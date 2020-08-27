@@ -1,0 +1,1 @@
+mklink "build/compile-commands.json" "build/"

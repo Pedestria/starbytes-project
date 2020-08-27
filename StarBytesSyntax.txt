@@ -1,0 +1,54 @@
+//DECLARATIONS
+//__________________
+//
+//Import Declaration
+import lib
+//Function Declaration
+func hello () >> String {
+	//Return Declaration
+	return "Greetings!"
+}
+//Scope Declaration / Namespace Declaration
+scope Scope0 {
+
+}
+//Class Declaration
+class MyClass <T> extends SuperClass utilizes SomeInterface {
+	//Method Declaration (Pretty Much same as Function Declaration)
+	myMethod(Int myNum) >> Boolean{
+		//If Declaration
+		if(1 > 3){
+			return true
+		}
+		//ElseIfDeclaration
+		else if(1 < 3){
+			return false
+		}
+		//ElseDeclaration
+		else {
+			return true
+		}
+		
+	}
+	
+}
+
+//Interface Declaration
+interface ClassInterface {
+
+}
+//Type Declaration
+deftype IntOrString = { Integer || String }
+//Alias Declaration
+alias Int = Integer
+alias SpecialNum = {Float || Double}
+//Structure Delcaration
+struct SomeStruct {
+
+}
+//Variable Declaration
+var hello;
+//Constant Declaration
+const myConst;
+
+
