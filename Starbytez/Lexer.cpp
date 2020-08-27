@@ -159,6 +159,12 @@ std::vector<Token> Lexer::tokenize() {
 			++bufptr;
 			resolveTokenAndClearCache();
 		}
+		else if(c == ';'){
+			resolveTokenAndClearCache();
+			*bufptr = c;
+			++bufptr;
+			resolveTokenAndClearCache(TokenType::Semicolon);
+		}
 		else if (c == '\0') {
 			resolveTokenAndClearCache();
 			break;

@@ -4,7 +4,7 @@
 
 namespace Starbytes {
 	enum class TokenType :int {
-		Keyword, Identifier, Operator,Bracket,Paren,Comma,Typecast,DoubleOperator,Quote,Dot
+		Keyword, Identifier, Operator,Bracket,Paren,Comma,Typecast,DoubleOperator,Quote,Dot,Semicolon
 	};
 	class Token
 	{

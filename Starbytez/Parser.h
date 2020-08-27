@@ -25,12 +25,18 @@ namespace Starbytes {
             Token* aheadToken() {
                 return &tokens[currentIndex + 1];
             };
+            /*Get token n times ahead of current token (Does not affect currentindex.)*/
+            Token * aheadNToken(int n){
+                return &tokens[currentIndex+n];
+            }
             /*Get behind token (Does not affect currentindex.)*/
             Token* behindToken() {
                 return &tokens[currentIndex - 1];
             }
             void parseIdentifier(Token* token1,ASTIdentifier *id);
-            void parseTypecast();
+            void parseTypecastIdentifier(ASTTypeCastIdentifier *ptr);
+            void parseVariableSpecifier(ASTVariableSpecifier * ptr);
+            void parseVariableDeclaration();
             void parseImportDeclaration();
             void parseDeclaration();
             void parseExpression();
