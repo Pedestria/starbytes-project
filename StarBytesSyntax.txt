@@ -4,20 +4,33 @@
 //Import Declaration
 import lib
 //Function Declaration
-func hello () >> String {
+[Usable]
+exec hello (hello:String) >> String {
 	//Return Declaration
 	return "Greetings!"
 }
 //Scope Declaration / Namespace Declaration
 scope Scope0 {
-
+	hello("Whatsup!")
+	
 }
+//TemplateUtilExpression
+[Usable,Serializable]
 //Class Declaration
 class MyClass <T> extends SuperClass utilizes SomeInterface {
+	//loose fields are mutable and can be released.
+	//while regular fields are muable but will never release.
+	//NewInstanceDeclaration
+	new[loose hello:string,otherString:String]
+	//ConstantFieldDeclaration
+	immutable otherField = 5;
+	
 	//Method Declaration (Pretty Much same as Function Declaration)
-	myMethod(Int myNum) >> Boolean{
+	myMethod(myNum:Int) >> Boolean{
+		release otherField;
 		//If Declaration
 		if(1 > 3){
+			
 			return true
 		}
 		//ElseIfDeclaration
@@ -39,6 +52,7 @@ interface ClassInterface {
 }
 //Type Declaration
 deftype IntOrString = { Integer || String }
+deftype Func = {<<[a:String]}
 //Alias Declaration
 alias Int = Integer
 alias SpecialNum = {Float || Double}
@@ -47,8 +61,19 @@ struct SomeStruct {
 
 }
 //Variable Declaration
-var hello;
+decl hello:String = "Hello"
 //Constant Declaration
-const myConst;
+decl immutable myConst = 4
+//Template Declaration
+template Usable {
+
+}
+
+template Serializable {
+
+}
+decl hello:MyClass<String>
+decl hello = new MyClass<String>();
+
 
 

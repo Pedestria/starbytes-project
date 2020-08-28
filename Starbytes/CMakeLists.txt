@@ -1,7 +1,7 @@
 ﻿# CMakeList.txt : CMake project for CPlusPlus, include source and define
 # project specific logic here.
 #
-set(STARBYTES_LIB_INCLUDE ${CMAKE_SOURCE_DIR}/Starbytez/starbytes-lib/include)
+set(STARBYTES_LIB_INCLUDE ${CMAKE_SOURCE_DIR}/Starbytes/starbytes-lib/include)
 add_subdirectory("starbytes")
 add_subdirectory("starbytes-lib")
 #add_subdirectory("starbytes-lsp")

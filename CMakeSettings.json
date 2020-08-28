@@ -17,7 +17,7 @@
           "type": "STRING"
         }
       ],
-      "cmakeToolchain": ""
+      "cmakeToolchain": "C:\\Users\\alex\\Documents\\GitHub\\vcpkg\\scripts\\buildsystems\\vcpkg.cmake"
     },
     {
       "name": "x64-Clang-Debug",

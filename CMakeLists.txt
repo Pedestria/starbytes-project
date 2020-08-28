@@ -2,7 +2,10 @@
 # and include sub-projects here.
 #
 cmake_minimum_required (VERSION 3.8)
+list(APPEND CMAKE_MODULE_PATH "C:/Users/alex/Documents/GitHub/vcpkg/scripts/buildsystems")
+include(vcpkg)
 
+# set(CMAKE_TOOLCHAIN_FILE C:/Users/alex/Documents/GitHub/vcpkg/scripts/buildsystems/vcpkg.cmake)
 
 if(NOT MSVC AND NOT MSVC_IDE OR CMAKE_COMPILER_IS_GNUCC)
 	set(CMAKE_CXX_COMPILER clang++)
@@ -12,7 +15,7 @@ if(NOT MSVC AND NOT MSVC_IDE OR CMAKE_COMPILER_IS_GNUCC)
 
 endif()
 
-project ("Starbytez" CXX)
+project ("Starbytes" CXX)
 
 # Include sub-projects.
-add_subdirectory ("Starbytez")
+add_subdirectory ("Starbytes")
