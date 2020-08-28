@@ -1,0 +1,1 @@
+echo -e "\e[34m Hello \e[34m"

@@ -70,30 +70,71 @@ void Parser::parseImportDeclaration(){
 void Parser::parseVariableDeclaration(){
     ASTVariableDeclaration node;
     node.type = ASTType::VariableDeclaration;
+    node.BeginFold = currentToken()->getPosition();
     Token *tok1 = aheadToken();
     if(tok1->getType() == TokenType::Identifier){
+  
         ASTVariableSpecifier node0;
+        //CurrentToken: Keyword before Id!
         parseVariableSpecifier(&node0);
-        
+        node.decls.push_back(node0);
+        //Semicolon, Comma, or Else;
+        if (currentToken()->getType() == TokenType::Comma) {
+            Token* t = aheadToken();
+            while (true) {
+                if (t->getType() == TokenType::Identifier) {
+                    ASTVariableSpecifier node1;
+                    parseVariableSpecifier(&node1);
+                    node.decls.push_back(node1);
+                }
+                if (t->getType() == TokenType::Semicolon) {
+                    break;
+                }
+                t = nextToken();
+            }
+        }
+        else if (currentToken()->getType() == TokenType::Semicolon) {
+            node.EndFold = currentToken()->getPosition();
+        }
+        else {
+            node.EndFold = behindToken()->getPosition();
+        }
+        nextToken();
+        //Current Token: (NOT A SEMICOLON OR COMMA!)
     } else {
         throw StarbytesParseError("Expected Identifer!",tok1->getPosition());
     }
 }
 void Parser::parseVariableSpecifier(ASTVariableSpecifier *ptr){
     Token *tok = nextToken();
+    ptr->BeginFold = tok->getPosition();
     if(tok->getType() == TokenType::Identifier){
         if(aheadToken()->getType() == TokenType::Typecast){
             ASTNode id;
+            //Try dyanmic cast!
             ASTTypeCastIdentifier * id0 = (ASTTypeCastIdentifier *) &id;
             parseTypecastIdentifier(id0);
+            ptr->id = id;
         }else if(aheadToken()->getContent() != "="){
             throw StarbytesParseError("Cannot imply type without Assignment",aheadToken()->getPosition());
         }
+        else if (aheadToken()->getContent() == "=") {
+            ASTNode id;
+            //Try dyanmic cast!
+            ASTIdentifier* id0 = (ASTIdentifier*)&id;
+            parseIdentifier(tok, id0);
+            ptr->id = id;
+        }
         Token *tok1 = nextToken();
         if(tok1->getType() == TokenType::Operator &&tok1->getContent() == "="){
-            if(tok1)
+            Token* tok2 = nextToken();
+            if (tok2->getType() == TokenType::Identifier || tok2->getType() == TokenType::Numeric || tok2->getType() == TokenType::Quote) {
+                //Parse Ids, Numbers, Quotes Here!
+            }
         }
+        
     }
+    //Current token: SemiColon or Other thing.
 }
 
 void Parser::parseTypecastIdentifier(ASTTypeCastIdentifier * ptr){

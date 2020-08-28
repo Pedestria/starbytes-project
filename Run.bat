@@ -1,1 +1,1 @@
-mklink "build/compile-commands.json" "build/"
+echo ^[0m [0mReset[0m

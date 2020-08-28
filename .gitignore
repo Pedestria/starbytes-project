@@ -1,3 +1,6 @@
 out
 build
 .vs
+*.symlink
+.clangd/
+compile_commands.json
