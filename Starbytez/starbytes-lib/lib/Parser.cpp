@@ -6,7 +6,7 @@ using namespace Starbytes;
 using namespace AST;
 
 enum class KeywordType:int {
-    Scope,Import,Variable,Constant,Class,Function
+    Scope,Import,Variable,Constant,Class,Function,Interface,Alias,Type,Return,If,Else
 };
 /*Creates Error Message For Console*/
 std::string StarbytesParseError(std::string message,DocumentPosition position){
@@ -23,17 +23,33 @@ KeywordType matchKeyword(std::string subject) {
         returncode = KeywordType::Variable;
     } else if(subject == "const"){
         returncode = KeywordType::Constant;
+    } else if(subject == "class"){
+        returncode = KeywordType::Class;
+    } else if(subject == "interface"){
+        returncode = KeywordType::Interface;
+    } else if(subject == "return"){
+        returncode = KeywordType::Return;
+    } else if(subject == "deftype"){
+        returncode = KeywordType::Type;
+    } else if(subject == "if"){
+        returncode = KeywordType::If;
+    } else if(subject == "else"){
+        returncode = KeywordType::Else;
     }
     return returncode;
 }
 
 void Parser::convertToAST(){
-    Token *tok = &tokens[0];
+    Token *tok = currentToken();
     while(currentIndex < tokens.size()){
         if(tok->getType() == TokenType::Keyword){
             parseDeclaration();
         } else if(tok->getType() == TokenType::Identifier){
             parseExpression();
+        }
+        
+        if(currentIndex == tokens.size()-1){
+            break;
         }
         tok = nextToken();
     }
@@ -55,12 +71,14 @@ void Parser::parseDeclaration(){
 
 void Parser::parseImportDeclaration(){
     ASTImportDeclaration node;
+    node.BeginFold = currentToken()->getPosition();
     node.type = ASTType::ImportDeclaration;
     Token *tok1 = nextToken();
     if(tok1->getType() == TokenType::Identifier){
         ASTIdentifier id;
         parseIdentifier(tok1,&id);
         node.id = id;
+        node.EndFold = tok1->getPosition();
         Treeptr->nodes.push_back(node);
     }
     else {
@@ -160,6 +178,10 @@ void Parser::parseTypecastIdentifier(ASTTypeCastIdentifier * ptr){
         throw StarbytesParseError("Expected Identifier!",tok->getPosition());
     }
     
+}
+
+void Parser::parseExpression(){
+
 }
 
 void Parser::parseIdentifier(Token *token1, ASTIdentifier * id) {

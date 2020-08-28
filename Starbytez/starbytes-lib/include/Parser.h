@@ -44,5 +44,6 @@ namespace Starbytes {
         public:
             Parser(std::vector<Token>& _tokens,AbstractSyntaxTree * tree) : tokens(_tokens), currentIndex(0), Treeptr(tree) {};
             void convertToAST();
+
     };
 }

@@ -7,6 +7,8 @@
 #include "Token.h"
 #include "Lexer.h"
 #include "Document.h"
+#include "Parser.h"
+#include "AST.h"
 
 #include <iostream>
 #include <vector>
