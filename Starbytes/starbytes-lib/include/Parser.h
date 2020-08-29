@@ -17,7 +17,11 @@ namespace Starbytes {
             Token * currentToken(){
                 return &tokens[currentIndex];
             }
-            /*Move to next Token*/
+            /*Move to next Token but does NOT return Token*/
+            void incrementToNextToken() {
+                ++currentIndex;
+            }
+            /*Move to next Token. Returns Token*/
             Token* nextToken() {
                 return &tokens[++currentIndex];
             };
@@ -37,6 +41,8 @@ namespace Starbytes {
             void parseTypecastIdentifier(ASTTypeCastIdentifier *ptr);
             void parseVariableSpecifier(ASTVariableSpecifier * ptr);
             void parseVariableDeclaration();
+            void parseConstantSpecifier(ASTConstantSpecifier * ptr);
+            void parseConstantDeclaration();
             void parseImportDeclaration();
             void parseDeclaration();
             void parseExpression();

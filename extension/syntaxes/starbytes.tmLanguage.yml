@@ -1,0 +1,11 @@
+name: "Starbytes Lang Syntax"
+scopeName: "source.strbyts" 
+fileTypes: ["strbyts"]
+foldingStartMarker: '\{\s*$'
+foldingStopMarker: '^\s*\}'
+
+#patterns: 
+#All pattern matchers for TOP level scope go here!
+
+#repository: 
+#Collection of pattern matchers!

@@ -1,0 +1,58 @@
+{
+    "name": "topperalex.starbytes",
+    "displayName": "Starbytes Extension For VSCode",
+    "version": "0.0.0",
+    "activationEvents": [
+        "onLanguage:starbytes"
+    ],
+    "categories": [
+        "Programming Languages"
+    ],
+    "author": "Alex Topper",
+    "engines": {
+        "vscode": "^1.22.0"
+    },
+    "main": "./index.js",
+    "scripts": {
+        "grammer":"js-yaml syntaxes/starbytes.tmLanguage.yml > syntaxes/starbytes.tmLanguage.json"
+    },
+    "contributes": {
+        "configuration": {
+            "type": "object",
+            "title": "Starbytes LSP Config",
+            "properties": {
+                "starbytesLSP.maxNumberOfProblems": {
+                    "scope": "resource",
+                    "type": "number",
+                    "default": 100,
+                    "description": "Controls the maximum number of problems produced by the server."
+                }
+            }
+        },
+        "languages": [
+            {
+                "id": "starbytes",
+                "aliases": [
+                    "Starbytes Lang",
+                    "Starbytes"
+                ],
+                "extensions": [
+                    ".strbyts"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "starbytes",
+                "scopeName": "source.strbyts",
+                "path": "./syntaxes/starbytes.tmLanguage.json"
+            }
+        ]
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.48.0",
+        "js-yaml": "^3.14.0",
+        "typescript": "^4.0.2"
+    }
+}

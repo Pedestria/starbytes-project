@@ -28,7 +28,7 @@ bool isOperator(char c) {
 }
 
 bool isQuote(char c){
-	if(c == '\''||c == '"'){
+	if(c == '\''||c == '"'||c == '\"'){
 		return true;
 	} else {
 		return false;
@@ -54,8 +54,18 @@ bool isParen(char c) {
 }
 
 bool isKeyword(std::string &subject){
-	LookupArray<std::string> keywordLookup = { "import","scope","func","interface","class","struct","return","if","else","alias","deftype","var","const"};
+	LookupArray<std::string> keywordLookup = { "import","scope","exec","interface","class","struct","return","if","else","alias","deftype","decl","immutable"};
 	return keywordLookup.lookup(subject);
+}
+
+bool isNumeric(std::string &subject){
+	for(int i = 0;i < subject.length();++i){
+		if(!isdigit(subject[i])){
+			return false;
+		}
+	}
+	return true;
+
 }
 
 
@@ -73,6 +83,9 @@ void Lexer::resolveTokenAndClearCache(TokenType tokT) {
 	std::string result = saveTokenBuffer(size);
 	if (isKeyword(result)) {
 		tokT = TokenType::Keyword;
+	}
+	else if(tokT != TokenType::Numeric && isNumeric(result)){
+		tokT = TokenType::Numeric;
 	}
 
 
@@ -100,18 +113,34 @@ std::vector<Token> Lexer::tokenize() {
 		else if (isspace(c)) {
 			resolveTokenAndClearCache();
 		}
-		else if (isalpha(c)) {
+		else if(c == '.'){
+			resolveTokenAndClearCache();
+			*bufptr = c;
+			++bufptr;
+			resolveTokenAndClearCache();
+		}
+		else if (isalnum(c)) {
 			*bufptr = c;
 			++bufptr;
 		}
 		else if (isQuote(c)){
-			//If look behind char is letter
-			if(isalpha(*(bufptr - 1))){
-				resolveTokenAndClearCache();	
-			} 
+			//Essesntially String Literal!
 			*bufptr = c;
 			++bufptr;
 			resolveTokenAndClearCache(TokenType::Quote);
+			char a;
+			while(true){
+				a = nextChar();
+				if(a == c){
+					resolveTokenAndClearCache();
+					*bufptr = a;
+					++bufptr;
+					break;
+				} else{
+					*bufptr = a;
+					++bufptr;
+				}
+			}
 		}
 		else if (isBracket(c)) {
 			*bufptr = c;
@@ -137,7 +166,7 @@ std::vector<Token> Lexer::tokenize() {
 		}
 		else if (isTypecast(c)) {
 			// Check to see if tokenbuffer is empty and look behind.
-			if (TokenBuffer != bufptr && isalpha(*(bufptr - 1))) {
+			if (TokenBuffer != bufptr && isalnum(*(bufptr - 1))) {
 				resolveTokenAndClearCache();
 			}
 			*bufptr = c;
@@ -147,7 +176,7 @@ std::vector<Token> Lexer::tokenize() {
 		}
 		else if (isParen(c)) {
 			// Check to see if tokenbuffer is empty and look behind.
-			if (TokenBuffer != bufptr && isalpha(*(bufptr-1))) {
+			if (TokenBuffer != bufptr && isalnum(*(bufptr-1))) {
 				resolveTokenAndClearCache();
 			}
 			*bufptr = c;
@@ -155,15 +184,12 @@ std::vector<Token> Lexer::tokenize() {
 			resolveTokenAndClearCache(TokenType::Paren);
 		}
 		else if (c == ',') {
+			if(TokenBuffer != bufptr && isalnum(*(bufptr-1))){
+				resolveTokenAndClearCache();
+			}
 			*bufptr = c;
 			++bufptr;
-			resolveTokenAndClearCache();
-		}
-		else if(c == ';'){
-			resolveTokenAndClearCache();
-			*bufptr = c;
-			++bufptr;
-			resolveTokenAndClearCache(TokenType::Semicolon);
+			resolveTokenAndClearCache(TokenType::Comma);
 		}
 		else if (c == '\0') {
 			resolveTokenAndClearCache();

@@ -6,7 +6,7 @@
 namespace Starbytes {
     namespace AST {
         enum class ASTType:int{
-            Identifier,Typecast,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration
+            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier
         };
         enum class NumericLiteralType {
             Integer,Float,Long,Double
@@ -34,46 +34,54 @@ namespace Starbytes {
         struct ASTIdentifier : ASTNode {
             std::string value;
         };
-        struct ASTExpression : ASTNode {
+        struct ASTExpression : ASTStatement {
         
         };
         struct ASTExpressionStatement : ASTStatement {
-            ASTExpression expression;
+            ASTExpression* expression;
         };
         
         struct ASTAssignExpression : ASTExpression {
-            ASTExpression subject;
+            ASTExpression* subject;
             std::string op;
-            ASTExpression objective;
+            ASTExpression* objective;
         };
         struct ASTMemberExpression : ASTExpression {
-            ASTExpression subject;
-            ASTIdentifier prop;
+            ASTExpression *object;
+            ASTIdentifier *prop;
         };
         struct ASTDeclaration : ASTStatement {};
 
         struct ASTVariableSpecifier : ASTStatement {
             //To Be Downcasted!
-            ASTNode id;
-            ASTExpression initializer;
+            ASTNode *id;
+            ASTExpression *initializer;
         };
         struct ASTVariableDeclaration : ASTStatement {
-            std::vector<ASTVariableSpecifier> decls;
+            std::vector<ASTVariableSpecifier*> specifiers;
+        };
+        struct ASTConstantSpecifier : ASTStatement {
+            //To Be Downcasted!
+            ASTNode *id;
+            ASTExpression *initializer;
+        };
+        struct ASTConstantDeclaration : ASTStatement {
+            std::vector<ASTConstantSpecifier *> specifiers;
         };
         struct ASTImportDeclaration : ASTDeclaration {
-            ASTIdentifier id;
+            ASTIdentifier *id;
         };
         struct ASTTypeCastIdentifier : ASTStatement {
-            ASTIdentifier id;
-            ASTIdentifier type;
+            ASTIdentifier *id;
+            ASTIdentifier *tid;
         };
         struct ASTScopeDeclaration : ASTDeclaration {
-            ASTIdentifier id;
+            ASTIdentifier *id;
         };
         
         struct AbstractSyntaxTree {
             std::string filename;
-            std::vector<ASTStatement> nodes;
+            std::vector<ASTStatement*> nodes;
         };
     };
 
