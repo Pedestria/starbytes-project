@@ -21,6 +21,6 @@ export function deactivate():Promise<void>|undefined{
     if(!langClient){
         return undefined;
     } else {
-        langClient.stop();
+        return langClient.stop();
     }
 }

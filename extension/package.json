@@ -12,6 +12,7 @@
     "engines": {
         "vscode": "^1.22.0"
     },
+    "files":["dist/"],
     "main": "./dist/index.js",
     "scripts": {
         "grammar": "node ./dist/grammar.js",

@@ -101,8 +101,8 @@ async function build (file:string){
         foldingStartMarker:TMGrammar.foldingStartMarker,
         foldingStopMarker:TMGrammar.foldingStopMarker,
         fileTypes:TMGrammar.fileTypes,
-        repository:TMGrammar.repository,
-        patterns:TMGrammar.patterns
+        patterns:TMGrammar.patterns,
+        repository:TMGrammar.repository
     };
     let options:Options = {
         trailingComma:"all",
