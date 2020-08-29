@@ -12,9 +12,10 @@
     "engines": {
         "vscode": "^1.22.0"
     },
-    "main": "./index.js",
+    "main": "./dist/index.js",
     "scripts": {
-        "grammer":"js-yaml syntaxes/starbytes.tmLanguage.yml > syntaxes/starbytes.tmLanguage.json"
+        "grammar": "node ./dist/grammar.js",
+        "types": "tsc -p ./tsconfig.json"
     },
     "contributes": {
         "configuration": {
@@ -51,8 +52,15 @@
         ]
     },
     "devDependencies": {
+        "@types/js-yaml": "^3.12.5",
+        "@types/node": "^14.6.2",
+        "@types/prettier": "^2.1.0",
         "@types/vscode": "^1.48.0",
         "js-yaml": "^3.14.0",
+        "prettier": "^2.1.1",
         "typescript": "^4.0.2"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^6.1.3"
     }
 }

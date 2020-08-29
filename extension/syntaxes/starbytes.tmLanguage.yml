@@ -4,8 +4,45 @@ fileTypes: ["strbyts"]
 foldingStartMarker: '\{\s*$'
 foldingStopMarker: '^\s*\}'
 
-#patterns: 
-#All pattern matchers for TOP level scope go here!
+variables:
+  identifier: '\w+'
 
-#repository: 
-#Collection of pattern matchers!
+patterns: 
+ - include: "#statements"
+
+repository: 
+  statements:
+    patterns:
+      - include: "#declarations"
+  #  - include: "#expressions"
+  declarations:
+    patterns:
+      - include: "#variable-declaration"
+      - include: "#import-declaration"
+      - include: "#function-declaration"
+  import-declaration:
+    name: "strbyts.import"
+    match: '\b(import)\b +({{identifier}})'
+    captures:
+      "1":
+        name: "keyword.control.strbyts.import"
+      "2":
+        name: "variable.readwrite"
+  variable-declaration:
+    name: "strbyts.decl"
+    begin: '\b(decl)\b +({{identifier}}) *= *'
+    end: '(?=\w)|(?=;)'
+    beginCaptures:
+      '1':
+        name: "keyword.control.strbyts.decl"
+      '2':
+        name: "variable.readwrite"
+  function-declaration:
+    name: "strbyts.func"
+    begin: '\b(func)\b +({{identifier}}) *\(\)\s*\{'
+    end: '.*\}'
+    beginCaptures:
+      '1':
+        name: "keyword.control.strbyts.func"
+      '2':
+        name: "variable.readwrite"

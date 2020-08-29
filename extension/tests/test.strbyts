@@ -1,0 +1,9 @@
+import something
+import otherLib
+
+decl hello = ;
+decl hello  = ;
+
+func hello () {
+
+}

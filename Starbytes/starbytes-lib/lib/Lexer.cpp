@@ -54,7 +54,7 @@ bool isParen(char c) {
 }
 
 bool isKeyword(std::string &subject){
-	LookupArray<std::string> keywordLookup = { "import","scope","exec","interface","class","struct","return","if","else","alias","deftype","decl","immutable"};
+	LookupArray<std::string> keywordLookup = { "import","scope","func","interface","class","struct","return","if","else","alias","deftype","decl","immutable"};
 	return keywordLookup.lookup(subject);
 }
 

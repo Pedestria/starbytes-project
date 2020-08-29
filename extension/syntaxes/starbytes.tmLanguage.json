@@ -1,0 +1,44 @@
+{
+  "name": "Starbytes Lang Syntax",
+  "scopeName": "source.strbyts",
+  "foldingStartMarker": "\\{\\s*$",
+  "foldingStopMarker": "^\\s*\\}",
+  "fileTypes": ["strbyts"],
+  "repository": {
+    "statements": { "patterns": [{ "include": "#declarations" }] },
+    "declarations": {
+      "patterns": [
+        { "include": "#variable-declaration" },
+        { "include": "#import-declaration" },
+        { "include": "#function-declaration" }
+      ]
+    },
+    "import-declaration": {
+      "name": "strbyts.import",
+      "match": "\\b(import)\\b +(\\w+)",
+      "captures": {
+        "1": { "name": "keyword.control.strbyts.import" },
+        "2": { "name": "variable.readwrite" }
+      }
+    },
+    "variable-declaration": {
+      "name": "strbyts.decl",
+      "begin": "\\b(decl)\\b +(\\w+) *= *",
+      "end": "(?=\\w)|(?=;)",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.strbyts.decl" },
+        "2": { "name": "variable.readwrite" }
+      }
+    },
+    "function-declaration": {
+      "name": "strbyts.func",
+      "begin": "\\b(func)\\b +(\\w+) *\\(\\)\\s*\\{",
+      "end": ".*\\}",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.strbyts.func" },
+        "2": { "name": "variable.readwrite" }
+      }
+    }
+  },
+  "patterns": [{ "include": "#statements" }]
+}
