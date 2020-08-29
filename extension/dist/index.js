@@ -20,7 +20,7 @@ function deactivate() {
         return undefined;
     }
     else {
-        langClient.stop();
+        return langClient.stop();
     }
 }
 exports.deactivate = deactivate;

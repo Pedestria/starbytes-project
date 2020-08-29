@@ -47,11 +47,16 @@ async function build(file) {
             rule.match = replaceVariables(rule.match);
         }
         if (rule.patterns) {
-            for (let key in rule.patterns) {
-                if (isTextMateRule(rule.patterns[key])) {
-                    recursiveBuild(rule.patterns[key]);
+            for (let ruleORInclude of rule.patterns) {
+                if (isTextMateRule(ruleORInclude)) {
+                    recursiveBuild(ruleORInclude);
                 }
             }
+        }
+    }
+    for (let ruleORInclude of TMGrammar.patterns) {
+        if (isTextMateRule(ruleORInclude)) {
+            recursiveBuild(ruleORInclude);
         }
     }
     for (let key in TMGrammar.repository) {
@@ -65,8 +70,8 @@ async function build(file) {
         foldingStartMarker: TMGrammar.foldingStartMarker,
         foldingStopMarker: TMGrammar.foldingStopMarker,
         fileTypes: TMGrammar.fileTypes,
-        repository: TMGrammar.repository,
-        patterns: TMGrammar.patterns
+        patterns: TMGrammar.patterns,
+        repository: TMGrammar.repository
     };
     let options = {
         trailingComma: "all",

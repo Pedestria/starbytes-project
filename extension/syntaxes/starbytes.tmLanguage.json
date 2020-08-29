@@ -4,6 +4,7 @@
   "foldingStartMarker": "\\{\\s*$",
   "foldingStopMarker": "^\\s*\\}",
   "fileTypes": ["strbyts"],
+  "patterns": [{ "include": "#statements" }],
   "repository": {
     "statements": { "patterns": [{ "include": "#declarations" }] },
     "declarations": {
@@ -39,6 +40,5 @@
         "2": { "name": "variable.readwrite" }
       }
     }
-  },
-  "patterns": [{ "include": "#statements" }]
+  }
 }

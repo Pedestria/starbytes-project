@@ -15,7 +15,7 @@ type TextMateRule = {
     match?:string
     begin?:string
     end?:string
-    patterns?:TextMateRule|TextMateInclude[]
+    patterns?:(TextMateRule|TextMateInclude)[]
 }
 
 type TextMateGrammar = {
@@ -24,7 +24,7 @@ type TextMateGrammar = {
     fileTypes:string[]
     foldingStartMarker:string
     foldingStopMarker:string
-    patterns:TextMateRule[]
+    patterns:(TextMateRule|TextMateInclude)[]
     repository:TextMateMap<TextMateRule>
     variables?:TextMateMap<string>
 }
@@ -81,11 +81,17 @@ async function build (file:string){
             rule.match = replaceVariables(rule.match)
         }
         if(rule.patterns){
-            for(let key in rule.patterns){
-                if(isTextMateRule(rule.patterns[key])){
-                    recursiveBuild(rule.patterns[key])
+            for(let ruleORInclude of rule.patterns){
+                if(isTextMateRule(ruleORInclude)){
+                    recursiveBuild(ruleORInclude)
                 }
             }
+        }
+    }
+
+    for(let ruleORInclude of TMGrammar.patterns){
+        if(isTextMateRule(ruleORInclude)){
+            recursiveBuild(ruleORInclude);
         }
     }
 
