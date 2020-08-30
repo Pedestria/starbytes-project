@@ -10,10 +10,18 @@
 using namespace Starbytes;
 
 bool isBracket(char c) {
-	if (c == '{' || c == '}' || c == ']' || c == '[') {
+	if (c == ']' || c == '[') {
 		return true;
 	}
 	else {
+		return false;
+	}
+}
+
+bool isBrace(char c) {
+	if(c == '{' || c == '}'){
+		return true;
+	} else{
 		return false;
 	}
 }
@@ -53,8 +61,16 @@ bool isParen(char c) {
 	}
 }
 
+bool isCarrot(char c){
+	if(c == '<'||c == '>'){
+		return true;
+	} else{
+		return false;
+	}
+}
+
 bool isKeyword(std::string &subject){
-	LookupArray<std::string> keywordLookup = { "import","scope","func","interface","class","struct","return","if","else","alias","deftype","decl","immutable"};
+	LookupArray<std::string> keywordLookup = { "import","scope","func","interface","class","struct","return","if","else","alias","deftype","immutable","decl"};
 	return keywordLookup.lookup(subject);
 }
 
@@ -135,6 +151,7 @@ std::vector<Token> Lexer::tokenize() {
 					resolveTokenAndClearCache();
 					*bufptr = a;
 					++bufptr;
+					resolveTokenAndClearCache(TokenType::Quote);
 					break;
 				} else{
 					*bufptr = a;
@@ -143,9 +160,26 @@ std::vector<Token> Lexer::tokenize() {
 			}
 		}
 		else if (isBracket(c)) {
+			TokenType type;
+			if(c == '['){
+				type = TokenType::OpenBracket;
+			} else if(c == ']'){
+				type = TokenType::CloseBracket;
+			}
 			*bufptr = c;
 			++bufptr;
-			resolveTokenAndClearCache(TokenType::Bracket);
+			resolveTokenAndClearCache(type);
+		}
+		else if(isBrace(c)){
+			TokenType type;
+			if(c == '{'){
+				type = TokenType::OpenBrace;
+			} else {
+				type = TokenType::CloseBrace;
+			}
+			*bufptr = c;
+			++bufptr;
+			resolveTokenAndClearCache(type);
 		}
 		else if (isOperator(c)){
 			//If look ahead char is operator
@@ -179,9 +213,27 @@ std::vector<Token> Lexer::tokenize() {
 			if (TokenBuffer != bufptr && isalnum(*(bufptr-1))) {
 				resolveTokenAndClearCache();
 			}
+			TokenType type;
+			if(c == '('){
+				type = TokenType::OpenParen;
+			}else if (c == ')'){
+				type = TokenType::CloseParen;
+			}
 			*bufptr = c;
 			++bufptr;
-			resolveTokenAndClearCache(TokenType::Paren);
+			resolveTokenAndClearCache(type);
+		}
+		else if(isCarrot(c)){
+			resolveTokenAndClearCache();
+			TokenType type;
+			if(c == '<'){
+				type = TokenType::OpenCarrot;
+			}else if(c == '>'){
+				type = TokenType::CloseCarrot;
+			}
+			*bufptr = c;
+			++bufptr;
+			resolveTokenAndClearCache(type);
 		}
 		else if (c == ',') {
 			if(TokenBuffer != bufptr && isalnum(*(bufptr-1))){
@@ -193,6 +245,9 @@ std::vector<Token> Lexer::tokenize() {
 		}
 		else if (c == '\0') {
 			resolveTokenAndClearCache();
+			*bufptr = c;
+			++bufptr;
+			resolveTokenAndClearCache(TokenType::EndOfFile);
 			break;
 		}
 

@@ -6,10 +6,7 @@
 namespace Starbytes {
     namespace AST {
         enum class ASTType:int{
-            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier
-        };
-        enum class NumericLiteralType {
-            Integer,Float,Long,Double
+            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,TypeIdentifier
         };
         /*Abstract Syntax Tree Node*/
         struct ASTNode {
@@ -19,12 +16,11 @@ namespace Starbytes {
         struct ASTLiteral : ASTNode {
 
         };
-        struct ASTStringLiteral {
+        struct ASTStringLiteral : ASTLiteral {
             std::string value;
         };
-        struct ASTNumericLiteral {
+        struct ASTNumericLiteral :ASTLiteral {
             std::string numericvalue;
-            NumericLiteralType type;
         };
         struct ASTStatement {
             DocumentPosition BeginFold;
@@ -33,6 +29,13 @@ namespace Starbytes {
         };
         struct ASTIdentifier : ASTNode {
             std::string value;
+        };
+        struct ASTTypeIdentifer : ASTStatement {
+            std::string value;
+        };
+        struct ASTTypeCastIdentifier : ASTStatement {
+            ASTIdentifier *id;
+            ASTTypeIdentifer *tid;
         };
         struct ASTExpression : ASTStatement {
         
@@ -44,16 +47,16 @@ namespace Starbytes {
         struct ASTAssignExpression : ASTExpression {
             ASTExpression* subject;
             std::string op;
-            ASTExpression* objective;
+            ASTExpression* object;
         };
         struct ASTMemberExpression : ASTExpression {
             ASTExpression *object;
-            ASTIdentifier *prop;
+            ASTExpression *prop;
         };
         struct ASTDeclaration : ASTStatement {};
 
         struct ASTVariableSpecifier : ASTStatement {
-            //To Be Downcasted!
+            //EITHER a ASTIdentifier or ASTTypeCastIdentifier
             ASTNode *id;
             ASTExpression *initializer;
         };
@@ -61,7 +64,7 @@ namespace Starbytes {
             std::vector<ASTVariableSpecifier*> specifiers;
         };
         struct ASTConstantSpecifier : ASTStatement {
-            //To Be Downcasted!
+            //EITHER a ASTIdentifier or ASTTypeCastIdentifier
             ASTNode *id;
             ASTExpression *initializer;
         };
@@ -71,12 +74,19 @@ namespace Starbytes {
         struct ASTImportDeclaration : ASTDeclaration {
             ASTIdentifier *id;
         };
-        struct ASTTypeCastIdentifier : ASTStatement {
-            ASTIdentifier *id;
-            ASTIdentifier *tid;
+        struct ASTBlockStatement : ASTStatement {
+            std::vector<ASTStatement*> nodes;
         };
+
         struct ASTScopeDeclaration : ASTDeclaration {
             ASTIdentifier *id;
+            ASTBlockStatement* body;
+        };
+        struct ASTFunctionDeclaration : ASTDeclaration {
+            ASTIdentifier *id;
+            std::vector<ASTTypeCastIdentifier*> params;
+            ASTTypeIdentifer *returnType;
+            ASTBlockStatement* body;
         };
         
         struct AbstractSyntaxTree {
