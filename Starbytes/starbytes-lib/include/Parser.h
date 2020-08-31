@@ -54,8 +54,12 @@ namespace Starbytes {
             /*Parses all Declaration and places them in container. (Container is used for scope declarations)*/
             bool parseDeclaration(std::vector<ASTStatement *> *container);
             void parseBlockStatement(ASTBlockStatement *ptr);
-            void parseNewExpression(ASTExpressionStatement * parent);
-            bool parseExpression(std::vector<ASTStatement *> *container);
+            void parseNewExpression(ASTNewExpression *ptr);
+            void parseArrayExpression(ASTArrayExpression *ptr);
+            void parseAssignExpression(ASTAssignExpression *ptr);
+            void parseMemberExpression(ASTMemberExpression *ptr,ASTExpression *object);
+            bool parseExpressionStatement(std::vector<ASTStatement *> *container);
+            bool parseExpression(ASTExpression *ptr);
             void parseStatement(std::vector<ASTStatement *> * container,Scope scope);
             void parseNumericLiteral(ASTNumericLiteral *ptr);
             void parseStringLiteral(ASTStringLiteral *ptr);

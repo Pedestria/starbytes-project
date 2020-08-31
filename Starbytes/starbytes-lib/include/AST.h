@@ -6,7 +6,7 @@
 namespace Starbytes {
     namespace AST {
         enum class ASTType:int{
-            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,TypeIdentifier
+            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression
         };
         /*Abstract Syntax Tree Node*/
         struct ASTNode {
@@ -45,6 +45,7 @@ namespace Starbytes {
         };
         struct ASTNewExpression : ASTExpression {
             ASTTypeIdentifier* decltid;
+            std::vector<ASTExpression *> params;
         };
         struct ASTArrayExpression : ASTExpression {
             std::vector<ASTExpression *> items;

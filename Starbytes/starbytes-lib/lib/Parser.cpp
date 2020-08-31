@@ -57,7 +57,7 @@ void Parser::convertToAST(){
 void Parser::parseStatement(std::vector<ASTStatement *> * container,Scope scope){
     //First Token of Statement!
     Token *tok = currentToken();
-    if(parseExpression(container)){
+    if(parseExpressionStatement(container)){
             return;
     }
 
@@ -478,31 +478,131 @@ void Parser::parseIdentifier(Token *token1, ASTIdentifier * id) {
     id->value = token1->getContent();
 }
 
-bool Parser::parseExpression(std::vector<ASTStatement *> *container){
-    ASTExpressionStatement *node = new ASTExpressionStatement();
+bool Parser::parseExpression(ASTExpression *ptr){
     if(currentToken()->getType() == TokenType::Keyword){
-        switch (matchKeyword(currentToken()->getContent())) {
-        case KeywordType::New:
-            parseNewExpression(node);
+        KeywordType match = matchKeyword(currentToken()->getContent());
+        if(match == KeywordType::New){
+            ASTNewExpression *node3 = new ASTNewExpression();
+            parseNewExpression(node3);
+            ptr = (ASTExpression *) node3;
             return true;
-            break;
-        default:
+        }else {
             return false;
-            break;
         }
     } else{
         if(currentToken()->getType() == TokenType::Numeric){
             ASTNumericLiteral *node0 = new ASTNumericLiteral();
             parseNumericLiteral(node0);
-            node->expression = (ASTExpression *) node0;
+            ptr = (ASTExpression *) node0;
             return true;
         } else if(currentToken()->getType() == TokenType::Quote){
             ASTStringLiteral *node1 = new ASTStringLiteral();
             parseStringLiteral(node1);
-            node->expression = (ASTExpression *) node1;
+            ptr = (ASTExpression *) node1;
             return true;
-        } else if(currentToken()->getType() == TokenType::Identifier){
-            
+        }else if(currentToken()->getType() == TokenType::OpenBracket) {
+            ASTArrayExpression *node2 = new ASTArrayExpression();
+            parseArrayExpression(node2);
+            ptr = (ASTExpression *)node2;
+            return true;
+        } 
+        else if(currentToken()->getType() == TokenType::Identifier){
+            ASTIdentifier *id = new ASTIdentifier();
+            parseIdentifier(currentToken(),id);
+            ptr = (ASTExpression*) id;
+            return true;
+        } else {
+            return false;
         }
+
     }
 }
+
+bool Parser::parseExpressionStatement(std::vector<ASTStatement *> *container){
+    ASTExpressionStatement *node = new ASTExpressionStatement();
+    ASTExpression *node1;
+    if(parseExpression(node1)){
+        node->expression = node1;
+        container->push_back(node);
+        return true;
+    } else {
+        delete node;
+        return false;
+    }
+}
+
+void Parser::parseArrayExpression(ASTArrayExpression *ptr){
+    ptr->type = ASTType::ArrayExpression;
+    ptr->BeginFold = currentToken()->getPosition();
+    Token *tok = nextToken();
+    while(true){
+        if(tok->getType() == TokenType::CloseBracket){
+            ptr->EndFold = tok->getPosition();
+            break;
+        } else {
+            ASTExpression *node;
+            if(parseExpression(node)){
+                ptr->items.push_back(node);
+            }
+            Token *tok1 = nextToken();
+            if(tok1->getType() != TokenType::Comma){
+                throw StarbytesParseError("Expected Comma!",tok1->getPosition());
+            }
+        }
+        tok = nextToken();
+    }
+}
+
+void Parser::parseNewExpression(ASTNewExpression *ptr){
+    ptr->type = ASTType::NewExpression;
+    ptr->BeginFold = currentToken()->getPosition();
+    if(aheadToken() ->getType() == TokenType::Identifier){
+        ASTTypeIdentifier *node0 = new ASTTypeIdentifier();
+        parseTypeIdentifier(node0);
+        ptr->decltid = node0;
+        Token *tok0 = nextToken();
+        if(tok0->getType() == TokenType::OpenParen){
+            while(true){
+                if(tok0->getType() == TokenType::CloseParen){
+                    ptr->EndFold = tok0->getPosition();
+                    break;
+                }else {
+                    ASTExpression *node1;
+                    if(parseExpression(node1)){
+                        ptr->params.push_back(node1);
+                    }
+                    Token *tok1 = nextToken();
+                    if(tok1->getType() != TokenType::Comma){
+                        throw StarbytesParseError("Expected Comma!",tok1->getPosition());
+                    }
+                }
+                tok0 = nextToken();
+            }
+        }
+        else{
+            throw StarbytesParseError("Expected Open Paren!",tok0->getPosition());
+        }
+    }
+    else {
+        throw StarbytesParseError("Expected Identifier!",aheadToken()->getPosition());
+    }
+}
+
+//REINVENT WAY TO PARSE MEMBEREXPRESSION!
+// void Parser::parseMemberExpression(ASTMemberExpression *ptr,ASTExpression *object){
+//     ptr->type = ASTType::MemberExpression;
+//     ptr->BeginFold = object->BeginFold;
+//     ptr->object = object;
+//     incrementToNextToken();
+//     Token *tok0 = nextToken();
+//     if(tok0->getType() == TokenType::Identifier){
+//         ASTIdentifier *id = new ASTIdentifier();
+//         parseIdentifier(tok0,id);
+//         ptr->prop = (ASTExpression *)id;
+//         ASTMemberExpression *node1 = new ASTMemberExpression();
+//         parseMemberExpression(node1,ptr);
+//         node1 = ptr;
+//         return;
+//     }  
+
+// }

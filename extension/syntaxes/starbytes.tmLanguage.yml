@@ -5,7 +5,7 @@ foldingStartMarker: '\{\s*$'
 foldingStopMarker: '^\s*\}'
 
 variables:
-  identifier: '\w+'
+  identifier: ':alnum:+'
 
 patterns: 
  - include: "#statements"

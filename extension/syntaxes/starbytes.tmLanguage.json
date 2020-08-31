@@ -16,7 +16,7 @@
     },
     "import-declaration": {
       "name": "strbyts.import",
-      "match": "\\b(import)\\b +(\\w+)",
+      "match": "\\b(import)\\b +(:alnum:+)",
       "captures": {
         "1": { "name": "keyword.control.strbyts.import" },
         "2": { "name": "variable.readwrite" }
@@ -24,7 +24,7 @@
     },
     "variable-declaration": {
       "name": "strbyts.decl",
-      "begin": "\\b(decl)\\b +(\\w+) *= *",
+      "begin": "\\b(decl)\\b +(:alnum:+) *= *",
       "end": "(?=\\w)|(?=;)",
       "beginCaptures": {
         "1": { "name": "keyword.control.strbyts.decl" },
@@ -33,7 +33,7 @@
     },
     "function-declaration": {
       "name": "strbyts.func",
-      "begin": "\\b(func)\\b +(\\w+) *\\(\\)\\s*\\{",
+      "begin": "\\b(func)\\b +(:alnum:+) *\\(\\)\\s*\\{",
       "end": ".*\\}",
       "beginCaptures": {
         "1": { "name": "keyword.control.strbyts.func" },

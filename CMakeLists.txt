@@ -8,7 +8,7 @@ option(MSVC_BUILD "Whether to Build With MSVC Or clang++" OFF)
 
 # set(CMAKE_TOOLCHAIN_FILE C:/Users/alex/Documents/GitHub/vcpkg/scripts/buildsystems/vcpkg.cmake)
 
-if(NOT MSVC_BUILD)
+if(NOT ${MSVC_BUILD})
 	set(CMAKE_CXX_COMPILER clang++)
 	set(CMAKE_CXX_COMPILER_FLAGS "-ansi -fms-compatibility")
 	set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
