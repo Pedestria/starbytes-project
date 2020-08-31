@@ -1,4 +1,7 @@
 add_executable(starbytes-lspserver "Starbytes-LSP.cpp" "Starbytes-LSP.h")
 add_dependencies(starbytes-lspserver starbytes-lib)
-include_directories(${STARBYTES_LIB_INCLUDE})
+include_directories(${STARBYTES_LIB_INCLUDE} SYSTEM "/Library/Developer/Toolchains/swift-5.3-DEVELOPMENT-SNAPSHOT-2020-08-18-a.xctoolchain/usr/include/c++/v1")
 target_link_libraries(starbytes-lspserver starbytes-lib)
+if(APPLE)
+    add_clang_lib(starbytes-lspserver)
+endif()
