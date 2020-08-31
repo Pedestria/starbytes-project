@@ -21,7 +21,7 @@ using namespace std;
 // }
 
 std::string help(){
- return "The Starbytes LSP Implementation! \n \n Flags: \n \n --help = Display help info.";
+ return "\n \u001b[35m\u001b[4m The Starbytes LSP Implementation!\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help info. \n";
 }
 
 int main(int argc, char* argv[]) {
