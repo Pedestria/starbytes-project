@@ -1,1 +1,1 @@
-echo ^[0m [0mReset[0m
+"./build/Starbytes/starbytes/StarbytesCompiler.exe"

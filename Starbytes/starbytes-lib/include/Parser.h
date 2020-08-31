@@ -9,6 +9,9 @@
 namespace Starbytes {
     using namespace AST;
     typedef unsigned int UInt;
+    enum class Scope:int {
+        Global,BlockStatement
+    };
     class Parser{
         private:
             /*Pointer to AST*/
@@ -39,7 +42,7 @@ namespace Starbytes {
                 return &tokens[currentIndex - 1];
             }
             void parseIdentifier(Token* token1,ASTIdentifier *id);
-            void parseTypeIdentifier(ASTTypeIdentifer *ptr);
+            void parseTypeIdentifier(ASTTypeIdentifier *ptr);
             void parseTypecastIdentifier(ASTTypeCastIdentifier *ptr);
             void parseVariableSpecifier(ASTVariableSpecifier * ptr);
             void parseVariableDeclaration(std::vector<ASTStatement *> * container);
@@ -49,10 +52,11 @@ namespace Starbytes {
             void parseScopeDeclaration(std::vector<ASTStatement *> *container);
             void parseFunctionDeclaration(std::vector<ASTStatement *> *container);
             /*Parses all Declaration and places them in container. (Container is used for scope declarations)*/
-            void parseDeclaration(std::vector<ASTStatement *> *container);
+            bool parseDeclaration(std::vector<ASTStatement *> *container);
             void parseBlockStatement(ASTBlockStatement *ptr);
-            void parseExpression();
-            void parseStatement();
+            void parseNewExpression(ASTExpressionStatement * parent);
+            bool parseExpression(std::vector<ASTStatement *> *container);
+            void parseStatement(std::vector<ASTStatement *> * container,Scope scope);
             void parseNumericLiteral(ASTNumericLiteral *ptr);
             void parseStringLiteral(ASTStringLiteral *ptr);
         public:

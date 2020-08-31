@@ -30,12 +30,12 @@ namespace Starbytes {
         struct ASTIdentifier : ASTNode {
             std::string value;
         };
-        struct ASTTypeIdentifer : ASTStatement {
+        struct ASTTypeIdentifier : ASTStatement {
             std::string value;
         };
         struct ASTTypeCastIdentifier : ASTStatement {
             ASTIdentifier *id;
-            ASTTypeIdentifer *tid;
+            ASTTypeIdentifier *tid;
         };
         struct ASTExpression : ASTStatement {
         
@@ -43,7 +43,12 @@ namespace Starbytes {
         struct ASTExpressionStatement : ASTStatement {
             ASTExpression* expression;
         };
-        
+        struct ASTNewExpression : ASTExpression {
+            ASTTypeIdentifier* decltid;
+        };
+        struct ASTArrayExpression : ASTExpression {
+            std::vector<ASTExpression *> items;
+        };
         struct ASTAssignExpression : ASTExpression {
             ASTExpression* subject;
             std::string op;
@@ -85,7 +90,7 @@ namespace Starbytes {
         struct ASTFunctionDeclaration : ASTDeclaration {
             ASTIdentifier *id;
             std::vector<ASTTypeCastIdentifier*> params;
-            ASTTypeIdentifer *returnType;
+            ASTTypeIdentifier *returnType;
             ASTBlockStatement* body;
         };
         

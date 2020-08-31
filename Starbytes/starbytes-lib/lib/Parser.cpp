@@ -6,8 +6,9 @@ using namespace Starbytes;
 using namespace AST;
 
 enum class KeywordType:int {
-    Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else
+    Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case
 };
+
 /*Creates Error Message For Console*/
 std::string StarbytesParseError(std::string message,DocumentPosition position){
     return message.append(" \n Error Occured at Position:{\nLine:"+std::to_string(position.line)+"\n Start Column:"+std::to_string(position.start)+"\n End Column:"+std::to_string(position.end)+"\n}");
@@ -37,30 +38,41 @@ KeywordType matchKeyword(std::string subject) {
         returncode = KeywordType::Else;
     } else if(subject == "func"){
         returncode = KeywordType::Function;
+    } else if(subject == "new"){
+        returncode = KeywordType::New;
     }
     return returncode;
 }
 
 void Parser::convertToAST(){
-    Token *tok = currentToken();
     while(currentIndex < tokens.size()){
-        if(tok->getType() == TokenType::Keyword){
-            parseDeclaration(&Treeptr->nodes);
-        } else if(tok->getType() == TokenType::Identifier){
-            parseExpression();
-        }
+        parseStatement(&Treeptr->nodes,Scope::Global);
         
         if(currentIndex == tokens.size()-1){
             break;
         }
-        tok = nextToken();
+        incrementToNextToken();
+    }
+}
+void Parser::parseStatement(std::vector<ASTStatement *> * container,Scope scope){
+    //First Token of Statement!
+    Token *tok = currentToken();
+    if(parseExpression(container)){
+            return;
+    }
+
+    if(tok->getType() == TokenType::Keyword){
+        if(parseDeclaration(container)){
+            return;
+        } 
     }
 }
 /*Parses all Declaration and places them in container. (Container is used for scope declarations)*/
-void Parser::parseDeclaration(std::vector<ASTStatement *> * container){
+bool Parser::parseDeclaration(std::vector<ASTStatement *> * container){
     switch (matchKeyword(currentToken()->getContent())) {
         case KeywordType::Import :
             parseImportDeclaration(container);
+            return true;
             break;
         case KeywordType::Variable :
             if(aheadToken()->getType() == TokenType::Keyword && matchKeyword(aheadToken()->getContent()) == KeywordType::Immutable){
@@ -68,15 +80,18 @@ void Parser::parseDeclaration(std::vector<ASTStatement *> * container){
             }else {
                  parseVariableDeclaration(container);
             }
+            return true;
             break;
         case KeywordType::Scope :
             parseScopeDeclaration(container);
+            return true;
             break;
         case KeywordType::Function :
             parseFunctionDeclaration(container);
+            return true;
             break;
         default :
-            throw StarbytesParseError("Unresolved Keyword!",currentToken()->getPosition());
+            return false;
             break;
     }
 }
@@ -155,18 +170,21 @@ void Parser::parseBlockStatement(ASTBlockStatement *ptr){
     ptr->type = ASTType::BlockStatement;
     Token *tok = nextToken();
     ptr->BeginFold = tok->getPosition();
-    while(true){
-        if(tok->getType() == TokenType::Keyword){
-            parseDeclaration(&ptr->nodes);
-        } else if(tok->getType() == TokenType::Identifier){
-            parseExpression();
+    if(tok->getType() == TokenType::OpenBrace){
+        while(true){
+            if(currentToken()->getType() == TokenType::CloseBrace){
+                break;
+            } else{
+                parseStatement(&ptr->nodes,Scope::BlockStatement);
+            }
+            incrementToNextToken();
         }
-        else if(tok->getType() == TokenType::CloseBrace){
-            break;
-        }
-        tok = nextToken();
+        ptr->EndFold = currentToken()->getPosition();
     }
-    ptr->EndFold = currentToken()->getPosition();
+    else {
+        throw StarbytesParseError("Expected Open Brace",tok->getPosition());
+    }
+
 }
 
 void Parser::parseScopeDeclaration(std::vector<ASTStatement *> * container){
@@ -370,7 +388,7 @@ void Parser::parseFunctionDeclaration(std::vector<ASTStatement *> * container){
                     Token *tok4 = nextToken();
                     if(tok4->getType() == TokenType::CloseCarrot){
                         //PARSE TYPED IDENTIFIER!
-                        ASTTypeIdentifer *tid = new ASTTypeIdentifer();
+                        ASTTypeIdentifier *tid = new ASTTypeIdentifier();
                         parseTypeIdentifier(tid);
                         node->returnType = tid;
                     }else {
@@ -387,10 +405,10 @@ void Parser::parseFunctionDeclaration(std::vector<ASTStatement *> * container){
                     //CurrentToken: Close Brace before OTHER_TOKEN
                 }
                 else {
-                    throw StarbytesParseError("Expected Open Brace!",tok3->getPosition());
+                    throw StarbytesParseError("Expected Open Brace!",aheadToken()->getPosition());
                 }
             }
-            else if(tok0->getType() == TokenType::CloseParen){
+            else if(tok1->getType() == TokenType::CloseParen){
                 Token *tok2 = aheadToken();
                 if(tok2->getType() == TokenType::OpenBrace){
                     ASTBlockStatement *block = new ASTBlockStatement();
@@ -425,7 +443,7 @@ void Parser::parseTypecastIdentifier(ASTTypeCastIdentifier * ptr){
             ASTIdentifier *id1 = new ASTIdentifier();
             parseIdentifier(tok,id1);
             ptr->id = id1;
-            ASTTypeIdentifer *tid = new ASTTypeIdentifer();
+            ASTTypeIdentifier *tid = new ASTTypeIdentifier();
             parseTypeIdentifier(tid);
             ptr->tid = tid;
             //CurrentToken: Last Token of TYPE_ID Before OTHER_TOKEN
@@ -440,7 +458,7 @@ void Parser::parseTypecastIdentifier(ASTTypeCastIdentifier * ptr){
     
 }
 //TODO: More Advanced Type Funcitonality Required! (Generics,Arrays,Dictionaries,etc...)
-void Parser::parseTypeIdentifier(ASTTypeIdentifer * ptr){
+void Parser::parseTypeIdentifier(ASTTypeIdentifier * ptr){
     //CurrenToken: Before ID
     ptr->type = ASTType::TypeIdentifier;
     Token *tok = nextToken();
@@ -460,6 +478,31 @@ void Parser::parseIdentifier(Token *token1, ASTIdentifier * id) {
     id->value = token1->getContent();
 }
 
-void Parser::parseExpression(){
-
+bool Parser::parseExpression(std::vector<ASTStatement *> *container){
+    ASTExpressionStatement *node = new ASTExpressionStatement();
+    if(currentToken()->getType() == TokenType::Keyword){
+        switch (matchKeyword(currentToken()->getContent())) {
+        case KeywordType::New:
+            parseNewExpression(node);
+            return true;
+            break;
+        default:
+            return false;
+            break;
+        }
+    } else{
+        if(currentToken()->getType() == TokenType::Numeric){
+            ASTNumericLiteral *node0 = new ASTNumericLiteral();
+            parseNumericLiteral(node0);
+            node->expression = (ASTExpression *) node0;
+            return true;
+        } else if(currentToken()->getType() == TokenType::Quote){
+            ASTStringLiteral *node1 = new ASTStringLiteral();
+            parseStringLiteral(node1);
+            node->expression = (ASTExpression *) node1;
+            return true;
+        } else if(currentToken()->getType() == TokenType::Identifier){
+            
+        }
+    }
 }
