@@ -1,3 +1,21 @@
+# New files eventually. (May split lib into mutliple libraries.)
+#
+# starbytes-lib:
+# - SemanticsEngine.h 
+# - SemanticsEngine.cpp
+# - RuntimeEngine.h
+# - RuntimeEngine.cpp
+# - RuntimeLib.h
+# - RuntimeLib.cpp
+# - ModuleConstructor.cpp
+# - ModuleConstructor.h
+# - ModuleWriter.h
+# - ModuleWriter.cpp
+# - ModuleReader.h
+# - ModuleReader.cpp
+# - ModuleFileParser.h
+# - ModuleFileParser.cpp
+#
 list(APPEND HEADERS "AST.h" "Document.h" "Lexer.h" "Lookup.h" "Parser.h" "Token.h" "Serialization.h")
 list(TRANSFORM HEADERS PREPEND "include/")
 include_directories(include)

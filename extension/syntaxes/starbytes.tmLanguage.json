@@ -1,44 +1,157 @@
 {
   "name": "Starbytes Lang Syntax",
+  "uuid": "86e272a9-6421-4db5-a7b8-01d296c9fca5",
   "scopeName": "source.strbyts",
+  "fileTypes": ["strbyts"],
   "foldingStartMarker": "\\{\\s*$",
   "foldingStopMarker": "^\\s*\\}",
-  "fileTypes": ["strbyts"],
   "patterns": [{ "include": "#statements" }],
   "repository": {
-    "statements": { "patterns": [{ "include": "#declarations" }] },
+    "statements": {
+      "patterns": [
+        { "include": "#declarations" },
+        { "include": "#expressions" }
+      ]
+    },
     "declarations": {
       "patterns": [
         { "include": "#variable-declaration" },
         { "include": "#import-declaration" },
-        { "include": "#function-declaration" }
+        { "include": "#function-declaration" },
+        { "include": "#scope-declaration" },
+        { "include": "#class-declaration" }
+      ]
+    },
+    "expressions": {
+      "patterns": [
+        { "include": "#literals" },
+        { "include": "#call-expression" },
+        { "include": "#number" },
+        { "include": "#identifier" }
+      ]
+    },
+    "number": { "name": "constant.numeric", "match": "[0-9]+(?:\\.[0-9]+)?" },
+    "identifier": {
+      "name": "variable.readwrite.strbyts",
+      "match": "\\b\\w+\\b"
+    },
+    "call-expression": {
+      "name": "strbyts.callexp",
+      "begin": "(\\w+)\\s*\\(",
+      "end": "\\s*\\)",
+      "beginCaptures": { "1": { "name": "entity.name.function" } },
+      "patterns": [{ "include": "#identifier" }]
+    },
+    "literals": { "patterns": [{ "include": "#string-literal" }] },
+    "string-literal": {
+      "name": "string.quoted.double.strbyts",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.strbyts", "match": "\\\\." }
       ]
     },
     "import-declaration": {
       "name": "strbyts.import",
-      "match": "\\b(import)\\b +(:alnum:+)",
+      "match": "\\b(import)\\b +(\\w+)",
       "captures": {
         "1": { "name": "keyword.control.strbyts.import" },
         "2": { "name": "variable.readwrite" }
       }
     },
+    "scope-declaration": {
+      "name": "strbyts.scope",
+      "begin": "\\b(scope)\\b +(\\w+)\\s*\\{",
+      "end": "^\\s*\\}",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.strbyts.scope" },
+        "2": { "name": "variable.readwrite" }
+      },
+      "patterns": [{ "include": "#statements" }]
+    },
     "variable-declaration": {
       "name": "strbyts.decl",
-      "begin": "\\b(decl)\\b +(:alnum:+) *= *",
-      "end": "(?=\\w)|(?=;)",
-      "beginCaptures": {
+      "match": "\\b(decl)\\b +(\\w+):?(\\w+)?",
+      "captures": {
         "1": { "name": "keyword.control.strbyts.decl" },
-        "2": { "name": "variable.readwrite" }
+        "2": { "name": "variable.readwrite" },
+        "3": { "name": "entity.name.type" }
       }
     },
     "function-declaration": {
       "name": "strbyts.func",
-      "begin": "\\b(func)\\b +(:alnum:+) *\\(\\)\\s*\\{",
-      "end": ".*\\}",
+      "begin": "\\b(func)\\b +(\\w+) *",
+      "end": "(?<=\\})",
       "beginCaptures": {
         "1": { "name": "keyword.control.strbyts.func" },
-        "2": { "name": "variable.readwrite" }
+        "2": { "name": "entity.name.function" }
+      },
+      "patterns": [
+        { "include": "#function-params" },
+        { "include": "#function-return" },
+        { "include": "#function-body" }
+      ]
+    },
+    "typedParameter": {
+      "name": "strbyts.tparam",
+      "match": "(\\w+):(\\w+)",
+      "captures": {
+        "1": { "name": "variable.parameter" },
+        "2": { "name": "entity.name.type" }
       }
+    },
+    "function-params": {
+      "name": "strbyts.func.params",
+      "begin": "\\(",
+      "end": "\\)",
+      "patterns": [{ "include": "#typedParameter" }]
+    },
+    "function-body": {
+      "name": "strbyts.func.body",
+      "begin": "\\{",
+      "end": "^\\s*\\}",
+      "patterns": [{ "include": "#statements" }]
+    },
+    "function-return": {
+      "name": "strbys.func.return",
+      "match": ">> *(\\w+)",
+      "captures": { "1": { "name": "entity.name.type" } }
+    },
+    "class-declaration": {
+      "name": "strbyts.class",
+      "begin": "\\b(class)\\b *\\b(\\w+)\\b\\s*\\{",
+      "end": "^\\s*\\}",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.strbyts.class" },
+        "2": { "name": "entity.name.class" }
+      },
+      "patterns": [{ "include": "#class-body-declarations" }]
+    },
+    "class-body-declarations": {
+      "patterns": [
+        { "include": "#class-property-declaration" },
+        { "include": "#class-method-declaration" }
+      ]
+    },
+    "class-property-declaration": {
+      "name": "strbyts.class.property",
+      "match": "^\\s*(immutable)? +(loose)? +\\b(\\w+)\\b",
+      "captures": {
+        "1": { "name": "keyword.control.strbyts.immutable" },
+        "2": { "name": "keyword.control.strbyts.loose" },
+        "3": { "name": "variable.readwrite" }
+      }
+    },
+    "class-method-declaration": {
+      "name": "strbyts.class.function",
+      "begin": "^\\s*\\b(\\w+)\\b *",
+      "end": "(?<=\\})",
+      "beginCaptures": { "1": { "name": "entity.name.function" } },
+      "patterns": [
+        { "include": "#function-params" },
+        { "include": "#function-return" },
+        { "include": "#function-body" }
+      ]
     }
   }
 }

@@ -66,10 +66,11 @@ async function build(file) {
     }
     let result = {
         name: TMGrammar.name,
+        uuid: TMGrammar.uuid,
         scopeName: TMGrammar.scopeName,
+        fileTypes: TMGrammar.fileTypes,
         foldingStartMarker: TMGrammar.foldingStartMarker,
         foldingStopMarker: TMGrammar.foldingStopMarker,
-        fileTypes: TMGrammar.fileTypes,
         patterns: TMGrammar.patterns,
         repository: TMGrammar.repository
     };

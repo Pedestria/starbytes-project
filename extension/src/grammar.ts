@@ -21,6 +21,7 @@ type TextMateRule = {
 type TextMateGrammar = {
     name:string
     scopeName:string
+    uuid:string
     fileTypes:string[]
     foldingStartMarker:string
     foldingStopMarker:string
@@ -103,10 +104,11 @@ async function build (file:string){
 
     let result:TextMateGrammar = {
         name:TMGrammar.name,
+        uuid:TMGrammar.uuid,
         scopeName:TMGrammar.scopeName,
+        fileTypes:TMGrammar.fileTypes,
         foldingStartMarker:TMGrammar.foldingStartMarker,
         foldingStopMarker:TMGrammar.foldingStopMarker,
-        fileTypes:TMGrammar.fileTypes,
         patterns:TMGrammar.patterns,
         repository:TMGrammar.repository
     };

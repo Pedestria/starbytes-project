@@ -1,12 +1,13 @@
 #include "Parser.h"
 #include "AST.h"
+#include <iostream>
 #include <string>
 
 using namespace Starbytes;
 using namespace AST;
 
 enum class KeywordType:int {
-    Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case
+    Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case,Extends,Utilizes
 };
 
 /*Creates Error Message For Console*/
@@ -40,6 +41,10 @@ KeywordType matchKeyword(std::string subject) {
         returncode = KeywordType::Function;
     } else if(subject == "new"){
         returncode = KeywordType::New;
+    } else if(subject == "extends"){
+        returncode = KeywordType::Extends;
+    } else if(subject == "utilizes"){
+        returncode = KeywordType::Utilizes;
     }
     return returncode;
 }
@@ -131,15 +136,15 @@ void Parser::parseNumericLiteral(ASTNumericLiteral *ptr){
 
 void Parser::parseStringLiteral(ASTStringLiteral *ptr){
     ptr->type = ASTType::StringLiteral;
-    Token* tok = nextToken();
-    if(tok->getType() == TokenType::Quote){
-        if(aheadToken()->getType() == TokenType::Quote){
+    if(currentToken()->getType() == TokenType::Quote){
+        Token *tok = nextToken();
+        if(tok->getType() == TokenType::Quote){
             ptr->value = "";
-            ptr->position = nextToken()->getPosition();
-            ptr->position.end = nextToken()->getPosition().end;
-        } else {
-            ptr->value = nextToken()->getContent();
-            ptr->position = currentToken()->getPosition();
+            ptr->position = tok->getPosition();
+            ptr->position.end = tok->getPosition().end;
+        }else {
+            ptr->value = tok->getContent();
+            ptr->position = tok->getPosition();
             if(nextToken()->getType() == TokenType::Quote){
                 return;
             } else {
@@ -335,12 +340,10 @@ void Parser::parseVariableSpecifier(ASTVariableSpecifier *ptr){
         Token *tok1 = nextToken();
         if(tok1->getType() == TokenType::Operator &&tok1->getContent() == "="){
             //PARSE EXPRESSION! OR LITERAL!
-            if(aheadToken()->getType() == TokenType::Quote){
-                ASTStringLiteral *node = new ASTStringLiteral();
-                ASTExpression *cast = (ASTExpression*) node;
-                parseStringLiteral(node);
-                ptr->initializer = cast;
-            }
+            ASTExpression *node;
+            incrementToNextToken();
+            parseExpression(node);
+            ptr->initializer = node;
         }
         //Token Last Token of expression before OTHER_TOKEN
         ptr->EndFold = currentToken()->getPosition();
@@ -530,7 +533,6 @@ bool Parser::parseExpressionStatement(std::vector<ASTStatement *> *container){
         return false;
     }
 }
-
 void Parser::parseArrayExpression(ASTArrayExpression *ptr){
     ptr->type = ASTType::ArrayExpression;
     ptr->BeginFold = currentToken()->getPosition();
@@ -545,7 +547,11 @@ void Parser::parseArrayExpression(ASTArrayExpression *ptr){
                 ptr->items.push_back(node);
             }
             Token *tok1 = nextToken();
-            if(tok1->getType() != TokenType::Comma){
+            if(tok1->getType() == TokenType::CloseBracket){
+                ptr->EndFold = tok->getPosition();
+                break;
+            }
+            else if(tok1->getType() != TokenType::Comma){
                 throw StarbytesParseError("Expected Comma!",tok1->getPosition());
             }
         }
@@ -588,21 +594,7 @@ void Parser::parseNewExpression(ASTNewExpression *ptr){
     }
 }
 
-//REINVENT WAY TO PARSE MEMBEREXPRESSION!
+
 // void Parser::parseMemberExpression(ASTMemberExpression *ptr,ASTExpression *object){
-//     ptr->type = ASTType::MemberExpression;
-//     ptr->BeginFold = object->BeginFold;
-//     ptr->object = object;
-//     incrementToNextToken();
-//     Token *tok0 = nextToken();
-//     if(tok0->getType() == TokenType::Identifier){
-//         ASTIdentifier *id = new ASTIdentifier();
-//         parseIdentifier(tok0,id);
-//         ptr->prop = (ASTExpression *)id;
-//         ASTMemberExpression *node1 = new ASTMemberExpression();
-//         parseMemberExpression(node1,ptr);
-//         node1 = ptr;
-//         return;
-//     }  
 
 // }

@@ -70,7 +70,7 @@ bool isCarrot(char c){
 }
 
 bool isKeyword(std::string &subject){
-	LookupArray<std::string> keywordLookup = { "import","scope","func","interface","class","struct","return","if","else","alias","deftype","immutable","decl"};
+	LookupArray<std::string> keywordLookup = { "import","scope","func","interface","class","struct","return","if","else","alias","deftype","immutable","decl","extends","utilizes"};
 	return keywordLookup.lookup(subject);
 }
 

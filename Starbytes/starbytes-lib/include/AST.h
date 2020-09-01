@@ -59,8 +59,35 @@ namespace Starbytes {
             ASTExpression *object;
             ASTExpression *prop;
         };
+        struct ASTBlockStatement : ASTStatement {
+            std::vector<ASTStatement*> nodes;
+        };
         struct ASTDeclaration : ASTStatement {};
-
+        struct ASTClassStatement : ASTStatement {};
+        struct ASTClassPropertyDeclaration : ASTClassStatement {
+            bool loose;
+            bool isConstant;
+            //EITHER a ASTIdentifier or ASTTypeCastIdentifier
+            ASTNode *id;
+            ASTExpression *initializer;
+        };
+        struct ASTClassMethodDeclaration : ASTClassStatement {
+            ASTIdentifier *id;
+            std::vector<ASTTypeCastIdentifier*> params;
+            ASTTypeIdentifier* returnType;
+            ASTBlockStatement* body;
+        };
+        struct ASTClassBlockStatement : ASTStatement {
+            std::vector<ASTClassStatement *> nodes;
+        };
+        struct ASTClassDeclaration : ASTDeclaration {
+            ASTTypeIdentifier tid;
+            bool isChildClass;
+            ASTTypeIdentifier superclass;
+            bool implementsInterfaces;
+            std::vector<ASTTypeIdentifier *> interfaces;
+            ASTClassBlockStatement *body;
+        };
         struct ASTVariableSpecifier : ASTStatement {
             //EITHER a ASTIdentifier or ASTTypeCastIdentifier
             ASTNode *id;
@@ -79,9 +106,6 @@ namespace Starbytes {
         };
         struct ASTImportDeclaration : ASTDeclaration {
             ASTIdentifier *id;
-        };
-        struct ASTBlockStatement : ASTStatement {
-            std::vector<ASTStatement*> nodes;
         };
 
         struct ASTScopeDeclaration : ASTDeclaration {

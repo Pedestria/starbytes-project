@@ -20,7 +20,7 @@ string convertPosition(DocumentPosition pos){
 int main(int argc, char* argv[]) {
 	// cout << loghelp() << "\n";
 	// printf("\u001b[40m[30mInfo:\u001b[0m");
-	string test = "import mylib\nimport otherLibrary\ndecl hello = \"A String!\"\nfunc hello (hello:String,moma:String) >> String {\n \n}";
+	string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\nfunc hello (hello:String,moma:String) >> String {\n \n}";
 	string test2 = "import library\nimport otherLibrary";
 	auto result = Lexer(test).tokenize();
 	// for (Token tok : result) {
@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
 		parser.convertToAST();
 
 		for(auto node : tree->nodes){
-			cout << "{Type:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
+			cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
 		}
 	} catch (string message) {
 		cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";

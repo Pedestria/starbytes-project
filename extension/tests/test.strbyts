@@ -1,9 +1,19 @@
-import something
-import otherLib
+decl var:Integer;
 
-decl hello = ;
-decl hello  = ;
-
-func hello () {
-
+func function(hello:String,other:Integer) >> String {
+    
 }
+
+func hello(var:Integer,var2:Integer[]) >> String {
+    
+}
+
+
+decl var1:Integer;
+decl var2:Integer[] = [1,4,40.2342,5343];
+
+decl var3:String[] = ["Gello","AnotherString"]
+
+
+hello(var3,var2)
+
