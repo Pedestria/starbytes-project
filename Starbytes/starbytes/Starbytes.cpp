@@ -20,7 +20,6 @@ string convertPosition(DocumentPosition pos){
 int main(int argc, char* argv[]) {
 	// cout << loghelp() << "\n";
 	// printf("\u001b[40m[30mInfo:\u001b[0m");
-	cout << "\u001b[31mHose\u001b[0m \n";
 	string test = "import mylib\nimport otherLibrary\ndecl hello = \"A String!\"\nfunc hello (hello:String,moma:String) >> String {\n \n}";
 	string test2 = "import library\nimport otherLibrary";
 	auto result = Lexer(test).tokenize();

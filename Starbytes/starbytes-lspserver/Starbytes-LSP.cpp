@@ -41,7 +41,10 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     else {
-        LSP::Messager::reply("");
+        LSP::Messenger::getRequest();
+        // LSP::LSPServerReply reply;
+        // reply.str_result = "RESULT!";
+        // LSP::Messenger::reply(reply,1);
     }
     // cout << help();
 }

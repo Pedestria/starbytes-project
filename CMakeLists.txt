@@ -4,6 +4,11 @@
 cmake_minimum_required (VERSION 3.13)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 cmake_policy(SET CMP0079 NEW)
+
+set(VCPKG_ROOT "/Users/alextopper/Documents/GitHub/vcpkg")
+set(CMAKE_TOOLCHAIN_FILE ${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake)
+message("- Toolchain File = " ${CMAKE_TOOLCHAIN_FILE})
+
 if(APPLE)
 	set(STARBYTES_MODULE_PATH "~/Documents/GitHub/starbytes-project/cmake/modules")
 	list(APPEND CMAKE_MODULE_PATH ${STARBYTES_MODULE_PATH})
@@ -13,10 +18,6 @@ endif()
 
 
 option(MSVC_BUILD "Whether to Build With MSVC Or clang++" NO)
-# list(APPEND CMAKE_MODULE_PATH "C:/Users/alex/Documents/GitHub/vcpkg/scripts/buildsystems")
-# include(vcpkg)
-
-# set(CMAKE_TOOLCHAIN_FILE C:/Users/alex/Documents/GitHub/vcpkg/scripts/buildsystems/vcpkg.cmake)
 
 if(NOT ${MSVC_BUILD})
 	if(APPLE)

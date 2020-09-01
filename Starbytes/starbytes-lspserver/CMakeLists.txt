@@ -1,8 +1,9 @@
+find_package(nlohmann_json CONFIG REQUIRED)
 add_executable(starbytes-lspserver "Starbytes-LSP.cpp" "Starbytes-LSP.h" "JSONOutput.h" "JSONOutput.cpp")
 
 add_dependencies(starbytes-lspserver starbytes-lib)
 include_directories(${STARBYTES_LIB_INCLUDE})
-target_link_libraries(starbytes-lspserver starbytes-lib)
+target_link_libraries(starbytes-lspserver starbytes-lib nlohmann_json::nlohmann_json)
 if(APPLE)
     add_clang_lib(starbytes-lspserver)
 endif()
