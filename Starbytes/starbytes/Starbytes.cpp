@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 
+
 // #include <nlohmann/json.hpp>
 
 // using JSON = nlohmann::json;
@@ -19,11 +20,10 @@ string convertPosition(DocumentPosition pos){
 int main(int argc, char* argv[]) {
 	// cout << loghelp() << "\n";
 	// printf("\u001b[40m[30mInfo:\u001b[0m");
-
+	cout << "\u001b[31mHose\u001b[0m \n";
 	string test = "import mylib\nimport otherLibrary\ndecl hello = \"A String!\"\nfunc hello (hello:String,moma:String) >> String {\n \n}";
 	string test2 = "import library\nimport otherLibrary";
 	auto result = Lexer(test).tokenize();
-
 	// for (Token tok : result) {
 	// 	cout << "Content:"+tok.getContent() << "\t" << "Type: " << int(tok.getType()) << "\t" << "Position:"+convertPosition(tok.getPosition());
 	// }
@@ -39,9 +39,6 @@ int main(int argc, char* argv[]) {
 	} catch (string message) {
 		cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
 	}
-
-
-
 	return 0;
 }
 

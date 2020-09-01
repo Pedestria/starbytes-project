@@ -12,21 +12,29 @@ if(APPLE)
 endif()
 
 
-option(MSVC_BUILD "Whether to Build With MSVC Or clang++" OFF)
+option(MSVC_BUILD "Whether to Build With MSVC Or clang++" NO)
 # list(APPEND CMAKE_MODULE_PATH "C:/Users/alex/Documents/GitHub/vcpkg/scripts/buildsystems")
 # include(vcpkg)
 
 # set(CMAKE_TOOLCHAIN_FILE C:/Users/alex/Documents/GitHub/vcpkg/scripts/buildsystems/vcpkg.cmake)
 
 if(NOT ${MSVC_BUILD})
-	set(CMAKE_CXX_COMPILER "/Library/Developer/Toolchains/swift-5.3-DEVELOPMENT-SNAPSHOT-2020-08-18-a.xctoolchain/usr/bin/clang++")
-	set(CMAKE_CXX_COMPILER_FLAGS "-ansi -fms-compatibility")
+	if(APPLE)
+		set(CMAKE_CXX_COMPILER "/Library/Developer/Toolchains/swift-5.3-DEVELOPMENT-SNAPSHOT-2020-08-18-a.xctoolchain/usr/bin/clang++")
+	else()
+		set(CMAKE_CXX_COMPILER "clang++")
+	endif()
+
+	set(CMAKE_CXX_COMPILER_FLAGS "-fansi-escape-codes -fms-compatibility")
 	set(CMAKE_CXX_STANDARD 14)
 	set(CMAKE_CXX_STANDARD_REQUIRED YES)
 	message("Clang Compiler!")
 elseif()
-	set(CMAKE_CXX_COMPILER cl)
+	set(CMAKE_GENERATOR "Visual Studio 16 2019")
+	# set(LINK_FLAGS "/SUBSYSTEM:CONSOLE")
 	message("MSVC Compiler!")
+	# set(CMAKE_CXX_COMPILER_FLAGS "/link /LIBPATH 'C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Tools/MSVC/14.27.29110/lib/x64' ")
+	
 
 endif()
 

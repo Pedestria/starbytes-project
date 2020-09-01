@@ -1,6 +1,6 @@
 list(APPEND HEADERS "AST.h" "Document.h" "Lexer.h" "Lookup.h" "Parser.h" "Token.h" "Serialization.h")
 list(TRANSFORM HEADERS PREPEND "include/")
-include_directories(include SYSTEM "/Library/Developer/Toolchains/swift-5.3-DEVELOPMENT-SNAPSHOT-2020-08-18-a.xctoolchain/usr/include/c++/v1")
+include_directories(include)
 list(APPEND LIB_SOURCES "AST.cpp" "Document.cpp" "Lexer.cpp" "Lookup.cpp" "Parser.cpp" "Token.cpp" "Serialization.cpp")
 list(TRANSFORM LIB_SOURCES PREPEND "lib/" )
 
