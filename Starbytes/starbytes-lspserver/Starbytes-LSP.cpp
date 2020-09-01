@@ -1,30 +1,47 @@
 #include "Starbytes-LSP.h"
+#include "JSONOutput.h"
 #include <array>
+#include <cctype>
+#include <sstream>
 #include <string>
+#include <array>
+#include <vector>
 
 using namespace std;
 
-// array<string,2> ARGS = {"--help",""};
-// void parseArguments(char * args[]){
-//     ++args;
-//     while(true){
-//         if(args){
-//             if(ARGS[0].find(*args)){
-//                 return;
-//             }
-//             ++args;
-//         }
-//         else{
-//             break;
-//         }
-//     }
-// }
-
-std::string help(){
+string help(){
  return "\n \u001b[35m\u001b[4m The Starbytes LSP Implementation!\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help info. \n";
 }
 
-int main(int argc, char* argv[]) {
+bool parseArguments(char * arguments[],int count){
+    char ** flags = arguments;
+    ++flags;
+    vector<string> FLAGS;
+    for(int i = 1;i < count;++i){
+        FLAGS.push_back(string(*flags));
+        ++flags;
+    }
     
-    cout << help();
+    for(auto f : FLAGS){
+        if(f == "--help"){
+            cout << help();
+            return false;
+        }
+    }
+    return true;
+
+    
+}
+
+
+
+
+int main(int argc, char* argv[]) {
+    if(!parseArguments(argv,argc)){
+        return 0;
+    }
+    else {
+        LSP::Messager::reply("");
+    }
+    // cout << help();
 }
