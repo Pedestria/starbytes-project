@@ -27,10 +27,12 @@
         { "include": "#literals" },
         { "include": "#call-expression" },
         { "include": "#number" },
+        { "include": "#boolean" },
         { "include": "#identifier" }
       ]
     },
     "number": { "name": "constant.numeric", "match": "[0-9]+(?:\\.[0-9]+)?" },
+    "boolean": { "name": "constant.language", "match": "(?:true|false)" },
     "identifier": {
       "name": "variable.readwrite.strbyts",
       "match": "\\b\\w+\\b"

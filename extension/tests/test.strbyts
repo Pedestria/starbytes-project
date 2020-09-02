@@ -8,9 +8,9 @@ func hello(var:Integer,var2:Integer[]) >> String {
     
 }
 
-
-decl var1:Integer;
-decl var2:Integer[] = [1,4,40.2342,5343];
+decl var:Boolean = true
+decl var1:Integer
+decl var2:Integer[] = [1,4,40.2342,5343]
 
 decl var3:String[] = ["Gello","AnotherString"]
 
