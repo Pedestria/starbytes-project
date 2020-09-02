@@ -1,13 +1,15 @@
 #include "Parser.h"
 #include "AST.h"
+#include "Token.h"
 #include <iostream>
 #include <string>
+#include <vector>
 
 using namespace Starbytes;
 using namespace AST;
 
 enum class KeywordType:int {
-    Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case,Extends,Utilizes
+    Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case,Extends,Utilizes,Loose
 };
 
 /*Creates Error Message For Console*/
@@ -45,6 +47,8 @@ KeywordType matchKeyword(std::string subject) {
         returncode = KeywordType::Extends;
     } else if(subject == "utilizes"){
         returncode = KeywordType::Utilizes;
+    } else if(subject == "loose"){
+        returncode = KeywordType::Loose;
     }
     return returncode;
 }
@@ -171,6 +175,369 @@ void Parser::parseImportDeclaration(std::vector<ASTStatement *> * container){
         throw StarbytesParseError("Expected Identifier!",tok1->getPosition());
     }
 }
+void Parser::parseClassDeclaration(std::vector<ASTStatement *> *container){
+    ASTClassDeclaration *node = new ASTClassDeclaration();
+    node->BeginFold = currentToken()->getPosition();
+    node->type = ASTType::ClassDeclaration;
+    Token *tok1 = nextToken();
+    if(tok1->getType() == TokenType::Identifier){
+        ASTTypeIdentifier *tid = new ASTTypeIdentifier();
+        parseTypeIdentifier(tid);
+        node->tid = tid;
+        Token *tok2 = aheadToken();
+        if(tok2->getType() == TokenType::Keyword){
+            KeywordType match = matchKeyword(tok2->getContent());
+            if(match == KeywordType::Extends){
+                Token *tok3 = aheadToken();
+                if(tok3->getType() == TokenType::Identifier){
+                    ASTTypeIdentifier *tid = new ASTTypeIdentifier();
+                    parseTypeIdentifier(tid);
+                    node->isChildClass = true;
+                    node->superclass = tid;
+                    tok2 = nextToken();
+                }
+                else{
+                    throw StarbytesParseError("Expected Identifier!",tok3->getPosition());
+                }   
+            }
+            KeywordType match2 = matchKeyword(tok2->getContent());
+            if(match == KeywordType::Utilizes){
+                Token *tok4 = aheadToken();
+                if(tok4->getType() == TokenType::Identifier){
+                    ASTTypeIdentifier *tid = new ASTTypeIdentifier();
+                    parseTypeIdentifier(tid);
+                    node->implementsInterfaces = true;
+                    node->interfaces.push_back(tid);
+                    while(true){
+                        if(aheadToken()->getType() == TokenType::Comma){
+                            incrementToNextToken();
+                            Token *tok5 = aheadToken();
+                            if(tok5->getType() == TokenType::Identifier){
+                                ASTTypeIdentifier *tid = new ASTTypeIdentifier();
+                                parseTypeIdentifier(tid);
+                                node->interfaces.push_back(tid);
+                            }
+                            else{
+                                throw StarbytesParseError("Expected Identifier!",tok5->getPosition());
+                            }
+                        }
+                        else{
+                            break;
+                        }
+                    }
+                }
+                else{
+                    throw StarbytesParseError("Expected Identifier!",tok4->getPosition());
+                }
+            }
+
+        }
+
+        if(aheadToken()->getType() == TokenType::OpenBrace){
+            ASTClassBlockStatement *block = new ASTClassBlockStatement();
+            parseClassBlockStatement(block);
+            node->body = block;
+            node->EndFold = currentToken()->getPosition();
+        }
+        else{
+            throw StarbytesParseError("Expected Open Brace!",tok2->getPosition());
+        }
+    }
+    else{
+        throw StarbytesParseError("Expected Identifier!",tok1->getPosition());
+    }
+}
+
+void Parser::parseClassBlockStatement(ASTClassBlockStatement *ptr){
+    ptr->type = ASTType::ClassBlockStatement;
+    Token *tok = nextToken();
+    ptr->BeginFold = tok->getPosition();
+    if(tok->getType() == TokenType::OpenBrace){
+        while(true){
+            if(currentToken()->getType() == TokenType::CloseBrace){
+                break;
+            }
+            else{
+                parseClassStatement(&ptr->nodes);
+            }
+            incrementToNextToken();
+        }
+        ptr->EndFold = currentToken()->getPosition();
+    }
+    else{
+        throw StarbytesParseError("Expected Open Brace",tok->getPosition());
+    }
+}
+
+void Parser::parseClassStatement(std::vector<ASTClassStatement *> * container){
+    Token *tok = nextToken();
+    if(tok->getType() == TokenType::Keyword){
+        KeywordType match = matchKeyword(tok->getContent());
+        if(match == KeywordType::New){
+            ASTClassConstructorDeclaration *construct = new ASTClassConstructorDeclaration();
+            parseClassConstructorDeclaration(construct);
+            //CurrentToken: Parenthesi before OTHER_TOKEN!
+            container->push_back(construct);
+        }
+        else if(match == KeywordType::Immutable){
+            ASTClassPropertyDeclaration *prop = new ASTClassPropertyDeclaration();
+            parseClassPropertyDeclaration(prop,true);
+            //CurrentToken: last Expression toke before OTHER_TOKEN!
+            container->push_back(prop);
+        }
+        else if(match == KeywordType::Loose){
+            ASTClassPropertyDeclaration *prop = new ASTClassPropertyDeclaration();
+            parseClassPropertyDeclaration(prop,false,true);
+
+            container->push_back(prop);
+        }
+    }
+    else if(tok->getType() == TokenType::Identifier){
+        Token *tok = nextToken();
+        if(tok->getType() == TokenType::Typecast || (tok->getType() == TokenType::Operator && tok->getContent() == "=")){
+            ASTClassPropertyDeclaration *prop = new ASTClassPropertyDeclaration();
+            parseClassPropertyDeclaration(prop,false);
+
+            container->push_back(prop);
+        } else {
+            ASTClassMethodDeclaration *method = new ASTClassMethodDeclaration();
+            parseClassMethodDeclaration(method);
+
+            container->push_back(method);
+        }
+    }
+}
+
+void Parser::parseClassConstructorDeclaration(ASTClassConstructorDeclaration *ptr){
+    Token *tok = currentToken();
+    ptr->BeginFold = tok->getPosition();
+    ptr->type = ASTType::ClassConstructorDeclaration;
+    Token *tok1 = nextToken();
+    if(tok1->getType() == TokenType::OpenParen){
+        Token *tok2 = nextToken();
+        while(true){
+            if(tok2->getType() == TokenType::CloseParen){
+                ptr->EndFold = tok2->getPosition();
+                break;
+            }else if(tok2->getType() == TokenType::Comma) {
+                Token *tok3 = nextToken();
+                if(tok3->getType() == TokenType::Keyword){
+                    KeywordType match = matchKeyword(tok3->getContent());
+                    if(match == KeywordType::Immutable){
+                        ASTClassConstructorParameterDeclaration *param = new ASTClassConstructorParameterDeclaration();
+                        parseClassConstructorParameterDeclaration(param,true);
+                        incrementToNextToken();
+                        ptr->params.push_back(param);
+                    } else if(match == KeywordType::Loose){
+                        ASTClassConstructorParameterDeclaration *param = new ASTClassConstructorParameterDeclaration();
+                        parseClassConstructorParameterDeclaration(param,false,true);
+                        incrementToNextToken();
+                        ptr->params.push_back(param);
+                    }
+                } else if(tok3->getType() == TokenType::Identifier){
+                    ASTClassConstructorParameterDeclaration *param = new ASTClassConstructorParameterDeclaration();
+                    parseClassConstructorParameterDeclaration(param,false);
+                    incrementToNextToken();
+                    ptr->params.push_back(param);
+                }
+                else {
+                    throw StarbytesParseError("Expected Identifier or Keywords: `immutable` or `loose`",tok3->getPosition());
+                }
+            }
+            else {
+                throw StarbytesParseError("Expected Comma or Close Paren!",tok2->getPosition());
+            }
+            tok2 = nextToken();
+        }
+    }
+    else {
+        throw StarbytesParseError("Expected Open Paren!",tok1->getPosition());
+    }
+}
+
+void Parser::parseClassConstructorParameterDeclaration(ASTClassConstructorParameterDeclaration *ptr,bool immutable,bool loose){
+    ptr->BeginFold = currentToken()->getPosition();
+    ptr->type = ASTType::ClassConstructorParameterDeclaration;
+    Token *tok = nextToken();
+    if(tok->getType() == TokenType::Keyword){
+        KeywordType match = matchKeyword(tok->getContent());
+        if(immutable){
+            ptr->isConstant = true;
+            if(match == KeywordType::Immutable){
+                throw StarbytesParseError("Cannot define `immutable` twice!",tok->getPosition());
+            } else if(match == KeywordType::Loose){
+                ptr->loose = true;
+                incrementToNextToken();
+            }
+        } else if(loose){
+            ptr->loose = true;
+            KeywordType match = matchKeyword(tok->getContent());
+            if(match == KeywordType::Loose){
+                throw StarbytesParseError("Cannot define `loose` twice!",tok->getPosition());
+            }
+            else if(match == KeywordType::Immutable){
+                ptr->isConstant = true;
+                incrementToNextToken();
+            }
+        }
+    }
+    if(currentToken()->getType() == TokenType::Identifier){
+        ASTTypeCastIdentifier *tcid = new ASTTypeCastIdentifier();
+        parseTypecastIdentifier(tcid);
+        ptr->tcid = tcid;
+        ptr->EndFold = currentToken()->getPosition();
+    }
+}
+
+void Parser::parseClassPropertyDeclaration(ASTClassPropertyDeclaration *ptr,bool immutable,bool loose){
+    ptr->type = ASTType::ClassPropertyDeclaration;
+    ptr->BeginFold = currentToken()->getPosition();
+    Token *tok = nextToken();
+    if(tok->getType() == TokenType::Keyword){
+        KeywordType match = matchKeyword(tok->getContent());
+        if(immutable){
+            if(match == KeywordType::Immutable){
+                throw StarbytesParseError("Cannot define `immutable` twice!",tok->getPosition());
+            }else if(match == KeywordType::Loose){
+                ptr->loose = true;
+                incrementToNextToken();
+            }
+        } else if(loose){
+            if(match == KeywordType::Loose){
+                throw StarbytesParseError("Cannot define `loose` twice!",tok->getPosition());
+            } else if(match == KeywordType::Immutable){
+                ptr->isConstant = true;
+                incrementToNextToken();
+            }
+        }
+    }
+
+    if(currentToken()->getType() == TokenType::Identifier) {
+        if(aheadToken()->getType() == TokenType::Typecast){
+            ASTTypeCastIdentifier *tcid = new ASTTypeCastIdentifier();
+            parseTypecastIdentifier(tcid);
+            ptr->id = (ASTNode *)tcid;
+        }
+        else {
+            ASTIdentifier *id = new ASTIdentifier();
+            parseIdentifier(currentToken(),id);
+            ptr->id = (ASTNode *)id;
+        }
+        Token *tok = nextToken();
+        if(tok->getType() == TokenType::Operator && tok->getContent() == "="){
+            ASTExpression *exp;
+            incrementToNextToken();
+            if(parseExpression(exp)){
+                ptr->initializer = exp;
+                ptr->EndFold = currentToken()->getPosition();
+            }
+            else {
+                throw StarbytesParseError("Expected Expression!",tok->getPosition());
+            }   
+        }
+
+    }
+    else {
+        throw StarbytesParseError("Expected Identifier!",currentToken()->getPosition());
+    }
+}
+//TODO: Generics to be added eventually! (CHECK LATER!! NEEDS POTENTIAL FIXING!)
+void Parser::parseClassMethodDeclaration(ASTClassMethodDeclaration *ptr){
+    ptr->BeginFold = currentToken()->getPosition();
+    ptr->type = ASTType::ClassMethodDeclaration;
+    ASTIdentifier *id = new ASTIdentifier();
+    ptr->id = id;
+    Token *tok = nextToken();
+    if(tok->getType() == TokenType::OpenParen){
+        Token *tok1 = nextToken();
+        if(tok1->getType() == TokenType::Identifier){
+            ASTTypeCastIdentifier *tcid = new ASTTypeCastIdentifier();
+            parseTypecastIdentifier(tcid);
+            Token *tok1 = nextToken();
+            if(tok1->getType() == TokenType::Comma){
+                while(true){
+                    if(tok1->getType() == TokenType::Comma){
+                        Token *tok2 = nextToken();
+                        if(tok2->getType() == TokenType::Identifier){
+                            ASTTypeCastIdentifier *tcid = new ASTTypeCastIdentifier();
+                            parseTypecastIdentifier(tcid);
+                        }
+                    } else {
+                        break;
+                    }
+                    tok1 = nextToken();
+                }
+            }
+
+            if(tok1->getType() == TokenType::CloseParen){
+                Token *tok2 = nextToken();
+                if(tok2->getType() == TokenType::CloseCarrot){
+                    tok2 = nextToken();
+                    if(tok2->getType() == TokenType::CloseCarrot){
+                        tok2 = nextToken();
+                        if(tok2->getType() == TokenType::Identifier){
+                            ASTTypeIdentifier *tid =  new ASTTypeIdentifier();
+                            parseTypeIdentifier(tid);
+                            ptr->returnType = tid;
+                        }
+                        else{
+                            throw StarbytesParseError("Expected Identifier!",tok2->getPosition());
+                        }
+                    }
+                    else {
+                        throw StarbytesParseError("Expected Close Carrot!",tok2->getPosition());
+                    }
+                }
+                Token *tok3 = aheadToken();
+                if(tok3->getType() == TokenType::OpenBrace){
+                    ASTBlockStatement *block = new ASTBlockStatement();
+                    parseBlockStatement(block);
+                    ptr->EndFold = currentToken()->getPosition();
+                    ptr->body = block;
+                }
+                else {
+                    throw StarbytesParseError("Expected Open Brace!",tok3->getPosition());
+                }
+                
+            }
+        }
+        else if(tok1->getType() == TokenType::CloseParen) {
+             Token *tok2 = nextToken();
+                if(tok2->getType() == TokenType::CloseCarrot){
+                    tok2 = nextToken();
+                    if(tok2->getType() == TokenType::CloseCarrot){
+                        tok2 = nextToken();
+                        if(tok2->getType() == TokenType::Identifier){
+                            ASTTypeIdentifier *tid =  new ASTTypeIdentifier();
+                            parseTypeIdentifier(tid);
+                            ptr->returnType = tid;
+                        }
+                        else{
+                            throw StarbytesParseError("Expected Identifier!",tok2->getPosition());
+                        }
+                    }
+                    else {
+                        throw StarbytesParseError("Expected Close Carrot!",tok2->getPosition());
+                    }
+                }
+                Token *tok3 = aheadToken();
+                if(tok3->getType() == TokenType::OpenBrace){
+                    ASTBlockStatement *block = new ASTBlockStatement();
+                    parseBlockStatement(block);
+                    ptr->EndFold = currentToken()->getPosition();
+                    ptr->body = block;
+                }
+                else {
+                    throw StarbytesParseError("Expected Open Brace!",tok3->getPosition());
+                }
+            
+        }
+    }
+    else {
+        throw StarbytesParseError("Expected Open Paren!",tok->getPosition());
+    }
+}
+
 void Parser::parseBlockStatement(ASTBlockStatement *ptr){
     ptr->type = ASTType::BlockStatement;
     Token *tok = nextToken();
@@ -187,7 +554,7 @@ void Parser::parseBlockStatement(ASTBlockStatement *ptr){
         ptr->EndFold = currentToken()->getPosition();
     }
     else {
-        throw StarbytesParseError("Expected Open Brace",tok->getPosition());
+        throw StarbytesParseError("Expected Open Brace!",tok->getPosition());
     }
 
 }
@@ -413,6 +780,19 @@ void Parser::parseFunctionDeclaration(std::vector<ASTStatement *> * container){
             }
             else if(tok1->getType() == TokenType::CloseParen){
                 Token *tok2 = aheadToken();
+                if(tok2->getType() == TokenType::CloseCarrot){
+                    incrementToNextToken();
+                    Token *tok4 = nextToken();
+                    if(tok4->getType() == TokenType::CloseCarrot){
+                        //PARSE TYPED IDENTIFIER!
+                        ASTTypeIdentifier *tid = new ASTTypeIdentifier();
+                        parseTypeIdentifier(tid);
+                        node->returnType = tid;
+                        tok2 = nextToken();
+                    }else {
+                        throw StarbytesParseError("Expected Close Carrot!",tok2->getPosition());
+                    }
+                }
                 if(tok2->getType() == TokenType::OpenBrace){
                     ASTBlockStatement *block = new ASTBlockStatement();
                     parseBlockStatement(block);

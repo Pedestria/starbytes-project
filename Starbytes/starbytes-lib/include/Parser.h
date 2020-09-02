@@ -51,12 +51,20 @@ namespace Starbytes {
             void parseImportDeclaration(std::vector<ASTStatement *> *container);
             void parseScopeDeclaration(std::vector<ASTStatement *> *container);
             void parseFunctionDeclaration(std::vector<ASTStatement *> *container);
+            void parseClassDeclaration(std::vector<ASTStatement *> * container);
+            void parseClassBlockStatement(ASTClassBlockStatement *ptr);
+            void parseClassStatement(std::vector<ASTClassStatement *> * container);
+            void parseClassConstructorDeclaration(ASTClassConstructorDeclaration * ptr);
+            void parseClassConstructorParameterDeclaration(ASTClassConstructorParameterDeclaration * ptr,bool immutable,bool loose = false);
+            void parseClassPropertyDeclaration(ASTClassPropertyDeclaration *ptr,bool immutable,bool loose = false);
+            void parseClassMethodDeclaration(ASTClassMethodDeclaration *ptr);
             /*Parses all Declaration and places them in container. (Container is used for scope declarations)*/
             bool parseDeclaration(std::vector<ASTStatement *> *container);
             void parseBlockStatement(ASTBlockStatement *ptr);
             void parseNewExpression(ASTNewExpression *ptr);
             void parseArrayExpression(ASTArrayExpression *ptr);
             void parseAssignExpression(ASTAssignExpression *ptr);
+            void parseCallExpression(ASTCallExpression *ptr);
             void parseMemberExpression(ASTMemberExpression *ptr,ASTExpression *object);
             bool parseExpressionStatement(std::vector<ASTStatement *> *container);
             bool parseExpression(ASTExpression *ptr);

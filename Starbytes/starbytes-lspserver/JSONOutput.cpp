@@ -1,10 +1,7 @@
 #include "JSONOutput.h"
 #include <iostream>
 #include <sstream>
-#include <nlohmann/json.hpp>
 #include <string>
-
-using JSON = nlohmann::json;
 
 using namespace LSP;
 
@@ -71,15 +68,5 @@ void Messenger::reply(LSPServerReply result,int id){
 // };
 
 LSPServerRequest Messenger::getRequest(){
-    string in;
-    cin >> in;
-    auto str = in.substr(in.find("{"));
-    auto j = JSON::parse(str);
-    LSPServerRequest request;
-    request.method = j["method"];
-    if(j.contains("params") && j["params"].is_array()){
-        j.at("params").get_to(request.params_array);
-    }
     
-    return request;
 };

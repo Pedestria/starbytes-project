@@ -6,7 +6,7 @@
 namespace Starbytes {
     namespace AST {
         enum class ASTType:int{
-            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression
+            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,ClassConstructorParameterDeclaration
         };
         /*Abstract Syntax Tree Node*/
         struct ASTNode {
@@ -43,6 +43,10 @@ namespace Starbytes {
         struct ASTExpressionStatement : ASTStatement {
             ASTExpression* expression;
         };
+        struct ASTCallExpression : ASTStatement {
+            ASTExpression * callee;
+            std::vector<ASTIdentifier *> params;
+        };
         struct ASTNewExpression : ASTExpression {
             ASTTypeIdentifier* decltid;
             std::vector<ASTExpression *> params;
@@ -64,6 +68,14 @@ namespace Starbytes {
         };
         struct ASTDeclaration : ASTStatement {};
         struct ASTClassStatement : ASTStatement {};
+        struct ASTClassConstructorParameterDeclaration : ASTStatement {
+            bool loose;
+            bool isConstant;
+            ASTTypeCastIdentifier *tcid;
+        };
+        struct ASTClassConstructorDeclaration : ASTClassStatement {
+            std::vector<ASTClassConstructorParameterDeclaration *> params;
+        };
         struct ASTClassPropertyDeclaration : ASTClassStatement {
             bool loose;
             bool isConstant;
@@ -81,9 +93,9 @@ namespace Starbytes {
             std::vector<ASTClassStatement *> nodes;
         };
         struct ASTClassDeclaration : ASTDeclaration {
-            ASTTypeIdentifier tid;
+            ASTTypeIdentifier * tid;
             bool isChildClass;
-            ASTTypeIdentifier superclass;
+            ASTTypeIdentifier * superclass;
             bool implementsInterfaces;
             std::vector<ASTTypeIdentifier *> interfaces;
             ASTClassBlockStatement *body;
