@@ -175,16 +175,60 @@ void Parser::parseImportDeclaration(std::vector<ASTStatement *> * container){
         throw StarbytesParseError("Expected Identifier!",tok1->getPosition());
     }
 }
+void Parser::parseTypeArgsDeclaration(ASTTypeArgumentsDeclaration *ptr){
+    Token *tok = nextToken();
+    ptr->type = ASTType::TypeArgumentsDeclaration;
+    ptr->BeginFold = tok->getPosition();
+    Token *tok1 = nextToken();
+    if(tok1->getType() == TokenType::Identifier){
+        ASTIdentifier *id = new ASTIdentifier();
+        parseIdentifier(tok1,id);
+        ptr->args.push_back(id);
+        Token *tok2 = nextToken();
+        while(true){
+            if(tok2->getType() == TokenType::CloseCarrot){
+                ptr->EndFold = tok2->getPosition();
+                break;
+            }else if(tok2->getType() == TokenType::Comma){
+                tok2 = nextToken();
+                if(tok2->getType() == TokenType::Identifier){
+                    ASTIdentifier *id = new ASTIdentifier();
+                    parseIdentifier(tok2,id);
+                    ptr->args.push_back(id);
+                }
+                else {
+                    throw StarbytesParseError("Expected Identifier!",tok2->getPosition());
+                }
+            } else {
+                throw StarbytesParseError("Expected Comma or Identifier!",tok2->getPosition());
+            }
+            tok2 = nextToken();
+        }
+    }else{
+        throw StarbytesParseError("Expected Identifier!",tok1->getPosition());
+    }
+}
+
 void Parser::parseClassDeclaration(std::vector<ASTStatement *> *container){
     ASTClassDeclaration *node = new ASTClassDeclaration();
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::ClassDeclaration;
+    node->isGeneric = false;
     Token *tok1 = nextToken();
     if(tok1->getType() == TokenType::Identifier){
-        ASTTypeIdentifier *tid = new ASTTypeIdentifier();
-        parseTypeIdentifier(tid);
-        node->tid = tid;
+        ASTIdentifier * id = new ASTIdentifier();
+        parseIdentifier(tok1,id);
         Token *tok2 = aheadToken();
+
+        if(tok2->getType() == TokenType::OpenCarrot){
+            ASTTypeArgumentsDeclaration *typeargs = new ASTTypeArgumentsDeclaration();
+            parseTypeArgsDeclaration(typeargs);
+            //CurrentToken: Closing Carrot before Open Brace or `utlizes` or 'extends'
+            node->typeargs = typeargs;
+            node->isGeneric = true;
+            tok2 = nextToken();
+        }
+
         if(tok2->getType() == TokenType::Keyword){
             KeywordType match = matchKeyword(tok2->getContent());
             if(match == KeywordType::Extends){
@@ -447,7 +491,17 @@ void Parser::parseClassMethodDeclaration(ASTClassMethodDeclaration *ptr){
     ptr->type = ASTType::ClassMethodDeclaration;
     ASTIdentifier *id = new ASTIdentifier();
     ptr->id = id;
-    Token *tok = nextToken();
+    ptr->isGeneric = false;
+    Token *tok = aheadToken();
+    if(tok->getType() == TokenType::OpenCarrot){
+        ASTTypeArgumentsDeclaration *typeargs = new ASTTypeArgumentsDeclaration();
+        parseTypeArgsDeclaration(typeargs);
+        ptr->typeargs = typeargs;
+        ptr->isGeneric = true;
+        tok = nextToken();
+    }else{
+        tok = nextToken();
+    }
     if(tok->getType() == TokenType::OpenParen){
         Token *tok1 = nextToken();
         if(tok1->getType() == TokenType::Identifier){
@@ -723,12 +777,23 @@ void Parser::parseFunctionDeclaration(std::vector<ASTStatement *> * container){
     ASTFunctionDeclaration *node = new ASTFunctionDeclaration();
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::FunctionDeclaration;
+    node->isGeneric = false;
     Token *tok = nextToken();
     if(tok->getType() == TokenType::Identifier){
         ASTIdentifier *id = new ASTIdentifier();
         parseIdentifier(tok,id);
         node->id = id;
-        Token *tok0 = nextToken();
+        Token *tok0 = aheadToken();
+        if(tok0->getType() == TokenType::OpenCarrot){
+            ASTTypeArgumentsDeclaration *typeargs = new ASTTypeArgumentsDeclaration();
+            parseTypeArgsDeclaration(typeargs);
+            node->isGeneric = true;
+            node->typeargs = typeargs;
+            tok0 = nextToken();
+        }else{
+            tok0 = nextToken();
+        }
+        //CurrentToken: Open Paren after Closing Carrot or Identifier!
         if(tok0->getType() == TokenType::OpenParen){
             Token *tok1 = nextToken();
             if(tok1->getType() == TokenType::Identifier){

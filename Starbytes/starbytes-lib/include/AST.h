@@ -6,7 +6,7 @@
 namespace Starbytes {
     namespace AST {
         enum class ASTType:int{
-            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,ClassConstructorParameterDeclaration
+            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,ClassConstructorParameterDeclaration,TypeArgumentsDeclaration
         };
         /*Abstract Syntax Tree Node*/
         struct ASTNode {
@@ -67,6 +67,9 @@ namespace Starbytes {
             std::vector<ASTStatement*> nodes;
         };
         struct ASTDeclaration : ASTStatement {};
+        struct ASTTypeArgumentsDeclaration : ASTDeclaration {
+            std::vector<ASTIdentifier *> args;
+        };
         struct ASTClassStatement : ASTStatement {};
         struct ASTClassConstructorParameterDeclaration : ASTStatement {
             bool loose;
@@ -85,6 +88,8 @@ namespace Starbytes {
         };
         struct ASTClassMethodDeclaration : ASTClassStatement {
             ASTIdentifier *id;
+            bool isGeneric;
+            ASTTypeArgumentsDeclaration *typeargs;
             std::vector<ASTTypeCastIdentifier*> params;
             ASTTypeIdentifier* returnType;
             ASTBlockStatement* body;
@@ -93,7 +98,9 @@ namespace Starbytes {
             std::vector<ASTClassStatement *> nodes;
         };
         struct ASTClassDeclaration : ASTDeclaration {
-            ASTTypeIdentifier * tid;
+            ASTIdentifier * id;
+            bool isGeneric;
+            ASTTypeArgumentsDeclaration *typeargs;
             bool isChildClass;
             ASTTypeIdentifier * superclass;
             bool implementsInterfaces;
@@ -126,6 +133,8 @@ namespace Starbytes {
         };
         struct ASTFunctionDeclaration : ASTDeclaration {
             ASTIdentifier *id;
+            bool isGeneric;
+            ASTTypeArgumentsDeclaration *typeargs;
             std::vector<ASTTypeCastIdentifier*> params;
             ASTTypeIdentifier *returnType;
             ASTBlockStatement* body;

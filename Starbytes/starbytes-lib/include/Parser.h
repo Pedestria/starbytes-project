@@ -50,6 +50,7 @@ namespace Starbytes {
             void parseConstantDeclaration(std::vector<ASTStatement *>  *container);
             void parseImportDeclaration(std::vector<ASTStatement *> *container);
             void parseScopeDeclaration(std::vector<ASTStatement *> *container);
+            void parseTypeArgsDeclaration(ASTTypeArgumentsDeclaration *ptr);
             void parseFunctionDeclaration(std::vector<ASTStatement *> *container);
             void parseClassDeclaration(std::vector<ASTStatement *> * container);
             void parseClassBlockStatement(ASTClassBlockStatement *ptr);
