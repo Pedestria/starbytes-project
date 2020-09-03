@@ -2,7 +2,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-
+using namespace Starbytes;
 using namespace LSP;
 
 using namespace std;
@@ -21,10 +21,10 @@ std::string ErrorToString(LSPReplyError error){
     return output.str();
 }
 
-void Messenger::reply(LSPServerReply result,int id){
+void Messenger::reply(LSPServerReply result){
     ostringstream reply;
     reply << "{\n\t\"jsonrpc\":\"2.0\",";
-    reply << "\n\t\"id\":" << id;
+    reply << "\n\t\"id\":" << result.id;
     if(result.bool_result){
         reply << "\n\t\"result\":" << result.bool_result;
     } else if(result.int_result){
@@ -67,6 +67,6 @@ void Messenger::reply(LSPServerReply result,int id){
 //         }
 // };
 
-LSPServerRequest Messenger::getRequest(){
+LSPServerMessage Messenger::getMessage(){
     
 };

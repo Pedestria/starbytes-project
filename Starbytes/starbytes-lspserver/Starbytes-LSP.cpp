@@ -7,6 +7,7 @@
 #include <array>
 #include <vector>
 
+using namespace Starbytes;
 using namespace std;
 
 string help(){
@@ -41,7 +42,7 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     else {
-        LSP::Messenger::getRequest();
+        LSP::Messenger::getMessage();
         // LSP::LSPServerReply reply;
         // reply.str_result = "RESULT!";
         // LSP::Messenger::reply(reply,1);

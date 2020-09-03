@@ -2,10 +2,19 @@
 #include <string>
 #include <vector>
 
+namespace Starbytes {
 
-namespace LSP {
+    namespace LSP {
+
+    enum LSPObjectType:int {
+        CancellParams
+    };
+    enum LSPMessageType:int {
+        Request,Notification
+    };
+    //The Lanugage Server Protocol Object that all objects extend!
     struct LSPServerObject {
-
+        LSPObjectType type;
     };
 
     struct LSReplyErrorData {
@@ -26,19 +35,45 @@ namespace LSP {
         LSReplyErrorData data;
     };
     struct LSPServerReply {
+        int id;
         std::string str_result;
         int int_result;
         bool bool_result;
         LSPServerObject object_result;
         LSPReplyError error;
     };
-    struct LSPServerRequest {
+    struct LSPServerMessage {};
+    struct LSPServerRequest : LSPServerMessage {
+        LSPMessageType type = Request;
+        int id;
         std::string method;
-        std::vector<std::string> params_array;
+        std::vector<LSPServerObject> params_array;
         LSPServerObject params_object;
     };
+
+    typedef std::string ProgressToken;
+    template<class TokVal>
+    struct LSPServerProgressParams : LSPServerObject {
+        ProgressToken token;
+        TokVal value;
+    };
+
+    struct LSPServerCancellationParams : LSPServerObject {
+        int int_id;
+        std::string string_id;
+    };
+    struct LSPServerNotification : LSPServerMessage {
+        LSPMessageType type = Notification;
+        std::string method;
+        std::vector<LSPServerObject> params_array;
+        LSPServerObject params_object;
+    };
+
     namespace Messenger {
-        LSPServerRequest getRequest();
-        void reply(LSPServerReply result,int id);
+        LSPServerMessage getMessage();
+        void reply(LSPServerReply result);
     };
 };
+
+}
+
