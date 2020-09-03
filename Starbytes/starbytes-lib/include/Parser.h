@@ -10,7 +10,7 @@ namespace Starbytes {
     using namespace AST;
     typedef unsigned int UInt;
     enum class Scope:int {
-        Global,BlockStatement
+        Global,BlockStatement,FunctionBlockStatement
     };
     class Parser{
         private:
@@ -44,6 +44,8 @@ namespace Starbytes {
             void parseIdentifier(Token* token1,ASTIdentifier *id);
             void parseTypeIdentifier(ASTTypeIdentifier *ptr);
             void parseTypecastIdentifier(ASTTypeCastIdentifier *ptr);
+
+            //DECLARATIONS!
             void parseVariableSpecifier(ASTVariableSpecifier * ptr);
             void parseVariableDeclaration(std::vector<ASTStatement *> * container);
             void parseConstantSpecifier(ASTConstantSpecifier * ptr);
@@ -51,7 +53,16 @@ namespace Starbytes {
             void parseImportDeclaration(std::vector<ASTStatement *> *container);
             void parseScopeDeclaration(std::vector<ASTStatement *> *container);
             void parseTypeArgsDeclaration(ASTTypeArgumentsDeclaration *ptr);
+            void parseReturnDeclaration(std::vector<ASTStatement *> * container);
             void parseFunctionDeclaration(std::vector<ASTStatement *> *container);
+            void parseEnumDeclaration(std::vector<ASTStatement *> * container);
+            void parseEnumBlockStatement(ASTEnumBlockStatement * ptr);
+            void parseEnumerator(ASTEnumerator * ptr);
+            void parseInterfaceDeclaration(std::vector<ASTStatement *> * container);
+            void parseInterfaceBlockStatement(ASTInterfaceBlockStatement * ptr);
+            void parseInterfaceStatement(std::vector<ASTInterfaceStatement *> * container);
+            void parseInterfacePropertyDeclaration(ASTInterfacePropertyDeclaration * ptr,bool immutable,bool loose = false);
+            void parseInterfaceMethodDeclaration(ASTInterfaceMethodDeclaration * ptr);
             void parseClassDeclaration(std::vector<ASTStatement *> * container);
             void parseClassBlockStatement(ASTClassBlockStatement *ptr);
             void parseClassStatement(std::vector<ASTClassStatement *> * container);
@@ -60,8 +71,10 @@ namespace Starbytes {
             void parseClassPropertyDeclaration(ASTClassPropertyDeclaration *ptr,bool immutable,bool loose = false);
             void parseClassMethodDeclaration(ASTClassMethodDeclaration *ptr);
             /*Parses all Declaration and places them in container. (Container is used for scope declarations)*/
-            bool parseDeclaration(std::vector<ASTStatement *> *container);
-            void parseBlockStatement(ASTBlockStatement *ptr);
+            bool parseDeclaration(std::vector<ASTStatement *> *container,Scope scope);
+            void parseBlockStatement(ASTBlockStatement *ptr,Scope scope);
+
+            //EXPRESSIONS!
             void parseNewExpression(ASTNewExpression *ptr);
             void parseArrayExpression(ASTArrayExpression *ptr);
             void parseAssignExpression(ASTAssignExpression *ptr);

@@ -6,16 +6,14 @@
 namespace Starbytes {
     namespace AST {
         enum class ASTType:int{
-            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,ClassConstructorParameterDeclaration,TypeArgumentsDeclaration
+            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,ClassConstructorParameterDeclaration,TypeArgumentsDeclaration,InterfaceDeclaration,InterfaceBlockStatement,InterfacePropertyDeclaration,InterfaceMethodDeclaration,ReturnDeclaration,EnumDeclaration,EnumBlockStatement,Enumerator
         };
         /*Abstract Syntax Tree Node*/
         struct ASTNode {
             DocumentPosition position;
             ASTType type;
         };
-        struct ASTLiteral : ASTNode {
-
-        };
+        struct ASTLiteral : ASTNode {};
         struct ASTStringLiteral : ASTLiteral {
             std::string value;
         };
@@ -106,6 +104,50 @@ namespace Starbytes {
             bool implementsInterfaces;
             std::vector<ASTTypeIdentifier *> interfaces;
             ASTClassBlockStatement *body;
+        };
+        struct ASTInterfaceStatement : ASTStatement {};
+
+        struct ASTReturnDeclaration : ASTStatement {
+            ASTExpression *returnee;
+        };
+
+        struct ASTEnumStatement : ASTStatement {};
+        struct ASTEnumerator : ASTEnumStatement {
+            ASTIdentifier *id;
+            bool hasValue;
+            ASTNumericLiteral *value;
+        };
+
+        struct ASTEnumBlockStatement : ASTStatement {
+            std::vector<ASTEnumerator *> nodes;
+        };
+        struct ASTEnumDeclaration : ASTStatement {
+            ASTIdentifier *id;
+            ASTEnumBlockStatement *body;
+        };
+        struct ASTInterfacePropertyDeclaration : ASTInterfaceStatement {
+            bool loose;
+            bool isConstant;
+            ASTTypeCastIdentifier *tcid;
+        };
+        struct ASTInterfaceMethodDeclaration : ASTInterfaceStatement {
+            ASTIdentifier *id;
+            bool isGeneric;
+            ASTTypeArgumentsDeclaration *typeargs;
+            std::vector<ASTTypeCastIdentifier*> params;
+            ASTTypeIdentifier *returnType;
+        };
+        struct ASTInterfaceBlockStatement : ASTStatement {
+            std::vector<ASTInterfaceStatement *> nodes;
+        };
+        struct ASTInterfaceDeclaration : ASTDeclaration {
+            ASTIdentifier * id;
+            bool isGeneric;
+            ASTTypeArgumentsDeclaration *typeargs;
+            bool isChildInterface;
+            ASTTypeIdentifier *superclass;
+            ASTInterfaceBlockStatement *body;
+
         };
         struct ASTVariableSpecifier : ASTStatement {
             //EITHER a ASTIdentifier or ASTTypeCastIdentifier

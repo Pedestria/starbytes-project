@@ -75,6 +75,12 @@ template Serializable {
 decl hello:MyClass<String>
 decl hello = new MyClass<String>();
 
+enum Something {
+	ONE
+	TWO
+	THREE
+}
+
 
 
 
