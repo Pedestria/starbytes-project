@@ -220,6 +220,101 @@ void Parser::parseImportDeclaration(std::vector<ASTStatement *> * container){
     }
 }
 
+void Parser::parseIfDeclaration(std::vector<ASTStatement *> *container){
+    ASTIfDeclaration *node = new ASTIfDeclaration();
+    node->BeginFold = currentToken()->getPosition();
+    node->type = ASTType::IfDeclaration;
+    Token *tok = nextToken();
+    if(tok->getType() == TokenType::OpenParen){
+        incrementToNextToken();
+        ASTExpression *exp;
+        if(parseExpression(exp)){
+            node->subject = exp;
+            Token *tok1 = nextToken();
+            if(tok1->getType() == TokenType::CloseParen){
+                Token *tok2 = aheadToken();
+                if(tok2->getType() == TokenType::OpenBrace){
+                    ASTBlockStatement *block = new ASTBlockStatement();
+                    parseBlockStatement(block,Scope::BlockStatement);
+                    node->body = block;
+                    node->EndFold = currentToken()->getPosition();
+                    container->push_back(node);
+                }
+                else{
+                    throw StarbytesParseError("Expected Open Brace!",tok2->getPosition());
+                }
+            }
+            else{
+                throw StarbytesParseError("Expected Close Paren!",tok1->getPosition());
+            }
+        }
+        else{
+            throw StarbytesParseError("Expected Expression!",currentToken()->getPosition());
+        }
+    }
+    else{
+        throw StarbytesParseError("Expected Open Paren!",tok->getPosition());
+    }
+}
+
+void Parser::parseElseIfDeclaration(std::vector<ASTStatement *> *container){
+    ASTElseIfDeclaration *node = new ASTElseIfDeclaration();
+    node->BeginFold = currentToken()->getPosition();
+    node->type = ASTType::ElseIfDeclaration;
+    //We have checked the `else if` therefore we can skip two tokens to Open Paren!
+    incrementToNextToken();
+    Token *tok = nextToken();
+    if(tok->getType() == TokenType::OpenParen){
+        incrementToNextToken();
+        ASTExpression *exp;
+        if(parseExpression(exp)){
+            node->subject = exp;
+            Token *tok1 = nextToken();
+            if(tok1->getType() == TokenType::CloseParen){
+                Token *tok2 = aheadToken();
+                if(tok2->getType() == TokenType::OpenBrace){
+                    ASTBlockStatement *block = new ASTBlockStatement();
+                    parseBlockStatement(block,Scope::BlockStatement);
+                    node->body = block;
+                    node->EndFold = currentToken()->getPosition();
+                    container->push_back(node);
+                }
+                else{
+                    throw StarbytesParseError("Expected Open Brace!",tok2->getPosition());
+                }
+            }
+            else{
+                throw StarbytesParseError("Expected Close Paren!",tok1->getPosition());
+            }
+        }
+        else{
+            throw StarbytesParseError("Expected Expression!",currentToken()->getPosition());
+        }
+    }
+    else{
+        throw StarbytesParseError("Expected Open Paren!",tok->getPosition());
+    }
+
+}
+
+void Parser::parseElseDeclaration(std::vector<ASTStatement *> *container){
+    ASTElseDeclaration *node = new ASTElseDeclaration();
+    node->type = ASTType::ElseDeclaration;
+    node->BeginFold = currentToken()->getPosition();
+    Token *tok = aheadToken();
+    if(tok->getType() == TokenType::OpenBrace){
+        ASTBlockStatement *block = new ASTBlockStatement();
+        parseBlockStatement(block,Scope::BlockStatement);
+        node->body = block;
+        node->EndFold = currentToken()->getPosition();
+        container->push_back(node);
+    }
+    else{
+        throw StarbytesParseError("Expected Open Brace!",tok->getPosition());
+
+    }
+}
+
 void Parser::parseEnumDeclaration(std::vector<ASTStatement *> *container){
     ASTEnumDeclaration *node = new ASTEnumDeclaration();
     node->BeginFold = currentToken()->getPosition();

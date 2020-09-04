@@ -1,5 +1,5 @@
 # find_package(nlohmann_json CONFIG REQUIRED)
-add_executable(starbytes-lspserver "Starbytes-LSP.cpp" "Starbytes-LSP.h" "JSONOutput.h" "JSONOutput.cpp")
+add_executable(starbytes-lspserver "Starbytes-LSP.cpp" "Starbytes-LSP.h" "JSONOutput.h" "JSONOutput.cpp" "LSPProtocol.h" "LSPProtocol.cpp")
 
 add_dependencies(starbytes-lspserver starbytes-lib)
 include_directories(${STARBYTES_LIB_INCLUDE})

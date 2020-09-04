@@ -7,6 +7,33 @@
 #include <array>
 #include <vector>
 
+#ifdef _WIN32
+#include <Windows.h>
+static HANDLE stdoutHandle;
+static DWORD outModeInit;
+
+void setupConsole(void){
+    DWORD outMode = 0;
+    stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+
+    if(stdoutHandle == INVALID_HANDLE_VALUE) {
+		exit(GetLastError());
+	}
+
+    if(!GetConsoleMode(stdoutHandle, &outMode)) {
+	    exit(GetLastError());
+	}
+
+    outModeInit = outMode;
+
+    outMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+
+    if(!SetConsoleMode(stdoutHandle, outMode)) {
+		exit(GetLastError());
+	}
+}
+#endif
+
 using namespace Starbytes;
 using namespace std;
 
@@ -38,14 +65,18 @@ bool parseArguments(char * arguments[],int count){
 
 
 int main(int argc, char* argv[]) {
-    if(!parseArguments(argv,argc)){
-        return 0;
-    }
-    else {
-        LSP::Messenger::getMessage();
-        // LSP::LSPServerReply reply;
-        // reply.str_result = "RESULT!";
-        // LSP::Messenger::reply(reply,1);
-    }
+    #ifdef _WIN32
+    setupConsole();
+    #endif
+    cout << help();
+    // if(!parseArguments(argv,argc)){
+    //     return 0;
+    // }
+    // else {
+    //     // LSP::Messenger::getMessage();
+    //     // LSP::LSPServerReply reply;
+    //     // reply.str_result = "RESULT!";
+    //     // LSP::Messenger::reply(reply,1);
+    // }
     // cout << help();
 }

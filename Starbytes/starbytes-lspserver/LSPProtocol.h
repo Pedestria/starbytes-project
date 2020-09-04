@@ -245,7 +245,29 @@ namespace Starbytes {
         enum class LSPTraceSetting:int {
             Off,Messages,Verbose
         };
-
+        struct LSPWorkspaceFolder : LSPServerObject {
+            LSPDocumentURI uri;
+            std::string name;
+        };
+        struct LSPTextDocumentClientCapabilities: LSPServerObject {};
+        struct LSPClientCapabilitiesWorkspace : LSPServerObject {
+            bool apply_edit;
+            bool hasWorkspaceEdit;
+            LSPWorkspaceEditClientCapabilities workspace_edit;
+            bool workspace_folders;
+            bool configuration;
+        };
+        struct LSPClientCapabilitiesWindow : LSPServerObject {
+            bool work_done_progress;
+        };
+        struct LSPClientCapabilities : LSPServerObject {
+            bool hasWorkspace;
+            LSPClientCapabilitiesWorkspace workspace;
+            bool hasTextDocument;
+            LSPTextDocumentClientCapabilities text_document;
+            bool hasWindow;
+            LSPClientCapabilitiesWindow window;
+        };
         struct LSPIntializeParams : LSPWorkDoneProgressParams {
             bool hasProcessId;
             int process_id;
@@ -261,5 +283,50 @@ namespace Starbytes {
             LSPTraceSetting trace;
             //TODO WORKSPACE_FOLDERS!
         };
+
+        struct LSPServerCapabilities : LSPServerObject {
+
+        };
+
+        struct LSPServerInfo : LSPServerObject {
+            std::string name;
+            float version;
+        };
+        struct LSPIntializeResult : LSPServerObject {
+            LSPServerCapabilities capabilites;
+            LSPServerInfo server_info;
+        };
+
+        enum class LSPIntializeErrorCode:int {
+            UnknownProtocolVersion = 1
+        };
+
+        struct LSPIntializeError : LSPServerObject {
+            bool retry;
+        };
+
+        struct LSPIntializedParams : LSPServerObject {
+
+        };
+        enum class LSPShowMessageType:int {
+            Error = 1,Warning = 2,Info = 3,Log = 4
+        };
+        struct LSPShowMessageParams : LSPServerObject {
+            LSPShowMessageType message_type;
+            std::string message;
+        };
+        struct LSPMessageActionItem : LSPServerObject {
+            std::string title;
+        };
+        struct LSPShowMessageRequestParams : LSPServerObject {
+            LSPShowMessageType message_type;
+            std::string message;
+            bool hasActions;
+            std::vector<LSPMessageActionItem> actions;
+        };
+
+
+
+
     }
 }

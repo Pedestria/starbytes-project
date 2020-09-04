@@ -6,7 +6,9 @@
 namespace Starbytes {
     namespace AST {
         enum class ASTType:int{
-            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,ClassConstructorParameterDeclaration,TypeArgumentsDeclaration,InterfaceDeclaration,InterfaceBlockStatement,InterfacePropertyDeclaration,InterfaceMethodDeclaration,ReturnDeclaration,EnumDeclaration,EnumBlockStatement,Enumerator
+            Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,
+            TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,
+            ClassConstructorParameterDeclaration,TypeArgumentsDeclaration,InterfaceDeclaration,InterfaceBlockStatement,InterfacePropertyDeclaration,InterfaceMethodDeclaration,ReturnDeclaration,EnumDeclaration,EnumBlockStatement,Enumerator,IfDeclaration,ElseIfDeclaration,ElseDeclaration
         };
         /*Abstract Syntax Tree Node*/
         struct ASTNode {
@@ -60,6 +62,12 @@ namespace Starbytes {
         struct ASTMemberExpression : ASTExpression {
             ASTExpression *object;
             ASTExpression *prop;
+        };
+
+        struct ASTUnaryExpression : ASTExpression {
+            std::string oprtr;
+            ASTExpression *left;
+            ASTExpression *right;
         };
         struct ASTBlockStatement : ASTStatement {
             std::vector<ASTStatement*> nodes;
@@ -149,12 +157,25 @@ namespace Starbytes {
             ASTInterfaceBlockStatement *body;
 
         };
+
+        struct ASTIfDeclaration : ASTDeclaration {
+            ASTExpression *subject;
+            ASTBlockStatement *body;
+        };
+        struct ASTElseIfDeclaration : ASTDeclaration {
+            ASTExpression *subject;
+            ASTBlockStatement *body;
+        };
+
+        struct ASTElseDeclaration : ASTDeclaration {
+            ASTBlockStatement *body;
+        };
         struct ASTVariableSpecifier : ASTStatement {
             //EITHER a ASTIdentifier or ASTTypeCastIdentifier
             ASTNode *id;
             ASTExpression *initializer;
         };
-        struct ASTVariableDeclaration : ASTStatement {
+        struct ASTVariableDeclaration : ASTDeclaration {
             std::vector<ASTVariableSpecifier*> specifiers;
         };
         struct ASTConstantSpecifier : ASTStatement {
@@ -162,7 +183,7 @@ namespace Starbytes {
             ASTNode *id;
             ASTExpression *initializer;
         };
-        struct ASTConstantDeclaration : ASTStatement {
+        struct ASTConstantDeclaration : ASTDeclaration {
             std::vector<ASTConstantSpecifier *> specifiers;
         };
         struct ASTImportDeclaration : ASTDeclaration {

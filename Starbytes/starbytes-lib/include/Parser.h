@@ -53,6 +53,9 @@ namespace Starbytes {
             void parseImportDeclaration(std::vector<ASTStatement *> *container);
             void parseScopeDeclaration(std::vector<ASTStatement *> *container);
             void parseTypeArgsDeclaration(ASTTypeArgumentsDeclaration *ptr);
+            void parseIfDeclaration(std::vector<ASTStatement *> *container);
+            void parseElseIfDeclaration(std::vector<ASTStatement *> *container);
+            void parseElseDeclaration(std::vector<ASTStatement *> *container);
             void parseReturnDeclaration(std::vector<ASTStatement *> * container);
             void parseFunctionDeclaration(std::vector<ASTStatement *> *container);
             void parseEnumDeclaration(std::vector<ASTStatement *> * container);

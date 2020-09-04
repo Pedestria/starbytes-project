@@ -27,7 +27,7 @@ bool isBrace(char c) {
 }
 
 bool isOperator(char c) {
-	if (c == '=' || c == '+' || c == '-') {
+	if (c == '=' || c == '+' || c == '-' || c== '&' || c == '|') {
 		return true;
 	}
 	else {
