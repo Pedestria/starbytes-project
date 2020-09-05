@@ -61,7 +61,7 @@ namespace Starbytes {
             void createSymbolStore(std::string name,Scope scope_type);
             void addSymbolToStore(std::string store_name,SymbolStoreEntry* symbol);
             SymbolType getSymbolTypeFromSymbolInCurrentStores(std::string symbol);
-            void verifySymbolInCurrentStores(std::string symbol,SymbolType symbol_type,DocumentPosition *position);
+            bool verifySymbolInCurrentStores(std::string symbol,SymbolType symbol_type,DocumentPosition *position);
             void addToCurrentScopes(std::string scope_name);
             void removeFromCurrentScopes(std::string scope_name);
             //
@@ -73,6 +73,12 @@ namespace Starbytes {
             void checkClassDeclaration(ASTClassDeclaration *node);
             void checkVariableDeclaration(ASTVariableDeclaration *node);
             void checkConstantDeclaration(ASTConstantDeclaration *node);
+            void checkTypeArgumentsDeclaration(ASTTypeArgumentsDeclaration *node);
+            void checkFuncArguments(std::vector<ASTTypeCastIdentifier *> * args);
+            //
+            //Type Getters!
+            //
+            std::string * getTypeOnExpression(ASTExpression *node);
 
     };
 }

@@ -245,10 +245,89 @@ namespace Starbytes {
         enum class LSPTraceSetting:int {
             Off,Messages,Verbose
         };
+
+        struct LSPWorkspaceFoldersServerCapabilities : LSPServerObject {
+            bool supported;
+            std::string string_change_notfications;
+            bool bool_change_notifications;
+        };
         struct LSPWorkspaceFolder : LSPServerObject {
             LSPDocumentURI uri;
             std::string name;
         };
+
+        struct LSPWorkspaceFoldersChangeEvent : LSPServerObject {
+            std::vector<LSPWorkspaceFolder> added;
+            std::vector<LSPWorkspaceFolder> removed;
+        };
+
+        struct LSPDidChangeWorkspaceFoldersParams : LSPServerObject {
+            LSPWorkspaceFoldersChangeEvent event;
+        };
+
+        struct LSPDidChangeConfigurationClientCapabilities : LSPServerObject {
+            bool dynamic_registration;
+        };
+
+        struct LSPDidChangeConfigurationParams : LSPServerObject {
+            LSPServerObject settings;
+        };
+        struct LSPConfigurationItem : LSPServerObject {
+            bool hasScopeUri;
+            LSPDocumentURI scope_uri;
+            bool hasSection;
+            std::string section;
+        };
+        struct LSPConfigurationParams : LSPServerObject {
+            std::vector<LSPConfigurationItem> items;
+        };
+
+        struct LSPDidChangeWatchedFilesClientCapabilities : LSPServerObject {
+            bool dynamic_registration;
+        };
+        enum class LSPWatchKind:int {
+            Create = 1,Change = 2,Delete = 4
+        };
+        struct LSPFileSystemWatcher : LSPServerObject {
+            std::string globPattern;
+            bool hasKind;
+            LSPWatchKind kind;
+        };
+
+        struct LSPDidChangeWatchedFilesRegistrationOptions : LSPServerObject {
+            std::vector<LSPFileSystemWatcher> watchers;
+        };
+
+        enum class LSPFileChangeType:int {
+            Created = 1,Changed =2,Deleted = 3
+        };
+
+        struct LSPFileEvent : LSPServerObject {
+            LSPDocumentURI uri;
+            LSPFileChangeType type;
+        };
+
+        struct LSPDidChangeWatchedFilesParams : LSPServerObject {
+            std::vector<LSPFileEvent> changes;
+        };
+
+        enum class LSPSymbolKind:int {
+            File = 1,Module = 2,Namespace = 3,Package = 4,Class = 5,Method = 6,Property = 7,Field = 8,
+            Constructor = 9,Enum = 10,Interface = 11,Function = 12,Variable = 13,Constant = 14,String = 15,
+            Number = 16,Boolean = 17,Array = 18,Object = 19,Key = 20,Null = 21,EnumMember = 22,Struct = 23,Event = 24,Operator = 25,TypeParameter = 26
+        };
+
+        struct LSPWorkspaceSymbolClientCapabilitiesSymbolKind : LSPServerObject {
+            bool hasValueSet;
+            std::vector<LSPSymbolKind> value_set;
+        };
+
+        struct LSPWorkspaceSymbolClientCapabilities : LSPServerObject{
+            bool dynamic_registration;
+            bool hasSymbolKind;
+            LSPWorkspaceSymbolClientCapabilitiesSymbolKind symbol_kind;
+        };
+
         struct LSPTextDocumentClientCapabilities: LSPServerObject {};
         struct LSPClientCapabilitiesWorkspace : LSPServerObject {
             bool apply_edit;
@@ -279,6 +358,7 @@ namespace Starbytes {
             LSPDocumentURI root_uri;
             LSPStarbytesIntializationOptions intialization_options;
             //TODO CAPABILITIES!
+            LSPClientCapabilities capabilites;
             bool hasTrace;
             LSPTraceSetting trace;
             //TODO WORKSPACE_FOLDERS!
@@ -324,6 +404,34 @@ namespace Starbytes {
             bool hasActions;
             std::vector<LSPMessageActionItem> actions;
         };
+
+        struct LSPWorkDoneProgressCreateParams : LSPServerObject {
+            ProgressToken token;
+        };
+
+        struct WorkDoneProgressCancelParams : LSPServerObject {
+            ProgressToken token;
+        };
+
+        struct LSPRegistration : LSPServerObject {
+            std::string id;
+            std::string method;
+            LSPServerObject register_options;
+        };
+
+        struct LSPRegistrationParams : LSPServerObject{
+            std::vector<LSPRegistration> registrations;
+        };
+
+        struct LSPUnregistration : LSPServerObject {
+            std::string id;
+            std::string method;
+        };
+
+        struct LSPUnregistrationParams : LSPServerObject {
+            std::vector<LSPUnregistration> unregistrations;
+        };
+
 
 
 

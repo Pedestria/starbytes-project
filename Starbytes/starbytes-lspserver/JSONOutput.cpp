@@ -21,6 +21,7 @@ std::string ErrorToString(LSPReplyError error){
     return output.str();
 }
 
+
 void Messenger::reply(LSPServerReply result){
     ostringstream reply;
     reply << "{\n\t\"jsonrpc\":\"2.0\",";
@@ -35,7 +36,8 @@ void Messenger::reply(LSPServerReply result){
         reply << "\n\t\"error\":" << ErrorToString(result.error);
     }
     reply << "\n}\n";
-    cout << "Content-Length:"<<reply.str().length()<<"\r\nContent-Type:utf-8\r\n\r\n" << reply.str();
+    std::string out = "Content-Length:"+to_string(reply.str().length())+"\r\nContent-Type:utf-8\r\n\r\n"+reply.str();
+    write(p[1],out.c_str(),out.length());
 }
 
 // struct JSONToken {

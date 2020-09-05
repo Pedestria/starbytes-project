@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <unistd.h>
 
 namespace Starbytes {
 
@@ -69,9 +70,16 @@ namespace Starbytes {
         LSPServerObject params_object;
     };
 
-    namespace Messenger {
-        LSPServerMessage getMessage();
-        void reply(LSPServerReply result);
+    class Messenger {
+        public:
+            LSPServerMessage getMessage();
+            void reply(LSPServerReply result);
+            int p[2], i;
+            Messenger(){
+                if(pipe(p) < 0)
+                    exit(1);  
+
+            };
     };
 };
 

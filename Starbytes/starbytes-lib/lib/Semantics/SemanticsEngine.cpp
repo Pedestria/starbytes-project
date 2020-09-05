@@ -73,18 +73,15 @@ SymbolType SemanticAnalyzer::getSymbolTypeFromSymbolInCurrentStores(std::string 
     return SymbolType::Unresolved;
 }
 
-void SemanticAnalyzer::verifySymbolInCurrentStores(std::string _symbol,SymbolType symbol_type,DocumentPosition *position){
-    bool resolved = false;
+bool SemanticAnalyzer::verifySymbolInCurrentStores(std::string _symbol,SymbolType symbol_type,DocumentPosition *position){
     for(auto store : stores){
         if(inStoreScope(store,&currentStoreScopes)){
             if(store->verifySymbolTS(_symbol,symbol_type)){
-                resolved = true;
+                return true;
             }
         }
     }
-    if(!resolved){
-        throw std::string("Unresolved Symbol! at Line:")+std::to_string(position->line);
-    }
+    return false;
 }
 
 void SemanticAnalyzer::freeSymbolStores(){
@@ -144,6 +141,7 @@ void SemanticAnalyzer::check(bool semanticTokens,std::vector<SemanticToken *> * 
 
     createSymbolStore("GLOBAL",Scope::Global);
     addToCurrentScopes("GLOBAL");
+    exactCurrentStoreScope = "GLOBAL";
 
     for(auto node : syntaxTree->nodes){
         checkStatement(node);
@@ -193,12 +191,32 @@ void SemanticAnalyzer::checkVariableDeclaration(ASTVariableDeclaration *node){
                     throw StarbytesSemanticError("Unknown Node Type!",declrtr->initializer->BeginFold);
                     break;
                 }
-                entry->symbol = (declrtr->id->type == AST::ASTType::Identifier)? ((ASTIdentifier *) declrtr->id)->value : (declrtr->id->type == AST::ASTType::TypecastIdentifier)? ((ASTIdentifier *)((ASTTypeCastIdentifier *)declrtr->id)->id)->value : nullptr;
+                if(declrtr->id->type == AST::ASTType::TypecastIdentifier){
+                    if(options->type_reference == ((ASTTypeCastIdentifier *)declrtr->id)->tid->value){
+                        entry->symbol = ((ASTTypeCastIdentifier *)declrtr->id)->id->value;
+                    } else {
+                        throw StarbytesSemanticError("Type `"+options->type_reference+"` is NOT equal to Type `"+((ASTTypeCastIdentifier *)declrtr->id)->tid->value+"`", ((ASTTypeCastIdentifier *)declrtr->id)->tid->BeginFold);
+                    }
+                }
                 entry->type = SymbolType::Variable;
                 entry->options = options;
                 addSymbolToStore(exactCurrentStoreScope,entry);
             }
             else {
+                SymbolStoreEntry *entry = new SymbolStoreEntry();
+                VariableOptions *options = new VariableOptions();
+                options->type_reference = *getTypeOnExpression(declrtr->initializer);
+                if(declrtr->id->type == AST::ASTType::TypecastIdentifier){
+                    if(options->type_reference == ((ASTTypeCastIdentifier *)declrtr->id)->tid->value){
+                        entry->symbol = ((ASTTypeCastIdentifier *)declrtr->id)->id->value;
+                    } else {
+                        throw StarbytesSemanticError("Type `"+options->type_reference+"` is NOT equal to Type `"+((ASTTypeCastIdentifier *)declrtr->id)->tid->value+"`", ((ASTTypeCastIdentifier *)declrtr->id)->tid->BeginFold);
+                    }
+                }
+                entry->type = SymbolType::Variable;
+                entry->options = options;
+                addSymbolToStore(exactCurrentStoreScope,entry);
+
 
             }
         }
@@ -222,5 +240,30 @@ void SemanticAnalyzer::checkVariableDeclaration(ASTVariableDeclaration *node){
                 throw StarbytesSemanticError("Unknown Node Type:"+std::to_string(int(declrtr->id->type)),declrtr->BeginFold);
             }
         }
+    }
+}
+
+void SemanticAnalyzer::checkFunctionDeclaration(ASTFunctionDeclaration *node){
+    if(verifySymbolInCurrentStores(node->id->value,SymbolType::Function,&node->id->position)){
+        throw StarbytesSemanticError("Function ID's identical! ID:`"+node->id->value+"`",node->id->position);
+    }
+    else{
+        std::string priorScope = exactCurrentStoreScope;
+        createSymbolStore(node->id->value,Scope::FunctionBlockStatement);
+        addToCurrentScopes(node->id->value);
+        if(node->isGeneric){
+            checkTypeArgumentsDeclaration(node->typeargs);
+        }
+
+        if(!node->params.empty()){
+            checkFuncArguments(&node->params);
+        }
+
+        exactCurrentStoreScope = node->id->value;
+        for(auto child_node : node->body->nodes){
+            checkStatement(node);
+        }
+        exactCurrentStoreScope = priorScope;
+        removeFromCurrentScopes(node->id->value);
     }
 }
