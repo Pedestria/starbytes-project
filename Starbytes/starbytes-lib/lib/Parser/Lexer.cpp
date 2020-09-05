@@ -1,9 +1,9 @@
 #include <string>
 #include <ctype.h>
-#include "Token.h"
-#include "Lexer.h"
+#include "Parser/Token.h"
+#include "Parser/Lexer.h"
 #include <iostream>
-#include "Lookup.h"
+#include "Parser/Lookup.h"
 //#include <algorithm>
 //#include <iterator>
 

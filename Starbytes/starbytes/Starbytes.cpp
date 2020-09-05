@@ -1,7 +1,7 @@
 ﻿// CPlusPlus.cpp : Defines the entry point for the application.
 //
 #include "Starbytes.h"
-#include "AST.h"
+#include "Parser/AST.h"
 #include <stdio.h>
 
 #ifdef _WIN32
@@ -73,26 +73,26 @@ int main(int argc, char* argv[]) {
 	setupConsole();
 	#endif
 
-	cout << help();
+	// cout << help();
 	// cout << loghelp() << "\n";
-	// string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\nfunc hello (hello:String,moma:String) >> String {\n \n}";
-	// string test2 = "import library\nimport otherLibrary";
-	// auto result = Lexer(test).tokenize();
+	string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\nfunc hello (hello:String,moma:String) >> String {\n \n}";
+	string test2 = "import library\nimport otherLibrary";
+	auto result = Lexer(test).tokenize();
 	// // for (Token tok : result) {
 	// // 	cout << "Content:"+tok.getContent() << "\t" << "Type: " << int(tok.getType()) << "\t" << "Position:"+convertPosition(tok.getPosition());
 	// // }
-	// AbstractSyntaxTree *tree = new AbstractSyntaxTree();
+	AbstractSyntaxTree *tree = new AbstractSyntaxTree();
 
-	// try {
-	// 	auto parser = Parser(result,tree);
-	// 	parser.convertToAST();
+	try {
+		auto parser = Parser(result,tree);
+		parser.convertToAST();
 
-	// 	for(auto node : tree->nodes){
-	// 		cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
-	// 	}
-	// } catch (string message) {
-	// 	cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
-	// }
+		for(auto node : tree->nodes){
+			cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
+		}
+	} catch (string message) {
+		cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
+	}
 	return 0;
 }
 

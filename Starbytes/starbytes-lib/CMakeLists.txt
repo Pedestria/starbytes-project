@@ -15,14 +15,42 @@
 # - ModuleReader.cpp
 # - ModuleFileParser.h
 # - ModuleFileParser.cpp
-#
-list(APPEND HEADERS "AST.h" "Document.h" "Lexer.h" "Lookup.h" "Parser.h" "Token.h" "Serialization.h")
-list(TRANSFORM HEADERS PREPEND "include/")
-include_directories(include)
-list(APPEND LIB_SOURCES "AST.cpp" "Document.cpp" "Lexer.cpp" "Lookup.cpp" "Parser.cpp" "Token.cpp" "Serialization.cpp")
-list(TRANSFORM LIB_SOURCES PREPEND "lib/" )
 
-add_library(starbytes-lib STATIC ${LIB_SOURCES} ${HEADERS})
-if(APPLE)
-    add_clang_lib(starbytes-lib)
-endif()
+function(add_starbytes_lib)
+    set(OPTIONS STATIC)
+    set(oneValue LIB_NAME LIB_PREFIX)
+    set(MULTI SOURCE_FILES HEADER_FILES)
+    include(CMakeParseArguments)
+
+    cmake_parse_arguments("STARBYTES_LIB" 
+    "${OPTIONS}" 
+    "${oneValue}" 
+    "${MULTI}" 
+    ${ARGN})
+
+    list(TRANSFORM STARBYTES_LIB_HEADER_FILES PREPEND ./include/${STARBYTES_LIB_LIB_PREFIX}/)
+    list(TRANSFORM STARBYTES_LIB_SOURCE_FILES PREPEND ./lib/${STARBYTES_LIB_LIB_PREFIX}/)
+    
+    message(${STARBYTES_LIB_LIB_NAME} " - Sources:" ${STARBYTES_LIB_SOURCE_FILES})
+    message(${STARBYTES_LIB_LIB_NAME} " - Headers:" ${STARBYTES_LIB_HEADER_FILES})
+    include_directories(include)
+    if(APPLE)
+        add_clang_lib(${STARBYTES_LIB_LIB_NAME})
+    endif()
+    add_library(${STARBYTES_LIB_LIB_NAME} STATIC ${STARBYTES_LIB_SOURCE_FILES} ${STARBYTES_LIB_HEADER_FILES})
+    set(LENGTH_LIST list(LENGTH ${STARBYTES_LIB_LIBS_TO_LINK}))
+    if(LENGTH_LIST EQUAL 0)
+        
+    elseif()
+        target_link_libraries(${STARBYTES_LIB_LIB_NAME} PRIVATE ${STARBYTES_LIB_LIBS_TO_LINK})   
+    endif()
+    
+    
+    
+endfunction()
+
+add_starbytes_lib(SOURCE_FILES AST.cpp Document.cpp Lexer.cpp Lookup.cpp Parser.cpp Token.cpp Serialization.cpp HEADER_FILES AST.h Document.h Lexer.h Lookup.h Parser.h Token.h Serialization.h LIB_NAME "starbytes-lib-parser" LIB_PREFIX "Parser")
+
+
+
+

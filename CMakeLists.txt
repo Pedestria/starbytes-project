@@ -14,6 +14,12 @@ if(APPLE)
 	list(APPEND CMAKE_MODULE_PATH ${STARBYTES_MODULE_PATH})
 
 	include(AddClangCXXLib)
+	include(AddStarbytesLib)
+elseif(WIN32)
+	set(STARBYTES_MODULE_PATH "./cmake/modules")
+	list(APPEND CMAKE_MODULE_PATH ${STARBYTES_MODULE_PATH})
+
+	include(AddStarbytesLib)
 endif()
 
 

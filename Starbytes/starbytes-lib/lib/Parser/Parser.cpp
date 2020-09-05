@@ -1,6 +1,6 @@
-#include "Parser.h"
-#include "AST.h"
-#include "Token.h"
+#include "Parser/Parser.h"
+#include "Parser/AST.h"
+#include "Parser/Token.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -9,7 +9,7 @@ using namespace Starbytes;
 using namespace AST;
 
 enum class KeywordType:int {
-    Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case,Extends,Utilizes,Loose,Enum
+    Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case,Extends,Utilizes,Loose,Enum,For,While
 };
 
 /*Creates Error Message For Console*/
@@ -51,6 +51,10 @@ KeywordType matchKeyword(std::string subject) {
         returncode = KeywordType::Loose;
     } else if(subject == "enum"){
         returncode = KeywordType::Enum;
+    } else if(subject == "for"){
+        returncode = KeywordType::For;
+    } else if(subject == "while"){
+        returncode = KeywordType::While;
     }
     return returncode;
 }
