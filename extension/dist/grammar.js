@@ -81,3 +81,4 @@ async function build(file) {
     await fs.writeFile(outputFile, prettier_1.format(JSON.stringify(result), options));
 }
 build("./syntaxes/starbytes.tmLanguage.yml").catch(err => console.error(err));
+build("./syntaxes/starbytes-module.tmLanguage.yml").catch(err => console.log(err));

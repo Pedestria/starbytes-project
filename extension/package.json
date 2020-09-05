@@ -42,6 +42,16 @@
                     ".strbyts"
                 ],
                 "configuration": "./language-configuration.json"
+            },
+            {
+                "id": "starmodule",
+                "aliases": [
+                    "Starbytes Module File"
+                ],
+                "extensions": [
+                    ".strmodule"
+                ],
+                "configuration": "./language-configuration-strmodule.json"
             }
         ],
         "grammars": [
@@ -49,6 +59,11 @@
                 "language": "starbytes",
                 "scopeName": "source.strbyts",
                 "path": "./syntaxes/starbytes.tmLanguage.json"
+            },
+            {
+                "language": "starmodule",
+                "scopeName": "source.strmodule",
+                "path": "./syntaxes/starbytes-module.tmLanguage.json"
             }
         ]
     },

@@ -1,0 +1,19 @@
+
+get JSONLib
+get OtherLib
+
+module LIB:
+type: Library
+directory:"./test/LIB/*"
+dependencies: [JSONLib,OtherLib]
+
+module Program:
+type: Executable
+directory:"./test/Program/*"
+entry: "Main"
+dependencies: [LIB]
+
+dump * to "./bin"
+
+
+

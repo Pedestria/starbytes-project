@@ -120,3 +120,5 @@ async function build (file:string){
 }
 
 build("./syntaxes/starbytes.tmLanguage.yml").catch(err => console.error(err));
+
+build("./syntaxes/starbytes-module.tmLanguage.yml").catch(err => console.log(err));
