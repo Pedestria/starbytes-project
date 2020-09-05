@@ -11,13 +11,31 @@ void SymbolStore::addSymbol(SymbolStoreEntry *symbol){
     symbols.push_back(symbol);
 }
 
-bool SymbolStore::verifySymbol(std::string symbol,SymbolType symbol_type){
+bool SymbolStore::verifySymbolTS(std::string symbol,SymbolType symbol_type){
     for(auto sym : symbols){
         if(sym->symbol == symbol && sym->type == symbol_type){
             return true;
         }
     }
     return false;
+}
+
+bool SymbolStore::verifySymbolTIS(std::string symbol){
+    for(auto sym : symbols){
+        if(sym->symbol == symbol){
+            return true;
+        }
+    }
+    return false;
+}
+
+SymbolType SymbolStore::getSymbolTypeFromSymbol(std::string symbol){
+    for(auto sym : symbols){
+        if(sym->symbol == symbol){
+            return sym->type;
+        }
+    }
+    return SymbolType::Unresolved;
 }
 
 
@@ -44,11 +62,22 @@ void SemanticAnalyzer::addSymbolToStore(std::string store_name,SymbolStoreEntry*
     }
 }
 
+SymbolType SemanticAnalyzer::getSymbolTypeFromSymbolInCurrentStores(std::string symbol){
+    for(auto store: stores){
+        if(inStoreScope(store,&currentStoreScopes)){
+            if(store->verifySymbolTIS(symbol)){
+                return store->getSymbolTypeFromSymbol(symbol);
+            }
+        }
+    }
+    return SymbolType::Unresolved;
+}
+
 void SemanticAnalyzer::verifySymbolInCurrentStores(std::string _symbol,SymbolType symbol_type,DocumentPosition *position){
     bool resolved = false;
     for(auto store : stores){
         if(inStoreScope(store,&currentStoreScopes)){
-            if(store->verifySymbol(_symbol,symbol_type)){
+            if(store->verifySymbolTS(_symbol,symbol_type)){
                 resolved = true;
             }
         }
@@ -75,6 +104,34 @@ void SemanticAnalyzer::removeFromCurrentScopes(std::string scope_name){
         if(currentStoreScopes[i] == scope_name){
             currentStoreScopes.erase(currentStoreScopes.begin()+i);
         }
+    }
+};
+//
+//
+//
+//
+//
+//
+
+std::string StarbytesSemanticError(std::string message,DocumentPosition position){
+    return message.append("\nSemantic Engine Error at {Line:"+std::to_string(position.line)+"\nStart Character:"+std::to_string(position.start)+"\nEnd Character:"+std::to_string(position.end)+"\n}");
+}
+
+
+bool isLiteralNodeType(ASTType * type){
+    switch (*type) {
+    case Starbytes::AST::ASTType::StringLiteral :
+        return true;
+        break;
+    case Starbytes::AST::ASTType::NumericLiteral :
+        return true;
+        break;
+    case Starbytes::AST::ASTType::BooleanLiteral :
+        return true;
+        break;
+    default:
+        return false;
+        break;
     }
 }
 
@@ -105,8 +162,65 @@ void SemanticAnalyzer::checkStatement(ASTStatement *node){
     case AST::ASTType::ScopeDeclaration:
         checkScopeDeclaration((ASTScopeDeclaration *) node);
         break;
-    default:
-        throw "Parser Fault!";
+    case AST::ASTType::VariableDeclaration:
+        checkVariableDeclaration((ASTVariableDeclaration*) node);
         break;
+    case AST::ASTType::ConstantDeclaration:
+        checkConstantDeclaration((ASTConstantDeclaration *) node);
+    default:
+        throw StarbytesSemanticError("Unknown Node Type:" +std::to_string(int(node->type)),node->BeginFold);
+        break;
+    }
+}
+
+void SemanticAnalyzer::checkVariableDeclaration(ASTVariableDeclaration *node){
+    for(auto declrtr : node->specifiers){
+        if(declrtr->initializer != nullptr){
+            if(isLiteralNodeType(&declrtr->initializer->type)){
+                SymbolStoreEntry *entry = new SymbolStoreEntry();
+                VariableOptions *options = new VariableOptions();
+                switch (declrtr->initializer->type) {
+                case AST::ASTType::StringLiteral:
+                    options->type_reference = "String";
+                    break;
+                case AST::ASTType::NumericLiteral :
+                    options->type_reference = "Number";
+                    break;
+                case AST::ASTType::BooleanLiteral :
+                    options->type_reference = "Boolean";
+                    break;
+                default:
+                    throw StarbytesSemanticError("Unknown Node Type!",declrtr->initializer->BeginFold);
+                    break;
+                }
+                entry->symbol = (declrtr->id->type == AST::ASTType::Identifier)? ((ASTIdentifier *) declrtr->id)->value : (declrtr->id->type == AST::ASTType::TypecastIdentifier)? ((ASTIdentifier *)((ASTTypeCastIdentifier *)declrtr->id)->id)->value : nullptr;
+                entry->type = SymbolType::Variable;
+                entry->options = options;
+                addSymbolToStore(exactCurrentStoreScope,entry);
+            }
+            else {
+
+            }
+        }
+        else{
+            if(declrtr->id->type == AST::ASTType::TypecastIdentifier){
+                //Checks to see if Type Exists!
+                if(getSymbolTypeFromSymbolInCurrentStores(((ASTTypeCastIdentifier *)declrtr->id)->tid->value) != SymbolType::Unresolved){
+                    SymbolStoreEntry *entry = new SymbolStoreEntry();
+                    VariableOptions *options = new VariableOptions();
+                    options->type_reference = ((ASTTypeCastIdentifier *) declrtr->id)->tid->value;
+                    entry->symbol = ((ASTTypeCastIdentifier *) declrtr->id)->id->value;
+                    entry->type = SymbolType::Variable;
+                    entry->options = options;
+                    addSymbolToStore(exactCurrentStoreScope,entry);
+                }
+            }
+            else if(declrtr->id->type == AST::ASTType::Identifier){
+                throw StarbytesSemanticError("Cannot infer type without intializer!",declrtr->BeginFold);
+            }
+            else{
+                throw StarbytesSemanticError("Unknown Node Type:"+std::to_string(int(declrtr->id->type)),declrtr->BeginFold);
+            }
+        }
     }
 }

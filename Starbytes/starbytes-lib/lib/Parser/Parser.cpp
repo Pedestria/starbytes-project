@@ -168,7 +168,7 @@ void Parser::parseNumericLiteral(ASTNumericLiteral *ptr){
             if(tok2->getType() == TokenType::Numeric){
                 std::string numvalue;
                 numvalue = tok->getContent().append(tok1->getContent()+tok2->getContent());
-                ptr->numericvalue = numvalue;
+                ptr->value = numvalue;
 
             }
             else {
@@ -178,7 +178,7 @@ void Parser::parseNumericLiteral(ASTNumericLiteral *ptr){
         }else{
             std::string numvalue;
             numvalue = tok->getContent();
-            ptr->numericvalue = numvalue;
+            ptr->value = numvalue;
         }
         ptr->position.end = currentToken()->getPosition().end;
     } else{

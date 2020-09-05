@@ -8,7 +8,7 @@ namespace Starbytes {
         enum class ASTType:int{
             Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,
             TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,
-            ClassConstructorParameterDeclaration,TypeArgumentsDeclaration,InterfaceDeclaration,InterfaceBlockStatement,InterfacePropertyDeclaration,InterfaceMethodDeclaration,ReturnDeclaration,EnumDeclaration,EnumBlockStatement,Enumerator,IfDeclaration,ElseIfDeclaration,ElseDeclaration
+            ClassConstructorParameterDeclaration,TypeArgumentsDeclaration,InterfaceDeclaration,InterfaceBlockStatement,InterfacePropertyDeclaration,InterfaceMethodDeclaration,ReturnDeclaration,EnumDeclaration,EnumBlockStatement,Enumerator,IfDeclaration,ElseIfDeclaration,ElseDeclaration,BooleanLiteral
         };
         /*Abstract Syntax Tree Node*/
         struct ASTNode {
@@ -20,8 +20,13 @@ namespace Starbytes {
             std::string value;
         };
         struct ASTNumericLiteral :ASTLiteral {
-            std::string numericvalue;
+            std::string value;
         };
+
+        struct ASTBooleanLiteral : ASTLiteral {
+            std::string value;
+        };
+
         struct ASTStatement {
             DocumentPosition BeginFold;
             DocumentPosition EndFold;

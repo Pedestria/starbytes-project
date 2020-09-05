@@ -8,7 +8,7 @@
 namespace Starbytes {
 
     enum class SymbolType:int {
-        Class,Interface,Function,Variable,Constant,Alias,Type,Property
+        Class,Interface,Function,Variable,Constant,Alias,Type,Property,Unresolved
     };
 
     struct SemanticToken {
@@ -16,10 +16,15 @@ namespace Starbytes {
         DocumentPosition start;
         DocumentPosition end;
     };
+    struct SymbolOptions {};
 
+    struct VariableOptions : SymbolOptions {
+        std::string type_reference;
+    };
     struct SymbolStoreEntry {
         std::string symbol;
         SymbolType type;
+        SymbolOptions *options;
     };
 
 
@@ -30,8 +35,11 @@ namespace Starbytes {
             std::string name;
             //Adds a Symbol to the store.
             void addSymbol(SymbolStoreEntry *);
-            //Verifies if a symbol exists in this store.
-            bool verifySymbol(std::string,SymbolType);
+            //Verifies if a symbol exists in this store. (Type Senstive!)
+            bool verifySymbolTS(std::string,SymbolType);
+            //Verifies if a symbol exists in this store. (Type IN-Senstive!)
+            bool verifySymbolTIS(std::string);
+            SymbolType getSymbolTypeFromSymbol(std::string);
             std::vector<SymbolStoreEntry *> * getSymbols();
         private:
             std::vector<SymbolStoreEntry *> symbols;
@@ -49,8 +57,10 @@ namespace Starbytes {
             std::vector<std::string> currentStoreScopes;
             std::vector<SemanticToken *> *semanticTokArray;
             bool outputSemanticTok;
+            std::string exactCurrentStoreScope;
             void createSymbolStore(std::string name,Scope scope_type);
             void addSymbolToStore(std::string store_name,SymbolStoreEntry* symbol);
+            SymbolType getSymbolTypeFromSymbolInCurrentStores(std::string symbol);
             void verifySymbolInCurrentStores(std::string symbol,SymbolType symbol_type,DocumentPosition *position);
             void addToCurrentScopes(std::string scope_name);
             void removeFromCurrentScopes(std::string scope_name);
@@ -61,6 +71,8 @@ namespace Starbytes {
             void checkScopeDeclaration(ASTScopeDeclaration *node);
             void checkFunctionDeclaration(ASTFunctionDeclaration *node);
             void checkClassDeclaration(ASTClassDeclaration *node);
+            void checkVariableDeclaration(ASTVariableDeclaration *node);
+            void checkConstantDeclaration(ASTConstantDeclaration *node);
 
     };
 }

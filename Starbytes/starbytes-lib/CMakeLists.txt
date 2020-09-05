@@ -19,7 +19,7 @@
 function(add_starbytes_lib)
     set(OPTIONS STATIC)
     set(oneValue LIB_NAME LIB_PREFIX)
-    set(MULTI SOURCE_FILES HEADER_FILES)
+    set(MULTI SOURCE_FILES HEADER_FILES LIBS_TO_LINK)
     include(CMakeParseArguments)
 
     cmake_parse_arguments("STARBYTES_LIB" 
@@ -38,12 +38,17 @@ function(add_starbytes_lib)
         add_clang_lib(${STARBYTES_LIB_LIB_NAME})
     endif()
     add_library(${STARBYTES_LIB_LIB_NAME} STATIC ${STARBYTES_LIB_SOURCE_FILES} ${STARBYTES_LIB_HEADER_FILES})
-    set(LENGTH_LIST list(LENGTH ${STARBYTES_LIB_LIBS_TO_LINK}))
-    if(LENGTH_LIST EQUAL 0)
-        
-    elseif()
+    list(LENGTH STARBYTES_LIB_LIBS_TO_LINK LENGTH_LIST)
+    if(${LENGTH_LIST} GREATER 0)
+        foreach(_LIB IN ITEMS ${STARBYTES_LIB_LIBS_TO_LINK})
+            add_dependencies(${STARBYTES_LIB_LIB_NAME} ${_LIB})
+        endforeach()
+        message(${STARBYTES_LIB_LIB_NAME} "- Dependencies:" ${STARBYTES_LIB_LIBS_TO_LINK})
         target_link_libraries(${STARBYTES_LIB_LIB_NAME} PRIVATE ${STARBYTES_LIB_LIBS_TO_LINK})   
     endif()
+        
+    
+
     
     
     
@@ -51,6 +56,7 @@ endfunction()
 
 add_starbytes_lib(SOURCE_FILES AST.cpp Document.cpp Lexer.cpp Lookup.cpp Parser.cpp Token.cpp Serialization.cpp HEADER_FILES AST.h Document.h Lexer.h Lookup.h Parser.h Token.h Serialization.h LIB_NAME "starbytes-lib-parser" LIB_PREFIX "Parser")
 
+add_starbytes_lib(SOURCE_FILES SemanticsEngine.cpp HEADER_FILES SemanticsEngine.h LIB_NAME "starbytes-lib-semantics" LIB_PREFIX "Semantics" LIBS_TO_LINK "starbytes-lib-parser")
 
 
 
