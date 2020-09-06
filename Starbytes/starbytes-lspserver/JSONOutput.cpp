@@ -1,4 +1,5 @@
 #include "JSONOutput.h"
+#include "LSPProtocol.h"
 #include <cctype>
 #include <iostream>
 #include <sstream>
@@ -8,68 +9,66 @@
 #include <array>
 #include <vector>
 
-
-using namespace Starbytes;
-using namespace LSP;
-
 using namespace std;
 
-enum class JSONNodeType:int {
-    Object,Array,String,Number,Null,Boolean
-};
-struct JSONNode {
-    JSONNodeType type;
-};
-
-struct JSONNull : JSONNode {};
-
-struct JSONBoolean : JSONNode {
-    bool value;
-};
-struct JSONNumber : JSONNode {
-    string value;
-};
-
-struct JSONString : JSONNode {
-    string value;
-};
-struct JSONObject : JSONNode {
-    map<string,JSONNode*> entries;
-};
-struct JSONArray : JSONNode {
-    vector<JSONNode*> objects;
-};
-
-enum class JSONTokType:int {
-    CloseBrace,CloseBracket,OpenBrace,OpenBracket,Numeric,String,Colon,Comma,Boolean,Null
-};
-
-string StarbytesLSPJsonError(string message){
-    return "JSONParser Error: \n"+message;
-}
-
-bool isNumber(string subject){
-    for(auto c : subject){
-        if(isalpha(c)){
-            return false;
-        } else if(isnumber(c)){
-            continue;
-        } else {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool isBoolean(string subject){
-    return subject == "true" || subject == "false";
-}
-
-bool isNull (string subject){
-    return subject == "null";
-}
+namespace Starbytes {
+namespace LSP {
 
 namespace JSON {
+    enum class JSONNodeType:int {
+        Object,Array,String,Number,Null,Boolean
+    };
+    struct JSONNode {
+        JSONNodeType type;
+    };
+
+    struct JSONNull : JSONNode {};
+
+    struct JSONBoolean : JSONNode {
+        bool value;
+    };
+    struct JSONNumber : JSONNode {
+        string value;
+    };
+
+    struct JSONString : JSONNode {
+        string value;
+    };
+    struct JSONObject : JSONNode {
+        map<string,JSONNode*> entries;
+    };
+    struct JSONArray : JSONNode {
+        vector<JSONNode*> objects;
+    };
+
+    enum class JSONTokType:int {
+        CloseBrace,CloseBracket,OpenBrace,OpenBracket,Numeric,String,Colon,Comma,Boolean,Null
+    };
+
+    string StarbytesLSPJsonError(string message){
+        return "JSONParser Error: \n"+message;
+    }
+
+    bool isNumber(string subject){
+        for(auto c : subject){
+            if(isalpha(c)){
+                return false;
+            } else if(isnumber(c)){
+                continue;
+            } else {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool isBoolean(string subject){
+        return subject == "true" || subject == "false";
+    }
+
+    bool isNull (string subject){
+        return subject == "null";
+    }
     struct JSONToken {
         string content;
         JSONTokType type;
@@ -461,6 +460,70 @@ namespace JSON {
 
             }
     };
+    //Translates From JSON to LSPServerObject and Back.
+    class JSONTranslator{
+        private:
+            void translateJSONObject(JSONObject *node,LSPServerObject *cntr){
+                map<string,JSONNode *>::iterator it;
+                // it = node->entries.find("");
+                it = node->entries.find("processId");
+                if(it != node->entries.end()){
+                    LSPIntializeParams *Node = new LSPIntializeParams();
+                    Node->type = IntializeParams;
+                    for(auto ent : node->entries){
+                        if(ent.first == "processId"){
+                            Node->hasProcessId = true;
+                            Node->process_id = ((JSONString *)ent.second)->value;
+                        } else if(ent.first == "workDoneToken"){
+                            Node->work_done_token = ((JSONString *)ent.second)->value;
+                        }
+                    }
+                }
+
+            };
+            void translateJSONArray(JSONArray *node,std::vector<LSPServerObject *> *resloc){
+                for(auto NODE : node->objects){
+                    if(NODE->type == JSONNodeType::Object){
+                        LSPServerObject *cntr;
+                        translateJSONObject((JSONObject *)NODE,cntr);
+                        resloc->push_back(cntr);
+                    }
+                }
+            };
+        public:
+            JSONTranslator(){};
+            void translateFromJSON(LSPServerMessage *msgcntr,string &message){
+                JSONObject *messagec;
+                JSONParser(message).parse(messagec);
+                map<string,JSONNode*>::iterator it = messagec->entries.find("id");
+                if(it != messagec->entries.end()){
+                    LSPServerRequest *req = new LSPServerRequest();
+                    msgcntr = req;
+                    for (auto entry : messagec->entries){
+                        if(entry.first == "id"){
+                            req->id = ((JSONNumber *)entry.second)->value;
+                        } else if(entry.first == "method"){
+                            req->method = ((JSONString *)entry.second)->value;
+                        } else if(entry.first == "params"){
+                            JSONNodeType &Type = entry.second->type;
+                            if(Type == JSONNodeType::Object){
+                                LSPServerObject *cntr;
+                                translateJSONObject((JSONObject *)entry.second,cntr);
+                                req->params_object = cntr;
+                            } else if(Type == JSONNodeType::Array){
+                                translateJSONArray((JSONArray *)entry.second,&req->params_array);
+                            }
+                        }
+                    }
+                }
+                else {
+
+                }
+            };
+            void translateToJSON(LSPServerReply *msgtosnd,string *msgout){
+
+            };
+    };
 
 
 };
@@ -471,16 +534,22 @@ void Messenger::read(LSPServerMessage *msgcntr){
     std::string message;
     cin >> message;
     if(!message.empty()){
-        JSONObject *messagec;
-        JSONParser(message).parse(messagec);
+        
     }
 }
 
-void Messenger::reply(LSPServerReply result){
+void Messenger::reply(LSPServerReply *result){
     using namespace JSON;
     JSONObject *obj;
     JSONGenerator gen = JSONGenerator(obj);
     string *r;
     gen.generate(r);
     cout << "Content-Length:" << r->length() << "\r\nContent-Type:utf-8\r\n\r\n" << *r;
+    gen.freeString();
 }
+
+
+};
+};
+
+

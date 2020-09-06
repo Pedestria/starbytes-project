@@ -349,7 +349,7 @@ namespace Starbytes {
         };
         struct LSPIntializeParams : LSPWorkDoneProgressParams {
             bool hasProcessId;
-            int process_id;
+            std::string process_id;
             bool hasClientInfo;
             LSPClientInfo client_info;
             bool hasRootPath;

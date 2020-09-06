@@ -8,7 +8,7 @@ namespace Starbytes {
     namespace LSP {
 
     enum LSPObjectType:int {
-        CancellParams
+        CancellParams,IntializeParams
     };
     enum LSPMessageType:int {
         Request,Notification
@@ -45,10 +45,10 @@ namespace Starbytes {
     };
     struct LSPServerMessage { LSPMessageType type;};
     struct LSPServerRequest : LSPServerMessage {
-        int id;
+        std::string id;
         std::string method;
-        std::vector<LSPServerObject> params_array;
-        LSPServerObject params_object;
+        std::vector<LSPServerObject *> params_array;
+        LSPServerObject * params_object;
     };
 
     typedef std::string ProgressToken;
@@ -64,16 +64,17 @@ namespace Starbytes {
     };
     struct LSPServerNotification : LSPServerMessage {
         std::string method;
-        std::vector<LSPServerObject> params_array;
-        LSPServerObject params_object;
+        std::vector<LSPServerObject*> params_array;
+        LSPServerObject * params_object;
     };
 
     class Messenger {
+        private:
+
         public:
-            void reply(LSPServerReply result);
+            void reply(LSPServerReply *result);
             void read(LSPServerMessage *msgcntr);
-            Messenger(){
-            };
+            Messenger(){};
     };
 };
 
