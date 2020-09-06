@@ -43,9 +43,8 @@ namespace Starbytes {
         LSPServerObject object_result;
         LSPReplyError error;
     };
-    struct LSPServerMessage {};
+    struct LSPServerMessage { LSPMessageType type;};
     struct LSPServerRequest : LSPServerMessage {
-        LSPMessageType type = Request;
         int id;
         std::string method;
         std::vector<LSPServerObject> params_array;
@@ -64,7 +63,6 @@ namespace Starbytes {
         std::string string_id;
     };
     struct LSPServerNotification : LSPServerMessage {
-        LSPMessageType type = Notification;
         std::string method;
         std::vector<LSPServerObject> params_array;
         LSPServerObject params_object;
@@ -72,9 +70,8 @@ namespace Starbytes {
 
     class Messenger {
         public:
-            LSPServerMessage getMessage();
             void reply(LSPServerReply result);
-            void read();
+            void read(LSPServerMessage *msgcntr);
             Messenger(){
             };
     };
