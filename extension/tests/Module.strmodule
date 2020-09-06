@@ -4,7 +4,7 @@ get OtherLib
 
 module LIB:
 type: Library
-directory:"./test/LIB/*"
+directory: "./test/LIB/*"
 dependencies: [JSONLib,OtherLib]
 
 module Program:

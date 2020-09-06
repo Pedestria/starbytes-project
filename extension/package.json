@@ -28,6 +28,16 @@
                     "type": "number",
                     "default": 100,
                     "description": "Controls the maximum number of problems produced by the server."
+                },
+                "starbytesLSP.trace.server": {
+                    "type": "string",
+                    "default": "verbose",
+                    "enum": [
+                        "off",
+                        "messages",
+                        "verbose"
+                    ],
+                    "description": "Traces the communication between VS Code and the starbytes-lspserver language server."
                 }
             }
         },

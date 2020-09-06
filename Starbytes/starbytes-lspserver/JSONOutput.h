@@ -74,11 +74,8 @@ namespace Starbytes {
         public:
             LSPServerMessage getMessage();
             void reply(LSPServerReply result);
-            int p[2], i;
+            void read();
             Messenger(){
-                if(pipe(p) < 0)
-                    exit(1);  
-
             };
     };
 };

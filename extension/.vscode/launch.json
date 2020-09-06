@@ -10,7 +10,7 @@
         ],
         "request": "launch",
         "runtimeExecutable": "${execPath}",
-        "type": "pwa-extensionHost"
+        "type": "pwa-extensionHost",
     }
     ]
 }

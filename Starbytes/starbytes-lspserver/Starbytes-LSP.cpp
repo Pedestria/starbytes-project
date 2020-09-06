@@ -41,7 +41,7 @@ string help(){
  return "\n \u001b[35m\u001b[4m The Starbytes LSP Implementation!\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help info. \n";
 }
 
-bool parseArguments(char * arguments[],int count){
+bool parseArguments(char * arguments[],int count,int pipe_id){
     char ** flags = arguments;
     ++flags;
     vector<string> FLAGS;
@@ -49,16 +49,21 @@ bool parseArguments(char * arguments[],int count){
         FLAGS.push_back(string(*flags));
         ++flags;
     }
-    
-    for(auto f : FLAGS){
-        if(f == "--help"){
+    int index = 0;
+    while(index < FLAGS.size()){
+
+        if(FLAGS[index] == "--help"){
             cout << help();
             return false;
         }
+        // else if(FLAGS[index] == "--pipe"){
+        //     ++index;
+        //     pipe_id = stoi(FLAGS[index]);
+        // }
+        ++index;
     }
     return true;
 
-    
 }
 
 
@@ -68,7 +73,15 @@ int main(int argc, char* argv[]) {
     #ifdef _WIN32
     setupConsole();
     #endif
-    cout << help();
+    int pipe_id;
+    if(parseArguments(argv,argc,pipe_id)){
+        LSP::Messenger *messenger = new LSP::Messenger();
+        messenger->read();
+        // while(true){
+        //     messenger->read();
+        // }
+    }
+
     // if(!parseArguments(argv,argc)){
     //     return 0;
     // }
