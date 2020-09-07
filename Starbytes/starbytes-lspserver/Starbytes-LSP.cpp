@@ -76,7 +76,8 @@ int main(int argc, char* argv[]) {
     int pipe_id;
     if(parseArguments(argv,argc,pipe_id)){
         LSP::Messenger *messenger = new LSP::Messenger();
-        messenger->read();
+        LSP::LSPServerMessage *cntr;
+        messenger->read(cntr);
         // while(true){
         //     messenger->read();
         // }

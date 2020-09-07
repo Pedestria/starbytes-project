@@ -1,6 +1,7 @@
 #include "JSONOutput.h"
 #include "LSPProtocol.h"
 #include <cctype>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -463,29 +464,74 @@ namespace JSON {
     //Translates From JSON to LSPServerObject and Back.
     class JSONTranslator{
         private:
-            void translateJSONObject(JSONObject *node,LSPServerObject *cntr){
-                map<string,JSONNode *>::iterator it;
-                // it = node->entries.find("");
-                it = node->entries.find("processId");
-                if(it != node->entries.end()){
+            void translateLSPWorkspaceFolder(JSONObject *obj,LSPWorkspaceFolder *node);
+            void translateJSONObject(JSONObject *node,LSPServerObject *cntr,string& methodToInvoke){
+                if(methodToInvoke == "initialize"){
                     LSPIntializeParams *Node = new LSPIntializeParams();
                     Node->type = IntializeParams;
                     for(auto ent : node->entries){
                         if(ent.first == "processId"){
-                            Node->hasProcessId = true;
-                            Node->process_id = ((JSONString *)ent.second)->value;
-                        } else if(ent.first == "workDoneToken"){
-                            Node->work_done_token = ((JSONString *)ent.second)->value;
+                            Node->process_id = ((JSONString*)ent.second)->value;
+                        } else if(ent.first == "clientInfo"){
+                            Node->hasClientInfo = true;
+                            LSPClientInfo *info = new LSPClientInfo();
+                            info->type = ClientInfo;
+                            for(auto ent2 : ((JSONObject*)ent.second)->entries){
+                                if(ent2.first == "name"){
+                                    info->name = ((JSONString *)ent2.second)->value;
+                                } else if(ent2.first == "version"){
+                                    info->hasVersion = true;
+                                    info->version = ((JSONString*)ent2.second)->value;
+                                }
+                            }
+                            Node->client_info = info;
+                        } else if(ent.first == "rootPath"){
+                            Node->hasRootPath = true;
+                            Node->root_path = ((JSONString *)ent.second)->value;
+                        } else if(ent.first == "rootUri"){
+                            if(ent.second->type == JSONNodeType::String){
+                                Node->hasRootUri = true;
+                                Node->root_uri = ((JSONString *)ent.second)->value;
+                            }
+                        } else if(ent.first == "capabilities"){
+                            LSPClientCapabilities *clientcap = new LSPClientCapabilities();
+                            for(auto ent2 : ((JSONObject *)ent.second)->entries){
+                                if(ent2.first == "workspace"){
+                                    clientcap->hasWorkspace = true;
+                                    LSPClientCapabilitiesWorkspace *wrkspce = new LSPClientCapabilitiesWorkspace();
+                                    
+                                }
+                            }
+                        } else if(ent.first == "trace"){
+                            Node->hasTrace = true;
+                            JSONString * s = (JSONString*)ent.second;
+                            if(s->value == "off"){
+                                Node->trace = LSPTraceSetting::Off;
+                            } else if(s->value == "messages"){
+                                Node->trace = LSPTraceSetting::Messages;
+                            } else if(s->value == "verbose"){
+                                Node->trace = LSPTraceSetting::Verbose;
+                            }
+                        } else if(ent.first == "workspaceFolders"){
+                            Node->hasWorkspacefolders = true;
+                            if(ent.second->type == JSONNodeType::Array){
+                                for(auto obj : ((JSONArray *)ent.second)->objects){
+                                    LSPWorkspaceFolder *folder = new LSPWorkspaceFolder();
+                                    translateLSPWorkspaceFolder((JSONObject *)obj,folder);
+                                    Node->workspace_folders.push_back(folder);
+                                }
+                            }else {
+                                Node->hasWorkspacefolders = false;
+                            }
                         }
                     }
                 }
-
             };
-            void translateJSONArray(JSONArray *node,std::vector<LSPServerObject *> *resloc){
+            void translateJSONArray(JSONArray *node,std::vector<LSPServerObject *> *resloc,string& methodToInvoke){
                 for(auto NODE : node->objects){
                     if(NODE->type == JSONNodeType::Object){
                         LSPServerObject *cntr;
-                        translateJSONObject((JSONObject *)NODE,cntr);
+                        translateJSONObject((JSONObject *)NODE,cntr,methodToInvoke);
                         resloc->push_back(cntr);
                     }
                 }
@@ -508,10 +554,10 @@ namespace JSON {
                             JSONNodeType &Type = entry.second->type;
                             if(Type == JSONNodeType::Object){
                                 LSPServerObject *cntr;
-                                translateJSONObject((JSONObject *)entry.second,cntr);
+                                translateJSONObject((JSONObject *)entry.second,cntr,req->method);
                                 req->params_object = cntr;
                             } else if(Type == JSONNodeType::Array){
-                                translateJSONArray((JSONArray *)entry.second,&req->params_array);
+                                translateJSONArray((JSONArray *)entry.second,&req->params_array,req->method);
                             }
                         }
                     }

@@ -11,7 +11,7 @@
 namespace Starbytes {
     namespace LSP {
         typedef std::string LSPDocumentURI;
-        std::vector<std::string> LSPEOLChars = {"\r\n","\n","\r"};
+        // std::vector<std::string> LSPEOLChars = {"\r\n","\n","\r"};
 
         struct LSPPosition : LSPServerObject {
             int line;
@@ -328,6 +328,132 @@ namespace Starbytes {
             LSPWorkspaceSymbolClientCapabilitiesSymbolKind symbol_kind;
         };
 
+        struct LSPWorkspaceSymbolOptions : LSPWorkDoneProgressParams {};
+
+        struct LSPWorkspaceSymbolRegistrationOptions : LSPWorkspaceSymbolOptions {};
+
+        struct LSPWorkspaceSymbolParams : LSPWorkDoneProgressParams, LSPPartialResultParams {
+            std::string query;
+        };
+
+        struct LSPExecuteCommandClientCapabilities : LSPServerObject {
+            bool dynamic_registration;
+        }; 
+
+        struct LSPExecuteCommandOptions : LSPWorkDoneProgressOptions {
+            std::vector<std::string> commands;
+        };
+
+        struct LSPExecuteCommandRegistrationOptions : LSPExecuteCommandOptions {};
+
+        struct LSPExecuteCommandParams : LSPWorkDoneProgressParams {
+            std::string command;
+            bool hasArguments;
+            std::vector<LSPServerObject *> arguments;
+        };
+
+        struct LSPApplyWorkspaceEditParams : LSPServerObject {
+            bool hasLabel;
+            std::string label;
+            LSPWorkspaceEdit* edit;
+        };
+
+        struct LSPApplyWorkspaceEditResponse : LSPServerObject {
+            bool applied;
+            bool hasFailureReason;
+            std::string failure_reason;
+        };
+
+        enum class LSPTextDocumentSyncKind:int {
+            None,Full,Incremental
+        };
+
+        struct LSPTextDocumentSyncOptions : LSPServerObject {
+            bool hasOpenClose;
+            bool open_close;
+            bool hasChange;
+            LSPTextDocumentSyncKind change;
+        };
+
+        struct LSPDidOpenTextDocumentParams : LSPServerObject {
+            LSPTextDocumentItem text_document;
+        };
+
+        struct LSPTextDocumentChangeRegistrationOptions : LSPTextDocumentRegistrationOptions {
+            LSPTextDocumentSyncKind sync_kind;
+        };
+
+        struct LSPTextDocumentContentChangeEvent : LSPServerObject {
+            bool hasRange;
+            LSPRange range;
+            // bool hasRangeLength;
+            // //@Deprectated
+            // int range_length;
+            std::string text;
+        };
+
+        struct LSPDidChangeTextDocumentParams : LSPServerObject {
+            LSPVersionedTextDocumentIdentfier text_document;
+            std::vector<LSPTextDocumentContentChangeEvent *> content_changes;
+        };
+
+        enum class LSPTextDocumentSaveReason:int {
+            Manual = 1,AfterDelay,FocusOut
+        };
+
+        struct LSPWillSaveTextDocumentParams : LSPServerObject {
+            LSPTextDocumentIdentifier text_document;
+            LSPTextDocumentSaveReason reason;
+        };
+
+        struct LSPSaveOptions : LSPServerObject {
+            bool hasIncludeText;
+            bool include_text;
+        };
+
+        struct LSPTextDocumentSaveRegistrationOptions : LSPTextDocumentRegistrationOptions {
+            bool hasIncludeText;
+            bool include_text;
+        };
+
+        struct LSPDidSaveTextDocumentParams : LSPServerObject {
+            LSPTextDocumentIdentifier text_document;
+            bool hasText;
+            std::string text;
+        };
+
+        struct LSPDidCloseTextDocumentParams : LSPServerObject {
+            LSPTextDocumentIdentifier text_document;
+        };
+
+        struct LSPTextDocumentSyncClientCapabilities : LSPServerObject {
+            bool dynamic_registration;
+            bool will_save;
+            bool will_save_wait_until;
+            bool did_save;
+        };
+
+        struct LSPTagSupport : LSPServerObject {
+            std::vector<LSPDiagonisticTag> value_set;
+        };
+
+        struct LSPPublishDiagnosticsClientCapabilities : LSPServerObject {
+            bool related_information;
+            bool hasTagSupport;
+            LSPTagSupport tag_support;
+            bool version_support;
+        };
+
+        struct LSPPublishDiagnosticsParams : LSPServerObject {
+            LSPDocumentURI uri;
+            bool hasVersion;
+            int version;
+            std::vector<LSPDiagnostic *> diagnostics;
+        };
+
+        //TODO GO TO HERE!
+        // AGAGIN!!!!!!!!!!!!!!!!
+
         struct LSPTextDocumentClientCapabilities: LSPServerObject {};
         struct LSPClientCapabilitiesWorkspace : LSPServerObject {
             bool apply_edit;
@@ -351,17 +477,19 @@ namespace Starbytes {
             bool hasProcessId;
             std::string process_id;
             bool hasClientInfo;
-            LSPClientInfo client_info;
+            LSPClientInfo* client_info;
             bool hasRootPath;
             std::string root_path;
             bool hasRootUri;
             LSPDocumentURI root_uri;
-            LSPStarbytesIntializationOptions intialization_options;
+            LSPStarbytesIntializationOptions* intialization_options;
             //TODO CAPABILITIES!
-            LSPClientCapabilities capabilites;
+            LSPClientCapabilities* capabilites;
             bool hasTrace;
             LSPTraceSetting trace;
             //TODO WORKSPACE_FOLDERS!
+            bool hasWorkspacefolders;
+            std::vector<LSPWorkspaceFolder *> workspace_folders;
         };
 
         struct LSPServerCapabilities : LSPServerObject {

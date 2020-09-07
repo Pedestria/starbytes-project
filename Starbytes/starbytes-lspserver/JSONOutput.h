@@ -8,7 +8,7 @@ namespace Starbytes {
     namespace LSP {
 
     enum LSPObjectType:int {
-        CancellParams,IntializeParams
+        CancellParams,IntializeParams,ClientInfo,ClientCapabilities
     };
     enum LSPMessageType:int {
         Request,Notification
