@@ -3,7 +3,7 @@
 #include "Document.h"
 
 namespace Starbytes {
-	enum class TokenType :int {
+	enum class TokenType:int {
 		Keyword, Identifier, Operator,Comma,Typecast,DoubleOperator,Quote,Dot,Semicolon,Numeric,EndOfFile,OpenBrace,CloseBrace,OpenBracket,CloseBracket,OpenParen,CloseParen,OpenCarrot,CloseCarrot
 	};
 	class Token

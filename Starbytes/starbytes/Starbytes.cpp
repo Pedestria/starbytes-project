@@ -3,6 +3,7 @@
 #include "Starbytes.h"
 #include "Parser/AST.h"
 #include <stdio.h>
+#include <fstream>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -45,7 +46,7 @@ string convertPosition(DocumentPosition pos){
 }
 
 string help(){
-	return "\u001b[35m\u001b[4mThe Starbytes Compiler (v. 0.0.1a)\u001b[0m \n \n\u001b[4mFlags:\u001b[0m \n \n--help = Display help information";
+	return "\n \u001b[35m\u001b[4mThe Starbytes Compiler (v. 0.0.1a)\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help information";
 }
 
 bool parseArguments(char * arguments[],int count){
@@ -72,26 +73,30 @@ int main(int argc, char* argv[]) {
 	#ifdef _WIN32
 	setupConsole();
 	#endif
+	if(!parseArguments(argv,argc)){
+		return 0;
+	}
+	else{
+			// cout << help();
+		// cout << loghelp() << "\n";
+		string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\nfunc hello (hello:String,moma:String) >> String {\n \n}\ndecl immutable hellop:Array = [\"One\",\"Two\"]\nclass Other {}\nclass SomeClass extends Other {}";
+		string test2 = "import library\nimport otherLibrary";
+		auto result = Lexer(test).tokenize();
+		// for (Token tok : result) {
+		// 	cout << "Content:"+tok.getContent() << "\t" << "Type: " << int(tok.getType()) << "\t" << "Position:"+convertPosition(tok.getPosition());
+		// }
+		AbstractSyntaxTree *tree = new AbstractSyntaxTree();
 
-	// cout << help();
-	// cout << loghelp() << "\n";
-	string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\nfunc hello (hello:String,moma:String) >> String {\n \n}";
-	string test2 = "import library\nimport otherLibrary";
-	auto result = Lexer(test).tokenize();
-	// // for (Token tok : result) {
-	// // 	cout << "Content:"+tok.getContent() << "\t" << "Type: " << int(tok.getType()) << "\t" << "Position:"+convertPosition(tok.getPosition());
-	// // }
-	AbstractSyntaxTree *tree = new AbstractSyntaxTree();
+		try {
+			auto parser = Parser(result,tree);
+			parser.convertToAST();
 
-	try {
-		auto parser = Parser(result,tree);
-		parser.convertToAST();
-
-		for(auto node : tree->nodes){
-			cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
+			for(auto node : tree->nodes){
+				cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
+			}
+		} catch (string message) {
+			cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
 		}
-	} catch (string message) {
-		cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
 	}
 	return 0;
 }

@@ -10,7 +10,7 @@ add_subdirectory("starbytes-lib")
 add_subdirectory("starbytes")
 add_subdirectory("starbytes-lspserver")
 
-set(STARBYTES_ALL_LIBS "starbytes-lib-parser")
+set(STARBYTES_ALL_LIBS "starbytes-parser" "starbytes-semantics")
 
 
 #target_link_libraries(CPlusPlus PRIVATE nlohmann_json nlohmann_json::nlohmann_json)

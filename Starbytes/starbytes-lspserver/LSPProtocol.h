@@ -433,14 +433,14 @@ namespace Starbytes {
             bool did_save;
         };
 
-        struct LSPTagSupport : LSPServerObject {
+        struct LSPTagSupportPC : LSPServerObject {
             std::vector<LSPDiagonisticTag> value_set;
         };
 
         struct LSPPublishDiagnosticsClientCapabilities : LSPServerObject {
             bool related_information;
             bool hasTagSupport;
-            LSPTagSupport tag_support;
+            LSPTagSupportPC tag_support;
             bool version_support;
         };
 
@@ -451,8 +451,104 @@ namespace Starbytes {
             std::vector<LSPDiagnostic *> diagnostics;
         };
 
-        //TODO GO TO HERE!
-        // AGAGIN!!!!!!!!!!!!!!!!
+        enum class LSPCompletionTriggerKind:int {
+            Invoked = 1,TriggerCharacter,TriggerForIncompleteCompletions
+        };
+        struct LSPCompletetionContext : LSPServerObject {
+            LSPCompletionTriggerKind triggerKind;
+            bool hasTriggerCharacter;
+            std::string trigger_character;
+        }; 
+
+        struct LSPCompletionParams : LSPTextDocumentPositionParams,LSPWorkDoneProgressParams,LSPPartialResultParams {
+            bool hasContext;
+            LSPCompletetionContext context;
+        };
+
+        enum class LSPCompletionItemTag:int {
+            Deprecated = 1
+        };
+
+        enum class LSPInsertTextFormat:int {
+            PlainText = 1,Snippet = 2
+        };
+
+        enum class LSPCompletionItemKind:int {
+            Text = 1,Method,Function,Constructor,Field,Variable,Class,
+            Interface,Module,Property,Unit,Value,Enum,Keyword,Snippet,
+            Color,File,Reference,Folder,EnumMember,Constant,Struct,Event,Operator,TypeParameter
+        };
+
+        struct LSPCompletionItem : LSPServerObject {
+            std::string label;
+            bool hasKind;
+            LSPCompletionItemKind kind;
+            bool hasTags;
+            std::vector<LSPCompletionItemTag> tags;
+            bool hasDetail;
+            std::string detail;
+            bool hasDocumentation;
+            LSPMarkupContent documentation;
+            bool deprecated;
+            bool preselect;
+            bool sort_text;
+            bool hasFilterText;
+            std::string filter_text;
+            bool hasInsertText;
+            std::string insert_text;
+            bool hasInsertTextFormat;
+            LSPInsertTextFormat insert_text_format;
+            bool hasTextEdit;
+            LSPTextEdit * text_edit;
+            bool hasAdditionalTextEdits;
+            std::vector<LSPTextEdit *> additional_text_edits;
+            bool hasCommitCharacters;
+            std::vector<std::string> commit_characters;
+            bool hasCommand;
+            LSPCommand command;
+        };
+
+        struct LSPCompletionList : LSPServerObject {
+            bool is_incomplete;
+            std::vector<LSPCompletionItem *> items;
+        };
+        struct LSPTagSupportCC : LSPServerObject {
+            std::vector<LSPCompletionItemTag> value_set;
+        };
+
+        struct LSPCompletionItemKindCC : LSPServerObject {
+            bool hasValueSet;
+            std::vector<LSPCompletionItemKind> value_set;
+        };
+        struct LSPCompletionClientCapabilitiesCompletion : LSPServerObject {
+            bool snippet_support;
+            bool commit_characters_support;
+            bool hasDocumentationFormat;
+            std::vector<LSPMarkupKind *> documentation_format;
+            bool deprecated_support;
+            bool preselect_support;
+            bool hasTagSupport;
+            LSPTagSupportCC tag_support;
+            bool hasCompletionItemKind;
+            LSPCompletionItemKindCC completion_item_kind;
+            bool context_support;
+
+        };
+
+        struct LSPCompletionOptions : LSPWorkDoneProgressOptions {
+            bool hasTriggerCharacters;
+            std::vector<std::string> trigger_characters;
+            bool hasAllCommitCharacters;
+            std::vector<std::string> all_commit_characters;
+            bool resolve_provider;
+        };
+
+        struct LSPCompletionRegistrationOptions : LSPTextDocumentRegistrationOptions, LSPCompletionOptions {};
+
+       struct LSPCompletionClientCapabilities : LSPServerObject {
+           bool dynamic_registration;
+
+       };
 
         struct LSPTextDocumentClientCapabilities: LSPServerObject {};
         struct LSPClientCapabilitiesWorkspace : LSPServerObject {

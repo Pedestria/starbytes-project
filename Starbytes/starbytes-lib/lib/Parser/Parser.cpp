@@ -673,20 +673,22 @@ void Parser::parseClassDeclaration(std::vector<ASTStatement *> *container){
         if(tok2->getType() == TokenType::Keyword){
             KeywordType match = matchKeyword(tok2->getContent());
             if(match == KeywordType::Extends){
+                incrementToNextToken();
                 Token *tok3 = aheadToken();
                 if(tok3->getType() == TokenType::Identifier){
                     ASTTypeIdentifier *tid = new ASTTypeIdentifier();
                     parseTypeIdentifier(tid);
                     node->isChildClass = true;
                     node->superclass = tid;
-                    tok2 = nextToken();
+                    tok2 = aheadToken();
                 }
                 else{
                     throw StarbytesParseError("Expected Identifier!",tok3->getPosition());
                 }   
             }
             KeywordType match2 = matchKeyword(tok2->getContent());
-            if(match == KeywordType::Utilizes){
+            if(match2 == KeywordType::Utilizes){
+                incrementToNextToken();
                 Token *tok4 = aheadToken();
                 if(tok4->getType() == TokenType::Identifier){
                     ASTTypeIdentifier *tid = new ASTTypeIdentifier();
@@ -723,6 +725,7 @@ void Parser::parseClassDeclaration(std::vector<ASTStatement *> *container){
             parseClassBlockStatement(block);
             node->body = block;
             node->EndFold = currentToken()->getPosition();
+            container->push_back(node);
         }
         else{
             throw StarbytesParseError("Expected Open Brace!",tok2->getPosition());
@@ -739,13 +742,13 @@ void Parser::parseClassBlockStatement(ASTClassBlockStatement *ptr){
     ptr->BeginFold = tok->getPosition();
     if(tok->getType() == TokenType::OpenBrace){
         while(true){
+            incrementToNextToken();
             if(currentToken()->getType() == TokenType::CloseBrace){
                 break;
             }
             else{
                 parseClassStatement(&ptr->nodes);
             }
-            incrementToNextToken();
         }
         ptr->EndFold = currentToken()->getPosition();
     }
@@ -755,7 +758,7 @@ void Parser::parseClassBlockStatement(ASTClassBlockStatement *ptr){
 }
 
 void Parser::parseClassStatement(std::vector<ASTClassStatement *> * container){
-    Token *tok = nextToken();
+    Token *tok = currentToken();
     if(tok->getType() == TokenType::Keyword){
         KeywordType match = matchKeyword(tok->getContent());
         if(match == KeywordType::New){
@@ -1089,30 +1092,27 @@ void Parser::parseConstantDeclaration(std::vector<ASTStatement *> * container){
     node->type = ASTType::ConstantDeclaration;
     //Begins at '[HERE]decl immutable value = 4'
     node->BeginFold = currentToken()->getPosition();
-    Token *tok = nextToken();
-    if(tok->getType() == TokenType::Identifier){
-         ASTConstantSpecifier *node0 = new ASTConstantSpecifier();
-        //CurrentToken: Keyword before Id!
-        parseConstantSpecifier(node0);
-        node->specifiers.push_back(node0);
-        //CurrentToken: EXPRESSION_RELATED_KEYWORD before Comma or OTHER_TOKEN
-        if(aheadToken()->getType() == TokenType::Comma){
-            while(true){
-                if(aheadToken()->getType() == TokenType::Comma){
-                    ASTConstantSpecifier * node1 = new ASTConstantSpecifier();
-                    parseConstantSpecifier(node1);
-                    node->specifiers.push_back(node1);
-                } else {
-                    break;
-                }
+    //Skip to `immutable` keyword!
+    incrementToNextToken();
+    ASTConstantSpecifier *node0 = new ASTConstantSpecifier();
+    //CurrentToken: Keyword before Id!
+    parseConstantSpecifier(node0);
+    node->specifiers.push_back(node0);
+    //CurrentToken: EXPRESSION_RELATED_KEYWORD before Comma or OTHER_TOKEN
+    if(aheadToken()->getType() == TokenType::Comma){
+        while(true){
+            if(aheadToken()->getType() == TokenType::Comma){
+                ASTConstantSpecifier * node1 = new ASTConstantSpecifier();
+                parseConstantSpecifier(node1);
+                node->specifiers.push_back(node1);
+            } else {
+                break;
             }
         }
-        //CurrentToken: before OTHER_Statement
-        node->EndFold = currentToken()->getPosition();
-        container->push_back(node);
-    }else {
-        throw StarbytesParseError("Expected Identifer!",tok->getPosition());
     }
+    //CurrentToken: before OTHER_Statement
+    node->EndFold = currentToken()->getPosition();
+    container->push_back(node);
 
 }
 
@@ -1138,6 +1138,11 @@ void Parser::parseConstantSpecifier(ASTConstantSpecifier *ptr){
         //CurrentToken: ID Before Equals
         if(tok3->getType() == TokenType::Operator && tok3->getContent() == "="){
             //PARSE EXPRESSION! OR LITERAL!
+            ASTExpression *node;
+            incrementToNextToken();
+            parseExpression(node);
+            ptr->initializer = node;
+            ptr->EndFold = currentToken()->getPosition();
         }
         else {
             throw StarbytesParseError("Expected `=` Operator! (Constants require assignment)",tok3->getPosition());

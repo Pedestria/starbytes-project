@@ -2,9 +2,9 @@ add_executable(starbytes "Starbytes.cpp" "Starbytes.h")
 
 
 # find_package(nlohmann_json CONFIG REQUIRED)
-add_dependencies(starbytes "starbytes-lib-parser")
+add_dependencies(starbytes "starbytes-parser")
 include_directories(${STARBYTES_LIB_INCLUDE})
-target_link_libraries(starbytes "starbytes-lib-parser")
+target_link_libraries(starbytes "starbytes-parser")
 if(APPLE)
     add_clang_lib(starbytes)
 endif()
