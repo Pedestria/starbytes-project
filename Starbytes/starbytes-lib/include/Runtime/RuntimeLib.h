@@ -5,9 +5,6 @@
 namespace Starbytes {
     namespace Runtime {
         namespace Lib {
-            class SBChar {
-
-            };
             /*Starbytes String*/
             class SBString{
                 private:
@@ -15,7 +12,7 @@ namespace Starbytes {
                 public:
                     SBString(std::string v):INTERAL_STRING(v){};
                     void append();
-                    SBChar * atIndex(int i);
+                    SBString * atIndex(int i);
                     void sliceAt(int i);
                     void findSubstr(SBString *substr);
             };
@@ -25,9 +22,24 @@ namespace Starbytes {
                     std::vector<_Type> INTERNAL_ARRAY;
                 public:
                     SBArray<_Type>(std::vector<_Type> v):INTERNAL_ARRAY(v){};
-                    void push();
-                    void filter(bool condition);
-                    void find(bool condition);
+                    void push(_Type item){
+                        INTERNAL_ARRAY.push_back(item);
+                    };
+                    void filter(bool (*cond)(_Type item)){
+                        for(int i = 0;i < INTERNAL_ARRAY.size();++i){
+                            if(cond(INTERNAL_ARRAY[i])){
+                                INTERNAL_ARRAY.erase(INTERNAL_ARRAY.begin()+i);
+                            }
+                        }
+                    };
+                    bool find(bool (*cond)(_Type item)){
+                        for(_Type it : INTERNAL_ARRAY){
+                            if(cond(it)){
+                                return true;
+                            }
+                        }
+                        return false;
+                    };
                     _Type * getAt(int i);
             };
 

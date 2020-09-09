@@ -4,6 +4,7 @@
 #include "Parser/AST.h"
 #include <stdio.h>
 #include <fstream>
+#include <string>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -49,7 +50,12 @@ string help(){
 	return "\n \u001b[35m\u001b[4mThe Starbytes Compiler (v. 0.0.1a)\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help information";
 }
 
-bool parseArguments(char * arguments[],int count){
+struct StarbytesArgs {
+	string module_file;
+};
+
+StarbytesArgs * parseArguments(char * arguments[],int count){
+	StarbytesArgs *arg = new StarbytesArgs();
     char ** flags = arguments;
     ++flags;
     vector<string> FLAGS;
@@ -57,14 +63,17 @@ bool parseArguments(char * arguments[],int count){
         FLAGS.push_back(string(*flags));
         ++flags;
     }
-    
-    for(auto f : FLAGS){
-        if(f == "--help"){
+    int i = 0;
+    while (i < FLAGS.size()) {
+        if(FLAGS[i] == "--help"){
             cout << help();
-            return false;
-        }
+            exit(0);
+        } else if(FLAGS[i] == "--module-file"){
+			arg->module_file = FLAGS[++i];
+		}
+		++i;
     }
-    return true;
+    return arg;
 
     
 }
@@ -73,10 +82,8 @@ int main(int argc, char* argv[]) {
 	#ifdef _WIN32
 	setupConsole();
 	#endif
-	if(!parseArguments(argv,argc)){
-		return 0;
-	}
-	else{
+	StarbytesArgs *args = parseArguments(argv,argc);
+	
 			// cout << help();
 		// cout << loghelp() << "\n";
 		string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\nfunc hello (hello:String,moma:String) >> String {\n \n}\ndecl immutable hellop:Array = [\"One\",\"Two\"]\nclass Other {}\nclass SomeClass extends Other {}";
@@ -97,7 +104,6 @@ int main(int argc, char* argv[]) {
 		} catch (string message) {
 			cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
 		}
-	}
 	return 0;
 }
 
