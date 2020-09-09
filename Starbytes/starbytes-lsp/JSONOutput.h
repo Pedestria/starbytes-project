@@ -8,17 +8,17 @@ namespace Starbytes {
     namespace LSP {
 
     enum LSPObjectType:int {
-        CancellParams,IntializeParams,ClientInfo,ClientCapabilities
+        CancellParams,IntializeParams,ClientInfo,ClientCapabilities,WorkspaceFolder,InitializeResult,CompletionOptions,HoverOptions,ReplyError
     };
     enum LSPMessageType:int {
         Request,Notification
     };
-    //The Lanugage Server Protocol Object that all objects extend!
+    //The Language Server Protocol Object that all objects extend!
     struct LSPServerObject {
         LSPObjectType type;
     };
 
-    struct LSReplyErrorData {
+    struct LSReplyErrorData : LSPServerObject {
         std::string str_data;
         int int_data;
         bool bool_data;
@@ -30,7 +30,7 @@ namespace Starbytes {
         ParseError = -32700,InvalidRequest = -32600,MethodNotFound = -32601,InvalidParams = -32602,InternalError = -32603, serverErrorStart = -32099,serverErrorEnd = -32000, ServerNotIntialized = -32002,UnknownErrorCode = -32001, RequestCancelled = -32800,ContentModified = -32801
     };
 
-    struct LSPReplyError {
+    struct LSPReplyError : LSPServerObject {
         LSPErrorCode code;
         std::string message;
         LSReplyErrorData data;
@@ -40,8 +40,8 @@ namespace Starbytes {
         std::string str_result;
         int int_result;
         bool bool_result;
-        LSPServerObject object_result;
-        LSPReplyError error;
+        LSPServerObject * object_result;
+        LSPReplyError * error;
     };
     struct LSPServerMessage { LSPMessageType type;};
     struct LSPServerRequest : LSPServerMessage {
@@ -72,6 +72,7 @@ namespace Starbytes {
         private:
 
         public:
+            void sendIntializeMessage();
             void reply(LSPServerReply *result);
             void read(LSPServerMessage *msgcntr);
             Messenger(){};

@@ -8,7 +8,7 @@
 set(STARBYTES_LIB_INCLUDE ${CMAKE_SOURCE_DIR}/Starbytes/starbytes-lib/include)
 add_subdirectory("starbytes-lib")
 add_subdirectory("starbytes")
-add_subdirectory("starbytes-lspserver")
+add_subdirectory("starbytes-lsp")
 
 set(STARBYTES_ALL_LIBS "starbytes-parser" "starbytes-semantics")
 

@@ -41,7 +41,7 @@ string help(){
  return "\n \u001b[35m\u001b[4m The Starbytes LSP Implementation!\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help info. \n";
 }
 
-bool parseArguments(char * arguments[],int count,int pipe_id){
+bool parseArguments(char * arguments[],int count){
     char ** flags = arguments;
     ++flags;
     vector<string> FLAGS;
@@ -66,6 +66,20 @@ bool parseArguments(char * arguments[],int count,int pipe_id){
 
 }
 
+// using namespace LSP;
+
+// void StarbytesLSPServer::init(int argc, char* argv[]){
+//     if(parseArguments(argv,argc)){
+//         LSP::LSPServerMessage *cntr;
+//         json_transit.read(cntr);
+//        if(cntr->type == Request){
+//            if(((LSPServerRequest *)cntr)->method == "intialize" ){
+
+//            }
+//        }
+//     }
+// };
+
 
 
 
@@ -73,24 +87,18 @@ int main(int argc, char* argv[]) {
     #ifdef _WIN32
     setupConsole();
     #endif
-    int pipe_id;
-    if(parseArguments(argv,argc,pipe_id)){
-        LSP::Messenger *messenger = new LSP::Messenger();
-        LSP::LSPServerMessage *cntr;
-        messenger->read(cntr);
-        // while(true){
-        //     messenger->read();
-        // }
-    }
 
-    // if(!parseArguments(argv,argc)){
-    //     return 0;
-    // }
-    // else {
-    //     // LSP::Messenger::getMessage();
-    //     // LSP::LSPServerReply reply;
-    //     // reply.str_result = "RESULT!";
-    //     // LSP::Messenger::reply(reply,1);
-    // }
+    // StarbytesLSPServer server;
+    // server.init(argc,argv);
+
+    if(!parseArguments(argv,argc)){
+        return 0;
+    }
+    else {
+        LSP::Messenger json_transit;
+        LSP::LSPServerRequest * msg;
+        json_transit.read(msg);
+        json_transit.sendIntializeMessage();
+    }
     // cout << help();
 }

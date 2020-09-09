@@ -1,11 +1,10 @@
 #include "JSONOutput.h"
 #include "LSPProtocol.h"
 #include <cctype>
-#include <cstdlib>
+#include <cstdio>
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <unistd.h>
 #include <map>
 #include <array>
 #include <vector>
@@ -16,6 +15,7 @@ namespace Starbytes {
 namespace LSP {
 
 namespace JSON {
+
     enum class JSONNodeType:int {
         Object,Array,String,Number,Null,Boolean
     };
@@ -46,6 +46,8 @@ namespace JSON {
         CloseBrace,CloseBracket,OpenBrace,OpenBracket,Numeric,String,Colon,Comma,Boolean,Null
     };
 
+    typedef pair<string,JSONNode *> JSONObjEntry;
+
     string StarbytesLSPJsonError(string message){
         return "JSONParser Error: \n"+message;
     }
@@ -74,6 +76,63 @@ namespace JSON {
         string content;
         JSONTokType type;
     };
+
+    JSONObject * createJSONObject(initializer_list<pair<string,JSONNode *>> ilist){
+        JSONObject *obj = new JSONObject();
+        obj->type = JSONNodeType::Object;
+        for(auto ent : ilist){
+            ent.first = "\""+ent.first+"\"";
+            obj->entries.insert(ent);
+        }
+        return obj;
+    }
+
+    JSONArray * createJSONArray(initializer_list<JSONNode *> ilist){
+        JSONArray *array = new JSONArray();
+        array->type = JSONNodeType::Array;
+        array->objects = vector(ilist);
+        return array;
+    }
+
+    JSONString * createJSONString(bool wrapQuotes,string value){
+        JSONString *str = new JSONString();
+        str->type = JSONNodeType::String;
+        if(wrapQuotes){
+            value = "\""+value+"\"";
+        }
+        str->value = value;
+        return str;
+    }
+
+    JSONNumber * createJSONNumber(string value){
+        JSONNumber *num = new JSONNumber();
+        num->type = JSONNodeType::Number;
+        num->value = value;
+        return num;
+    };
+
+    JSONBoolean * createJSONBoolean(bool value){
+        JSONBoolean *bol =  new JSONBoolean();
+        bol->type = JSONNodeType::Boolean;
+        bol->value = value;
+        return bol;
+    }
+
+    JSONNull * createJSONNull (string value){
+        JSONNull *nil = new JSONNull();
+        nil->type = JSONNodeType::Null;
+        return nil;
+    }
+
+    JSONArray * convertStringArray(std::vector<std::string> *c){
+        JSONArray * ar = createJSONArray({});
+        for(auto str : *c){
+            ar->objects.push_back(createJSONString(true,str));
+        }
+        return ar;
+    }
+
+
 
     class JSONGenerator{
         private:
@@ -172,15 +231,14 @@ namespace JSON {
             }
         public:
             JSONGenerator(JSONObject *_tree):tree(_tree){}
-            void generate(string *_resultc){
+            string * generate(){
                 generateJSONObject(tree);
-                _resultc = new string();
+                
+                string * _resultc = new string();
                 *_resultc = result.str();
                 ptr = _resultc;
+                return _resultc;
             };
-            void freeString(){
-                delete ptr;
-            }
     };
 
     class JSONParser {
@@ -374,8 +432,8 @@ namespace JSON {
                                 node = new JSONNumber();
                                 parseJSONNumber((JSONNumber *)node);
                             }else if(*TYPE == JSONTokType::Boolean){
-                                    node = new JSONBoolean();
-                                    parseJSONBoolean((JSONBoolean *)node);
+                                node = new JSONBoolean();
+                                parseJSONBoolean((JSONBoolean *)node);
                             } else if(*TYPE == JSONTokType::Null){
                                 node = new JSONNull();
                                 parserJSONNull((JSONNull *) node);
@@ -420,7 +478,7 @@ namespace JSON {
                                     node = new JSONNull();
                                     parserJSONNull((JSONNull *) node);
                                 }
-                                obj->entries.insert(pair<string,JSONNode *>(key,node));
+                                obj->entries.insert(JSONObjEntry(key,node));
                             }
                             else {
                                 StarbytesLSPJsonError("Expected Colon");
@@ -440,7 +498,7 @@ namespace JSON {
             }
         public:
             JSONParser(string code) : code(code),currentIndex(code.find("{")){};
-            void parse(JSONObject *loc){
+            JSONObject * parse(){
                 tokenize();
                 // auto toks = tokens;
                 // for(auto tok : toks){
@@ -450,13 +508,14 @@ namespace JSON {
                 try {
                     tokenIndex = 0;
                     parseJSONObject(parseResult);
-                    loc = parseResult;
+                    return parseResult;
                     // for(auto entries : parseResult->entries){
                     //     cout << "{Key:" << entries.first << ",NodeType:" << int(entries.second->type) << "}";
                     // }
                 }
                 catch (string message){
                     cout << message << "\n";
+                    return nullptr;
                 }
 
             }
@@ -464,7 +523,16 @@ namespace JSON {
     //Translates From JSON to LSPServerObject and Back.
     class JSONTranslator{
         private:
-            void translateLSPWorkspaceFolder(JSONObject *obj,LSPWorkspaceFolder *node);
+            void translateLSPWorkspaceFolder(JSONObject *obj,LSPWorkspaceFolder *node){
+                node->type = WorkspaceFolder;
+                for(auto ent : obj->entries){
+                    if(ent.first == "uri"){
+                        node->uri = ((JSONString *)ent.second)->value;
+                    } else if(ent.first == "name"){
+                        node->name = ((JSONString *)ent.second)->value;
+                    }
+                }
+            };
             void translateJSONObject(JSONObject *node,LSPServerObject *cntr,string& methodToInvoke){
                 if(methodToInvoke == "initialize"){
                     LSPIntializeParams *Node = new LSPIntializeParams();
@@ -539,8 +607,7 @@ namespace JSON {
         public:
             JSONTranslator(){};
             void translateFromJSON(LSPServerMessage *msgcntr,string &message){
-                JSONObject *messagec;
-                JSONParser(message).parse(messagec);
+                JSONObject *messagec = JSONParser(message).parse();
                 map<string,JSONNode*>::iterator it = messagec->entries.find("id");
                 if(it != messagec->entries.end()){
                     LSPServerRequest *req = new LSPServerRequest();
@@ -566,8 +633,39 @@ namespace JSON {
 
                 }
             };
-            void translateToJSON(LSPServerReply *msgtosnd,string *msgout){
-
+            void compileToJSON(LSPServerReply *msgtosnd,string *msgout){
+                JSONGenerator g = JSONGenerator(translateToJSON(msgtosnd));
+                msgout = g.generate();
+            }
+            JSONObject * translateLSPObjectToJSON(LSPServerObject *obj){
+                JSONObject *result;
+                if(obj->type == ReplyError){
+                    LSPReplyError *err = (LSPReplyError *)obj;
+                    result = createJSONObject({
+                        JSONObjEntry ("code",createJSONNumber(to_string(err->code))),
+                        JSONObjEntry ("message",createJSONString(true,err->message))
+                    });
+                } else if(obj->type == CompletionOptions){
+                    LSPCompletionOptions *re = (LSPCompletionOptions *)obj;
+                    result = createJSONObject({
+                        JSONObjEntry ("triggerCharacters",convertStringArray(&re->trigger_characters)),
+                        JSONObjEntry ("allCommitCharacters",convertStringArray(&re->all_commit_characters)),
+                        JSONObjEntry ("resolveProvider",createJSONBoolean(re->resolve_provider))
+                    });
+                }
+                return result;
+            }
+            JSONObject * translateToJSON(LSPServerReply *msgtosnd){
+                JSONObject *result = createJSONObject({
+                    JSONObjEntry ("id",createJSONNumber(to_string(msgtosnd->id))),
+                });
+                if(msgtosnd->error != nullptr){
+                    result->entries.insert(JSONObjEntry("error",translateLSPObjectToJSON(msgtosnd->error)));
+                }
+                else if(msgtosnd->object_result != nullptr){
+                    result->entries.insert(JSONObjEntry ("result",translateLSPObjectToJSON(msgtosnd->object_result)));
+                }
+                return result;
             };
     };
 
@@ -580,19 +678,41 @@ void Messenger::read(LSPServerMessage *msgcntr){
     std::string message;
     cin >> message;
     if(!message.empty()){
-        
+        JSONTranslator t;
+        LSPServerMessage *c;
+        t.translateFromJSON(c,message);
     }
 }
 
 void Messenger::reply(LSPServerReply *result){
     using namespace JSON;
-    JSONObject *obj;
-    JSONGenerator gen = JSONGenerator(obj);
+    JSONTranslator t;
     string *r;
-    gen.generate(r);
-    cout << "Content-Length:" << r->length() << "\r\nContent-Type:utf-8\r\n\r\n" << *r;
-    gen.freeString();
+    t.compileToJSON(result,r);
+    cout << "Content-Length:" << r->length() << "\r\n\r\n" << *r;
 }
+
+void Messenger::sendIntializeMessage(){
+    using namespace JSON;
+
+    JSONObject *json_init = createJSONObject({
+        JSONObjEntry ("jsonrpc",createJSONString(true,"2.0")),
+        JSONObjEntry ("id",createJSONString(true,"initialize - (0)")),
+        JSONObjEntry ("result",createJSONObject({
+            JSONObjEntry ("capabilities",createJSONObject({
+               
+            })),
+            JSONObjEntry ("serverInfo",createJSONObject({
+                JSONObjEntry ("name",createJSONString(true,"StarbytesLSPServer"))
+            }))
+        }))
+        });
+    string *initMessage;
+    JSONGenerator g = JSONGenerator(json_init);
+    initMessage = g.generate();
+    cout << "Content-Length:" << initMessage->length() << "\r\n\r\n" << *initMessage;
+
+};
 
 
 };
