@@ -7,7 +7,7 @@ let langClient;
 function activate(context) {
     console.log("Yipee");
     const serverOptions = {
-        command: context.asAbsolutePath("../build/Starbytes/starbytes-lspserver/starbytes-lspserver"),
+        command: context.asAbsolutePath("../build/Starbytes/starbytes-lsp/starbytes-lsp"),
     };
     const clientOptions = {
         documentSelector: [

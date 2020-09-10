@@ -87,7 +87,7 @@ int main(int argc, char* argv[]) {
     #ifdef _WIN32
     setupConsole();
     #endif
-
+    using namespace LSP;
     // StarbytesLSPServer server;
     // server.init(argc,argv);
 
@@ -96,9 +96,21 @@ int main(int argc, char* argv[]) {
     }
     else {
         LSP::Messenger json_transit;
-        LSP::LSPServerRequest * msg;
-        json_transit.read(msg);
-        json_transit.sendIntializeMessage();
+        while(true){
+            LSP::LSPServerMessage * msg;
+            msg = json_transit.read();
+            if(msg != nullptr){
+                if(msg->type == Request){
+                    if(((LSPServerRequest *)msg)->method == "initialize"){
+                        json_transit.sendIntializeMessage(((LSPServerRequest *)msg)->id);
+                    }
+                }
+                else if(msg->type == Notification){
+
+                }
+            }
+        }
+
     }
     // cout << help();
 }

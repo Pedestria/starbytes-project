@@ -72,11 +72,14 @@ namespace Starbytes {
         private:
 
         public:
-            void sendIntializeMessage();
+            void sendIntializeMessage(std::string id);
             void reply(LSPServerReply *result);
-            void read(LSPServerMessage *msgcntr);
+            LSPServerMessage * read();
             Messenger(){};
     };
+
+    std::string wrapQuotes(std::string &subject);
+    std::string unwrapQuotes(std::string &subject);
 };
 
 }
