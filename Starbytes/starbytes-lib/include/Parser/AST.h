@@ -1,4 +1,5 @@
 #pragma once
+#include <initializer_list>
 #include <vector>
 #include <string>
 #include "Document.h"
@@ -212,6 +213,18 @@ namespace Starbytes {
             std::string filename;
             std::vector<ASTStatement*> nodes;
         };
+        template <typename NODE = ASTNode>
+        struct WalkPath {
+          NODE * currentNode; 
+          
+        };
+
+        struct ASTCallbackEntry {
+            ASTType type;
+            void (*callback)(WalkPath<> *);
+        };
+
+        void WalkAST(AbstractSyntaxTree *tree,std::initializer_list<ASTCallbackEntry> callbacks);
     };
 
 }
