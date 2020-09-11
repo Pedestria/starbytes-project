@@ -51,12 +51,12 @@ namespace JSON {
     string StarbytesLSPJsonError(string message){
         return "\u001b[31mJSONParser Error: \n"+message + "\u001b[0m";
     }
-
+    
     bool isNumber(string subject){
         for(auto c : subject){
             if(isalpha(c)){
                 return false;
-            } else if(isnumber(c)){
+            } else if(isdigit(c)){
                 continue;
             } else {
                 return false;
@@ -341,7 +341,7 @@ namespace JSON {
                         *bufptr = c;
                         ++bufptr;
                     }
-                    else if(isnumber(c)){
+                    else if(isdigit(c)){
                         *bufptr = c;
                         ++bufptr;
                     }

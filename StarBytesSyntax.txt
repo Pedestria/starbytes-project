@@ -87,6 +87,34 @@ decl lambda hello:FUNCTYPE = [String a,Number b] >> Number {
 
 }
 
+//Secure Variables/Expressions
+//THIS WAY! (Probably This Way!)
+secure(decl var = %/(?:word1|word2)/g%) catch (error:AnyExpection) {
+
+}
+
+//OR THIS WAY!
+decl secure var = %/(?:word1|word2)/g% >> catch (error:AnyExpection) {
+
+}
+
+secure(decl var = someOption()) catch {
+
+}
+
+//Error Throwing Function!
+
+func someFunc () >! String {
+
+}
+
+//Optional Return Function!
+func otherFunc () >? String {
+
+}
+
+
+
 
 
 

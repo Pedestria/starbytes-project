@@ -19,7 +19,9 @@
         { "include": "#import-declaration" },
         { "include": "#function-declaration" },
         { "include": "#scope-declaration" },
-        { "include": "#class-declaration" }
+        { "include": "#class-declaration" },
+        { "include": "#if-declaration" },
+        { "include": "#single-comment" }
       ]
     },
     "expressions": {
@@ -28,8 +30,13 @@
         { "include": "#call-expression" },
         { "include": "#number" },
         { "include": "#boolean" },
-        { "include": "#identifier" }
+        { "include": "#identifier" },
+        { "include": "#single-comment" }
       ]
+    },
+    "single-comment": {
+      "name": "comment.line.double-slash",
+      "match": "\\/\\/.*"
     },
     "number": { "name": "constant.numeric", "match": "[0-9]+(?:\\.[0-9]+)?" },
     "boolean": { "name": "constant.language", "match": "(?:true|false)" },
@@ -94,6 +101,32 @@
         { "include": "#function-body" }
       ]
     },
+    "if-declaration": {
+      "name": "strbyts.if",
+      "begin": "\\b(if)\\b *",
+      "end": "(?<=\\})",
+      "beginCaptures": { "1": { "name": "keyword.control.strbyts.if" } },
+      "patterns": [
+        { "include": "#if-decl-paren" },
+        { "include": "#block-statement" }
+      ]
+    },
+    "if-decl-paren": {
+      "name": "strbyts.if.parens",
+      "begin": "\\(",
+      "end": "\\)",
+      "patterns": [{ "include": "#expressions" }]
+    },
+    "block-statement": {
+      "name": "strbyts.block",
+      "begin": "\\{",
+      "end": "\\}",
+      "patterns": [
+        { "include": "#throw-declaration" },
+        { "include": "#return-declaration" },
+        { "include": "#statements" }
+      ]
+    },
     "typedParameter": {
       "name": "strbyts.tparam",
       "match": "(\\w+):(\\w+)",
@@ -108,15 +141,33 @@
       "end": "\\)",
       "patterns": [{ "include": "#typedParameter" }]
     },
+    "return-declaration": {
+      "name": "strbyts.func.body.return-decl",
+      "begin": "\\b(return)\\b +",
+      "end": "(?<=\\})|(?=(?:decl|class|func|scope|import|if|else|switch|case|loose|immutable|alias|deftype|return|secure|throw))",
+      "beginCaptures": { "1": { "name": "keyword.control.strbyts.return" } },
+      "patterns": [{ "include": "#expressions" }]
+    },
+    "throw-declaration": {
+      "name": "strbyts.func.body.throw-decl",
+      "begin": "\\b(throw)\\b +",
+      "end": "(?<=\\})|(?=(?:decl|class|func|scope|import|if|else|switch|case|loose|immutable|alias|deftype|return|secure|throw))",
+      "beginCaptures": { "1": { "name": "keyword.control.strbyts.throw" } },
+      "patterns": [{ "include": "#expressions" }]
+    },
     "function-body": {
       "name": "strbyts.func.body",
       "begin": "\\{",
       "end": "^\\s*\\}",
-      "patterns": [{ "include": "#statements" }]
+      "patterns": [
+        { "include": "#throw-declaration" },
+        { "include": "#return-declaration" },
+        { "include": "#statements" }
+      ]
     },
     "function-return": {
       "name": "strbys.func.return",
-      "match": ">> *(\\w+)",
+      "match": ">[?!>] *(\\w+)",
       "captures": { "1": { "name": "entity.name.type" } }
     },
     "class-declaration": {
@@ -137,7 +188,7 @@
     },
     "class-property-declaration": {
       "name": "strbyts.class.property",
-      "match": "^\\s*(immutable)? +(loose)? +\\b(\\w+)\\b",
+      "match": "^\\s*(immutable)? +(loose)? +\\b(\\w+)\\b(?! *\\()",
       "captures": {
         "1": { "name": "keyword.control.strbyts.immutable" },
         "2": { "name": "keyword.control.strbyts.loose" },

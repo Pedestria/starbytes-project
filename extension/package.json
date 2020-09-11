@@ -37,7 +37,7 @@
                         "messages",
                         "verbose"
                     ],
-                    "description": "Traces the communication between VS Code and the starbytes-lspserver language server."
+                    "description": "Traces the communication between VS Code and the starbytes-lsp language server."
                 }
             }
         },

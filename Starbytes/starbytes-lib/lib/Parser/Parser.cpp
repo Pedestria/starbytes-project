@@ -1486,6 +1486,15 @@ void Parser::parseNewExpression(ASTNewExpression *ptr){
 }
 
 
-// void Parser::parseMemberExpression(ASTMemberExpression *ptr,ASTExpression *object){
-
-// }
+void Parser::parseMemberExpression(ASTMemberExpression *ptr,ASTExpression *object){
+    ptr->type = AST::ASTType::MemberExpression;
+    ptr->BeginFold = object->BeginFold;
+    ptr->object = object;
+    Token *tok = nextToken();
+    if(tok->getType() == TokenType::Dot){
+        ASTIdentifier *id = new ASTIdentifier();
+        parseIdentifier(nextToken(),id);
+        ptr->prop = (ASTExpression *) id;
+        ptr->EndFold = currentToken()->getPosition();
+    }
+}

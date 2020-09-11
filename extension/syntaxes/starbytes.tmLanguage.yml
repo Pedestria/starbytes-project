@@ -8,7 +8,7 @@ foldingStopMarker: '^\s*\}'
 variables:
   identifier: '\w+'
   typeID: '{{identifier}}'
-  declKeywords: (?:decl|class|func|scope|import|if|else|switch|case|loose|immutable|alias|deftype)
+  declKeywords: (?:decl|class|func|scope|import|if|else|switch|case|loose|immutable|alias|deftype|return|secure|throw)
   number: '[0-9]+(?:\.[0-9]+)?'
   boolean: '(?:true|false)'
 
@@ -27,6 +27,8 @@ repository:
       - include: "#function-declaration"
       - include: "#scope-declaration"
       - include: "#class-declaration"
+      - include: "#if-declaration"
+      - include: "#single-comment"
   expressions:
     patterns:
       - include: "#literals"
@@ -34,6 +36,10 @@ repository:
       - include: "#number"
       - include: "#boolean"
       - include: "#identifier"
+      - include: "#single-comment"
+  single-comment:
+    name: "comment.line.double-slash"
+    match: '\/\/.*'
   number:
     name: "constant.numeric"
     match: '{{number}}'
@@ -104,6 +110,30 @@ repository:
       - include: "#function-params"
       - include: "#function-return"
       - include: "#function-body"
+  if-declaration:
+    name: "strbyts.if"
+    begin: '\b(if)\b *'
+    end: '(?<=\})'
+    beginCaptures:
+      '1':
+        name: "keyword.control.strbyts.if"
+    patterns:
+      - include: "#if-decl-paren"
+      - include: "#block-statement"
+  if-decl-paren:
+    name: "strbyts.if.parens"
+    begin: '\('
+    end: '\)'
+    patterns:
+      - include: "#expressions"
+  block-statement:
+    name: "strbyts.block"
+    begin: '\{'
+    end: '\}'
+    patterns:
+      - include: "#throw-declaration"
+      - include: "#return-declaration"
+      - include: "#statements"
   typedParameter:
     name: "strbyts.tparam"
     match: "({{identifier}}):({{typeID}})"
@@ -118,15 +148,35 @@ repository:
     end: '\)'
     patterns:
       - include: "#typedParameter"
+  return-declaration:
+    name: "strbyts.func.body.return-decl"
+    begin: '\b(return)\b +'
+    end: '(?<=\})|(?={{declKeywords}})'
+    beginCaptures:
+      '1':
+        name: "keyword.control.strbyts.return"
+    patterns:
+      - include: "#expressions"
+  throw-declaration:
+    name: "strbyts.func.body.throw-decl"
+    begin: '\b(throw)\b +'
+    end: '(?<=\})|(?={{declKeywords}})'
+    beginCaptures:
+      '1':
+        name: "keyword.control.strbyts.throw"
+    patterns:
+      - include: "#expressions"
   function-body:
     name: "strbyts.func.body"
     begin: '\{'
     end: '^\s*\}'
     patterns:
+      - include: "#throw-declaration"
+      - include: "#return-declaration"
       - include: "#statements"
   function-return:
     name: "strbys.func.return"
-    match: '>> *({{typeID}})'
+    match: '>[?!>] *({{typeID}})'
     captures:
       '1':
         name: 'entity.name.type'
@@ -147,7 +197,7 @@ repository:
       - include: "#class-method-declaration"
   class-property-declaration:
     name: "strbyts.class.property"
-    match: '^\s*(immutable)? +(loose)? +\b({{identifier}})\b'
+    match: '^\s*(immutable)? +(loose)? +\b({{identifier}})\b(?! *\()'
     captures:
       '1':
         name: 'keyword.control.strbyts.immutable'
@@ -166,7 +216,7 @@ repository:
       - include: "#function-params"
       - include: "#function-return"
       - include: "#function-body"
-
+  
 
 
 

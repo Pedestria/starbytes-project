@@ -1,24 +1,31 @@
 import JSONLib
 
 
+decl other = 4
+decl var:Number
 
-
-decl var:Integer;
-
-func function(hello:String,other:Integer) >> String {
+func function(hello:String,other:Number) >? String {
+    if(other != 4){
+      return "Other"
+    }
     
-}
-
-func hello(var:Integer,var2:Integer[]) >> String {
-    
+    return "Hello World!"
 }
 
 decl var:Boolean = true
-decl var1:Integer
-decl var2:Integer[] = [1,4,40.2342,5343]
+decl var1:Number
+decl var2:Number[] = [1,4,40.2342,5343]
 
 decl var3:String[] = ["Gello","AnotherString"]
 
 
 hello(var3,var2)
+
+class Hello {
+    immutable  sd;
+    loose oppo
+    method() >> String{
+
+    }
+}
 
