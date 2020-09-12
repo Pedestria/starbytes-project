@@ -4,3 +4,4 @@ build
 *.symlink
 .clangd/
 compile_commands.json
+.cache
