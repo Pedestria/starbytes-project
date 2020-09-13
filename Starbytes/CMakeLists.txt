@@ -16,7 +16,7 @@ function(add_starbytes_lib)
     "${MULTI}" 
     ${ARGN})
 
-    include_directories(include)
+    include_directories(${STARBYTES_LIB_INCLUDE})
     file(RELATIVE_PATH includePath ${STARBYTES_SOURCE_DIR}/lib ${CMAKE_CURRENT_SOURCE_DIR})
     list(TRANSFORM STARBYTES_LIB_HEADER_FILES PREPEND ${STARBYTES_SOURCE_DIR}/include/${includePath}/)
     add_library(${STARBYTES_LIB_LIB_NAME} STATIC ${STARBYTES_LIB_HEADER_FILES} ${STARBYTES_LIB_SOURCE_FILES})
