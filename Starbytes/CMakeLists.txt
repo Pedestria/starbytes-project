@@ -3,21 +3,6 @@
 #
 set(STARBYTES_LIB_INCLUDE ${CMAKE_SOURCE_DIR}/Starbytes/include)
 set(STARBYTES_SOURCE_DIR ${CMAKE_SOURCE_DIR}/Starbytes )
-# starbytes-lib:
-# - SemanticsEngine.h 
-# - SemanticsEngine.cpp
-# - RuntimeEngine.h
-# - RuntimeEngine.cpp
-# - RuntimeLib.h
-# - RuntimeLib.cpp
-# - ModuleConstructor.cpp
-# - ModuleConstructor.h
-# - ModuleWriter.h
-# - ModuleWriter.cpp
-# - ModuleReader.h
-# - ModuleReader.cpp
-# - ModuleFileParser.h
-# - ModuleFileParser.cpp
 
 function(add_starbytes_lib)
     set(OPTIONS STATIC)
