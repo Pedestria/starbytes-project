@@ -6,7 +6,7 @@ let langClient:LanguageClient
 export function activate(context:ExtensionContext){
     console.log("Yipee");
     const serverOptions:ServerOptions = {
-        command:context.asAbsolutePath("../build/Starbytes/starbytes-lsp/starbytes-lsp"),
+        command:context.asAbsolutePath("../build/bin/starbytes-lsp"),
     };
 
 

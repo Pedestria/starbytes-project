@@ -49,7 +49,7 @@
                     "Starbytes"
                 ],
                 "extensions": [
-                    ".strbyts"
+                    ".stb"
                 ],
                 "configuration": "./language-configuration.json"
             },
@@ -67,7 +67,7 @@
         "grammars": [
             {
                 "language": "starbytes",
-                "scopeName": "source.strbyts",
+                "scopeName": "source.stb",
                 "path": "./syntaxes/starbytes.tmLanguage.json"
             },
             {

@@ -83,7 +83,6 @@ int main(int argc, char* argv[]) {
 	setupConsole();
 	#endif
 	StarbytesArgs *args = parseArguments(argv,argc);
-	
 			// cout << help();
 		// cout << loghelp() << "\n";
 		string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\nfunc hello (hello:String,moma:String) >> String {\n \n}\ndecl immutable hellop:Array = [\"One\",\"Two\"]\nclass Other {}\nclass SomeClass extends Other {}";

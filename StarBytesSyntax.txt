@@ -24,7 +24,9 @@ class MyClass <T> extends SuperClass utilizes SomeInterface {
 	new(loose hello:string,otherString:String)
 	//ConstantFieldDeclaration
 	immutable otherField = 5;
-	
+	lazy otherMethod() >> String{
+
+	}
 	//Method Declaration (Pretty Much same as Function Declaration)
 	myMethod(myNum:Int)>>Boolean{
 		release otherField;
@@ -92,13 +94,17 @@ decl lambda hello:FUNCTYPE = [String a,Number b] >> Number {
 secure(decl var = %/(?:word1|word2)/g%) catch (error:AnyExpection) {
 
 }
-
-//OR THIS WAY!
-decl secure var = %/(?:word1|word2)/g% >> catch (error:AnyExpection) {
+decl someVar = await method() catch {
 
 }
 
+//Possible new feature
+//Secure Declaration
 secure(decl var = someOption()) catch {
+
+}
+
+lazy func method(){
 
 }
 

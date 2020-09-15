@@ -1,0 +1,9 @@
+add_starbytes_test(
+    INCLUDE_LIB
+    NAME 
+    "file-test" 
+    FILES
+    "test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS} 
+    )

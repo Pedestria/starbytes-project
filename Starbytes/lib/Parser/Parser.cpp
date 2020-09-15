@@ -9,7 +9,7 @@ using namespace Starbytes;
 using namespace AST;
 
 enum class KeywordType:int {
-    Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case,Extends,Utilizes,Loose,Enum,For,While
+    Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case,Extends,Utilizes,Loose,Enum,For,While,Lazy,Await
 };
 
 /*Creates Error Message For Console*/
@@ -55,6 +55,10 @@ KeywordType matchKeyword(std::string subject) {
         returncode = KeywordType::For;
     } else if(subject == "while"){
         returncode = KeywordType::While;
+    } else if(subject == "await"){
+        returncode = KeywordType::Await;
+    } else if(subject == "lazy"){
+        returncode = KeywordType::Lazy;
     }
     return returncode;
 }
@@ -73,7 +77,7 @@ void Parser::parseStatement(std::vector<ASTStatement *> * container,Scope scope)
     //First Token of Statement!
     Token *tok = currentToken();
     if(parseExpressionStatement(container)){
-            return;
+        return;
     }
 
     if(tok->getType() == TokenType::Keyword){
@@ -114,9 +118,19 @@ bool Parser::parseDeclaration(std::vector<ASTStatement *> * container,Scope scop
             }
             break;
         case KeywordType::Function :
-            parseFunctionDeclaration(container);
+            parseFunctionDeclaration(container,false);
             return true;
             break;
+        case KeywordType::Lazy:
+            incrementToNextToken();
+            if(currentToken()->getType() == TokenType::Keyword && matchKeyword(currentToken()->getContent()) == KeywordType::Function){
+                parseFunctionDeclaration(container,true);
+            }
+            else{
+                throw StarbytesParseError("Can only use keyword `lazy` with functions",currentToken()->getPosition());
+                return false;
+            }
+            return true;
         case KeywordType::Class :
             if(scope != Scope::FunctionBlockStatement){
                 parseClassDeclaration(container);
@@ -231,8 +245,8 @@ void Parser::parseIfDeclaration(std::vector<ASTStatement *> *container){
     Token *tok = nextToken();
     if(tok->getType() == TokenType::OpenParen){
         incrementToNextToken();
-        ASTExpression *exp;
-        if(parseExpression(exp)){
+        ASTExpression *exp = parseExpression();
+        if(exp != nullptr) {
             node->subject = exp;
             Token *tok1 = nextToken();
             if(tok1->getType() == TokenType::CloseParen){
@@ -270,8 +284,8 @@ void Parser::parseElseIfDeclaration(std::vector<ASTStatement *> *container){
     Token *tok = nextToken();
     if(tok->getType() == TokenType::OpenParen){
         incrementToNextToken();
-        ASTExpression *exp;
-        if(parseExpression(exp)){
+        ASTExpression *exp = parseExpression();
+        if(exp != nullptr){
             node->subject = exp;
             Token *tok1 = nextToken();
             if(tok1->getType() == TokenType::CloseParen){
@@ -318,6 +332,8 @@ void Parser::parseElseDeclaration(std::vector<ASTStatement *> *container){
 
     }
 }
+
+
 
 void Parser::parseEnumDeclaration(std::vector<ASTStatement *> *container){
     ASTEnumDeclaration *node = new ASTEnumDeclaration();
@@ -422,8 +438,8 @@ void Parser::parseReturnDeclaration(std::vector<ASTStatement *> * container){
     ASTReturnDeclaration *node = new ASTReturnDeclaration();
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::ReturnDeclaration;
-    ASTExpression *exp;
-    if(parseExpression(exp)){
+    ASTExpression *exp = parseExpression();
+    if(exp != nullptr){
         node->returnee = exp;
         node->EndFold = currentToken()->getPosition();
         container->push_back(node);
@@ -522,6 +538,18 @@ void Parser::parseInterfaceStatement(std::vector<ASTInterfaceStatement *> * cont
             parseInterfacePropertyDeclaration(prop,false,true);
             container->push_back(prop);
         }
+        else if(match == KeywordType::Lazy){
+            ASTInterfaceMethodDeclaration *method = new ASTInterfaceMethodDeclaration();
+            method->isLazy = true;
+            Token *tok1 = nextToken();
+            if(tok1->getType() == TokenType::Identifier){
+                parseInterfaceMethodDeclaration(method);
+                container->push_back(method);
+            } 
+            else{
+                throw StarbytesParseError("Expected Identifier!",tok1->getPosition());
+            }
+        }
         else{
             throw StarbytesParseError("Expected Keywords `immutable` or `loose` !",tok0->getPosition());
         }
@@ -535,6 +563,7 @@ void Parser::parseInterfaceStatement(std::vector<ASTInterfaceStatement *> * cont
         }
         else{
             ASTInterfaceMethodDeclaration *method = new ASTInterfaceMethodDeclaration();
+            method->isLazy = false;
             parseInterfaceMethodDeclaration(method);
             container->push_back(method);
         }
@@ -779,6 +808,18 @@ void Parser::parseClassStatement(std::vector<ASTClassStatement *> * container){
 
             container->push_back(prop);
         }
+        else if(match == KeywordType::Lazy){
+            ASTClassMethodDeclaration *method = new ASTClassMethodDeclaration();
+            method->isLazy = true;
+            Token *tok2 = nextToken();
+            if(tok2->getType() == TokenType::Identifier){
+                parseClassMethodDeclaration(method);
+                container->push_back(method);
+            }
+            else{
+                throw StarbytesParseError("Expected Identifier!",tok2->getPosition());
+            }
+        }
     }
     else if(tok->getType() == TokenType::Identifier){
         Token *tok = nextToken();
@@ -789,6 +830,7 @@ void Parser::parseClassStatement(std::vector<ASTClassStatement *> * container){
             container->push_back(prop);
         } else {
             ASTClassMethodDeclaration *method = new ASTClassMethodDeclaration();
+            method->isLazy = false;
             parseClassMethodDeclaration(method);
 
             container->push_back(method);
@@ -913,9 +955,9 @@ void Parser::parseClassPropertyDeclaration(ASTClassPropertyDeclaration *ptr,bool
         }
         Token *tok = nextToken();
         if(tok->getType() == TokenType::Operator && tok->getContent() == "="){
-            ASTExpression *exp;
             incrementToNextToken();
-            if(parseExpression(exp)){
+            ASTExpression *exp = parseExpression();
+            if(exp != nullptr){
                 ptr->initializer = exp;
                 ptr->EndFold = currentToken()->getPosition();
             }
@@ -1138,9 +1180,11 @@ void Parser::parseConstantSpecifier(ASTConstantSpecifier *ptr){
         //CurrentToken: ID Before Equals
         if(tok3->getType() == TokenType::Operator && tok3->getContent() == "="){
             //PARSE EXPRESSION! OR LITERAL!
-            ASTExpression *node;
             incrementToNextToken();
-            parseExpression(node);
+            ASTExpression *node = parseExpression();
+            if(node == nullptr){
+                throw StarbytesParseError("Expected Expression!",currentToken()->getPosition());
+            }
             ptr->initializer = node;
             ptr->EndFold = currentToken()->getPosition();
         }
@@ -1207,9 +1251,8 @@ void Parser::parseVariableSpecifier(ASTVariableSpecifier *ptr){
         Token *tok1 = nextToken();
         if(tok1->getType() == TokenType::Operator &&tok1->getContent() == "="){
             //PARSE EXPRESSION! OR LITERAL!
-            ASTExpression *node;
             incrementToNextToken();
-            parseExpression(node);
+            ASTExpression *node = parseExpression();
             ptr->initializer = node;
         }
         //Token Last Token of expression before OTHER_TOKEN
@@ -1219,11 +1262,12 @@ void Parser::parseVariableSpecifier(ASTVariableSpecifier *ptr){
     //Current token: Before Comma or OTHER_TOKEN
 }
 //TODO: More Advanced Type Funcitonality Required! (Generics,Arrays,Dictionaries,etc...)
-void Parser::parseFunctionDeclaration(std::vector<ASTStatement *> * container){
+void Parser::parseFunctionDeclaration(std::vector<ASTStatement *> * container,bool isLazy){
     ASTFunctionDeclaration *node = new ASTFunctionDeclaration();
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::FunctionDeclaration;
     node->isGeneric = false;
+    node->isAsync = isLazy;
     Token *tok = nextToken();
     if(tok->getType() == TokenType::Identifier){
         ASTIdentifier *id = new ASTIdentifier();
@@ -1357,9 +1401,46 @@ void Parser::parseTypeIdentifier(ASTTypeIdentifier * ptr){
     ptr->type = ASTType::TypeIdentifier;
     Token *tok = nextToken();
     ptr->BeginFold = tok->getPosition();
+    ptr->isArrayType = false;
+    ptr->isGeneric = false;
     if(tok->getType() == TokenType::Identifier){
-        ptr->value = tok->getContent();
-        ptr->EndFold = tok->getPosition();
+        ptr->type_name = tok->getContent();
+        Token *tok1 = nextToken();
+        if(tok1->getType() == TokenType::OpenCarrot){
+            ptr->isGeneric = true;
+            while(true){
+                tok1 = aheadToken();
+                if(tok1->getType() == TokenType::CloseCarrot){
+                    incrementToNextToken();
+                    break;
+                }
+                else{
+                    ASTTypeIdentifier *tid = new ASTTypeIdentifier();
+                    parseTypeIdentifier(tid);
+                    ptr->typeargs.push_back(tid);
+                }
+            }
+        }
+        while(true){
+            if(currentToken()->getType() == TokenType::OpenBracket){
+                ptr->isArrayType = true;
+                Token *tok2 = nextToken();
+                if(tok2->getType() != TokenType::CloseBracket){
+                    throw StarbytesParseError("Expected Close Bracket!",tok2->getPosition());
+                }   
+                else{
+                    ++(ptr->array_count);
+                }
+            }
+            if(aheadToken()->getType() != TokenType::OpenBracket){
+                break;
+            }
+            else{
+                incrementToNextToken();
+                continue;
+            }
+        }
+        ptr->EndFold = currentToken()->getPosition();
     }
     else {
         throw StarbytesParseError("Expected Identifier!",tok->getPosition());
@@ -1372,51 +1453,99 @@ void Parser::parseIdentifier(Token *token1, ASTIdentifier * id) {
     id->value = token1->getContent();
 }
 
-bool Parser::parseExpression(ASTExpression *ptr){
+ASTExpression * Parser::parseExpression(){
+    ASTExpression *ptr = nullptr;
+    bool isNotLiteral = false;
     if(currentToken()->getType() == TokenType::Keyword){
         KeywordType match = matchKeyword(currentToken()->getContent());
         if(match == KeywordType::New){
             ASTNewExpression *node3 = new ASTNewExpression();
             parseNewExpression(node3);
-            ptr = (ASTExpression *) node3;
-            return true;
-        }else {
-            return false;
+            ptr = node3;
+            isNotLiteral = true;
+        }
+        else if(match == KeywordType::Await){
+            ASTAwaitExpression *node4 = new ASTAwaitExpression();
+            parseAwaitExpression(node4);
+            ptr = node4;
+            isNotLiteral = true;
         }
     } else{
         if(currentToken()->getType() == TokenType::Numeric){
             ASTNumericLiteral *node0 = new ASTNumericLiteral();
             parseNumericLiteral(node0);
-            ptr = (ASTExpression *) node0;
-            return true;
+            ptr = (ASTExpression *)node0;
         } else if(currentToken()->getType() == TokenType::Quote){
             ASTStringLiteral *node1 = new ASTStringLiteral();
             parseStringLiteral(node1);
-            ptr = (ASTExpression *) node1;
-            return true;
+            ptr = (ASTExpression *)node1;
         }else if(currentToken()->getType() == TokenType::OpenBracket) {
             ASTArrayExpression *node2 = new ASTArrayExpression();
             parseArrayExpression(node2);
-            ptr = (ASTExpression *)node2;
-            return true;
+            ptr = node2;
+            isNotLiteral = true;
         } 
         else if(currentToken()->getType() == TokenType::Identifier){
             ASTIdentifier *id = new ASTIdentifier();
             parseIdentifier(currentToken(),id);
-            ptr = (ASTExpression*) id;
-            return true;
-        } else {
-            return false;
+            ptr = (ASTExpression *)id;
+            isNotLiteral = true;
         }
 
     }
+    
+    Token *tok0 = aheadToken();
+    if(tok0->getType() == TokenType::Dot){
+        if(isNotLiteral){
+            ASTMemberExpression *membexp = new ASTMemberExpression();
+            parseMemberExpression(membexp,ptr);
+            ptr = membexp;
+            Token *tok1 = aheadToken();
+            if(tok1->getType() == TokenType::OpenParen){
+                ASTCallExpression *callexp = new ASTCallExpression();
+                parseCallExpression(callexp,ptr);
+                ptr = callexp;
+                tok1 = aheadToken();
+            }
+            while(true){
+                if(tok1->getType() == TokenType::Dot){
+                    ASTMemberExpression *membexp = new ASTMemberExpression();
+                    parseMemberExpression(membexp,ptr);
+                    ptr = membexp;
+                    Token *tok3 = aheadToken();
+                    if(tok3->getType() == TokenType::OpenParen){
+                        ASTCallExpression *callexp = new ASTCallExpression();
+                        parseCallExpression(callexp,ptr);
+                        ptr = callexp;
+                    }
+                }
+                else{
+                    break;
+                }
+                tok1 = aheadToken();
+            }
+        }
+        else{
+            throw StarbytesParseError("Literals can be embedded in member expressions!",tok0->getPosition());
+        }
+    }
+
+    if(aheadToken()->getType() == TokenType::OpenParen){
+         ASTCallExpression *callexp = new ASTCallExpression();
+         parseCallExpression(callexp,ptr);
+         ptr = callexp;
+    }
+
+    return ptr;
 }
 
 bool Parser::parseExpressionStatement(std::vector<ASTStatement *> *container){
     ASTExpressionStatement *node = new ASTExpressionStatement();
-    ASTExpression *node1;
-    if(parseExpression(node1)){
+    ASTExpression *node1 = parseExpression();
+    if(node1 != nullptr){
         node->expression = node1;
+        node->BeginFold = node1->BeginFold;
+        node->EndFold = node1->EndFold;
         container->push_back(node);
         return true;
     } else {
@@ -1433,8 +1562,8 @@ void Parser::parseArrayExpression(ASTArrayExpression *ptr){
             ptr->EndFold = tok->getPosition();
             break;
         } else {
-            ASTExpression *node;
-            if(parseExpression(node)){
+            ASTExpression *node = parseExpression();
+            if(node != nullptr){
                 ptr->items.push_back(node);
             }
             Token *tok1 = nextToken();
@@ -1464,8 +1593,8 @@ void Parser::parseNewExpression(ASTNewExpression *ptr){
                     ptr->EndFold = tok0->getPosition();
                     break;
                 }else {
-                    ASTExpression *node1;
-                    if(parseExpression(node1)){
+                    ASTExpression *node1 = parseExpression();
+                    if(node1 != nullptr){
                         ptr->params.push_back(node1);
                     }
                     Token *tok1 = nextToken();
@@ -1485,6 +1614,45 @@ void Parser::parseNewExpression(ASTNewExpression *ptr){
     }
 }
 
+void Parser::parseAwaitExpression(ASTAwaitExpression *ptr){
+    //CurrentToken: `await` Keyword!
+    ptr->type = AST::ASTType::AwaitExpression;
+    ptr->BeginFold = currentToken()->getPosition();
+    Token *tok0 = nextToken();
+    if(tok0->getType() == TokenType::OpenParen){
+        Token *tok1 = nextToken();
+        if(tok1->getType() == TokenType::Identifier){
+            ASTExpression *exp = parseExpression();
+            if(exp->type == AST::ASTType::CallExpression){
+                ptr->callee = (ASTCallExpression *)exp;
+                Token *tok2 = nextToken();
+                if(tok2->getType() == TokenType::CloseParen){
+                    ptr->EndFold = tok2->getPosition();
+                }
+                else{
+                    throw StarbytesParseError("Expected Close Paren!",tok2->getPosition());
+                }
+            }
+            else{
+                throw StarbytesParseError("Expected Call Expression!",tok1->getPosition());
+            }
+        }
+        else{
+            throw StarbytesParseError("Expected Identifier!",tok1->getPosition());
+        }
+    }
+    else{
+        ASTExpression *exp = parseExpression();
+        if(exp->type == AST::ASTType::CallExpression){
+            ptr->callee = (ASTCallExpression *)exp;
+            ptr->EndFold = currentToken()->getPosition();
+        }
+        else{
+            throw StarbytesParseError("Expected Call Expression!",tok0->getPosition());
+        }
+    }
+}
+
 
 void Parser::parseMemberExpression(ASTMemberExpression *ptr,ASTExpression *object){
     ptr->type = AST::ASTType::MemberExpression;
@@ -1492,9 +1660,45 @@ void Parser::parseMemberExpression(ASTMemberExpression *ptr,ASTExpression *objec
     ptr->object = object;
     Token *tok = nextToken();
     if(tok->getType() == TokenType::Dot){
-        ASTIdentifier *id = new ASTIdentifier();
-        parseIdentifier(nextToken(),id);
-        ptr->prop = (ASTExpression *) id;
-        ptr->EndFold = currentToken()->getPosition();
+        Token *tok1 = nextToken();
+        if(tok1->getType() == TokenType::Identifier){
+            ASTIdentifier *id = new ASTIdentifier();
+            parseIdentifier(tok1,id);
+            ptr->prop = (ASTExpression *) id;
+            ptr->EndFold = currentToken()->getPosition();
+        }
+        else{
+            throw StarbytesParseError("Expected Identifier!",tok1->getPosition());
+        }
+    }
+}
+
+void Parser::parseCallExpression(ASTCallExpression *ptr,ASTExpression *callee){
+    ptr->type = AST::ASTType::CallExpression;
+    ptr->BeginFold = callee->BeginFold;
+    ptr->callee = callee;
+    Token *tok0 = nextToken();
+    if(tok0->getType() == TokenType::OpenParen){
+        Token *tok1 = nextToken();
+        if(tok1->getType() != TokenType::CloseParen){
+            ASTExpression *exp = parseExpression();
+            ptr->params.push_back(exp);
+            tok1 = nextToken();
+            while(true){
+                if(tok1->getType() == TokenType::CloseParen){
+                    break;
+                }
+                else if(tok1->getType() == TokenType::Comma){
+                    incrementToNextToken();
+                    ASTExpression *exp = parseExpression();
+                    ptr->params.push_back(exp);
+                    tok1 = nextToken();
+                }
+                else{
+                    throw StarbytesParseError("Expected Comma or Close Paren!",tok1->getPosition());
+                }
+            }   
+        }
+        
     }
 }

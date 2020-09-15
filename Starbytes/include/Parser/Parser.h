@@ -57,7 +57,7 @@ namespace Starbytes {
             void parseElseIfDeclaration(std::vector<ASTStatement *> *container);
             void parseElseDeclaration(std::vector<ASTStatement *> *container);
             void parseReturnDeclaration(std::vector<ASTStatement *> * container);
-            void parseFunctionDeclaration(std::vector<ASTStatement *> *container);
+            void parseFunctionDeclaration(std::vector<ASTStatement *> *container,bool isLazy);
             void parseEnumDeclaration(std::vector<ASTStatement *> * container);
             void parseEnumBlockStatement(ASTEnumBlockStatement * ptr);
             void parseEnumerator(ASTEnumerator * ptr);
@@ -80,11 +80,12 @@ namespace Starbytes {
             //EXPRESSIONS!
             void parseNewExpression(ASTNewExpression *ptr);
             void parseArrayExpression(ASTArrayExpression *ptr);
+            void parseAwaitExpression(ASTAwaitExpression *ptr);
             void parseAssignExpression(ASTAssignExpression *ptr);
-            void parseCallExpression(ASTCallExpression *ptr);
+            void parseCallExpression(ASTCallExpression *ptr,ASTExpression *callee);
             void parseMemberExpression(ASTMemberExpression *ptr,ASTExpression *object);
             bool parseExpressionStatement(std::vector<ASTStatement *> *container);
-            bool parseExpression(ASTExpression *ptr);
+            ASTExpression * parseExpression();
             void parseStatement(std::vector<ASTStatement *> * container,Scope scope);
             void parseNumericLiteral(ASTNumericLiteral *ptr);
             void parseStringLiteral(ASTStringLiteral *ptr);

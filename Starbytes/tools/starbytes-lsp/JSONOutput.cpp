@@ -725,6 +725,8 @@ LSPServerMessage * Messenger::read(){
                     message.append(ch);
                 }
             }
+        } else {
+            message.append(ch);
         }
 
         if(!message.empty()){

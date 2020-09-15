@@ -4,7 +4,6 @@
 cmake_minimum_required (VERSION 3.13)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 cmake_policy(SET CMP0079 NEW)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 option(USE_VCPKG "Use vcpkg manager!" OFF)
 option(USE_VCPKG_AS_TOOLCHAIN "Use vcpkg cmake toolchain file" OFF)

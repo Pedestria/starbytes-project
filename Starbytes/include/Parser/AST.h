@@ -9,7 +9,8 @@ namespace Starbytes {
         enum class ASTType:int{
             Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,
             TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,
-            ClassConstructorParameterDeclaration,TypeArgumentsDeclaration,InterfaceDeclaration,InterfaceBlockStatement,InterfacePropertyDeclaration,InterfaceMethodDeclaration,ReturnDeclaration,EnumDeclaration,EnumBlockStatement,Enumerator,IfDeclaration,ElseIfDeclaration,ElseDeclaration,BooleanLiteral
+            ClassConstructorParameterDeclaration,TypeArgumentsDeclaration,InterfaceDeclaration,InterfaceBlockStatement,InterfacePropertyDeclaration,InterfaceMethodDeclaration,ReturnDeclaration,EnumDeclaration,EnumBlockStatement,
+            Enumerator,IfDeclaration,ElseIfDeclaration,ElseDeclaration,BooleanLiteral,AwaitExpression
         };
         /*Abstract Syntax Tree Node*/
         struct ASTNode {
@@ -37,7 +38,11 @@ namespace Starbytes {
             std::string value;
         };
         struct ASTTypeIdentifier : ASTStatement {
-            std::string value;
+            std::string type_name;
+            bool isGeneric;
+            std::vector<ASTTypeIdentifier *> typeargs;
+            bool isArrayType;
+            unsigned int array_count = 0;  
         };
         struct ASTTypeCastIdentifier : ASTStatement {
             ASTIdentifier *id;
@@ -49,9 +54,9 @@ namespace Starbytes {
         struct ASTExpressionStatement : ASTStatement {
             ASTExpression* expression;
         };
-        struct ASTCallExpression : ASTStatement {
+        struct ASTCallExpression : ASTExpression {
             ASTExpression * callee;
-            std::vector<ASTIdentifier *> params;
+            std::vector<ASTExpression *> params;
         };
         struct ASTNewExpression : ASTExpression {
             ASTTypeIdentifier* decltid;
@@ -74,6 +79,9 @@ namespace Starbytes {
             std::string oprtr;
             ASTExpression *left;
             ASTExpression *right;
+        };
+        struct ASTAwaitExpression : ASTExpression {
+            ASTCallExpression *callee;
         };
         struct ASTBlockStatement : ASTStatement {
             std::vector<ASTStatement*> nodes;
@@ -101,6 +109,7 @@ namespace Starbytes {
         struct ASTClassMethodDeclaration : ASTClassStatement {
             ASTIdentifier *id;
             bool isGeneric;
+            bool isLazy;
             ASTTypeArgumentsDeclaration *typeargs;
             std::vector<ASTTypeCastIdentifier*> params;
             ASTTypeIdentifier* returnType;
@@ -147,6 +156,7 @@ namespace Starbytes {
         struct ASTInterfaceMethodDeclaration : ASTInterfaceStatement {
             ASTIdentifier *id;
             bool isGeneric;
+            bool isLazy;
             ASTTypeArgumentsDeclaration *typeargs;
             std::vector<ASTTypeCastIdentifier*> params;
             ASTTypeIdentifier *returnType;
@@ -202,6 +212,7 @@ namespace Starbytes {
         };
         struct ASTFunctionDeclaration : ASTDeclaration {
             ASTIdentifier *id;
+            bool isAsync;
             bool isGeneric;
             ASTTypeArgumentsDeclaration *typeargs;
             std::vector<ASTTypeCastIdentifier*> params;
