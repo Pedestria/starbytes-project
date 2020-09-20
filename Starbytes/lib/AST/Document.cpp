@@ -1,4 +1,4 @@
-#include "Parser/Document.h"
+#include "AST/Document.h"
 
 using namespace Starbytes;
 

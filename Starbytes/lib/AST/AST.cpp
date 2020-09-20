@@ -1,4 +1,4 @@
-#include "Parser/AST.h"
+#include "AST/AST.h"
 #include <initializer_list>
 
 namespace Starbytes{

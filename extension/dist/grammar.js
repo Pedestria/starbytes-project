@@ -4,6 +4,7 @@ const YAML = require("js-yaml");
 const fs = require("fs/promises");
 const path = require("path");
 const prettier_1 = require("prettier");
+const PLIST = require("plist");
 function isTextMateRule(arg) {
     if (arg.include) {
         return false;
@@ -17,9 +18,15 @@ function isTextMateRule(arg) {
  * Outputs to a `.json` with same file name
  * @param {string} file
  */
-async function build(file) {
+async function build(file, plist = false) {
     let TMGrammar = YAML.safeLoad((await fs.readFile(file, "utf-8")));
-    let outputFile = path.dirname(file) + '/' + path.basename(file, "yml") + "json";
+    let outputFile;
+    if (plist) {
+        outputFile = path.dirname(file) + '/' + path.basename(file, ".yml");
+    }
+    else {
+        outputFile = path.dirname(file) + '/' + path.basename(file, "yml") + "json";
+    }
     //Get Variables
     let VariablesMatchers = [];
     for (let varname in TMGrammar.variables) {
@@ -78,7 +85,12 @@ async function build(file) {
         trailingComma: "all",
         parser: "json"
     };
-    await fs.writeFile(outputFile, prettier_1.format(JSON.stringify(result), options));
+    if (plist) {
+        await fs.writeFile(outputFile, PLIST.build(JSON.parse(JSON.stringify(result)), { pretty: true }));
+    }
+    else {
+        await fs.writeFile(outputFile, prettier_1.format(JSON.stringify(result), options));
+    }
 }
-build("./syntaxes/starbytes.tmLanguage.yml").catch(err => console.error(err));
-build("./syntaxes/starbytes-module.tmLanguage.yml").catch(err => console.log(err));
+build("./syntaxes/starbytes.tmLanguage.yml", true).catch(err => console.error(err));
+build("./syntaxes/starbytes-module.tmLanguage.yml", true).catch(err => console.log(err));

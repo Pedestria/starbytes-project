@@ -6,9 +6,9 @@
 #include "Parser/Lookup.h"
 #include "Parser/Token.h"
 #include "Parser/Lexer.h"
-#include "Parser/Document.h"
+#include "AST/Document.h"
 #include "Parser/Parser.h"
-#include "Parser/AST.h"
+#include "AST/AST.h"
 
 
 #include <iostream>

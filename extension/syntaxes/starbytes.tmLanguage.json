@@ -1,8 +1,8 @@
 {
   "name": "Starbytes Lang Syntax",
   "uuid": "86e272a9-6421-4db5-a7b8-01d296c9fca5",
-  "scopeName": "source.strbyts",
-  "fileTypes": ["strbyts"],
+  "scopeName": "source.stb",
+  "fileTypes": ["stb"],
   "foldingStartMarker": "\\{\\s*$",
   "foldingStopMarker": "^\\s*\\}",
   "patterns": [{ "include": "#statements" }],

@@ -1,19 +1,18 @@
 add_starbytes_lib(
     SOURCE_FILES 
-    AST.cpp 
-    Document.cpp 
     Lexer.cpp 
     Lookup.cpp 
     Parser.cpp 
     Token.cpp 
     Serialization.cpp 
     HEADER_FILES 
-    AST.h 
-    Document.h 
     Lexer.h 
     Lookup.h 
     Parser.h 
     Token.h 
     Serialization.h 
     LIB_NAME 
-    "starbytesParser")
+    "starbytesParser"
+    LIBS_TO_LINK
+    "starbytesAST"
+    )

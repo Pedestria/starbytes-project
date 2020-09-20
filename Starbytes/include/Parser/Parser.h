@@ -2,8 +2,8 @@
 
 #include "Token.h"
 #include <vector>
-#include "Document.h"
-#include "AST.h"
+#include "AST/Document.h"
+#include "AST/AST.h"
 #include <iostream>
 
 namespace Starbytes {

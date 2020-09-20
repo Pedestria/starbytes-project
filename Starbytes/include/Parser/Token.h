@@ -1,6 +1,6 @@
 #pragma once
 #include <string>
-#include "Document.h"
+#include "AST/Document.h"
 
 namespace Starbytes {
 	enum class TokenType:int {

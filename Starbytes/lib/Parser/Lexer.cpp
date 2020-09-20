@@ -9,7 +9,7 @@
 
 using namespace Starbytes;
 
-bool isBracket(char c) {
+bool isBracket(char &c) {
 	if (c == ']' || c == '[') {
 		return true;
 	}
@@ -18,7 +18,7 @@ bool isBracket(char c) {
 	}
 }
 
-bool isBrace(char c) {
+bool isBrace(char &c) {
 	if(c == '{' || c == '}'){
 		return true;
 	} else{
@@ -26,7 +26,7 @@ bool isBrace(char c) {
 	}
 }
 
-bool isOperator(char c) {
+bool isOperator(char &c) {
 	if (c == '=' || c == '+' || c == '-' || c== '&' || c == '|') {
 		return true;
 	}
@@ -35,7 +35,7 @@ bool isOperator(char c) {
 	}
 }
 
-bool isQuote(char c){
+bool isQuote(char &c){
 	if(c == '\''||c == '"'||c == '\"'){
 		return true;
 	} else {
@@ -43,7 +43,7 @@ bool isQuote(char c){
 	}
 }
 
-bool isTypecast(char c) {
+bool isTypecast(char &c) {
 	if (c == ':') {
 		return true;
 	}
@@ -52,7 +52,7 @@ bool isTypecast(char c) {
 	}
 }
 
-bool isParen(char c) {
+bool isParen(char &c) {
 	if (c == '(' || c == ')') {
 		return true;
 	}
@@ -61,7 +61,7 @@ bool isParen(char c) {
 	}
 }
 
-bool isCarrot(char c){
+bool isCarrot(char &c){
 	if(c == '<'||c == '>'){
 		return true;
 	} else{
@@ -118,7 +118,7 @@ void Lexer::resolveTokenAndClearCache(TokenType tokT) {
 
 std::vector<Token> Lexer::tokenize() {
 	bufptr = TokenBuffer;
-	int c = code[0];
+	char c = code[0];
 	start = bufptr;
 	while (true) {
 		if (c == '\n') {
@@ -183,7 +183,8 @@ std::vector<Token> Lexer::tokenize() {
 		}
 		else if (isOperator(c)){
 			//If look ahead char is operator
-			if (isOperator(lookAhead())) {
+			char nc = lookAhead();
+			if (isOperator(nc)) {
 				*bufptr = c;
 				++bufptr;
 				*bufptr = nextChar();

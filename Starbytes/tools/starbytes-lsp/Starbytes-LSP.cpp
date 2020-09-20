@@ -90,6 +90,7 @@ int main(int argc, char* argv[]) {
     using namespace LSP;
     // StarbytesLSPServer server;
     // server.init(argc,argv);
+    //Change
 
     if(!parseArguments(argv,argc)){
         return 0;

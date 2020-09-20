@@ -1,14 +1,11 @@
 import JSONLib
 
 
-decl other = 4
+alias FS = use FileSystem
+
 decl var:Number
 
 func function(hello:String,other:Number) >? String {
-    if(other != 4){
-      return "Other"
-    }
-    
     return "Hello World!"
 }
 
@@ -17,7 +14,6 @@ decl var1:Number
 decl var2:Number[] = [1,4,40.2342,5343]
 
 decl var3:String[] = ["Gello","AnotherString"]
-
 
 hello(var3,var2)
 

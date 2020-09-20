@@ -1,7 +1,5 @@
-﻿// CPlusPlus.cpp : Defines the entry point for the application.
-//
+﻿//
 #include "Starbytes.h"
-#include "Parser/AST.h"
 #include <stdio.h>
 #include <fstream>
 #include <string>
@@ -49,9 +47,16 @@ string convertPosition(DocumentPosition pos){
 string help(){
 	return "\n \u001b[35m\u001b[4mThe Starbytes Compiler (v. 0.0.1a)\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help information";
 }
+// Wraps ANSI Escape Code around message!
+string createStarbytesError(string message,string escc = "31m"){
+	return "\x1b["+escc+message+"\x1b[0m";
+}
 
 struct StarbytesArgs {
+	bool hasModuleFile = false;
 	string module_file;
+	bool hasSources = false;
+	vector<string> files;
 };
 
 StarbytesArgs * parseArguments(char * arguments[],int count){
@@ -69,7 +74,11 @@ StarbytesArgs * parseArguments(char * arguments[],int count){
             cout << help();
             exit(0);
         } else if(FLAGS[i] == "--module-file"){
+			arg->hasModuleFile = true;
 			arg->module_file = FLAGS[++i];
+		} else if(FLAGS[i] == "--source"){
+			arg->hasSources = true;
+			arg->files.push_back(FLAGS[++i]);
 		}
 		++i;
     }
@@ -78,15 +87,54 @@ StarbytesArgs * parseArguments(char * arguments[],int count){
     
 }
 
+std::string * readFile(std::string & file) {
+	std::string * buffer = new std::string();
+	std::ifstream input (file);
+	if(input.is_open()){
+		std::ostringstream file;
+		file << input.rdbuf();
+		*buffer = file.str();
+		input.close();
+	}
+	else{
+		*buffer = "";
+		cerr << createStarbytesError("Error: Unable to Open File: ") << file;
+	}
+	return buffer;
+        
+}
+
 int main(int argc, char* argv[]) {
 	#ifdef _WIN32
 	setupConsole();
 	#endif
 	StarbytesArgs *args = parseArguments(argv,argc);
-			// cout << help();
-		// cout << loghelp() << "\n";
-		string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\nfunc hello (hello:String,moma:String) >> String {\n \n}\ndecl immutable hellop:Array = [\"One\",\"Two\"]\nclass Other {}\nclass SomeClass extends Other {}";
+	if(args->hasModuleFile){
+		cout << "Module File Location:" << args->module_file;
+		cout << *(readFile(args->module_file));
+	}
+	//If we can test from source files!
+	if(args->hasSources){
+		for(auto srcfile : args->files){
+			string *file_buf = readFile(srcfile);
+			auto result = Lexer(*file_buf).tokenize();
+			AbstractSyntaxTree * tree = new AbstractSyntaxTree();
+			try {
+				auto parser = Parser(result,tree);
+				parser.convertToAST();
+
+				for(auto node : tree->nodes){
+					cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
+				}
+			} catch (string message) {
+				cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
+			}
+		}
+	}
+	else{
+		string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\ndecl immutable hellop:Array = [\"One\",\"Two\"]\n";
 		string test2 = "import library\nimport otherLibrary";
+	
 		auto result = Lexer(test).tokenize();
 		// for (Token tok : result) {
 		// 	cout << "Content:"+tok.getContent() << "\t" << "Type: " << int(tok.getType()) << "\t" << "Position:"+convertPosition(tok.getPosition());
@@ -103,6 +151,10 @@ int main(int argc, char* argv[]) {
 		} catch (string message) {
 			cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
 		}
+	}
+			// cout << help();
+		// cout << loghelp() << "\n";
+
 	return 0;
 }
 

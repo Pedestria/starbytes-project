@@ -2,6 +2,7 @@ import * as YAML from 'js-yaml'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import {format, Options} from 'prettier'
+import * as PLIST from 'plist'
 
 type TextMateMap <T> = {
     [s:string]:T
@@ -44,13 +45,24 @@ function isTextMateRule(arg:any): arg is TextMateRule{
 }
 /**
  * Transforms Sublime TextMate Syntax Variables in tmLanguage.yml files.
- * Outputs to a `.json` with same file name
+ * Outputs to a `.json` with same file name. However if `plist` is set to `true`
+ * Then it will output to a TM Plist file.
  * @param {string} file 
+ * @param {boolean} plist
+ * @returns {Promise<void>} A void
  */
 
-async function build (file:string){
+async function build (file:string,plist:boolean = false):Promise<void>{
     let TMGrammar = YAML.safeLoad((await fs.readFile(file,"utf-8"))) as TextMateGrammar;
-    let outputFile:string = path.dirname(file)+'/'+path.basename(file,"yml")+"json"
+    let outputFile:string
+    if(plist){
+        outputFile = path.dirname(file)+'/'+path.basename(file,".yml");
+    }
+    else{
+        outputFile = path.dirname(file)+'/'+path.basename(file,"yml")+"json";
+    }
+    
+    
     //Get Variables
     let VariablesMatchers:RegexTextMateVariableMatcher[] = [];
     for(let varname in TMGrammar.variables){
@@ -116,9 +128,16 @@ async function build (file:string){
         trailingComma:"all",
         parser:"json"
     };
-    await fs.writeFile(outputFile,format(JSON.stringify(result),options));
+
+    if(plist){
+        await fs.writeFile(outputFile,PLIST.build(JSON.parse(JSON.stringify(result)),{pretty:true}));
+    }
+    else{
+        await fs.writeFile(outputFile,format(JSON.stringify(result),options));
+    }
+    
 }
 
-build("./syntaxes/starbytes.tmLanguage.yml").catch(err => console.error(err));
+build("./syntaxes/starbytes.tmLanguage.yml",true).catch(err => console.error(err));
 
-build("./syntaxes/starbytes-module.tmLanguage.yml").catch(err => console.log(err));
+build("./syntaxes/starbytes-module.tmLanguage.yml",true).catch(err => console.log(err));

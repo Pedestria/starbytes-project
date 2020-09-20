@@ -6,8 +6,9 @@ const vscode_languageclient_1 = require("vscode-languageclient");
 let langClient;
 function activate(context) {
     console.log("Yipee");
+    console.log(context.asAbsolutePath("../build/bin/starbytes-lsp.exe"));
     const serverOptions = {
-        command: context.asAbsolutePath("../build/Starbytes/starbytes-lsp/starbytes-lsp"),
+        command: context.asAbsolutePath("../build/bin/starbytes-lsp.exe"),
     };
     const clientOptions = {
         documentSelector: [

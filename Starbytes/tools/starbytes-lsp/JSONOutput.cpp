@@ -17,14 +17,14 @@ namespace LSP {
 namespace JSON {
 
     enum class JSONNodeType:int {
-        Object,Array,String,Number,Null,Boolean
+        Object,Array,String,Number,Null,Boolean,NullString
     };
     struct JSONNode {
         JSONNodeType type;
     };
 
     struct JSONNull : JSONNode {};
-
+    struct JSONNullString : JSONNode {};
     struct JSONBoolean : JSONNode {
         bool value;
     };
@@ -43,7 +43,7 @@ namespace JSON {
     };
 
     enum class JSONTokType:int {
-        CloseBrace,CloseBracket,OpenBrace,OpenBracket,Numeric,String,Colon,Comma,Boolean,Null
+        CloseBrace,CloseBracket,OpenBrace,OpenBracket,Numeric,String,Colon,Comma,Boolean,Null,NullString
     };
 
     typedef pair<string,JSONNode *> JSONObjEntry;
@@ -146,6 +146,7 @@ namespace JSON {
     class JSONGenerator{
         private:
             ostringstream result;
+            bool pretty;
             string *ptr;
             JSONObject *tree;
             void generateJSONNull(JSONNull *node){
@@ -169,14 +170,22 @@ namespace JSON {
                 delete node;
             }
             void generateJSONArray(JSONArray * node,int level){
-                result << "[" << "\n";
+                result << "[";
+                if(pretty){
+                    result << "\n";
+                }
                 int count = 0;
                 for(auto obj : node->objects){
                     if(count > 0){
-                        result << "," << "\n";
+                        result << ",";
+                        if(pretty){
+                            result << "\n";
+                        }
                     }
-                    for(int i = 0;i < level;++i){
-                        result << "\t";
+                    if(pretty){
+                        for(int i = 0;i < level;++i){
+                            result << "\t";
+                        }
                     }
                     switch (obj->type) {
                     case JSONNodeType::Object:
@@ -202,22 +211,32 @@ namespace JSON {
                     }
                     ++count;
                 }
-                result << "\n";
-                for(int i = 1;i < level;++i){
-                        result << "\t";
+                if(pretty){
+                    result << "\n";
+                    for(int i = 1;i < level;++i){
+                            result << "\t";
+                    }
                 }
                 result << "]";
                 delete node;
             }
             void generateJSONObject(JSONObject *object,int level){
-                result << "{" << "\n";
+                result << "{";
+                if(pretty){
+                    result << "\n";
+                }
                 int count = 0;
                 for (auto entry : object->entries){
                     if(count > 0){
-                        result << "," << "\n";
+                        result << ",";
+                        if(pretty){
+                            result << "\n";
+                        }
                     }
-                    for(int i = 0;i < level;++i){
-                        result << "\t";
+                    if(pretty){
+                        for(int i = 0;i < level;++i){
+                            result << "\t";
+                        }
                     }
                     result << entry.first;
                     result << ":";
@@ -245,16 +264,19 @@ namespace JSON {
                     }
                     ++count;                
                 }
-                result << "\n";
-                for(int i = 1;i < level;++i){
-                        result << "\t";
+                if(pretty){
+                    result << "\n";
+                    for(int i = 1;i < level;++i){
+                            result << "\t";
+                    }
                 }
                 result << "}";
                 delete object;
             }
         public:
             JSONGenerator(JSONObject *_tree):tree(_tree){}
-            string * generate(){
+            string * generate(bool _pretty){
+                pretty = _pretty;
                 generateJSONObject(tree,1);
                 string * _resultc = new string();
                 *_resultc = result.str();
@@ -276,6 +298,9 @@ namespace JSON {
             }
             char aheadChar(){
                 return code[currentIndex + 1];
+            }
+            char behindChar(){
+                return code[currentIndex - 1];
             }
             void clearCache(JSONTokType type = JSONTokType::String){
                 auto length = bufptr-start;
@@ -352,6 +377,14 @@ namespace JSON {
                         c = nextChar();
                         while(true){
                             if(c == '\"'){
+                                if(behindChar() == '\"'){
+                                    *bufptr = '\"';
+                                    ++bufptr;
+                                    *bufptr = '\"';
+                                    ++bufptr;
+                                    clearCache(JSONTokType::NullString);
+                                    break;
+                                }
                                 clearCache();
                                 break;
                             }else {
@@ -457,6 +490,7 @@ namespace JSON {
                                 parserJSONNull((JSONNull *) node);
                             }
                             Node->objects.push_back(node);
+                            tok = nextToken();
                         }
                         else if(tok->type == JSONTokType::CloseBracket){
                             break;
@@ -657,9 +691,9 @@ namespace JSON {
                 // }
                 return msgcntr;
             };
-            void compileToJSON(LSPServerReply *msgtosnd,string *msgout){
+            string * compileToJSON(LSPServerReply *msgtosnd,bool beautify){
                 JSONGenerator g = JSONGenerator(translateToJSON(msgtosnd));
-                msgout = g.generate();
+                return g.generate(beautify);
             }
             JSONObject * translateLSPObjectToJSON(LSPServerObject *obj){
                 JSONObject *result;
@@ -668,13 +702,6 @@ namespace JSON {
                     result = createJSONObject({
                         JSONObjEntry ("code",createJSONNumber(to_string(err->code))),
                         JSONObjEntry ("message",createJSONString(true,err->message))
-                    });
-                } else if(obj->type == CompletionOptions){
-                    LSPCompletionOptions *re = (LSPCompletionOptions *)obj;
-                    result = createJSONObject({
-                        JSONObjEntry ("triggerCharacters",convertStringArray(&re->trigger_characters)),
-                        JSONObjEntry ("allCommitCharacters",convertStringArray(&re->all_commit_characters)),
-                        JSONObjEntry ("resolveProvider",createJSONBoolean(re->resolve_provider))
                     });
                 }
                 return result;
@@ -703,16 +730,14 @@ LSPServerMessage * Messenger::read(){
     std::string message;
     while(true){
         getline(cin,header);
-        if(!header.find("Content-Length:")){
+        size_t found = header.find("Content-Length:");
+        if(found == string::npos){
             cout << "Header Expected!";
             continue;
         }
         std::string ch;
         getline(cin,ch);
-        if(!ch.find("")){
-            cout << "Expected Line Break!";
-            continue;
-        }
+        
         getline(cin,ch);
         if(ch == "{"){
             message.append(ch);
@@ -744,7 +769,7 @@ void Messenger::reply(LSPServerReply *result){
     using namespace JSON;
     JSONTranslator t;
     string *r;
-    t.compileToJSON(result,r);
+    t.compileToJSON(result,false);
     cout << "Content-Length: " << r->length() << "\r\n\r\n" << *r;
 }
 
@@ -756,7 +781,23 @@ void Messenger::sendIntializeMessage(string id){
         JSONObjEntry ("id",createJSONString(false,id)),
         JSONObjEntry ("result",createJSONObject({
             JSONObjEntry ("capabilities",createJSONObject({
-               
+                JSONObjEntry("textDocumentSync",createJSONObject({
+                    JSONObjEntry("openClose",createJSONBoolean(true)),
+                    JSONObjEntry("change",createJSONNumber("1"))
+                })),
+                JSONObjEntry("completionProvider",createJSONObject({
+                    JSONObjEntry("workDoneProgress",createJSONBoolean(true)),
+                    JSONObjEntry("triggerCharacters",createJSONArray({
+                        createJSONString(true,".")
+                    })),
+                    JSONObjEntry("resolveProvider",createJSONBoolean(true))
+                })),
+                JSONObjEntry("hoverProvider",createJSONBoolean(true)),
+               JSONObjEntry("workspace",createJSONObject({
+                   JSONObjEntry("workspaceFolders",createJSONObject({
+                       JSONObjEntry("supported",createJSONBoolean(true))
+                   }))
+               }))
             })),
             JSONObjEntry ("serverInfo",createJSONObject({
                 JSONObjEntry ("name",createJSONString(true,"StarbytesLSP-Server")),
@@ -765,7 +806,7 @@ void Messenger::sendIntializeMessage(string id){
         });
     string *initMessage;
     JSONGenerator g = JSONGenerator(json_init);
-    initMessage = g.generate();
+    initMessage = g.generate(false);
     cout << "Content-Length: " << initMessage->length() << "\r\n\r\n" << *initMessage;
 
 };

@@ -2,7 +2,7 @@
 # project specific logic here.
 #
 set(STARBYTES_LIB_INCLUDE ${CMAKE_SOURCE_DIR}/Starbytes/include)
-set(STARBYTES_SOURCE_DIR ${CMAKE_SOURCE_DIR}/Starbytes )
+set(STARBYTES_SOURCE_DIR ${CMAKE_SOURCE_DIR}/Starbytes)
 set(STARBYTES_ALL_LIBS "" CACHE INTERNAL "All libs")
 
 function(add_starbytes_lib)
@@ -87,6 +87,13 @@ function(add_starbytes_test)
     add_test(NAME "Test-${STARBYTES_TEST_NAME}" COMMAND ${STARBYTES_TEST_NAME})
 endfunction()
 
+function(create_lib_set set_name)
+    set(${set_name} "" CACHE INTERNAL "LIB_SET")
+endfunction()
+
+function(add_to_lib_set set_name item)
+    set(${set_name} ${set_name} ${item} CACHE INTERNAL "LIB_SET")
+endfunction()
 
 add_subdirectory("lib")
 add_subdirectory("tools")
