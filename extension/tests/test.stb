@@ -5,7 +5,7 @@ alias FS = use FileSystem
 
 decl var:Number
 
-func function(hello:String,other:Number) >? String {
+func function(hello:String,other:Number) >> String {
     return "Hello World!"
 }
 
