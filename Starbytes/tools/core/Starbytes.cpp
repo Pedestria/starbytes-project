@@ -3,6 +3,11 @@
 #include <stdio.h>
 #include <fstream>
 #include <string>
+#include <Base/ADT.h>
+
+
+
+//Commeny Break;
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -31,7 +36,7 @@ void setupConsole(void){
 }
 #endif
 
-
+// Another Break;
 
 // #include <nlohmann/json.hpp>
 
@@ -108,6 +113,8 @@ int main(int argc, char* argv[]) {
 	#ifdef _WIN32
 	setupConsole();
 	#endif
+
+	using namespace Foundation;
 	StarbytesArgs *args = parseArguments(argv,argc);
 	if(args->hasModuleFile){
 		cout << "Module File Location:" << args->module_file;
