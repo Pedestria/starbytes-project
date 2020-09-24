@@ -1,0 +1,10 @@
+add_starbytes_lib(
+    LIB_NAME 
+    "starbytesBase"
+    HEADER_FILES
+    ADT.h
+    ANSIColors.h
+    Base.h
+    SOURCE_FILES
+    ADT.cpp
+    )

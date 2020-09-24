@@ -89,6 +89,9 @@ namespace Starbytes {
             void parseStatement(std::vector<ASTStatement *> * container,Scope scope);
             void parseNumericLiteral(ASTNumericLiteral *ptr);
             void parseStringLiteral(ASTStringLiteral *ptr);
+            void parseComment();
+            void parseLineComment(ASTLineComment *ptr);
+            void parseBlockComment(ASTBlockComment *ptr);
         public:
             Parser(std::vector<Token>& _tokens,AbstractSyntaxTree * tree) : tokens(_tokens), currentIndex(0), Treeptr(tree) {};
             void convertToAST();

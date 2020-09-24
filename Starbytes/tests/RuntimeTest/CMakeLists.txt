@@ -1,0 +1,9 @@
+add_starbytes_test(
+    INCLUDE_LIB
+    NAME 
+    "runtime-test"
+    FILES
+    "Run.cpp"
+    DEPENDENCIES
+    "starbytesRuntime"
+)

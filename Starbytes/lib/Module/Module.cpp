@@ -1,33 +1,19 @@
 #include "Module/Module.h"
 #include "Parser/Lookup.h"
 #include "AST/Document.h"
+#include "Base/Base.h"
 #include <fstream>
 #include <iostream>
 #include <cctype>
 
 namespace Starbytes {
 
+    using namespace Foundation;
+
     inline std::string & unwrapQuotes(std::string & subject){
         subject.erase(subject.begin());
         subject.erase(subject.end());
         return subject;
-    }
-
-    std::string * readFile(std::string & File){
-        std::string * buffer = new std::string();
-        std::ifstream input (File);
-        if(input.is_open()){
-            std::ostringstream file;
-            file << input.rdbuf();
-            *buffer = file.str();
-            input.close();
-        }
-        else{
-            *buffer = "";
-            std::cerr << "Error: Cannot Locate File: " << File;
-        }
-        return buffer;
-        
     }
 
     std::string ProjectFileParseError(std::string message,DocumentPosition * pos){

@@ -3,8 +3,8 @@
 ---
 
 ### Contents:
-- `starbytes` - The Compiler/Interpreter Engine
-- `starbytes-lib` - The Library for all starbytes toolchain programs.
+- `starbytes-c` - The Compiler.
+- `starbytes-rn` - The Runtime.
 - `starbytes-lsp` - The LSP Implementation for Starbytes
 - ### Editors (`extension` Directory)
 - starbytes-grammar - The Textmate Syntax Grammar for Starbytes.

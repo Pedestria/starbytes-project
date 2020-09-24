@@ -69,6 +69,15 @@ bool isCarrot(char &c){
 	}
 }
 
+bool isSlash(char &c){
+	if(c == '/'){
+		return true;
+	}
+	else{
+		return false;
+	}
+}
+
 bool isKeyword(std::string &subject){
 	LookupArray<std::string> keywordLookup = {"import","scope","func","lazy","interface","class","struct","return","if","else","alias","deftype","immutable","decl","extends","utilizes","new","loose","enum","for","while","catch","secure"};
 	return keywordLookup.lookup(subject);
@@ -243,6 +252,60 @@ std::vector<Token> Lexer::tokenize() {
 			*bufptr = c;
 			++bufptr;
 			resolveTokenAndClearCache(TokenType::Comma);
+		}
+		else if(isSlash(c)){
+			//Comments!
+			resolveTokenAndClearCache(TokenType::LineCommentDBSlash);
+			*bufptr = c;
+			++bufptr;
+			c = nextChar();
+			if(isSlash(c)){
+				*bufptr = c;
+				++bufptr;
+				while(true){
+					if(c == '\n'){
+						resolveTokenAndClearCache(TokenType::Comment);
+						column = 0;
+						++line;
+						break;
+					}
+					else{
+						*bufptr = c;
+						++bufptr;
+					}
+					c = nextChar();
+				}
+			}
+			else if(c == '*'){
+				*bufptr = c;
+				++bufptr;
+				resolveTokenAndClearCache(TokenType::BlockCommentStart);
+				while(true){
+					if(c == '\n'){
+						resolveTokenAndClearCache(TokenType::Comment);
+						column = 0;
+						++line;
+					}
+					else if(c == '*'){
+						resolveTokenAndClearCache(TokenType::Comment);
+						c = nextChar();
+						*bufptr = c;
+						++bufptr;
+						if(c == '/'){
+							*bufptr = c;
+							++bufptr;
+							resolveTokenAndClearCache(TokenType::BlockCommentEnd);
+							break;
+						}
+						
+					}
+					else{
+						*bufptr = c;
+						++bufptr;
+					}
+					c = nextChar();
+				}
+			}
 		}
 		else if (c == '\0') {
 			resolveTokenAndClearCache();

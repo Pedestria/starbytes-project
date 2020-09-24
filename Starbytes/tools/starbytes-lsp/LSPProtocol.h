@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <optional>
 #include "JSONOutput.h"
 
 namespace Starbytes {

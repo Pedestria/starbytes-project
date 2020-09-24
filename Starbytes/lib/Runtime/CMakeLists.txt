@@ -1,0 +1,10 @@
+add_starbytes_lib(
+    LIB_NAME
+    "starbytesRuntime"
+    SOURCE_FILES
+    "RuntimeEngine.cpp"
+    "RuntimeLib.cpp"
+    HEADER_FILES
+    "RuntimeEngine.h"
+    "RuntimeLib.h"
+)

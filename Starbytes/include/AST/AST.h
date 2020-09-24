@@ -10,10 +10,31 @@ namespace Starbytes {
             Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,
             TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,
             ClassConstructorParameterDeclaration,TypeArgumentsDeclaration,InterfaceDeclaration,InterfaceBlockStatement,InterfacePropertyDeclaration,InterfaceMethodDeclaration,ReturnDeclaration,EnumDeclaration,EnumBlockStatement,
-            Enumerator,IfDeclaration,ElseIfDeclaration,ElseDeclaration,BooleanLiteral,AwaitExpression
+            Enumerator,IfDeclaration,ElseIfDeclaration,ElseDeclaration,BooleanLiteral,AwaitExpression,ExpressionStatement
+        };
+
+        enum class CommentType:int {
+            LineComment,BlockComment
+        };
+
+        struct ASTComment {
+            CommentType type;
+        };
+
+        struct ASTLineComment : ASTComment{
+            std::string value;
+        };
+
+        struct ASTBlockComment : ASTComment {
+            unsigned int line_num;
+            std::vector<std::string> lines;
+        };
+
+        struct ASTObject {
+            std::vector<ASTComment *> preceding_comments;
         };
         /*Abstract Syntax Tree Node*/
-        struct ASTNode {
+        struct ASTNode : ASTObject {
             DocumentPosition position;
             ASTType type;
         };
@@ -29,7 +50,7 @@ namespace Starbytes {
             std::string value;
         };
 
-        struct ASTStatement {
+        struct ASTStatement : ASTObject {
             DocumentPosition BeginFold;
             DocumentPosition EndFold;
             ASTType type;
@@ -230,12 +251,13 @@ namespace Starbytes {
           
         };
 
-        struct ASTCallbackEntry {
+        struct ASTVisitorEntry {
             ASTType type;
             void (*callback)(WalkPath<> *);
         };
 
-        void WalkAST(AbstractSyntaxTree *tree,std::initializer_list<ASTCallbackEntry> callbacks);
+        void WalkAST(AbstractSyntaxTree *tree,std::initializer_list<ASTVisitorEntry> callbacks);
+        void WalkStatement(ASTStatement *node,std::initializer_list<ASTVisitorEntry> &cbs);
     };
 
 }

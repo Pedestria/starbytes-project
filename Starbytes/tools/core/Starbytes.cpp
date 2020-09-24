@@ -3,8 +3,7 @@
 #include <stdio.h>
 #include <fstream>
 #include <string>
-#include <Base/ADT.h>
-
+#include "Base/Base.h"
 
 
 //Commeny Break;
@@ -50,10 +49,10 @@ string convertPosition(DocumentPosition pos){
 }
 
 string help(){
-	return "\n \u001b[35m\u001b[4mThe Starbytes Compiler (v. 0.0.1a)\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help information";
+	return "\n \u001b[35m\u001b[4mThe Starbytes Compiler (v. 0.0.1a)\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help information \n --project-file = Directory to project file to build";
 }
 // Wraps ANSI Escape Code around message!
-string createStarbytesError(string message,string escc = "31m"){
+string createStarbytesError(string message,string escc = RED){
 	return "\x1b["+escc+message+"\x1b[0m";
 }
 
@@ -78,7 +77,7 @@ StarbytesArgs * parseArguments(char * arguments[],int count){
         if(FLAGS[i] == "--help"){
             cout << help();
             exit(0);
-        } else if(FLAGS[i] == "--module-file"){
+        } else if(FLAGS[i] == "--project-file"){
 			arg->hasModuleFile = true;
 			arg->module_file = FLAGS[++i];
 		} else if(FLAGS[i] == "--source"){
@@ -92,29 +91,13 @@ StarbytesArgs * parseArguments(char * arguments[],int count){
     
 }
 
-std::string * readFile(std::string & file) {
-	std::string * buffer = new std::string();
-	std::ifstream input (file);
-	if(input.is_open()){
-		std::ostringstream file;
-		file << input.rdbuf();
-		*buffer = file.str();
-		input.close();
-	}
-	else{
-		*buffer = "";
-		cerr << createStarbytesError("Error: Unable to Open File: ") << file;
-	}
-	return buffer;
-        
-}
-
 int main(int argc, char* argv[]) {
 	#ifdef _WIN32
 	setupConsole();
 	#endif
 
 	using namespace Foundation;
+
 	StarbytesArgs *args = parseArguments(argv,argc);
 	if(args->hasModuleFile){
 		cout << "Module File Location:" << args->module_file;

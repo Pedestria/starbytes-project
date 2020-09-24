@@ -5,6 +5,7 @@ add_starbytes_lib(
     HEADER_FILES
     Module.h
     LIBS_TO_LINK
+    "starbytesBase"
     "starbytesAST"
     "starbytesParser"
 )
