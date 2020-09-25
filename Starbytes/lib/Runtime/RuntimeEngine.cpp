@@ -137,8 +137,14 @@ namespace Starbytes::Runtime::Engine {
         tm buf;
         time_t t = time(NULL);
         char RESULT [50];
+        #ifdef __APPLE__
+        gmtime_r(&t,&buf);
+        asctime_r(&buf,RESULT);
+        #elif _WIN32
         gmtime_s(&buf,&t);
         asctime_s(RESULT,sizeof (RESULT),&buf);
+        #endif
+        
         std::string R (RESULT);
         size_t found = R.find("\n");
         if(found != std::string::npos){
