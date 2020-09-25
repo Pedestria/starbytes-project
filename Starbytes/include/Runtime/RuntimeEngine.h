@@ -21,7 +21,7 @@ namespace Starbytes {
                     
             };
         enum class PtrType:int {
-            CreateFunc,InvokeFunc
+            CreateFunc,InvokeFunc,CreateVariable,SetVariable,CreateFunctionArgs
         };
         template<typename ARGTYPE = std::any>
         struct InternalFuncPtr : RuntimeObject {
@@ -72,7 +72,7 @@ namespace Starbytes {
                     std::string INTERAL_STRING;
                 public:
                     StarbytesString(std::string v):INTERAL_STRING(v),StarbytesObject(SBObjectType::String){};
-                    void append();
+                    void append(StarbytesString *obj);
                     StarbytesString * atIndex(int i);
                     void sliceAt(int i);
                     void findSubstr(StarbytesString *substr);

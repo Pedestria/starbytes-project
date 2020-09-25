@@ -3,8 +3,7 @@
 ---
 
 ### Contents:
-- `starbytes-c` - The Compiler.
-- `starbytes-rn` - The Runtime.
+- `starbytes` - The Compiler/Runtime.
 - `starbytes-lsp` - The LSP Implementation for Starbytes
 - ### Editors (`extension` Directory)
 - starbytes-grammar - The Textmate Syntax Grammar for Starbytes.
