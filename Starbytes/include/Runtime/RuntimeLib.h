@@ -4,24 +4,56 @@
 
 namespace Starbytes {
     namespace Runtime {
+        struct RuntimeObject {};
         namespace Lib {
+            enum class SBObjectType:int {
+                String,Array,Set
+            };
+            class StarbytesObject : public RuntimeObject {
+                protected:
+                    SBObjectType type;
+                public:
+                    explicit StarbytesObject(SBObjectType _type):type(_type){};
+                    bool isType(SBObjectType _subject){
+                        return type == _subject;
+                    }
+                    
+            };
+
+            struct StarbytesClassProperty {
+                std::string name;
+                bool loose;
+                bool immutable;
+                StarbytesObject *value;
+            };
+
+            struct StarbytesClassMethod {
+
+            };
+            struct StarbytesClassInstance : public StarbytesObject {
+                std::string name;
+                std::vector<StarbytesClassProperty *> properties;
+                
+            };
+            
             /*Starbytes String*/
-            class SBString{
+            class StarbytesString : public StarbytesObject{
                 private:
                     std::string INTERAL_STRING;
                 public:
-                    SBString(std::string v):INTERAL_STRING(v){};
+                    StarbytesString(std::string v):INTERAL_STRING(v),StarbytesObject(SBObjectType::String){};
                     void append();
-                    SBString * atIndex(int i);
+                    StarbytesString * atIndex(int i);
                     void sliceAt(int i);
-                    void findSubstr(SBString *substr);
+                    void findSubstr(StarbytesString *substr);
+                    std::string & __get_interal();
             };
             template <class _Type>
-            class SBArray {
+            class StarbytesArray : public StarbytesObject {
                 private:
                     std::vector<_Type> INTERNAL_ARRAY;
                 public:
-                    SBArray<_Type>(std::vector<_Type> v):INTERNAL_ARRAY(v){};
+                    StarbytesArray<_Type>(std::vector<_Type> v):INTERNAL_ARRAY(v){};
                     void push(_Type item){
                         INTERNAL_ARRAY.push_back(item);
                     };
@@ -44,11 +76,11 @@ namespace Starbytes {
             };
 
             template <class _Type>
-            class SBSet {
+            class StarbytesSet : public StarbytesObject {
                 private:
                     std::vector<_Type> INTERNAL_SET;
                 public:
-                    SBSet<_Type>(std::vector<_Type> v):INTERNAL_SET(v){};
+                    StarbytesSet<_Type>(std::vector<_Type> v):INTERNAL_SET(v){};
                     bool push();
                     void filter(bool condition);
                     void find(bool condition);
