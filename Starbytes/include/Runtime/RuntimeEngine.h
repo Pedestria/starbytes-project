@@ -2,13 +2,14 @@
 #include <any>
 #include <string>
 #include <vector>
+#include <optional>
 
 namespace Starbytes {
     namespace Runtime {
         namespace Engine {
         struct RuntimeObject {};
         enum class SBObjectType:int {
-                String,Array,Set,ClassInstance
+                String,Array,Set,ClassInstance,Number
         };
         class StarbytesObject : public RuntimeObject {
                 protected:
@@ -21,7 +22,7 @@ namespace Starbytes {
                     
             };
         enum class PtrType:int {
-            CreateFunc,InvokeFunc,CreateVariable,SetVariable,CreateFunctionArgs
+            CreateFunc,InvokeFunc,CreateVariable,SetVariable,CreateFunctionArgs,ReturnFunc
         };
         template<typename ARGTYPE = std::any>
         struct InternalFuncPtr : RuntimeObject {
@@ -37,12 +38,14 @@ namespace Starbytes {
         };
         struct StoredFunction {
             std::string name;
+            bool lazy;
             std::vector<StoredVariable<> *> args;
             std::initializer_list<InternalFuncPtr<> *> body;
         };
 
             struct StarbytesClassProperty {
                 std::string name;
+                bool not_constructible;
                 bool loose;
                 bool immutable;
                 StarbytesObject *value;
@@ -63,7 +66,24 @@ namespace Starbytes {
                 std::string name;
                 std::string type;
                 std::vector<StarbytesClassProperty *> properties;
-                std::vector<StarbytesClassMethod *> * method_ptrs;
+                std::vector<StarbytesClassMethod *> methods;
+            };
+            template<typename _numType>
+            class StarbytesNumber : public StarbytesObject {
+                private:
+                    _numType INTERNAL_VALUE;
+                public: 
+                    void add(StarbytesNumber<_numType> * _otherNum){
+                        INTERNAL_VALUE += _otherNum->INTERNAL_VALUE;
+                    };
+                    void subtract(StarbytesNumber<_numType> *_otherNum){
+                        INTERNAL_VALUE -= _otherNum->INTERNAL_VALUE;
+                    }
+                    _numType & __get_interal(){
+                        return INTERNAL_VALUE;
+                    }
+                    StarbytesNumber(_numType num):INTERNAL_VALUE(num),StarbytesObject(SBObjectType::Number){};
+                    ~StarbytesNumber(){};
             };
             
             /*Starbytes String*/

@@ -1,11 +1,13 @@
 #include "Starbytes-LSP.h"
 #include "JSONOutput.h"
+// #include "Parser/Lexer.h"
+// #include "Parser/Parser.h"
 #include <array>
 #include <cctype>
 #include <sstream>
 #include <string>
-#include <array>
 #include <vector>
+
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -80,6 +82,20 @@ bool parseArguments(char * arguments[],int count){
 //     }
 // };
 
+// AbstractSyntaxTree * parseStarbytesSource(std::string & data){
+//     auto toks = Lexer(data).tokenize();
+//     AbstractSyntaxTree * tree = new AbstractSyntaxTree();
+//     try {
+//         Parser(toks,tree).convertToAST();
+//         return tree;
+//     }
+//     catch (string message){
+//         std::cerr << "Parser Error!";
+//         return nullptr;
+//     }
+
+// }
+
 
 
 
@@ -91,6 +107,9 @@ int main(int argc, char* argv[]) {
     // StarbytesLSPServer server;
     // server.init(argc,argv);
     //Change
+
+    // string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\ndecl immutable hellop:Array = [\"One\",\"Two\"]\n";
+    // parseStarbytesSource(test);
 
     if(!parseArguments(argv,argc)){
         return 0;
@@ -113,5 +132,6 @@ int main(int argc, char* argv[]) {
         }
 
     }
+    //If receives a textDocument via message, parse document!
     // cout << help();
 }

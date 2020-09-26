@@ -87,7 +87,7 @@ namespace Starbytes {
     }
 
     bool isNumber(std::string & subject){
-        for(auto c : subject){
+        for(auto & c : subject){
             if(!std::isdigit(c)){
                 return false;
             }
