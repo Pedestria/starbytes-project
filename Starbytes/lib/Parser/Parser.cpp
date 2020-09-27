@@ -79,7 +79,9 @@ void Parser::convertToAST(){
 void Parser::parseStatement(std::vector<ASTStatement *> * container,Scope scope){
     //First Token of Statement!
     Token *tok = currentToken();
-
+    if(tok->getType() == TokenType::EndOfFile){
+        return; 
+    }
     if(parseExpressionStatement(container)){
         return;
     }

@@ -19,6 +19,7 @@ namespace Starbytes {
                     bool isType(SBObjectType _subject){
                         return type == _subject;
                     }
+                    virtual bool __is_equal(StarbytesObject *_obj);
                     
             };
         enum class PtrType:int {
@@ -84,6 +85,22 @@ namespace Starbytes {
                     }
                     StarbytesNumber(_numType num):INTERNAL_VALUE(num),StarbytesObject(SBObjectType::Number){};
                     ~StarbytesNumber(){};
+                    bool __is_equal(StarbytesObject *_obj) override{
+                        bool return_code;
+                        if(_obj->isType(SBObjectType::Number)){
+                            StarbytesNumber<int> *n = (StarbytesNumber<int> *)_obj;
+                            if(n->INTERNAL_VALUE == INTERNAL_VALUE){
+                                return_code = true;
+                            }
+                            else{
+                                return_code = false;
+                            }
+                        }
+                        else{
+                            return_code = false;
+                        }
+                        return return_code;
+                    };
             };
             
             /*Starbytes String*/
@@ -99,6 +116,7 @@ namespace Starbytes {
                     std::string & __get_interal(){
                         return INTERAL_STRING;
                     };
+                    bool __is_equal(StarbytesObject *_obj) override;
             };
             template <class _Type>
             class StarbytesArray : public StarbytesObject {

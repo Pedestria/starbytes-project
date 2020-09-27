@@ -14,6 +14,23 @@ namespace Starbytes::Runtime::Engine {
 
     //Data Types/Data Type Instance Methods Implementations
 
+    bool StarbytesString::__is_equal(StarbytesObject *_obj) {
+        bool return_code;
+        if(_obj->isType(SBObjectType::String)){
+            StarbytesString *s = (StarbytesString *)_obj;
+            if(s->INTERAL_STRING == INTERAL_STRING){
+                return_code = true;
+            }
+            else{
+                return_code = false;
+            }
+        }
+        else{
+            return_code = false;
+        }
+        return return_code;
+    }
+
     void StarbytesString::append(StarbytesString *obj) {
         INTERAL_STRING.append(obj->__get_interal());
     };
@@ -73,7 +90,6 @@ namespace Starbytes::Runtime::Engine {
     // std::vector<StoredFunction *> stored_functions;
     // std::vector<StoredVariable<> *> stored_variables;
     // std::vector<StarbytesClass *> stored_classes;
-
     class Scope {
         private:
             std::string name;
@@ -88,7 +104,12 @@ namespace Starbytes::Runtime::Engine {
             ~Scope(){};
     };
 
-    std::string current_scope;
+    std::vector<std::string> scope_heirarchy;
+
+    std::string & get_current_scope(){
+        return scope_heirarchy.front();
+    }
+
     std::vector<Scope *> scopes;
 
     void create_scope(std::string name){
@@ -123,6 +144,15 @@ namespace Starbytes::Runtime::Engine {
     StarbytesArray<StarbytesObject *> * create_starbytes_array(std::initializer_list<StarbytesObject *> ilist){
         StarbytesArray<StarbytesObject *> * rc = new StarbytesArray<StarbytesObject *>(ilist);
         return rc;
+    }
+
+    bool is_starbytes_array(StarbytesObject *& ptr){
+        if(ptr->isType(SBObjectType::Array)){
+            return true;
+        }
+        else{
+            return false;
+        }
     }
 
     template<typename _NumT>
@@ -192,11 +222,11 @@ namespace Starbytes::Runtime::Engine {
     void create_variable(std::string name){
         StoredVariable<> * val = new StoredVariable<>;
         val->name = name;
-        get_scope(current_scope)->stored_variables.push_back(val);
+        get_scope(get_current_scope())->stored_variables.push_back(val);
     }
     template<typename _Type>
     void set_variable(std::string name,_Type * value){
-        for(auto & v : get_scope(current_scope)->stored_variables){
+        for(auto & v : get_scope(get_current_scope())->stored_variables){
             if(v->name == name){
                 v->val = value;
                 break;
@@ -209,7 +239,7 @@ namespace Starbytes::Runtime::Engine {
     }
     //Returns `address` of pointer to variable!
     StarbytesObject ** refer_variable_a(std::string name){
-        for(auto & v : get_scope(current_scope)->stored_variables){
+        for(auto & v : get_scope(get_current_scope())->stored_variables){
             if(v->name == name){
                 return &v->val;
             }
@@ -218,7 +248,7 @@ namespace Starbytes::Runtime::Engine {
     }
     //Returns pointer to variable!
     StarbytesObject * refer_variable_d(std::string name){
-        for(auto & v : get_scope(current_scope)->stored_variables){
+        for(auto & v : get_scope(get_current_scope())->stored_variables){
             if(v->name == name){
                 return v->val;
             }
@@ -252,7 +282,7 @@ namespace Starbytes::Runtime::Engine {
         func->body = body;
         func->args = args;
         func->lazy = lazy;
-        get_scope(current_scope)->stored_functions.push_back(func);
+        get_scope(get_current_scope())->stored_functions.push_back(func);
     }
 
     void invoke_function(std::string name,std::vector<StarbytesObject **> & args){
@@ -260,7 +290,7 @@ namespace Starbytes::Runtime::Engine {
             starbytes_log(starbytes_object_to_string(*args[0]));
         }
         else{
-            for(auto & stfnc : get_scope(current_scope)->stored_functions){
+            for(auto & stfnc : get_scope(get_current_scope())->stored_functions){
                 if(stfnc->name == name && stfnc->lazy == false){
                     for(int i = 0;i < stfnc->args.size();++i){
                         stfnc->args[i]->val = *args[i];
@@ -296,7 +326,7 @@ namespace Starbytes::Runtime::Engine {
 
     StarbytesObject * invoke_function_return_guaranteed(std::string name,std::vector<StarbytesObject **> & args){
             StarbytesObject *return_ptr;
-            for(auto & stfnc : get_scope(current_scope)->stored_functions){
+            for(auto & stfnc : get_scope(get_current_scope())->stored_functions){
                 if(stfnc->name == name){
                     for(int i = 0;i < stfnc->args.size();++i){
                         stfnc->args[i]->val = *args[i];
@@ -334,7 +364,7 @@ namespace Starbytes::Runtime::Engine {
     //     std::future future_result = promise.get_future();
     //     std::thread thread1 ([&promise,&name,&args]{
     //         StarbytesObject *return_ptr;
-    //         for(auto & stfnc : get_scope(current_scope)->stored_functions){
+    //         for(auto & stfnc : get_scope(get_current_scope())->stored_functions){
     //             if(stfnc->name == name){
     //                 for(int i = 0;i < stfnc->args.size();++i){
     //                     stfnc->args[i]->val = *args[i];
@@ -376,7 +406,7 @@ namespace Starbytes::Runtime::Engine {
         cl->name = name;
         cl->methods = _methods;
         cl->props = _props;
-        get_scope(current_scope)->stored_classes.push_back(cl);
+        get_scope(get_current_scope())->stored_classes.push_back(cl);
     }
 
 
@@ -475,6 +505,11 @@ namespace Starbytes::Runtime::Engine {
                     num->subtract((StarbytesNumber <int> *)*args[0]);
                 }
             }
+        } else if(is_starbytes_array(_instance_refer)){
+            StarbytesArray<StarbytesObject *> *arr = (StarbytesArray<StarbytesObject *> *)_instance_refer;
+            if(name == "push"){
+                arr->push(*args[0]);
+            }
         }
     }
 
@@ -485,7 +520,7 @@ namespace Starbytes::Runtime::Engine {
         }
         else if(_obj->isType(SBObjectType::Array)){
             std::vector<StarbytesObject *> vals;
-            for(auto it : ((StarbytesArray<StarbytesObject *> *)_obj)->getIterator()){
+            for(auto & it : ((StarbytesArray<StarbytesObject *> *)_obj)->getIterator()){
                 vals.push_back(clone_object(it));
             }
             ptr = new StarbytesArray(vals);
@@ -495,39 +530,52 @@ namespace Starbytes::Runtime::Engine {
         return ptr;
     }
 
-    StoredFunction * clone_function(StoredFunction * _func){
+    // StoredFunction * clone_function(StoredFunction * _func){
 
-    }
+    // }
 
-    StarbytesClassInstance * create_instance_of_class(std::string type,std::string name,std::initializer_list<StarbytesObject *> args){
-        StarbytesClassInstance *cl_inst = new StarbytesClassInstance(name,type);
-        std::vector a (args);
-        for(auto & cl : get_scope(current_scope)->stored_classes){
-            if(cl->name == type){
-               for(int i = 0; i < cl->props.size(); ++i){
-                   auto & p = cl->props[i];
-                   if(p->not_constructible){
-                       StarbytesObject * property_val = clone_object(p->value);
-                       cl_inst->properties.push_back(create_class_property(p->name,p->immutable,p->loose,true,property_val));
-                   }
-                   else{
-                       cl_inst->properties.push_back(create_class_property(p->name,p->immutable,p->loose,false,true,a[i]));
-                   }
-               }
-               for (auto & m : cl->methods){
-                   StarbytesClassMethod *me = new StarbytesClassMethod;
-                   me->lazy = m->lazy;
-                   me->func = clone_function(m->func);
-                   cl_inst->methods.push_back(me);
-               }
-            }
+    // StarbytesClassInstance * create_instance_of_class(std::string type,std::string name,std::initializer_list<StarbytesObject *> args){
+    //     StarbytesClassInstance *cl_inst = new StarbytesClassInstance(name,type);
+    //     std::vector a (args);
+    //     for(auto & cl : get_scope(get_current_scope())->stored_classes){
+    //         if(cl->name == type){
+    //            for(int i = 0; i < cl->props.size(); ++i){
+    //                auto & p = cl->props[i];
+    //                if(p->not_constructible){
+    //                    StarbytesObject * property_val = clone_object(p->value);
+    //                    cl_inst->properties.push_back(create_class_property(p->name,p->immutable,p->loose,true,property_val));
+    //                }
+    //                else{
+    //                    cl_inst->properties.push_back(create_class_property(p->name,p->immutable,p->loose,false,true,a[i]));
+    //                }
+    //            }
+    //            for (auto & m : cl->methods){
+    //                StarbytesClassMethod *me = new StarbytesClassMethod;
+    //                me->lazy = m->lazy;
+    //                me->func = clone_function(m->func);
+    //                cl_inst->methods.push_back(me);
+    //            }
+    //         }
+    //     }
+    //     return cl_inst;
+    // }
+
+    enum class starbytes_conditional_operators:int{
+        IsEqual,IsNotEqual,IsGreaterThan,IsLessThan
+    };
+
+
+    void internal_if(starbytes_conditional_operators op,StarbytesObject * subject,StarbytesObject * object,std::string _func_to_invoke,std::vector<StarbytesObject **> & args){
+        if(op == starbytes_conditional_operators::IsEqual){
+           if(subject->__is_equal(object)){
+               invoke_function(_func_to_invoke,args);
+           }
         }
-        return cl_inst;
     }
 
     void Program(){
-        current_scope = "GLOBAL";
-        create_scope(current_scope);
+        get_current_scope() = "GLOBAL";
+        create_scope(get_current_scope());
         /* 
             decl Var = "Hello! Advanced Starbytes!"
             decl Some = "Extension!"
@@ -537,12 +585,6 @@ namespace Starbytes::Runtime::Engine {
             }
             TestFunc(Var)
             TestFunc(["Another Message!","Other Message!"])
-
-            func SomeOtherFunc() >> Number{
-                return 3
-            }
-            decl test = SomeOtherFunc()
-            TestFunc(test)
         */
         create_variable("Var");
         set_variable("Var",create_starbytes_string("Hello! Advanced Starbytes!"));
@@ -556,16 +598,22 @@ namespace Starbytes::Runtime::Engine {
             });
         std::vector<StarbytesObject **> args {refer_variable_a("Var")};
         invoke_function("TestFunc",args);
-        StarbytesObject * s = create_starbytes_array({create_starbytes_string("Another Message!"),create_starbytes_string("Other Message!")});
-        std::vector<StarbytesObject **> args0 { &s };
+        create_variable("Array");
+        set_variable("Array",create_starbytes_array({create_starbytes_string("Another Message!"),create_starbytes_string("Other Message!")}));
+        std::vector<StarbytesObject **> args0 { refer_variable_a("Array") };
         invoke_function("TestFunc",args0);
-        std::vector<StoredVariable<> *> * func_args0 = create_function_args({});
-        create_function("SomeOtherFunc",*func_args0,{create_func_ptr(PtrType::ReturnFunc,create_return_func_args(create_starbytes_number(3)))});
-        create_variable("test");
-        std::vector<StarbytesObject **> args2;
-        set_variable("test",invoke_function_return_guaranteed("SomeOtherFunc",args2));
-        std::vector<StarbytesObject **> args3 {refer_variable_a("test")};
-        invoke_function("TestFunc",args3);
+        StarbytesObject *s = create_starbytes_string("Another String!");
+        std::vector<StarbytesObject **> args3 { &s };
+        invoke_instance_method(refer_variable_d("Array"),"push",args3);
+        std::vector<StarbytesObject **> args2 {refer_variable_a("Array")};
+        invoke_function("TestFunc",args2);
+        // std::vector<StoredVariable<> *> * func_args0 = create_function_args({});
+        // create_function("SomeOtherFunc",*func_args0,{create_func_ptr(PtrType::ReturnFunc,create_return_func_args(create_starbytes_number(3)))});
+        // create_variable("test");
+        // std::vector<StarbytesObject **> args2;
+        // set_variable("test",invoke_function_return_guaranteed("SomeOtherFunc",args2));
+        // std::vector<StarbytesObject **> args3 {refer_variable_a("test")};
+        // invoke_function("TestFunc",args3);
     }
     
 

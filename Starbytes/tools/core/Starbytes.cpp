@@ -122,9 +122,8 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	else{
-		string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\ndecl immutable hellop:Array = [\"One\",\"Two\"]\n";
+		string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\ndecl immutable hellop:Array = [\"One\",\"Two\"]";
 		string test2 = "import library\nimport otherLibrary";
-	
 		auto result = Lexer(test).tokenize();
 		// for (Token tok : result) {
 		// 	cout << "Content:"+tok.getContent() << "\t" << "Type: " << int(tok.getType()) << "\t" << "Position:"+convertPosition(tok.getPosition());
