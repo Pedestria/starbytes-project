@@ -1,0 +1,10 @@
+add_starbytes_test(
+    NAME 
+    "semantic-engine-test"
+    INCLUDE_LIB
+    FILES
+    "Test.cpp"
+    DEPENDENCIES
+    "starbytesSemanticsEngineVisitors"
+    "starbytesSemanticsEngineCore"
+    )

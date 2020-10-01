@@ -14,5 +14,6 @@ add_starbytes_lib(
     LIB_NAME 
     "starbytesParser"
     LIBS_TO_LINK
+    "starbytesBase"
     "starbytesAST"
     )

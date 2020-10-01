@@ -3,7 +3,8 @@
 #include <stdio.h>
 #include <fstream>
 #include <string>
-#include "Base/Base.h"
+#include "starbytes/Base/Base.h"
+#include "starbytes/Parser/Token.h"
 
 
 //Commeny Break;
@@ -45,7 +46,7 @@ using namespace std;
 using namespace Starbytes;
 /*Serializes Position into String*/
 string convertPosition(DocumentPosition pos){
-	return string("{Line:" +to_string(pos.line)+" ,Start:"+to_string(pos.start)+" ,End:"+to_string(pos.end)+"}");
+	return string("{Line:" +to_string(pos.line)+",Start:"+to_string(pos.start)+",End:"+to_string(pos.end)+",RawIndex:"+to_string(pos.raw_index)+"\n\t}");
 }
 
 string help(){
@@ -54,6 +55,43 @@ string help(){
 // Wraps ANSI Escape Code around message!
 string createStarbytesError(string message,string escc = RED){
 	return "\x1b["+escc+message+"\x1b[0m";
+}
+
+string highlightCode(std::string & code,std::vector<Token> & tokens){
+	int index = 0;
+	for(auto tok : tokens){
+		DocumentPosition & pos = tok.getPosition();
+		string color_code;
+		if(tok.getType() == Starbytes::TokenType::Keyword){
+			color_code = PURPLE;
+		} else if(tok.getType() == Starbytes::TokenType::Identifier){
+			color_code = YELLOW;
+		} else if(tok.getType() == Starbytes::TokenType::Operator){
+			color_code = PURPLE;
+		} else {
+			color_code = "1m";
+		}
+		
+		if(pos.raw_index == 0){
+			code = "\x1b["+color_code + code;
+			cout << "start:" << pos.raw_index << " end:" << pos.raw_index+tok.getTokenSize() << " ";
+			++index;
+			code.insert(pos.raw_index+tok.getTokenSize()+4*(index),"\x1b[0m");
+		}
+		else if(tok.getType() != Starbytes::TokenType::EndOfFile){
+			cout << "start:" << pos.raw_index << " end:" << pos.raw_index+tok.getTokenSize() << " ";
+			code.insert(pos.raw_index+(4 * index)+1,"\x1b["+color_code);
+			++index;
+			code.insert(pos.raw_index+tok.getTokenSize()+4 * (index),"\x1b[0m");
+		}
+		++index;
+	}
+	return code;
+}
+
+void logError(std::string message,std::string code, std::vector<Token> &tokens){
+	string result = highlightCode(code,tokens);
+	std::cerr << message << "\n\n" << result << "\n";
 }
 
 struct StarbytesArgs {
@@ -124,22 +162,23 @@ int main(int argc, char* argv[]) {
 	else{
 		string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\ndecl immutable hellop:Array = [\"One\",\"Two\"]";
 		string test2 = "import library\nimport otherLibrary";
-		auto result = Lexer(test).tokenize();
+		auto result = Lexer(test2).tokenize();
+		logError("TEST",test2,result);
 		// for (Token tok : result) {
-		// 	cout << "Content:"+tok.getContent() << "\t" << "Type: " << int(tok.getType()) << "\t" << "Position:"+convertPosition(tok.getPosition());
+		// 	cout << "{\nContent:"+tok.getContent() << "\nType: " << int(tok.getType()) << "\nPosition:"+convertPosition(tok.getPosition()) << "\nSize:" <<tok.getTokenSize() << "\n}\n";
 		// }
-		AbstractSyntaxTree *tree = new AbstractSyntaxTree();
+		// AbstractSyntaxTree *tree = new AbstractSyntaxTree();
 
-		try {
-			auto parser = Parser(result,tree);
-			parser.convertToAST();
+		// try {
+		// 	auto parser = Parser(result,tree);
+		// 	parser.convertToAST();
 
-			for(auto node : tree->nodes){
-				cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
-			}
-		} catch (string message) {
-			cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
-		}
+		// 	for(auto node : tree->nodes){
+		// 		cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
+		// 	}
+		// } catch (string message) {
+		// 	cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
+		// }
 	}
 			// cout << help();
 		// cout << loghelp() << "\n";

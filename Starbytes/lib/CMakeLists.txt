@@ -1,5 +1,6 @@
 add_subdirectory("Base")
 add_subdirectory("AST")
 add_subdirectory("Parser")
-add_subdirectory("Runtime")
-add_subdirectory("Module")
+add_subdirectory("Semantics")
+add_subdirectory("Interpreter")
+add_subdirectory("Project")

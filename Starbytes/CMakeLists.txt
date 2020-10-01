@@ -19,7 +19,7 @@ function(add_starbytes_lib)
 
     include_directories(${STARBYTES_LIB_INCLUDE})
     file(RELATIVE_PATH includePath ${STARBYTES_SOURCE_DIR}/lib ${CMAKE_CURRENT_SOURCE_DIR})
-    list(TRANSFORM STARBYTES_LIB_HEADER_FILES PREPEND ${STARBYTES_SOURCE_DIR}/include/${includePath}/)
+    list(TRANSFORM STARBYTES_LIB_HEADER_FILES PREPEND ${STARBYTES_SOURCE_DIR}/include/starbytes/${includePath}/)
     add_library(${STARBYTES_LIB_LIB_NAME} STATIC ${STARBYTES_LIB_HEADER_FILES} ${STARBYTES_LIB_SOURCE_FILES})
     set_target_properties(${STARBYTES_LIB_LIB_NAME} PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
     message("Adding Starbytes Library - " ${STARBYTES_LIB_LIB_NAME})

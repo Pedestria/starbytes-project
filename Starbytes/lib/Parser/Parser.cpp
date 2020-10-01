@@ -1,6 +1,6 @@
-#include "Parser/Parser.h"
-#include "AST/AST.h"
-#include "Parser/Token.h"
+#include "starbytes/Parser/Parser.h"
+#include "starbytes/AST/AST.h"
+#include "starbytes/Parser/Token.h"
 #include <iostream>
 #include <string>
 #include <vector>

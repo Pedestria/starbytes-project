@@ -3,8 +3,13 @@ add_starbytes_lib(
     "starbytesBase"
     HEADER_FILES
     ADT.h
+    Document.h
     ANSIColors.h
     Base.h
+    Macros.h
+    StarbytesError.h
     SOURCE_FILES
     ADT.cpp
+    Document.cpp
+    StarbytesError.cpp
     )

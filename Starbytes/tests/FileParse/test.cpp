@@ -1,5 +1,5 @@
-#include "Parser/Lexer.h"
-#include "Parser/Parser.h"
+#include "starbytes/Parser/Lexer.h"
+#include "starbytes/Parser/Parser.h"
 #include <fstream>
 #include <iostream>
 using namespace Starbytes;

@@ -1,4 +1,4 @@
-#include "Parser/Token.h"
+#include "starbytes/Parser/Token.h"
 
 using namespace Starbytes;
 
@@ -8,6 +8,6 @@ std::string Token::getContent(){
 TokenType Token::getType() {
 	return type;
 }
-DocumentPosition Token::getPosition(){
+DocumentPosition & Token::getPosition(){
 	return pos;
 }

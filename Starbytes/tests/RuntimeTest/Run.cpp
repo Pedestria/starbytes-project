@@ -1,4 +1,4 @@
-#include "Runtime/RuntimeEngine.h"
+#include "starbytes/Interpreter/RuntimeEngine.h"
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -31,5 +31,5 @@ int main(){
     #ifdef _WIN32
         setupConsole(); 
     #endif
-    Starbytes::Runtime::Engine::Program();
+    Starbytes::Interpreter::Engine::Program();
 }

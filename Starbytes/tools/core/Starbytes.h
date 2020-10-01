@@ -3,12 +3,12 @@
 
 #pragma once
 
-#include "Parser/Lookup.h"
-#include "Parser/Token.h"
-#include "Parser/Lexer.h"
-#include "AST/Document.h"
-#include "Parser/Parser.h"
-#include "AST/AST.h"
+#include "starbytes/Parser/Lookup.h"
+#include "starbytes/Parser/Token.h"
+#include "starbytes/Parser/Lexer.h"
+#include "starbytes/Base/Document.h"
+#include "starbytes/Parser/Parser.h"
+#include "starbytes/AST/AST.h"
 
 
 #include <iostream>

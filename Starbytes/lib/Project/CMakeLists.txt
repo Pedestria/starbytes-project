@@ -1,0 +1,12 @@
+add_starbytes_lib(
+    LIB_NAME 
+    "starbytesProjectLib"
+    SOURCE_FILES
+    "Project.cpp"
+    HEADER_FILES
+    "Project.h"
+    LIBS_TO_LINK
+    "starbytesBase"
+    "starbytesAST"
+    "starbytesParser"
+)

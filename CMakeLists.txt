@@ -7,6 +7,8 @@ cmake_policy(SET CMP0079 NEW)
 
 option(USE_VCPKG "Use vcpkg manager!" OFF)
 option(USE_VCPKG_AS_TOOLCHAIN "Use vcpkg cmake toolchain file" OFF)
+set(STARBYTES_PROJECT_VERSION "0.0.4")
+message("Starbytes Project Version " ${STARBYTES_PROJECT_VERSION})
 
 macro(find_vcpkg USE_TOOLCHAIN)
 	message(STATUS "Locating vcpkg executable")

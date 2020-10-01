@@ -1,17 +1,21 @@
+add_subdirectory("Visitors")
+
 add_starbytes_lib(
     SOURCE_FILES 
-    SemanticsEngine.cpp 
+    SemanticsMain.cpp
+    Scope.cpp
+    Symbols.cpp 
     HEADER_FILES 
-    SemanticsEngine.h 
+    SemanticsMain.h 
+    Scope.h
+    Symbols.h 
     LIB_NAME 
-    "starbytesSemanticsCore" 
+    "starbytesSemanticsEngineCore" 
     LIBS_TO_LINK 
+    "starbytesBase"
     "starbytesAST"
-    "starbytesSymbols"
-    "starbytesSemanticsDeclarations"
-    "starbytesSemanticsExpressions"
+    "starbytesSemanticsEngineVisitors"
     )
-create_lib_set("Semantics")
-add_lib_to_set("Semantics" "starbytesSemanticsCore")
-add_lib_to_set("Semantics" "starbytesSemanticsDeclarations")
-add_lib_to_set("Semantics" "starbytesSemanticsExpressions")
+# create_lib_set("Semantics")
+# add_lib_to_set("Semantics" "starbytesSemanticsEngineCore")
+# add_lib_to_set("Semantics" "starbytesSemanticsEngineVisitors")

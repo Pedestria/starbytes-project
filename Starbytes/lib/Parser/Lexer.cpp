@@ -1,9 +1,9 @@
 #include <string>
 #include <ctype.h>
-#include "Parser/Token.h"
-#include "Parser/Lexer.h"
+#include "starbytes/Parser/Token.h"
+#include "starbytes/Parser/Lexer.h"
 #include <iostream>
-#include "Parser/Lookup.h"
+#include "starbytes/Parser/Lookup.h"
 //#include <algorithm>
 //#include <iterator>
 
@@ -101,7 +101,7 @@ std::string Lexer::saveTokenBuffer(size_t size) {
 }
 /*Copies token from buffer, clears buffer, and resets pointer.*/
 void Lexer::resolveTokenAndClearCache(TokenType tokT) {
-	auto size = bufptr - start;
+	size_t size = bufptr - start;
 	if (bufptr == TokenBuffer) {
 		return;
 	}
@@ -118,9 +118,10 @@ void Lexer::resolveTokenAndClearCache(TokenType tokT) {
 	position.line = line;
 	position.start = column-size;
 	position.end = column-1;
+	position.raw_index = raw_index-size;
 
 
-	tree.push_back(Token(tokT,result,position));
+	tree.push_back(Token(tokT,result,position,size));
 	bufptr = TokenBuffer;
 	start = bufptr;
 }
@@ -133,6 +134,7 @@ std::vector<Token> Lexer::tokenize() {
 		if (c == '\n') {
 			resolveTokenAndClearCache();
 			column = 0;
+			++raw_index;
 			++line;
 		}
 		else if (isspace(c)) {
