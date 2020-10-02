@@ -36,12 +36,6 @@ void setupConsole(void){
 }
 #endif
 
-// Another Break;
-
-// #include <nlohmann/json.hpp>
-
-// using JSON = nlohmann::json;
-
 using namespace std;
 using namespace Starbytes;
 /*Serializes Position into String*/
@@ -59,6 +53,7 @@ string createStarbytesError(string message,string escc = RED){
 
 string highlightCode(std::string & code,std::vector<Token> & tokens){
 	int index = 0;
+	size_t s = sizeof("\x1b[30m");
 	for(auto tok : tokens){
 		DocumentPosition & pos = tok.getPosition();
 		string color_code;
@@ -69,23 +64,33 @@ string highlightCode(std::string & code,std::vector<Token> & tokens){
 		} else if(tok.getType() == Starbytes::TokenType::Operator){
 			color_code = PURPLE;
 		} else {
-			color_code = "1m";
+			color_code = "0m";
 		}
 		
 		if(pos.raw_index == 0){
+			cout << "StrLength:" << code.length();
 			code = "\x1b["+color_code + code;
-			cout << "start:" << pos.raw_index << " end:" << pos.raw_index+tok.getTokenSize() << " ";
+			cout << "start:" << pos.raw_index << " end:" << pos.raw_index+tok.getTokenSize()+(3*index)+3 << " ";
 			++index;
-			code.insert(pos.raw_index+tok.getTokenSize()+4*(index),"\x1b[0m");
+			code.insert(pos.raw_index+tok.getTokenSize()+(3*index)+3,"\x1b[0m");
 		}
 		else if(tok.getType() != Starbytes::TokenType::EndOfFile){
-			cout << "start:" << pos.raw_index << " end:" << pos.raw_index+tok.getTokenSize() << " ";
-			code.insert(pos.raw_index+(4 * index)+1,"\x1b["+color_code);
+			cout << "start:" << pos.raw_index+(3 * index)+3 << " end:" << pos.raw_index+tok.getTokenSize()+(3*index)+3 << " ";
+			code.insert(pos.raw_index+(3* index)+3,"\x1b["+color_code);
 			++index;
-			code.insert(pos.raw_index+tok.getTokenSize()+4 * (index),"\x1b[0m");
+			if(pos.raw_index == code.size()-1){
+				code.append("\x1b[0m");
+			}
+			else{
+				code.insert(pos.raw_index+tok.getTokenSize()+(3*index)+3,"\x1b[0m");
+			}
+		}
+		else if(pos.raw_index == code.size()-1){
+			code.append("\x1b[0m");
 		}
 		++index;
 	}
+	cout << "New Size:" << code.size();
 	return code;
 }
 

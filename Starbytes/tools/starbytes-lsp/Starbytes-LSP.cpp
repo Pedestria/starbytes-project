@@ -1,5 +1,5 @@
 #include "Starbytes-LSP.h"
-#include "JSONOutput.h"
+#include "LSPProtocol.h"
 // #include "Parser/Lexer.h"
 // #include "Parser/Parser.h"
 #include <array>
@@ -68,19 +68,33 @@ bool parseArguments(char * arguments[],int count){
 
 }
 
-// using namespace LSP;
+using namespace LSP;
 
-// void StarbytesLSPServer::init(int argc, char* argv[]){
-//     if(parseArguments(argv,argc)){
-//         LSP::LSPServerMessage *cntr;
-//         json_transit.read(cntr);
-//        if(cntr->type == Request){
-//            if(((LSPServerRequest *)cntr)->method == "intialize" ){
+void LSPQueue::queueMessage(LSPServerMessage * msg){
+    messages.push_back(msg);
+};
 
-//            }
-//        }
-//     }
-// };
+LSPServerMessage * LSPQueue::getLatest(){
+    LSPServerMessage * rc =  messages.back();
+    messages.pop_back();
+    return rc;
+};
+
+void StarbytesLSPServer::init(){
+    getMessageFromStdin();
+    LSPServerMessage *INITAL = queue.getLatest();
+    if(INITAL->type == Request){
+        LSPServerRequest *RQ = (LSPServerRequest *)INITAL;
+        if(RQ->method == INITIALIZE){
+            json_transit.sendIntializeMessage(RQ->id);
+        }
+    }
+};
+
+void StarbytesLSPServer::getMessageFromStdin(){
+    LSP::LSPServerMessage *cntr = json_transit.read();
+    queue.queueMessage(cntr);
+};
 
 // AbstractSyntaxTree * parseStarbytesSource(std::string & data){
 //     auto toks = Lexer(data).tokenize();
@@ -115,22 +129,8 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     else {
-        LSP::Messenger json_transit;
-        while(true){
-            LSP::LSPServerMessage * msg;
-            msg = json_transit.read();
-            if(msg != nullptr){
-                if(msg->type == Request){
-                    if(((LSPServerRequest *)msg)->method == "initialize"){
-                        json_transit.sendIntializeMessage(((LSPServerRequest *)msg)->id);
-                    }
-                }
-                else if(msg->type == Notification){
-
-                }
-            }
-        }
-
+        LSP::StarbytesLSPServer server;
+        server.init();
     }
     //If receives a textDocument via message, parse document!
     // cout << help();

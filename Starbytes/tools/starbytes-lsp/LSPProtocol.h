@@ -11,9 +11,12 @@
 
 namespace Starbytes {
     namespace LSP {
+
         typedef std::string LSPDocumentURI;
         // std::vector<std::string> LSPEOLChars = {"\r\n","\n","\r"};
-
+        #define INITIALIZE "initalize"
+        #define DOC_COMPLETION "textDocument/completion"
+        #define DOC_HOVER "textDocument/hover"
         struct LSPPosition : LSPServerObject {
             int line;
             int character;

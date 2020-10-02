@@ -1,7 +1,7 @@
-#include "starbytes/Base/Base.h"
+#include "Macros.h"
 
-#ifndef AST_DOCUMENT_H
-#define AST_DOCUMENT_H
+#ifndef BASE_DOCUMENT_H
+#define BASE_DOCUMENT_H
 
 STARBYTES_STD_NAMESPACE
     /*A Position on A Starbytes Document. Used to determine Positions of Tokens/ASTNodes/etc.

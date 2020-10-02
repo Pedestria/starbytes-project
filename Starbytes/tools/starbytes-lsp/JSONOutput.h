@@ -1,8 +1,11 @@
-#pragma once
 #include <string>
 #include <vector>
+#include "starbytes/Base/Base.h"
 
-namespace Starbytes {
+#ifndef STARBYTES_LSP_JSON_OUTPUT_H
+#define STARBYTES_LSP_JSON_OUTPUT_H
+
+STARBYTES_STD_NAMESPACE
 
     namespace LSP {
 
@@ -81,5 +84,8 @@ namespace Starbytes {
     std::string unwrapQuotes(std::string &subject);
 };
 
-}
+NAMESPACE_END
+
+#endif
+
 

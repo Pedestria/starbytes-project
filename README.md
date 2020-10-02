@@ -7,7 +7,7 @@
 - `starbytes-lsp` - The LSP Implementation for Starbytes
 - ### Editors (`extension` Directory)
 - starbytes-grammar - The Textmate Syntax Grammar for Starbytes.
-- starbytes-vscode - The VSCode extension for Starbytes Language. (Provides Grammar ONLY. Executable `starbytes-lspserver` must be externally provided!)
+- starbytes-vscode - The VSCode extension for Starbytes Language. (Provides Grammar ONLY. Executable `starbytes-lsp` must be externally provided!)
 
 ### Dev/Build Instructions (With CMake)
 - ### To Setup: 
