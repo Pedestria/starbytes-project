@@ -16,7 +16,7 @@ std::vector<ASTComment *> commentBuffer;
 
 
 /*Creates Error Message For Console*/
-std::string StarbytesParseError(std::string message,DocumentPosition position){
+inline std::string StarbytesParseError(std::string message,DocumentPosition position){
     return message.append(" \n Error Occured at Position:{\nLine:"+std::to_string(position.line)+"\n Start Column:"+std::to_string(position.start)+"\n End Column:"+std::to_string(position.end)+"\n}");
 }
 

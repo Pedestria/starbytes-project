@@ -19,8 +19,8 @@ STARBYTES_STD_NAMESPACE
         };
         class StarbytesLSPServer {
             public:
-                StarbytesLSPServer();
-                ~StarbytesLSPServer();
+                StarbytesLSPServer(){};
+                ~StarbytesLSPServer(){};
                 LSPQueue queue;
                 void init();
                 void getMessageFromStdin();

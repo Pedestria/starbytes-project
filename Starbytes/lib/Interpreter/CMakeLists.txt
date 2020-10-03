@@ -3,8 +3,12 @@ add_starbytes_lib(
     "starbytesInterpreterRuntime"
     SOURCE_FILES
     "RuntimeEngine.cpp"
+    "RTTypeCheck.cpp"
+    "STDObjects.cpp"
     HEADER_FILES
     "RuntimeEngine.h"
+    "RTTypeCheck.h"
+    "STDObjects.h"
     LIBS_TO_LINK
     "starbytesBase"
 )

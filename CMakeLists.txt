@@ -81,6 +81,5 @@ elseif()
 endif()
 
 project ("Starbytes" CXX)
-
 # Include sub-projects.
 add_subdirectory ("Starbytes")
