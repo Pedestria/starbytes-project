@@ -15,10 +15,12 @@ namespace Semantics {
         if(symbol_is<FunctionSymbol>(s)){
             std::cout << "Real Time TypeChecking!";
         }
+
+        ScopeStore *Store;
         
         for(auto node : tree->nodes){
-            if(astnode_is<ASTVariableDeclaration>((ASTNode *)node)){
-                visitVariableDecl(cast_astnode<ASTVariableDeclaration *>(node),&store);
+            if(AST_NODE_IS(node,ASTVariableDeclaration)){
+                visitVariableDecl(ASSERT_AST_NODE(node,ASTVariableDeclaration),Store);
             }
         }
     }

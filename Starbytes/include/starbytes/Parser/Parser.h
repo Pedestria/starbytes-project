@@ -45,59 +45,62 @@ STARBYTES_STD_NAMESPACE
             Token* behindToken() {
                 return &tokens[currentIndex - 1];
             }
-            void parseIdentifier(Token* token1,ASTIdentifier *id);
-            void parseTypeIdentifier(ASTTypeIdentifier *ptr);
-            void parseTypecastIdentifier(ASTTypeCastIdentifier *ptr);
+            void parseComment(ASTObject *& ptr);
+            void parseLineComment(ASTLineComment *&ptr);
+            void parseBlockComment(ASTBlockComment *&ptr);
+
+            inline void checkForComments(ASTObject * ptr);
+            
+            inline void parseIdentifier(Token * token1,ASTIdentifier *&id);
+            inline void parseTypeIdentifier(ASTTypeIdentifier *&ptr);
+            void parseTypecastIdentifier(ASTTypeCastIdentifier *&ptr);
 
             //DECLARATIONS!
-            void parseVariableSpecifier(ASTVariableSpecifier * ptr);
-            void parseVariableDeclaration(std::vector<ASTStatement *> * container);
-            void parseConstantSpecifier(ASTConstantSpecifier * ptr);
-            void parseConstantDeclaration(std::vector<ASTStatement *>  *container);
-            void parseImportDeclaration(std::vector<ASTStatement *> *container);
-            void parseScopeDeclaration(std::vector<ASTStatement *> *container);
-            void parseTypeArgsDeclaration(ASTTypeArgumentsDeclaration *ptr);
-            void parseIfDeclaration(std::vector<ASTStatement *> *container);
-            void parseElseIfDeclaration(std::vector<ASTStatement *> *container);
-            void parseElseDeclaration(std::vector<ASTStatement *> *container);
-            void parseReturnDeclaration(std::vector<ASTStatement *> * container);
-            void parseFunctionDeclaration(std::vector<ASTStatement *> *container,bool isLazy);
-            void parseEnumDeclaration(std::vector<ASTStatement *> * container);
-            void parseEnumBlockStatement(ASTEnumBlockStatement * ptr);
+            void parseVariableSpecifier(ASTVariableSpecifier *& ptr);
+            void parseVariableDeclaration(std::vector<ASTStatement *> *& container);
+            void parseConstantSpecifier(ASTConstantSpecifier *& ptr);
+            void parseConstantDeclaration(std::vector<ASTStatement *>  *&container);
+            void parseImportDeclaration(std::vector<ASTStatement *> *&container);
+            void parseScopeDeclaration(std::vector<ASTStatement *> *&container);
+            void parseTypeArgsDeclaration(ASTTypeArgumentsDeclaration *&ptr);
+            void parseIfDeclaration(std::vector<ASTStatement *> *&container);
+            void parseElseIfDeclaration(std::vector<ASTStatement *> *&container);
+            void parseElseDeclaration(std::vector<ASTStatement *> *&container);
+            void parseReturnDeclaration(std::vector<ASTStatement *> *& container);
+            void parseFunctionDeclaration(std::vector<ASTStatement *> *&container,bool isLazy);
+            void parseEnumDeclaration(std::vector<ASTStatement *> *& container);
+            void parseEnumBlockStatement(ASTEnumBlockStatement *& ptr);
             void parseEnumerator(ASTEnumerator * ptr);
-            void parseInterfaceDeclaration(std::vector<ASTStatement *> * container);
-            void parseInterfaceBlockStatement(ASTInterfaceBlockStatement * ptr);
+            void parseInterfaceDeclaration(std::vector<ASTStatement *> *& container);
+            void parseInterfaceBlockStatement(ASTInterfaceBlockStatement *& ptr);
             void parseInterfaceStatement(std::vector<ASTInterfaceStatement *> * container);
             void parseInterfacePropertyDeclaration(ASTInterfacePropertyDeclaration * ptr,bool immutable,bool loose = false);
-            void parseInterfaceMethodDeclaration(ASTInterfaceMethodDeclaration * ptr);
-            void parseClassDeclaration(std::vector<ASTStatement *> * container);
+            void parseInterfaceMethodDeclaration(ASTInterfaceMethodDeclaration *& ptr);
+            void parseClassDeclaration(std::vector<ASTStatement *> *& container);
             void parseClassBlockStatement(ASTClassBlockStatement *ptr);
             void parseClassStatement(std::vector<ASTClassStatement *> * container);
             void parseClassConstructorDeclaration(ASTClassConstructorDeclaration * ptr);
-            void parseClassConstructorParameterDeclaration(ASTClassConstructorParameterDeclaration * ptr,bool immutable,bool loose = false);
-            void parseClassPropertyDeclaration(ASTClassPropertyDeclaration *ptr,bool immutable,bool loose = false);
-            void parseClassMethodDeclaration(ASTClassMethodDeclaration *ptr);
+            void parseClassConstructorParameterDeclaration(ASTClassConstructorParameterDeclaration *& ptr,bool immutable,bool loose = false);
+            void parseClassPropertyDeclaration(ASTClassPropertyDeclaration *&ptr,bool immutable,bool loose = false);
+            void parseClassMethodDeclaration(ASTClassMethodDeclaration *&ptr);
             /*Parses all Declaration and places them in container. (Container is used for scope declarations)*/
-            bool parseDeclaration(std::vector<ASTStatement *> *container,Scope scope);
-            void parseBlockStatement(ASTBlockStatement *ptr,Scope scope);
+            bool parseDeclaration(std::vector<ASTStatement *> *&container,Scope scope);
+            void parseBlockStatement(ASTBlockStatement *&ptr,Scope scope);
 
             //EXPRESSIONS!
-            void parseNewExpression(ASTNewExpression *ptr);
-            void parseArrayExpression(ASTArrayExpression *ptr);
-            void parseAwaitExpression(ASTAwaitExpression *ptr);
-            void parseAssignExpression(ASTAssignExpression *ptr);
-            void parseCallExpression(ASTCallExpression *ptr,ASTExpression *callee);
-            void parseMemberExpression(ASTMemberExpression *ptr,ASTExpression *object);
-            bool parseExpressionStatement(std::vector<ASTStatement *> *container);
+            void parseNewExpression(ASTNewExpression *&ptr);
+            void parseArrayExpression(ASTArrayExpression *&ptr);
+            void parseAwaitExpression(ASTAwaitExpression *&ptr);
+            void parseAssignExpression(ASTAssignExpression *&ptr);
+            void parseCallExpression(ASTCallExpression *&ptr,ASTExpression *&callee);
+            void parseMemberExpression(ASTMemberExpression *&ptr,ASTExpression *&object);
+            bool parseExpressionStatement(std::vector<ASTStatement *> *&container);
             ASTExpression * parseExpression();
             void parseStatement(std::vector<ASTStatement *> * container,Scope scope);
-            void parseNumericLiteral(ASTNumericLiteral *ptr);
-            void parseStringLiteral(ASTStringLiteral *ptr);
-            void parseComment();
-            void parseLineComment(ASTLineComment *ptr);
-            void parseBlockComment(ASTBlockComment *ptr);
+            void parseNumericLiteral(ASTNumericLiteral *&ptr);
+            void parseStringLiteral(ASTStringLiteral *&ptr);
         public:
-            Parser(std::vector<Token>& _tokens,AbstractSyntaxTree * tree) : tokens(_tokens), currentIndex(0), Treeptr(tree) {};
+            Parser(std::vector<Token> _tokens,AbstractSyntaxTree *& tree) : tokens(_tokens), currentIndex(0), Treeptr(tree) {};
             void convertToAST();
 
     };

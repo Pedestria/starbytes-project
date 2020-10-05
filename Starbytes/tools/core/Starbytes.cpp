@@ -40,7 +40,7 @@ using namespace std;
 using namespace Starbytes;
 /*Serializes Position into String*/
 string convertPosition(DocumentPosition pos){
-	return string("{Line:" +to_string(pos.line)+",Start:"+to_string(pos.start)+",End:"+to_string(pos.end)+",RawIndex:"+to_string(pos.raw_index)+"\n\t}");
+	return string("{Line:" +to_string(pos.line)+",Start:"+to_string(pos.start)+",End:"+to_string(pos.end)+",RawIndex:"+to_string(pos.raw_index)+"}");
 }
 
 string help(){
@@ -168,22 +168,22 @@ int main(int argc, char* argv[]) {
 		string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\ndecl immutable hellop:Array = [\"One\",\"Two\"]";
 		string test2 = "import library\nimport otherLibrary";
 		auto result = Lexer(test2).tokenize();
-		logError("TEST",test2,result);
+		// logError("TEST",test2,result);
 		// for (Token tok : result) {
 		// 	cout << "{\nContent:"+tok.getContent() << "\nType: " << int(tok.getType()) << "\nPosition:"+convertPosition(tok.getPosition()) << "\nSize:" <<tok.getTokenSize() << "\n}\n";
 		// }
-		// AbstractSyntaxTree *tree = new AbstractSyntaxTree();
+		AbstractSyntaxTree *tree = new AbstractSyntaxTree();
 
-		// try {
-		// 	auto parser = Parser(result,tree);
-		// 	parser.convertToAST();
+		try {
+			auto parser = Parser(result,tree);
+			parser.convertToAST();
 
-		// 	for(auto node : tree->nodes){
-		// 		cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
-		// 	}
-		// } catch (string message) {
-		// 	cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
-		// }
+			for(auto node : tree->nodes){
+				cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
+			}
+		} catch (string message) {
+			cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
+		}
 	}
 			// cout << help();
 		// cout << loghelp() << "\n";

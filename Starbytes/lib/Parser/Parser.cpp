@@ -8,11 +8,11 @@
 using namespace Starbytes;
 using namespace AST;
 
-enum class KeywordType:int {
+TYPED_ENUM KeywordType:int {
     Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case,Extends,Utilizes,Loose,Enum,For,While,Lazy,Await
 };
 
-std::vector<ASTComment *> commentBuffer;
+// std::vector<ASTComment *> commentBuffer;
 
 
 /*Creates Error Message For Console*/
@@ -66,6 +66,7 @@ KeywordType matchKeyword(std::string subject) {
     return returncode;
 }
 
+
 void Parser::convertToAST(){
     while(currentIndex < tokens.size()){
         parseStatement(&Treeptr->nodes,Scope::Global);
@@ -91,12 +92,9 @@ void Parser::parseStatement(std::vector<ASTStatement *> * container,Scope scope)
             return;
         } 
     }
-    else{
-        parseComment();
-    }
 }
 /*Parses all Declaration and places them in container. (Container is used for scope declarations)*/
-bool Parser::parseDeclaration(std::vector<ASTStatement *> * container,Scope scope){
+bool Parser::parseDeclaration(std::vector<ASTStatement *> *& container,Scope scope){
     switch (matchKeyword(currentToken()->getContent())) {
         case KeywordType::Import :
             if(scope == Scope::Global){
@@ -140,6 +138,7 @@ bool Parser::parseDeclaration(std::vector<ASTStatement *> * container,Scope scop
                 return false;
             }
             return true;
+            break;
         case KeywordType::Class :
             if(scope != Scope::FunctionBlockStatement){
                 parseClassDeclaration(container);
@@ -178,7 +177,7 @@ bool Parser::parseDeclaration(std::vector<ASTStatement *> * container,Scope scop
 
 
 
-void Parser::parseNumericLiteral(ASTNumericLiteral *ptr){
+void Parser::parseNumericLiteral(ASTNumericLiteral *&ptr){
     Token * tok = nextToken();
     //CurrentToken: All of the Numeric or 1/3 of the numeric tokens!
     ptr->type = ASTType::NumericLiteral;
@@ -209,7 +208,7 @@ void Parser::parseNumericLiteral(ASTNumericLiteral *ptr){
     }
 }
 
-void Parser::parseStringLiteral(ASTStringLiteral *ptr){
+void Parser::parseStringLiteral(ASTStringLiteral *&ptr){
     ptr->type = ASTType::StringLiteral;
     if(currentToken()->getType() == TokenType::Quote){
         Token *tok = nextToken();
@@ -230,13 +229,13 @@ void Parser::parseStringLiteral(ASTStringLiteral *ptr){
     //Current Token: Last Quote Before OTHER_TOKEN
 }
 
-void Parser::parseImportDeclaration(std::vector<ASTStatement *> * container){
+void Parser::parseImportDeclaration(std::vector<ASTStatement *> *& container){
 
     ASTImportDeclaration *node = new ASTImportDeclaration();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
+    // if(!commentBuffer.empty()){
+    //     node->preceding_comments = commentBuffer;
+    //     commentBuffer.clear();
+    // }
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::ImportDeclaration;
     Token *tok1 = nextToken();
@@ -245,6 +244,7 @@ void Parser::parseImportDeclaration(std::vector<ASTStatement *> * container){
         parseIdentifier(tok1,id);
         node->id = id;
         node->EndFold = tok1->getPosition();
+        checkForComments(node);
         container->push_back(node);
     }
     else {
@@ -252,12 +252,12 @@ void Parser::parseImportDeclaration(std::vector<ASTStatement *> * container){
     }
 }
 
-void Parser::parseIfDeclaration(std::vector<ASTStatement *> *container){
+void Parser::parseIfDeclaration(std::vector<ASTStatement *> *&container){
     ASTIfDeclaration *node = new ASTIfDeclaration();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
+    // if(!commentBuffer.empty()){
+    //     node->preceding_comments = commentBuffer;
+    //     commentBuffer.clear();
+    // }
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::IfDeclaration;
     Token *tok = nextToken();
@@ -274,6 +274,7 @@ void Parser::parseIfDeclaration(std::vector<ASTStatement *> *container){
                     parseBlockStatement(block,Scope::BlockStatement);
                     node->body = block;
                     node->EndFold = currentToken()->getPosition();
+                    checkForComments(node);
                     container->push_back(node);
                 }
                 else{
@@ -293,12 +294,12 @@ void Parser::parseIfDeclaration(std::vector<ASTStatement *> *container){
     }
 }
 
-void Parser::parseElseIfDeclaration(std::vector<ASTStatement *> *container){
+void Parser::parseElseIfDeclaration(std::vector<ASTStatement *> *&container){
     ASTElseIfDeclaration *node = new ASTElseIfDeclaration();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
+    // if(!commentBuffer.empty()){
+    //     node->preceding_comments = commentBuffer;
+    //     commentBuffer.clear();
+    // }
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::ElseIfDeclaration;
     //We have checked the `else if` therefore we can skip two tokens to Open Paren!
@@ -317,6 +318,7 @@ void Parser::parseElseIfDeclaration(std::vector<ASTStatement *> *container){
                     parseBlockStatement(block,Scope::BlockStatement);
                     node->body = block;
                     node->EndFold = currentToken()->getPosition();
+                    checkForComments(node);
                     container->push_back(node);
                 }
                 else{
@@ -337,12 +339,12 @@ void Parser::parseElseIfDeclaration(std::vector<ASTStatement *> *container){
 
 }
 
-void Parser::parseElseDeclaration(std::vector<ASTStatement *> *container){
+void Parser::parseElseDeclaration(std::vector<ASTStatement *> *&container){
     ASTElseDeclaration *node = new ASTElseDeclaration();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
+    // if(!commentBuffer.empty()){
+    //     node->preceding_comments = commentBuffer;
+    //     commentBuffer.clear();
+    // }
     node->type = ASTType::ElseDeclaration;
     node->BeginFold = currentToken()->getPosition();
     Token *tok = aheadToken();
@@ -351,6 +353,7 @@ void Parser::parseElseDeclaration(std::vector<ASTStatement *> *container){
         parseBlockStatement(block,Scope::BlockStatement);
         node->body = block;
         node->EndFold = currentToken()->getPosition();
+        checkForComments(node);
         container->push_back(node);
     }
     else{
@@ -361,12 +364,12 @@ void Parser::parseElseDeclaration(std::vector<ASTStatement *> *container){
 
 
 
-void Parser::parseEnumDeclaration(std::vector<ASTStatement *> *container){
+void Parser::parseEnumDeclaration(std::vector<ASTStatement *> *&container){
     ASTEnumDeclaration *node = new ASTEnumDeclaration();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
+    // if(!commentBuffer.empty()){
+    //     node->preceding_comments = commentBuffer;
+    //     commentBuffer.clear();
+    // }
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::EnumDeclaration;
     Token *tok0 = nextToken();
@@ -379,6 +382,8 @@ void Parser::parseEnumDeclaration(std::vector<ASTStatement *> *container){
             parseEnumBlockStatement(block);
             node->body = block;
             node->EndFold = currentToken()->getPosition();
+            checkForComments(node);
+            container->push_back(node);
         }   
         else{
             throw StarbytesParseError("Expected Open Brace!",tok1->getPosition());
@@ -389,7 +394,7 @@ void Parser::parseEnumDeclaration(std::vector<ASTStatement *> *container){
     }
 }
 
-void Parser::parseEnumBlockStatement(ASTEnumBlockStatement * ptr){
+void Parser::parseEnumBlockStatement(ASTEnumBlockStatement *& ptr){
     ptr->type = ASTType::EnumBlockStatement;
     ptr->BeginFold = currentToken()->getPosition();
     Token *tok0 = nextToken();
@@ -400,6 +405,7 @@ void Parser::parseEnumBlockStatement(ASTEnumBlockStatement * ptr){
         }else if(tok0->getType() == TokenType::Identifier){
             ASTEnumerator *node = new ASTEnumerator();
             parseEnumerator(node);
+            checkForComments(node);
             ptr->nodes.push_back(node);
         }
     }
@@ -430,7 +436,7 @@ void Parser::parseEnumerator(ASTEnumerator * ptr){
     ptr->EndFold = currentToken()->getPosition();
 }
 
-void Parser::parseTypeArgsDeclaration(ASTTypeArgumentsDeclaration *ptr){
+void Parser::parseTypeArgsDeclaration(ASTTypeArgumentsDeclaration *&ptr){
     Token *tok = nextToken();
     ptr->type = ASTType::TypeArgumentsDeclaration;
     ptr->BeginFold = tok->getPosition();
@@ -464,18 +470,19 @@ void Parser::parseTypeArgsDeclaration(ASTTypeArgumentsDeclaration *ptr){
     }
 }
 
-void Parser::parseReturnDeclaration(std::vector<ASTStatement *> * container){
+void Parser::parseReturnDeclaration(std::vector<ASTStatement *> *& container){
     ASTReturnDeclaration *node = new ASTReturnDeclaration();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
+    // if(!commentBuffer.empty()){
+    //     node->preceding_comments = commentBuffer;
+    //     commentBuffer.clear();
+    // }
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::ReturnDeclaration;
     ASTExpression *exp = parseExpression();
     if(exp != nullptr){
         node->returnee = exp;
         node->EndFold = currentToken()->getPosition();
+        checkForComments(node);
         container->push_back(node);
     }
     else{
@@ -483,12 +490,8 @@ void Parser::parseReturnDeclaration(std::vector<ASTStatement *> * container){
     }
 }
 
-void Parser::parseInterfaceDeclaration(std::vector<ASTStatement *> * container){
+void Parser::parseInterfaceDeclaration(std::vector<ASTStatement *> *& container){
     ASTInterfaceDeclaration *node = new ASTInterfaceDeclaration();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::InterfaceDeclaration;
     node->isGeneric = false;
@@ -536,7 +539,8 @@ void Parser::parseInterfaceDeclaration(std::vector<ASTStatement *> * container){
             //CurrentToken : Close Brace before OTHER_TOKEN!
             node->body = block;
             node->EndFold = currentToken()->getPosition();
-
+            checkForComments(node);
+            container->push_back(node);
         }
         else{
             throw StarbytesParseError("Expected Open Brace!",tok2->getPosition());
@@ -547,7 +551,7 @@ void Parser::parseInterfaceDeclaration(std::vector<ASTStatement *> * container){
         throw StarbytesParseError("Expected Identifier!",tok1->getPosition());
     }
 }
-void Parser::parseInterfaceBlockStatement(ASTInterfaceBlockStatement * ptr){
+void Parser::parseInterfaceBlockStatement(ASTInterfaceBlockStatement *& ptr){
     ptr->type = ASTType::InterfaceBlockStatement;
     ptr->BeginFold = nextToken()->getPosition();
     incrementToNextToken();
@@ -644,7 +648,7 @@ void Parser::parseInterfacePropertyDeclaration(ASTInterfacePropertyDeclaration *
 
 }
 
-void Parser::parseInterfaceMethodDeclaration(ASTInterfaceMethodDeclaration * ptr){
+void Parser::parseInterfaceMethodDeclaration(ASTInterfaceMethodDeclaration *& ptr){
     ptr->BeginFold = currentToken()->getPosition();
     ptr->type = ASTType::InterfaceMethodDeclaration;
     ptr->isGeneric = false;
@@ -717,12 +721,8 @@ void Parser::parseInterfaceMethodDeclaration(ASTInterfaceMethodDeclaration * ptr
     }
 }
 
-void Parser::parseClassDeclaration(std::vector<ASTStatement *> *container){
+void Parser::parseClassDeclaration(std::vector<ASTStatement *> *&container){
     ASTClassDeclaration *node = new ASTClassDeclaration();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::ClassDeclaration;
     node->isGeneric = false;
@@ -796,6 +796,7 @@ void Parser::parseClassDeclaration(std::vector<ASTStatement *> *container){
             parseClassBlockStatement(block);
             node->body = block;
             node->EndFold = currentToken()->getPosition();
+            checkForComments(node);
             container->push_back(node);
         }
         else{
@@ -927,7 +928,7 @@ void Parser::parseClassConstructorDeclaration(ASTClassConstructorDeclaration *pt
     }
 }
 
-void Parser::parseClassConstructorParameterDeclaration(ASTClassConstructorParameterDeclaration *ptr,bool immutable,bool loose){
+void Parser::parseClassConstructorParameterDeclaration(ASTClassConstructorParameterDeclaration *& ptr,bool immutable,bool loose){
     ptr->BeginFold = currentToken()->getPosition();
     ptr->type = ASTType::ClassConstructorParameterDeclaration;
     Token *tok = nextToken();
@@ -961,7 +962,7 @@ void Parser::parseClassConstructorParameterDeclaration(ASTClassConstructorParame
     }
 }
 
-void Parser::parseClassPropertyDeclaration(ASTClassPropertyDeclaration *ptr,bool immutable,bool loose){
+void Parser::parseClassPropertyDeclaration(ASTClassPropertyDeclaration *&ptr,bool immutable,bool loose){
     ptr->type = ASTType::ClassPropertyDeclaration;
     ptr->BeginFold = currentToken()->getPosition();
     Token *tok = nextToken();
@@ -1014,7 +1015,7 @@ void Parser::parseClassPropertyDeclaration(ASTClassPropertyDeclaration *ptr,bool
     }
 }
 //TODO: Generics to be added eventually! (CHECK LATER!! NEEDS POTENTIAL FIXING!)
-void Parser::parseClassMethodDeclaration(ASTClassMethodDeclaration *ptr){
+void Parser::parseClassMethodDeclaration(ASTClassMethodDeclaration *&ptr){
     ptr->BeginFold = currentToken()->getPosition();
     ptr->type = ASTType::ClassMethodDeclaration;
     ASTIdentifier *id = new ASTIdentifier();
@@ -1120,7 +1121,7 @@ void Parser::parseClassMethodDeclaration(ASTClassMethodDeclaration *ptr){
     }
 }
 
-void Parser::parseBlockStatement(ASTBlockStatement *ptr,Scope scope){
+void Parser::parseBlockStatement(ASTBlockStatement *&ptr,Scope scope){
     ptr->type = ASTType::BlockStatement;
     Token *tok = nextToken();
     ptr->BeginFold = tok->getPosition();
@@ -1141,13 +1142,13 @@ void Parser::parseBlockStatement(ASTBlockStatement *ptr,Scope scope){
 
 }
 
-void Parser::parseScopeDeclaration(std::vector<ASTStatement *> * container){
+void Parser::parseScopeDeclaration(std::vector<ASTStatement *> *& container){
     //CurrentToken: Keyword before ID
     ASTScopeDeclaration *node = new ASTScopeDeclaration();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
+    // if(!commentBuffer.empty()){
+    //     node->preceding_comments = commentBuffer;
+    //     commentBuffer.clear();
+    // }
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::ScopeDeclaration;
     Token *tok1 = nextToken();
@@ -1175,12 +1176,12 @@ void Parser::parseScopeDeclaration(std::vector<ASTStatement *> * container){
 }
 
 //NEEDS TO BE REVIEWED!!
-void Parser::parseConstantDeclaration(std::vector<ASTStatement *> * container){
+void Parser::parseConstantDeclaration(std::vector<ASTStatement *> *& container){
     ASTConstantDeclaration *node = new ASTConstantDeclaration();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
+    // if(!commentBuffer.empty()){
+    //     node->preceding_comments = commentBuffer;
+    //     commentBuffer.clear();
+    // }
     node->type = ASTType::ConstantDeclaration;
     //Begins at '[HERE]decl immutable value = 4'
     node->BeginFold = currentToken()->getPosition();
@@ -1208,7 +1209,7 @@ void Parser::parseConstantDeclaration(std::vector<ASTStatement *> * container){
 
 }
 
-void Parser::parseConstantSpecifier(ASTConstantSpecifier *ptr){
+void Parser::parseConstantSpecifier(ASTConstantSpecifier *&ptr){
     ptr->type = ASTType::ConstantSpecifier;
     Token * tok = nextToken();
     ptr->BeginFold = tok->getPosition();
@@ -1246,12 +1247,12 @@ void Parser::parseConstantSpecifier(ASTConstantSpecifier *ptr){
     }
 }
 
-void Parser::parseVariableDeclaration(std::vector<ASTStatement *> * container){
+void Parser::parseVariableDeclaration(std::vector<ASTStatement *> *& container){
     ASTVariableDeclaration *node = new ASTVariableDeclaration();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
+    // if(!commentBuffer.empty()){
+    //     node->preceding_comments = commentBuffer;
+    //     commentBuffer.clear();
+    // }
     node->type = ASTType::VariableDeclaration;
     node->BeginFold = currentToken()->getPosition();
     Token *tok1 = aheadToken();
@@ -1277,12 +1278,13 @@ void Parser::parseVariableDeclaration(std::vector<ASTStatement *> * container){
         }
         //CurrentToken: Before OTHER_TOKEN
         node->EndFold = currentToken()->getPosition();
+        checkForComments(node);
         container->push_back(node);
     } else {
         throw StarbytesParseError("Expected Identifer!",tok1->getPosition());
     }
 }
-void Parser::parseVariableSpecifier(ASTVariableSpecifier *ptr){
+void Parser::parseVariableSpecifier(ASTVariableSpecifier *&ptr){
     Token *tok = nextToken();
     ptr->type = ASTType::VariableSpecifier;
     ptr->BeginFold = tok->getPosition();
@@ -1316,12 +1318,12 @@ void Parser::parseVariableSpecifier(ASTVariableSpecifier *ptr){
     //Current token: Before Comma or OTHER_TOKEN
 }
 //TODO: More Advanced Type Funcitonality Required! (Generics,Arrays,Dictionaries,etc...)
-void Parser::parseFunctionDeclaration(std::vector<ASTStatement *> * container,bool isLazy){
+void Parser::parseFunctionDeclaration(std::vector<ASTStatement *> *& container,bool isLazy){
     ASTFunctionDeclaration *node = new ASTFunctionDeclaration();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
+    // if(!commentBuffer.empty()){
+    //     node->preceding_comments = commentBuffer;
+    //     commentBuffer.clear();
+    // }
     node->BeginFold = currentToken()->getPosition();
     node->type = ASTType::FunctionDeclaration;
     node->isGeneric = false;
@@ -1384,6 +1386,7 @@ void Parser::parseFunctionDeclaration(std::vector<ASTStatement *> * container,bo
                     parseBlockStatement(block,Scope::FunctionBlockStatement);
                     node->body = block;
                     node->EndFold = currentToken()->getPosition();
+                    checkForComments(node);
                     container->push_back(node);
                     //CurrentToken: Close Brace before OTHER_TOKEN
                 }
@@ -1411,6 +1414,7 @@ void Parser::parseFunctionDeclaration(std::vector<ASTStatement *> * container,bo
                     parseBlockStatement(block,Scope::FunctionBlockStatement);
                     node->body = block;
                     node->EndFold = currentToken()->getPosition();
+                    checkForComments(node);
                     container->push_back(node);
                 }
                 else {
@@ -1427,7 +1431,7 @@ void Parser::parseFunctionDeclaration(std::vector<ASTStatement *> * container,bo
     }
 }
 
-void Parser::parseTypecastIdentifier(ASTTypeCastIdentifier * ptr){
+void Parser::parseTypecastIdentifier(ASTTypeCastIdentifier *& ptr){
     Token *tok = currentToken();
     Token *tok1 = nextToken();
     Token *tok2 = aheadToken();
@@ -1454,7 +1458,7 @@ void Parser::parseTypecastIdentifier(ASTTypeCastIdentifier * ptr){
     
 }
 //TODO: More Advanced Type Funcitonality Required! (Generics,Arrays,Dictionaries,etc...)
-void Parser::parseTypeIdentifier(ASTTypeIdentifier * ptr){
+void Parser::parseTypeIdentifier(ASTTypeIdentifier *& ptr){
     //CurrenToken: Before ID
     ptr->type = ASTType::TypeIdentifier;
     Token *tok = nextToken();
@@ -1505,7 +1509,7 @@ void Parser::parseTypeIdentifier(ASTTypeIdentifier * ptr){
     }
 }
 
-void Parser::parseIdentifier(Token *token1, ASTIdentifier * id) {
+void Parser::parseIdentifier(Token *token1, ASTIdentifier *& id) {
     id->position = token1->getPosition();
     id->type = ASTType::Identifier;
     id->value = token1->getContent();
@@ -1597,18 +1601,19 @@ ASTExpression * Parser::parseExpression(){
     return ptr;
 }
 
-bool Parser::parseExpressionStatement(std::vector<ASTStatement *> *container){
+bool Parser::parseExpressionStatement(std::vector<ASTStatement *> *& container){
     ASTExpressionStatement *node = new ASTExpressionStatement();
-    if(!commentBuffer.empty()){
-        node->preceding_comments = commentBuffer;
-        commentBuffer.clear();
-    }
+    // if(!commentBuffer.empty()){
+    //     node->preceding_comments = commentBuffer;
+    //     commentBuffer.clear();
+    // }
     node->type = AST::ASTType::ExpressionStatement;
     ASTExpression *node1 = parseExpression();
     if(node1 != nullptr){
         node->expression = node1;
         node->BeginFold = node1->BeginFold;
         node->EndFold = node1->EndFold;
+        checkForComments(node);
         container->push_back(node);
         return true;
     } else {
@@ -1616,7 +1621,7 @@ bool Parser::parseExpressionStatement(std::vector<ASTStatement *> *container){
         return false;
     }
 }
-void Parser::parseArrayExpression(ASTArrayExpression *ptr){
+void Parser::parseArrayExpression(ASTArrayExpression *&ptr){
     ptr->type = ASTType::ArrayExpression;
     ptr->BeginFold = currentToken()->getPosition();
     Token *tok = nextToken();
@@ -1642,7 +1647,7 @@ void Parser::parseArrayExpression(ASTArrayExpression *ptr){
     }
 }
 
-void Parser::parseNewExpression(ASTNewExpression *ptr){
+void Parser::parseNewExpression(ASTNewExpression *&ptr){
     ptr->type = ASTType::NewExpression;
     ptr->BeginFold = currentToken()->getPosition();
     if(aheadToken() ->getType() == TokenType::Identifier){
@@ -1677,7 +1682,7 @@ void Parser::parseNewExpression(ASTNewExpression *ptr){
     }
 }
 
-void Parser::parseAwaitExpression(ASTAwaitExpression *ptr){
+void Parser::parseAwaitExpression(ASTAwaitExpression *&ptr){
     //CurrentToken: `await` Keyword!
     ptr->type = AST::ASTType::AwaitExpression;
     ptr->BeginFold = currentToken()->getPosition();
@@ -1717,7 +1722,7 @@ void Parser::parseAwaitExpression(ASTAwaitExpression *ptr){
 }
 
 
-void Parser::parseMemberExpression(ASTMemberExpression *ptr,ASTExpression *object){
+void Parser::parseMemberExpression(ASTMemberExpression *&ptr,ASTExpression *&object){
     ptr->type = AST::ASTType::MemberExpression;
     ptr->BeginFold = object->BeginFold;
     ptr->object = object;
@@ -1736,7 +1741,7 @@ void Parser::parseMemberExpression(ASTMemberExpression *ptr,ASTExpression *objec
     }
 }
 
-void Parser::parseCallExpression(ASTCallExpression *ptr,ASTExpression *callee){
+void Parser::parseCallExpression(ASTCallExpression *&ptr,ASTExpression *&callee){
     ptr->type = AST::ASTType::CallExpression;
     ptr->BeginFold = callee->BeginFold;
     ptr->callee = callee;
@@ -1766,21 +1771,21 @@ void Parser::parseCallExpression(ASTCallExpression *ptr,ASTExpression *callee){
     }
 }
 
-void Parser::parseComment(){
+void Parser::parseComment(ASTObject *& ptr){
     Token *tok = currentToken();
     if(tok->getType() == TokenType::LineCommentDBSlash){
         ASTLineComment *com = new ASTLineComment();
         parseLineComment(com);
-        commentBuffer.push_back(com);
+        ptr->preceding_comments.push_back(com);
     }
     else if(tok->getType() == TokenType::BlockCommentStart){
         ASTBlockComment *com = new ASTBlockComment();
         parseBlockComment(com);
-        commentBuffer.push_back(com);
+        ptr->preceding_comments.push_back(com);
     }
 }
 
-void Parser::parseLineComment(ASTLineComment *ptr){
+void Parser::parseLineComment(ASTLineComment *&ptr){
     ptr->type = AST::CommentType::LineComment;
     Token *tok = nextToken();
     if(tok->getType() == TokenType::Comment){
@@ -1792,7 +1797,7 @@ void Parser::parseLineComment(ASTLineComment *ptr){
     
 }
 
-void Parser::parseBlockComment(ASTBlockComment *ptr){
+void Parser::parseBlockComment(ASTBlockComment *&ptr){
     ptr->type = AST::CommentType::BlockComment;
     Token *tok = nextToken();
     ptr->line_num = 0;
@@ -1806,4 +1811,17 @@ void Parser::parseBlockComment(ASTBlockComment *ptr){
         }
         tok = nextToken();
     }
+}
+
+void Parser::checkForComments(ASTObject * ptr){
+    Token *tok = aheadToken();
+    while(true){
+        if(tok->getType() == TokenType::LineCommentDBSlash || tok->getType() == TokenType::BlockCommentStart){
+            parseComment(ptr);
+        }
+        else {
+            break;
+        }
+    }
+    
 }

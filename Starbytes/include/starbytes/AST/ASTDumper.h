@@ -18,9 +18,8 @@ namespace AST {
         private:
             AbstractSyntaxTree *& ast;
             std::ostringstream output;
-            void toXMLStatement(ASTStatement *& st);
-            void toXMLDeclaration(ASTDeclaration *& decl);
-            void toXMLExpression(ASTExpression *& expr);
+            bool toXMLDeclaration(ASTDeclaration *& decl);
+            bool toXMLExpression(ASTExpression *& expr);
             void toXMLVariableDeclaration(){};
             template<typename _Ty = ASTStatement *>
             void toXMLVector(std::vector<_Ty> & vec){

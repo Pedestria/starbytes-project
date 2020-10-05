@@ -2,13 +2,13 @@
 #include <initializer_list>
 #include <vector>
 #include <string>
-#include "starbytes/Base/Document.h"
+#include "starbytes/Base/Base.h"
 
 #ifndef AST_AST_H
 #define AST_AST_H 
 
 
-namespace Starbytes {
+STARBYTES_STD_NAMESPACE
     namespace AST {
 
         #define ASTDECL(name) struct name : ASTDeclaration
@@ -302,15 +302,12 @@ namespace Starbytes {
                 return false;
             }
         }
-        template<typename _Node>
-        inline _Node cast_astnode(ASTObject *node){
-            return (_Node)node;
-        }
 
         #define AST_NODE_CAST(ptr) ((ASTNode *)ptr)
         #define AST_NODE_IS(ptr,type) (astnode_is<type>(AST_NODE_CAST(ptr)))
+        #define ASSERT_AST_NODE(ptr,type) ((type *)ptr)
     };
 
-}
+NAMESPACE_END
 
 #endif
