@@ -11,14 +11,17 @@
 namespace Starbytes {
     namespace AST {
 
-        enum class ASTType:int{
+        #define ASTDECL(name) struct name : ASTDeclaration
+
+        
+        TYPED_ENUM ASTType:int{
             Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,
             TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,
             ClassConstructorParameterDeclaration,TypeArgumentsDeclaration,InterfaceDeclaration,InterfaceBlockStatement,InterfacePropertyDeclaration,InterfaceMethodDeclaration,ReturnDeclaration,EnumDeclaration,EnumBlockStatement,
             Enumerator,IfDeclaration,ElseIfDeclaration,ElseDeclaration,BooleanLiteral,AwaitExpression,ExpressionStatement
         };
 
-        enum class CommentType:int {
+        TYPED_ENUM CommentType:int {
             LineComment,BlockComment
         };
 
@@ -164,7 +167,7 @@ namespace Starbytes {
         struct ASTClassBlockStatement : ASTStatement {
             std::vector<ASTClassStatement *> nodes;
         };
-        struct ASTClassDeclaration : ASTDeclaration {
+        ASTDECL(ASTClassDeclaration) {
             static ASTType static_type;
             ASTIdentifier * id;
             bool isGeneric;
@@ -218,7 +221,7 @@ namespace Starbytes {
             static ASTType static_type;
             std::vector<ASTInterfaceStatement *> nodes;
         };
-        struct ASTInterfaceDeclaration : ASTDeclaration {
+        ASTDECL(ASTInterfaceDeclaration) {
             static ASTType static_type;
             ASTIdentifier * id;
             bool isGeneric;
@@ -229,18 +232,18 @@ namespace Starbytes {
 
         };
 
-        struct ASTIfDeclaration : ASTDeclaration {
+        ASTDECL(ASTIfDeclaration) {
             static ASTType static_type;
             ASTExpression *subject;
             ASTBlockStatement *body;
         };
-        struct ASTElseIfDeclaration : ASTDeclaration {
+        ASTDECL(ASTElseIfDeclaration) {
             static ASTType static_type;
             ASTExpression *subject;
             ASTBlockStatement *body;
         };
 
-        struct ASTElseDeclaration : ASTDeclaration {
+        ASTDECL(ASTElseDeclaration) {
             static ASTType static_type;
             ASTBlockStatement *body;
         };
@@ -250,7 +253,7 @@ namespace Starbytes {
             ASTNode *id;
             ASTExpression *initializer;
         };
-        struct ASTVariableDeclaration : ASTDeclaration {
+        ASTDECL(ASTVariableDeclaration) {
             static ASTType static_type;
             std::vector<ASTVariableSpecifier*> specifiers;
         };
@@ -260,21 +263,21 @@ namespace Starbytes {
             ASTNode *id;
             ASTExpression *initializer;
         };
-        struct ASTConstantDeclaration : ASTDeclaration {
+        ASTDECL(ASTConstantDeclaration) {
             static ASTType static_type;
             std::vector<ASTConstantSpecifier *> specifiers;
         };
-        struct ASTImportDeclaration : ASTDeclaration {
+        ASTDECL(ASTImportDeclaration) {
             static ASTType static_type;
             ASTIdentifier *id;
         };
 
-        struct ASTScopeDeclaration : ASTDeclaration {
+        ASTDECL(ASTScopeDeclaration) {
             static ASTType static_type;
             ASTIdentifier *id;
             ASTBlockStatement* body;
         };
-        struct ASTFunctionDeclaration : ASTDeclaration {
+        ASTDECL(ASTFunctionDeclaration) {
             static ASTType static_type;
             ASTIdentifier *id;
             bool isAsync;
@@ -303,6 +306,9 @@ namespace Starbytes {
         inline _Node cast_astnode(ASTObject *node){
             return (_Node)node;
         }
+
+        #define AST_NODE_CAST(ptr) ((ASTNode *)ptr)
+        #define AST_NODE_IS(ptr,type) (astnode_is<type>(AST_NODE_CAST(ptr)))
     };
 
 }

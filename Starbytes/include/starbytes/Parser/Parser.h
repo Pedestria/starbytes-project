@@ -13,7 +13,7 @@
 STARBYTES_STD_NAMESPACE
     using namespace AST;
     typedef unsigned int UInt;
-    enum class Scope:int {
+    TYPED_ENUM Scope:int {
         Global,BlockStatement,FunctionBlockStatement
     };
     class Parser{

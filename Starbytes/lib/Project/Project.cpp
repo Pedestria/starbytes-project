@@ -6,9 +6,16 @@
 #include <iostream>
 #include <cctype>
 
-namespace Starbytes {
+// #define UNIX_FS HAS_FILESYSTEM_H
 
-    using namespace Foundation;
+// #ifdef HAS_DIRENT_H
+// #include <dirent.h>
+// #endif
+
+// #ifdef HAS_FILESYSTEM_H 
+// #endif
+
+STARBYTES_FOUNDATION_NAMESPACE
 
     inline std::string & unwrapQuotes(std::string & subject){
         subject.erase(subject.begin());
@@ -20,11 +27,11 @@ namespace Starbytes {
         return "\x1b[31mSyntax Error: \n "+message+"\x1b[0m" + "\n This Error has Occurred at:{" +"\n Start:"+std::to_string(pos->start)+"\n End:"+std::to_string(pos->end)+"\n Line:"+std::to_string(pos->line)+"\n}";
     }
 
-    enum class PFTokenType:int {
+    TYPED_ENUM PFTokenType:int {
         Identifier,Keyword,Colon,String,Asterisk,OpenBracket,CloseBracket,Number,Comma
     };
 
-    enum class PFKeywordType:int {
+    TYPED_ENUM PFKeywordType:int {
         Module,Dump,To,Get
     };
 
@@ -110,7 +117,7 @@ namespace Starbytes {
         std::vector<std::string> targets_to_dump;
         std::string dump_dest;
     };
-    enum class ModuleType:int{
+    TYPED_ENUM ModuleType:int{
         Executable,Library
     };
 
@@ -125,7 +132,7 @@ namespace Starbytes {
         std::vector<std::string> dependencies;
     };
 
-    enum class ModuleDeclPropTypes:int {
+    TYPED_ENUM ModuleDeclPropTypes:int {
         Directory,Entry,Type,Dependencies
     };
 
@@ -435,4 +442,5 @@ namespace Starbytes {
         auto * result = new std::vector<StarbytesCompiledModule *>();
         return result;
     }
-}
+
+NAMESPACE_END

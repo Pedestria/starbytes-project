@@ -8,6 +8,14 @@
 #include <string>
 #include <vector>
 
+// #ifdef HAS_IO_H
+// #include <io.h>
+// #endif
+
+// #ifdef HAS_UNISTD_H
+// #include <unistd.h>
+// #endif
+
 
 #ifdef _WIN32
 #include <Windows.h>

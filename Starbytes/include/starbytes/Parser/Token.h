@@ -7,7 +7,7 @@
 #define PARSER_TOKEN_H
 
 STARBYTES_STD_NAMESPACE
-	enum class TokenType:int {
+	TYPED_ENUM TokenType:int {
 		Keyword, Identifier, Operator,Comma,Typecast,DoubleOperator,Quote,Dot,Semicolon,Numeric,
 		EndOfFile,OpenBrace,CloseBrace,OpenBracket,CloseBracket,OpenParen,CloseParen,OpenCarrot,
 		CloseCarrot,Comment,LineCommentDBSlash,BlockCommentStart,BlockCommentEnd

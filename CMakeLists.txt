@@ -65,6 +65,7 @@ if(NOT ${MSVC_BUILD})
 		# set(CMAKE_CXX_COMPILER "clang++")
 	else()
 		set(CMAKE_CXX_COMPILER "clang++")
+		set(CMAKE_C_COMPILER "clang")
 	endif()
 
 	set(CMAKE_CXX_COMPILER_FLAGS "-fansi-escape-codes -fms-compatibility")
@@ -80,6 +81,6 @@ elseif()
 
 endif()
 
-project ("Starbytes" CXX)
+project ("Starbytes" CXX C)
 # Include sub-projects.
 add_subdirectory ("Starbytes")

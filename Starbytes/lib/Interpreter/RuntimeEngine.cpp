@@ -14,7 +14,7 @@
 
 STARBYTES_INTERPRETER_NAMESPACE
 namespace Engine {
-        enum class PtrType:int {
+        TYPED_ENUM PtrType:int {
             CreateFunc,InvokeFunc,CreateVariable,SetVariable,CreateFunctionArgs,ReturnFunc
         };
         template<typename ARGTYPE = std::any>
@@ -321,6 +321,17 @@ namespace Engine {
             }
         }
     }
+    bool dealloc_variable(std::string name){
+        for(auto var : get_scope(get_current_scope())->stored_variables){
+            if(var->name == name){
+                delete var->val;
+                delete var;
+                return true;
+            }
+        }
+        return false;
+    }
+
     StarbytesObject ** get_address_of_starbytes_object (StarbytesObject * t){
         StarbytesObject ** ptr = &t;
         return ptr;
@@ -364,6 +375,8 @@ namespace Engine {
         return args;
     }
 
+    #define FUNC_PTR(type,ptr) InternalFuncPtr<type> * new_ptr = reinterpret_cast<InternalFuncPtr<type> *>(ptr)
+
     void create_function(std::string name,std::vector<StoredVariable<> *> args,std::initializer_list<InternalFuncPtr<> *> body,bool lazy = false){
         StoredFunction *func = new StoredFunction();
         func->name = name;
@@ -386,19 +399,19 @@ namespace Engine {
                     //
                     for(auto & fnc : stfnc->body){
                         if(fnc->type == PtrType::CreateFunc){
-                            InternalFuncPtr<CreateFunctionArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<CreateFunctionArgs *> *>(fnc);
+                            FUNC_PTR(CreateFunctionArgs*,fnc);
                             create_function(new_ptr->args->name,new_ptr->args->args,new_ptr->args->body);
                         }
                         else if(fnc->type == PtrType::InvokeFunc){
-                            InternalFuncPtr<InvokeFunctionArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<InvokeFunctionArgs *> *>(fnc);
+                            FUNC_PTR(InvokeFunctionArgs*,fnc);
                             invoke_function(new_ptr->args->name,new_ptr->args->args);
                         }
                         else if(fnc->type == PtrType::CreateVariable){
-                            InternalFuncPtr<CreateVariableArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<CreateVariableArgs *> *>(fnc);
+                            FUNC_PTR(CreateVariableArgs*,fnc);
                             create_variable(new_ptr->args->name);
                         }
                         else if(fnc->type == PtrType::SetVariable){
-                            InternalFuncPtr<SetVariableArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<SetVariableArgs *> *>(fnc);
+                            FUNC_PTR(SetVariableArgs*,fnc);
                             set_variable(new_ptr->args->name,new_ptr->args->value);
                         }  
                     }
@@ -422,23 +435,23 @@ namespace Engine {
                     //
                     for(auto & fnc : stfnc->body){
                         if(fnc->type == PtrType::CreateFunc){
-                            InternalFuncPtr<CreateFunctionArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<CreateFunctionArgs *> *>(fnc);
+                            FUNC_PTR(CreateFunctionArgs*,fnc);
                             create_function(new_ptr->args->name,new_ptr->args->args,new_ptr->args->body);
                         }
                         else if(fnc->type == PtrType::InvokeFunc){
-                            InternalFuncPtr<InvokeFunctionArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<InvokeFunctionArgs *> *>(fnc);
+                            FUNC_PTR(InvokeFunctionArgs*,fnc);
                             invoke_function(new_ptr->args->name,new_ptr->args->args);
                         }
                         else if(fnc->type == PtrType::CreateVariable){
-                            InternalFuncPtr<CreateVariableArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<CreateVariableArgs *> *>(fnc);
+                            FUNC_PTR(CreateVariableArgs*,fnc);
                             create_variable(new_ptr->args->name);
                         }
                         else if(fnc->type == PtrType::SetVariable){
-                            InternalFuncPtr<SetVariableArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<SetVariableArgs *> *>(fnc);
+                            FUNC_PTR(SetVariableArgs*,fnc);
                             set_variable(new_ptr->args->name,new_ptr->args->value);
                         }  
                         else if(fnc->type == PtrType::ReturnFunc){
-                            InternalFuncPtr<ReturnFuncArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<ReturnFuncArgs *> *>(fnc);
+                            FUNC_PTR(ReturnFuncArgs*,fnc);
                             return_ptr = new_ptr->args->obj_to_return;
                         }
                     }
@@ -552,19 +565,19 @@ namespace Engine {
                         //
                         for(auto fnc : m->func->body){
                             if(fnc->type == PtrType::CreateFunc){
-                                InternalFuncPtr<CreateFunctionArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<CreateFunctionArgs *> *>(fnc);
+                                FUNC_PTR(CreateFunctionArgs*,fnc);
                                 create_function(new_ptr->args->name,new_ptr->args->args,new_ptr->args->body);
                             }
                             else if(fnc->type == PtrType::InvokeFunc){
-                                InternalFuncPtr<InvokeFunctionArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<InvokeFunctionArgs *> *>(fnc);
+                                FUNC_PTR(InvokeFunctionArgs*,fnc);
                                 invoke_function(new_ptr->args->name,new_ptr->args->args);
                             }
                             else if(fnc->type == PtrType::CreateVariable){
-                                InternalFuncPtr<CreateVariableArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<CreateVariableArgs *> *>(fnc);
+                                FUNC_PTR(CreateVariableArgs*,fnc);
                                 create_variable(new_ptr->args->name);
                             }
                             else if(fnc->type == PtrType::SetVariable){
-                                InternalFuncPtr<SetVariableArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<SetVariableArgs *> *>(fnc);
+                                FUNC_PTR(SetVariableArgs*,fnc);
                                 set_variable(new_ptr->args->name,new_ptr->args->value);
                             }
                             
@@ -621,23 +634,23 @@ namespace Engine {
                     //
                     for(auto fnc : m->func->body){
                         if(fnc->type == PtrType::CreateFunc){
-                            InternalFuncPtr<CreateFunctionArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<CreateFunctionArgs *> *>(fnc);
+                            FUNC_PTR(CreateFunctionArgs*,fnc);
                             create_function(new_ptr->args->name,new_ptr->args->args,new_ptr->args->body);
                         }
                         else if(fnc->type == PtrType::InvokeFunc){
-                            InternalFuncPtr<InvokeFunctionArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<InvokeFunctionArgs *> *>(fnc);
+                            FUNC_PTR(InvokeFunctionArgs*,fnc);
                             invoke_function(new_ptr->args->name,new_ptr->args->args);
                         }
                         else if(fnc->type == PtrType::CreateVariable){
-                            InternalFuncPtr<CreateVariableArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<CreateVariableArgs *> *>(fnc);
+                            FUNC_PTR(CreateVariableArgs*,fnc);
                             create_variable(new_ptr->args->name);
                         }
                         else if(fnc->type == PtrType::SetVariable){
-                            InternalFuncPtr<SetVariableArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<SetVariableArgs *> *>(fnc);
+                            FUNC_PTR(SetVariableArgs*,fnc);
                             set_variable(new_ptr->args->name,new_ptr->args->value);
                         }
                         else if(fnc->type == PtrType::ReturnFunc){
-                            InternalFuncPtr<ReturnFuncArgs *> * new_ptr = reinterpret_cast<InternalFuncPtr<ReturnFuncArgs *> *>(fnc);
+                            FUNC_PTR(ReturnFuncArgs*,fnc);
                             return_ptr = new_ptr->args->obj_to_return;
                         }   
                     }

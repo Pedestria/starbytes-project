@@ -3,8 +3,10 @@ add_starbytes_lib(
     "starbytesAST"
     SOURCE_FILES
     AST.cpp
+    ASTDumper.cpp
     HEADER_FILES
     AST.h
+    ASTDumper.h
     LIBS_TO_LINK
     "starbytesBase"
     )
