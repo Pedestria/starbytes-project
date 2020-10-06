@@ -1,7 +1,7 @@
 {
-  "name": "Starbytes Module File Syntax",
-  "scopeName": "source.strmodule",
-  "fileTypes": ["strmodule"],
+  "name": "Starbytes Project File Syntax",
+  "scopeName": "source.stbproject",
+  "fileTypes": ["stbproject"],
   "foldingStartMarker": "\\:$",
   "foldingStopMarker": "^\\s*(?=module|dump|get|to)",
   "patterns": [

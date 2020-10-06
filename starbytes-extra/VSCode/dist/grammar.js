@@ -15,8 +15,11 @@ function isTextMateRule(arg) {
 }
 /**
  * Transforms Sublime TextMate Syntax Variables in tmLanguage.yml files.
- * Outputs to a `.json` with same file name
+ * Outputs to a `.json` with same file name. However if `plist` is set to `true`
+ * Then it will output to a TM Plist file.
  * @param {string} file
+ * @param {boolean} plist
+ * @returns {Promise<void>} A void
  */
 async function build(file, plist = false) {
     let TMGrammar = YAML.safeLoad((await fs.readFile(file, "utf-8")));
@@ -92,5 +95,5 @@ async function build(file, plist = false) {
         await fs.writeFile(outputFile, prettier_1.format(JSON.stringify(result), options));
     }
 }
-build("./syntaxes/starbytes.tmLanguage.yml", true).catch(err => console.error(err));
-build("./syntaxes/starbytes-module.tmLanguage.yml", true).catch(err => console.log(err));
+build("./syntaxes/starbytes.tmLanguage.yml", false).catch(err => console.error(err));
+build("./syntaxes/starbytes-project.tmLanguage.yml", false).catch(err => console.log(err));

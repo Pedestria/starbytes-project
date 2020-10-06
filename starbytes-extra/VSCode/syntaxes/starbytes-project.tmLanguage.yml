@@ -1,7 +1,7 @@
-name: "Starbytes Module File Syntax"
-scopeName: "source.strmodule" 
+name: "Starbytes Project File Syntax"
+scopeName: "source.stbproject" 
 # uuid: 347f9b27-fc68-4a5c-8659-f7a4b8d7a33e
-fileTypes: ["strmodule"]
+fileTypes: ["stbproject"]
 foldingStartMarker: '\:$'
 foldingStopMarker: '^\s*(?=module|dump|get|to)'
 

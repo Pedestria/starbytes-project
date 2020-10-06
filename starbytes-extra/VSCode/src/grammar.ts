@@ -138,6 +138,6 @@ async function build (file:string,plist:boolean = false):Promise<void>{
     
 }
 
-build("./syntaxes/starbytes.tmLanguage.yml",true).catch(err => console.error(err));
+build("./syntaxes/starbytes.tmLanguage.yml",false).catch(err => console.error(err));
 
-build("./syntaxes/starbytes-module.tmLanguage.yml",true).catch(err => console.log(err));
+build("./syntaxes/starbytes-project.tmLanguage.yml",false).catch(err => console.log(err));

@@ -3,12 +3,12 @@
 <plist version="1.0">
   <dict>
     <key>name</key>
-    <string>Starbytes Module File Syntax</string>
+    <string>Starbytes Project File Syntax</string>
     <key>scopeName</key>
-    <string>source.strmodule</string>
+    <string>source.stbproject</string>
     <key>fileTypes</key>
     <array>
-      <string>strmodule</string>
+      <string>stbproject</string>
     </array>
     <key>foldingStartMarker</key>
     <string>\:$</string>

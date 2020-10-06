@@ -1,4 +1,4 @@
 {
     "cmake.configureOnOpen": false,
-    "cmake.sourceDirectory": "${workspaceFolder}/Starbytes"
+    "cmake.sourceDirectory": "${workspaceFolder}/starbytes-lang"
 }

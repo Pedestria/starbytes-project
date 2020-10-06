@@ -3,7 +3,8 @@
     "displayName": "Starbytes Extension For VSCode",
     "version": "0.0.0",
     "activationEvents": [
-        "onLanguage:starbytes"
+        "onLanguage:starbytes",
+        "onLanguage:starbytes-project"
     ],
     "categories": [
         "Programming Languages"
@@ -56,14 +57,14 @@
                 "configuration": "./language-configuration.json"
             },
             {
-                "id": "starmodule",
+                "id": "starbytes-project",
                 "aliases": [
-                    "Starbytes Module File"
+                    "Starbytes Project File"
                 ],
                 "extensions": [
-                    ".strmodule"
+                    ".stbproject"
                 ],
-                "configuration": "./language-configuration-strmodule.json"
+                "configuration": "./language-configuration-stbproject.json"
             }
         ],
         "grammars": [
@@ -73,9 +74,9 @@
                 "path": "./syntaxes/starbytes.tmLanguage.json"
             },
             {
-                "language": "starmodule",
-                "scopeName": "source.strmodule",
-                "path": "./syntaxes/starbytes-module.tmLanguage.json"
+                "language": "starbytes-project",
+                "scopeName": "source.stbproject",
+                "path": "./syntaxes/starbytes-project.tmLanguage.json"
             }
         ]
     },
