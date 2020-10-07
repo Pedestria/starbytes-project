@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include "starbytes/Base/Base.h"
+#include "starbytes/Project/DependencyTree.h"
 
 #ifndef PROJECT_PROJECT_H
 #define PROJECT_PROJECT_H
@@ -14,12 +15,6 @@ STARBYTES_STD_NAMESPACE
         std::string dest;
     };
 
-
-    class StarbytesModule{
-        public:
-            StarbytesModule();
-
-    };
     std::vector<StarbytesModule *> * constructModule(std::string & module_config_file);
     std::vector<StarbytesCompiledModule *> * constructAndCompileModulesFromConfig(std::string & module_config_file);
 

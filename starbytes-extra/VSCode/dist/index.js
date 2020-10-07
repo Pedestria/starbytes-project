@@ -42,8 +42,8 @@ function activate(context) {
     langClient = new vscode_languageclient_1.LanguageClient("starbytesLSP", "Starbytes LSP", serverOptions, clientOptions);
     vscode_1.languages.registerHoverProvider({ scheme: "file", language: "starbytes-project" }, {
         provideHover: (doc, pos, token) => {
-            console.log("Hovering!");
             let docTokens = doc.getText(doc.getWordRangeAtPosition(pos));
+            console.log(docTokens);
             let result;
             if (/\bmodule\b/g.test(docTokens)) {
                 result = "Module Declaration";

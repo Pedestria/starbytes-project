@@ -1,9 +1,11 @@
 #include "Starbytes-LSP.h"
 #include "LSPProtocol.h"
+#include "starbytes/Base/Base.h"
 // #include "Parser/Lexer.h"
 // #include "Parser/Parser.h"
 #include <array>
 #include <cctype>
+#include <cstdlib>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -49,31 +51,6 @@ using namespace std;
 
 string help(){
  return "\n \u001b[35m\u001b[4m The Starbytes LSP Implementation!\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help info. \n";
-}
-
-bool parseArguments(char * arguments[],int count){
-    char ** flags = arguments;
-    ++flags;
-    vector<string> FLAGS;
-    for(int i = 1;i < count;++i){
-        FLAGS.push_back(string(*flags));
-        ++flags;
-    }
-    int index = 0;
-    while(index < FLAGS.size()){
-
-        if(FLAGS[index] == "--help"){
-            cout << help();
-            return false;
-        }
-        // else if(FLAGS[index] == "--pipe"){
-        //     ++index;
-        //     pipe_id = stoi(FLAGS[index]);
-        // }
-        ++index;
-    }
-    return true;
-
 }
 
 using namespace LSP;
@@ -126,6 +103,11 @@ int main(int argc, char* argv[]) {
     setupConsole();
     #endif
     using namespace LSP;
+
+    Foundation::parseCmdArgs(argc,argv,{},{},[]{
+        cout << help();
+        exit(0);
+    });
     // StarbytesLSPServer server;
     // server.init(argc,argv);
     //Change
@@ -133,13 +115,10 @@ int main(int argc, char* argv[]) {
     // string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\ndecl immutable hellop:Array = [\"One\",\"Two\"]\n";
     // parseStarbytesSource(test);
 
-    if(!parseArguments(argv,argc)){
-        return 0;
-    }
-    else {
-        LSP::StarbytesLSPServer server;
-        server.init();
-    }
+    
+    LSP::StarbytesLSPServer server;
+    server.init();
+    
     //If receives a textDocument via message, parse document!
     // cout << help();
 }

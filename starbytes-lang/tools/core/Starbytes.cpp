@@ -1,5 +1,6 @@
 ﻿//
 #include "Starbytes.h"
+#include <algorithm>
 #include <stdio.h>
 #include <fstream>
 #include <string>
@@ -99,91 +100,55 @@ void logError(std::string message,std::string code, std::vector<Token> &tokens){
 	std::cerr << message << "\n\n" << result << "\n";
 }
 
-struct StarbytesArgs {
-	bool hasModuleFile = false;
-	string module_file;
-	bool hasSources = false;
+struct StarbytesCoreSettings {
+	bool hasProjectFile = false;
+	string project_file;
+	bool hasSources;
 	vector<string> files;
 };
 
-StarbytesArgs * parseArguments(char * arguments[],int count){
-	StarbytesArgs *arg = new StarbytesArgs();
-    char ** flags = arguments;
-    ++flags;
-    vector<string> FLAGS;
-    for(int i = 1;i < count;++i){
-        FLAGS.push_back(string(*flags));
-        ++flags;
-    }
-    int i = 0;
-    while (i < FLAGS.size()) {
-        if(FLAGS[i] == "--help"){
-            cout << help();
-            exit(0);
-        } else if(FLAGS[i] == "--project-file"){
-			arg->hasModuleFile = true;
-			arg->module_file = FLAGS[++i];
-		} else if(FLAGS[i] == "--source"){
-			arg->hasSources = true;
-			arg->files.push_back(FLAGS[++i]);
-		}
-		++i;
-    }
-    return arg;
+StarbytesCoreSettings settings;
 
-    
-}
+Foundation::CommandInput project_file {"project-file","p",[](std::string p_file){
+	settings.hasProjectFile = true;
+	settings.project_file = p_file;
+}};
 
-int main(int argc, char* argv[]) {
-	#ifdef _WIN32
-	setupConsole();
-	#endif
-
-	using namespace Foundation;
-
-	StarbytesArgs *args = parseArguments(argv,argc);
-	if(args->hasModuleFile){
-		cout << "Module File Location:" << args->module_file;
-		cout << *(readFile(args->module_file));
+Foundation::CommandInput source {"source","s",[](std::string source_file){
+	if(!settings.hasSources){
+		settings.hasSources = true;
 	}
-	//If we can test from source files!
-	if(args->hasSources){
-		for(auto srcfile : args->files){
-			string *file_buf = readFile(srcfile);
-			auto result = Lexer(*file_buf).tokenize();
-			AbstractSyntaxTree * tree = new AbstractSyntaxTree();
-			try {
-				auto parser = Parser(result,tree);
-				parser.convertToAST();
+	settings.files.push_back(source_file);
+}};
 
-				for(auto node : tree->nodes){
-					cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
-				}
-			} catch (string message) {
-				cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
-			}
+
+int main(int argc,char *argv[]){
+
+	
+
+	Foundation::parseCmdArgs(argc,argv,{},{&project_file,&source},[]{
+		cout << help();
+		exit(0);
+	});
+
+	string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\ndecl immutable hellop:Array = [\"One\",\"Two\"]";
+	string test2 = "import library\nimport otherLibrary";
+	auto result = Lexer(test2).tokenize();
+	// logError("TEST",test2,result);
+	// for (Token tok : result) {
+	// 	cout << "{\nContent:"+tok.getContent() << "\nType: " << int(tok.getType()) << "\nPosition:"+convertPosition(tok.getPosition()) << "\nSize:" <<tok.getTokenSize() << "\n}\n";
+	// }
+	AbstractSyntaxTree *tree = new AbstractSyntaxTree();
+
+	try {
+		auto parser = Parser(result,tree);
+		parser.convertToAST();
+
+		for(auto node : tree->nodes){
+			cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
 		}
-	}
-	else{
-		string test = "import mylib\nimport otherLibrary\ndecl hello = [\"One\",\"Two\"]\ndecl immutable hellop:Array = [\"One\",\"Two\"]";
-		string test2 = "import library\nimport otherLibrary";
-		auto result = Lexer(test2).tokenize();
-		// logError("TEST",test2,result);
-		// for (Token tok : result) {
-		// 	cout << "{\nContent:"+tok.getContent() << "\nType: " << int(tok.getType()) << "\nPosition:"+convertPosition(tok.getPosition()) << "\nSize:" <<tok.getTokenSize() << "\n}\n";
-		// }
-		AbstractSyntaxTree *tree = new AbstractSyntaxTree();
-
-		try {
-			auto parser = Parser(result,tree);
-			parser.convertToAST();
-
-			for(auto node : tree->nodes){
-				cout << "{\nType:" << int(node->type) << "\n BeginFold:"+convertPosition(node->BeginFold) << "\n EndFold:"+convertPosition(node->EndFold) << "\n}\n";
-			}
-		} catch (string message) {
-			cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
-		}
+	} catch (string message) {
+		cerr << "\x1b[31mSyntaxError:\n" << message << "\x1b[0m";
 	}
 			// cout << help();
 		// cout << loghelp() << "\n";

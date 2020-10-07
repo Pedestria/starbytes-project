@@ -8,8 +8,9 @@ add_starbytes_lib(
     Base.h
     Macros.h
     StarbytesError.h
+    CmdLine.h
     SOURCE_FILES
     ADT.cpp
-    Document.cpp
     StarbytesError.cpp
+    CmdLine.cpp
     )

@@ -54,6 +54,7 @@ export function activate(context:ExtensionContext){
     languages.registerHoverProvider({scheme:"file",language:"starbytes-project"},{
         provideHover: (doc,pos,token) => {
             let docTokens = doc.getText(doc.getWordRangeAtPosition(pos));
+            console.log(docTokens);
             let result:string;
             if(/\bmodule\b/g.test(docTokens)){
                 result = "Module Declaration";
