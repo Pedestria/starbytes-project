@@ -1,4 +1,4 @@
-# `extension`
+# `VSCode`
 
 - starbytes-grammar
 - starbytes-vscode
