@@ -1,3 +1,6 @@
+<img src="./public/STD Logo.png">
+
+
 # Starbytes Project/Toolchain
 ## New Expressive/Simple/Strongly Typed Interpreted Language.
 ---

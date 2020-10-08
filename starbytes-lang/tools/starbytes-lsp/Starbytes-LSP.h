@@ -17,9 +17,16 @@ STARBYTES_STD_NAMESPACE
                 void queueMessage(LSPServerMessage * msg);
                 LSPServerMessage * getLatest();
         };
+        enum class CompletionItemStyle:int {
+            Detailed,Brief
+        };
+        struct LSPServerSettings {
+            CompletionItemStyle completion_item_style;
+        };
         class StarbytesLSPServer {
             public:
-                StarbytesLSPServer(){};
+                LSPServerSettings & settings;
+                StarbytesLSPServer(LSPServerSettings & sett):settings(sett){};
                 ~StarbytesLSPServer(){};
                 LSPQueue queue;
                 void init();

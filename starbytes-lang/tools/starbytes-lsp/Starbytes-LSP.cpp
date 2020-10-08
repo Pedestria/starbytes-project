@@ -81,19 +81,19 @@ void StarbytesLSPServer::getMessageFromStdin(){
     queue.queueMessage(cntr);
 };
 
-// AbstractSyntaxTree * parseStarbytesSource(std::string & data){
-//     auto toks = Lexer(data).tokenize();
-//     AbstractSyntaxTree * tree = new AbstractSyntaxTree();
-//     try {
-//         Parser(toks,tree).convertToAST();
-//         return tree;
-//     }
-//     catch (string message){
-//         std::cerr << "Parser Error!";
-//         return nullptr;
-//     }
+LSPServerSettings settings;
 
-// }
+
+Foundation::CommandInput completion_style {"completion-item-style","c",[](std::string arg){
+    CompletionItemStyle style;
+    if(arg == "detailed"){
+        style = CompletionItemStyle::Detailed;
+    }
+    else if(arg == "brief"){
+        style = CompletionItemStyle::Brief;
+    }
+    settings.completion_item_style = style;
+}};
 
 
 
@@ -104,7 +104,7 @@ int main(int argc, char* argv[]) {
     #endif
     using namespace LSP;
 
-    Foundation::parseCmdArgs(argc,argv,{},{},[]{
+    Foundation::parseCmdArgs(argc,argv,{},{&completion_style},[]{
         cout << help();
         exit(0);
     });
@@ -116,7 +116,7 @@ int main(int argc, char* argv[]) {
     // parseStarbytesSource(test);
 
     
-    LSP::StarbytesLSPServer server;
+    LSP::StarbytesLSPServer server(settings);
     server.init();
     
     //If receives a textDocument via message, parse document!
