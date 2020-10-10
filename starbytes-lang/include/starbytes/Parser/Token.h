@@ -21,8 +21,8 @@ STARBYTES_STD_NAMESPACE
 		public:
 			Token(TokenType type, std::string content, DocumentPosition &position,size_t & size) : type(type), content(content),pos(position),size(size) {};
 			~Token(){};
-			std::string getContent();
-			TokenType getType();
+			std::string & getContent();
+			TokenType & getType();
 			DocumentPosition & getPosition();
 			unsigned int & getTokenSize(){
 				return size;

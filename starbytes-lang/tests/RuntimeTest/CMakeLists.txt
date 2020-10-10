@@ -5,5 +5,5 @@ add_starbytes_test(
     FILES
     "Run.cpp"
     DEPENDENCIES
-    "starbytesInterpreterRuntime"
+    "starbytesBCInterpreter"
 )

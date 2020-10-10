@@ -20,7 +20,7 @@
 
 
 #ifdef _WIN32
-WINDOWS_INIT_CONSOLE
+WINDOWS_CONSOLE_INIT
 #endif
 
 using namespace Starbytes;

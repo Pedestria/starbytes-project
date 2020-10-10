@@ -1,0 +1,14 @@
+add_starbytes_lib(
+    LIB_NAME 
+    "starbytesByteCode"
+    SOURCE_FILES
+    "BCParser.cpp"
+    "BCSerializer.cpp"
+    HEADER_FILES
+    "BCDef.h"
+    "BCParser.h"
+    "BCSerializer.h"
+    LIBS_TO_LINK
+    "starbytesBase"
+    "starbytesAST"
+)

@@ -1,13 +1,15 @@
 #include "starbytes/Parser/Token.h"
 
-using namespace Starbytes;
+STARBYTES_STD_NAMESPACE
 
-std::string Token::getContent(){
+std::string & Token::getContent(){
 	return content;
 }
-TokenType Token::getType() {
+Starbytes::TokenType & Token::getType() {
 	return type;
 }
 DocumentPosition & Token::getPosition(){
 	return pos;
 }
+
+NAMESPACE_END
