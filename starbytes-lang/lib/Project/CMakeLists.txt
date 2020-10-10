@@ -3,10 +3,10 @@ add_starbytes_lib(
     "starbytesProjectManagement"
     SOURCE_FILES
     "Project.cpp"
+    "DependencyTree.h"
     "DependencyTree.cpp"
     HEADER_FILES
     "Project.h"
-    "DependencyTree.h"
     LIBS_TO_LINK
     "starbytesBase"
     "starbytesAST"

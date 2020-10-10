@@ -27,6 +27,33 @@ struct CommandOption {
 
 void parseCmdArgs(int arg_count,char *argv[],std::initializer_list<CommandOption *> options,std::initializer_list<CommandInput *> inputs,void (*help_opt_callback)());
 
+#ifdef _WIN32
+#include <Windows.h>
+#define WINDOWS_CONSOLE_INIT /
+static HANDLE stdoutHandle; /
+static DWORD outModeInit; /
+ /
+void setupConsole(void){ /
+    DWORD outMode = 0; /
+    stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+ /
+    if(stdoutHandle == INVALID_HANDLE_VALUE) { /
+		exit(GetLastError()); /
+	} /
+ /
+    if(!GetConsoleMode(stdoutHandle, &outMode)) { /
+	    exit(GetLastError()); /
+	} /
+ /
+    outModeInit = outMode;  /
+ /
+    outMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING; /
+ / 
+    if(!SetConsoleMode(stdoutHandle, outMode)) { /
+		exit(GetLastError()); /
+	} /
+} 
+#endif
 
 NAMESPACE_END
 

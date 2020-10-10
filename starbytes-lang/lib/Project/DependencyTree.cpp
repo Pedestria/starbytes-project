@@ -1,8 +1,8 @@
-#include "starbytes/Project/DependencyTree.h"
+#include "DependencyTree.h"
 
 STARBYTES_STD_NAMESPACE
 
-void DependencyTree::add(TargetDependency && dep) {
+void DependencyTree::add(TargetDependency & dep) {
     dependencies.push_back(dep);
 };
 
@@ -18,5 +18,13 @@ bool DependencyTree::remove(std::string name) {
     }
     return return_code;
 };
+
+TargetDependency & DependencyTree::getDependencyByName(std::string &name){
+    for(auto & dep : dependencies){
+        if(dep.name == name){
+            return dep;
+        }
+    }
+}
 
 NAMESPACE_END

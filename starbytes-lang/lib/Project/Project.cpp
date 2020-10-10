@@ -2,20 +2,12 @@
 #include "starbytes/Parser/Lookup.h"
 #include "starbytes/Base/Document.h"
 #include "starbytes/Base/Base.h"
+#include "DependencyTree.h"
 #include <fstream>
 #include <iostream>
 #include <cctype>
 
-// #define UNIX_FS HAS_FILESYSTEM_H
-
-// #ifdef HAS_DIRENT_H
-// #include <dirent.h>
-// #endif
-
-// #ifdef HAS_FILESYSTEM_H 
-// #endif
-
-STARBYTES_FOUNDATION_NAMESPACE
+STARBYTES_STD_NAMESPACE
 
     inline std::string & unwrapQuotes(std::string & subject){
         subject.erase(subject.begin());
@@ -123,6 +115,7 @@ STARBYTES_FOUNDATION_NAMESPACE
 
     struct ModuleDeclaration{
         ModuleType type;
+        std::string name;
         bool hasType = false;
         bool hasDirectory = false;
         bool hasEntry = false;
@@ -157,7 +150,7 @@ STARBYTES_FOUNDATION_NAMESPACE
             unsigned int currentIndex;
             unsigned int currentLine;
             std::vector<PFToken *> tokens;
-            std::vector<StarbytesModule *> * result;
+            std::string entry;
             std::vector<ModuleDeclaration *> modules;
             std::vector<GetDeclaration *> libs_to_get;
             std::vector<DumpDeclaration *> dumps;
@@ -370,26 +363,29 @@ STARBYTES_FOUNDATION_NAMESPACE
                 }
             }
             void parseModuleDecl(ModuleDeclaration * ptr){
-                PFToken *tok1 = aheadToken();
-                while(true){
-                    if(tok1->type == PFTokenType::Identifier){
-                        ModuleDeclPropTypes prop_type = matchPropType(tok1->content);
-                        goToNextToken();
-                        PFToken *tok2 = nextToken();
-                        if(tok2->type == PFTokenType::Colon){
-                            resolveModulePropertyValue(ptr,prop_type);
+                PFToken *tok1 = nextToken();
+                if(tok1->type == PFTokenType::Identifier){
+                        ptr->name = tok1->content;
+                        tok1 = aheadToken();
+                        while(true){
+                        if(tok1->type == PFTokenType::Identifier){
+                            ModuleDeclPropTypes prop_type = matchPropType(tok1->content);
+                            goToNextToken();
+                            PFToken *tok2 = nextToken();
+                            if(tok2->type == PFTokenType::Colon){
+                                resolveModulePropertyValue(ptr,prop_type);
+                            }
+                            else{
+                                throw ProjectFileParseError("Expected Colon",tok2->pos);
+                            }
+                        } else if(tok1->type == PFTokenType::Keyword){
+                            break;
                         }
-                        else{
-                            throw ProjectFileParseError("Expected Colon",tok2->pos);
-                        }
-                    } else if(tok1->type == PFTokenType::Keyword){
-                        break;
+                        tok1 = aheadToken();
                     }
-                    tok1 = aheadToken();
-                }
-                
+                }     
             }
-            void parseToModules(){
+            void parseToConfig(){
                 currentIndex = 0;
                 PFToken *tok = tokens[0];
                 while(true){
@@ -413,28 +409,68 @@ STARBYTES_FOUNDATION_NAMESPACE
                     tok = nextToken();
                 }
             }
+            void buildDependencyTree(DependencyTree * tree){
+                //Create TGs!
+                for(auto & node : modules){
+                    TargetDependency dep {};
+                    dep.name = node->name;
+                    dep.type = node->type;
+                    tree->add(dep);
+                }
+                //Figure out each TG's dependents!
+                for(auto & mod : modules){
+                    for(auto & dep_name : mod->dependencies){
+                        TargetDependency & tg_ref = tree->getDependencyByName(dep_name);
+                        tg_ref.dependents.push_back(mod->name); 
+                    }
+                }
+
+                int idx = 0;
+                for(auto & dump : dumps){
+                    if(!dump->all){
+                        for(auto & t_name : dump->targets_to_dump){
+                            TargetDependency & t_dep = tree->getDependencyByName(t_name);
+                            t_dep.dump_loc = dump->dump_dest;
+                        }
+                    }
+                    else {
+                        tree->foreach([&dump](TargetDependency &dep){
+                            dep.dump_loc = dump->dump_dest;
+                        });
+                    }
+                    delete dump;
+                    dumps.erase(dumps.begin()+idx);
+                    ++idx;
+                }
+            }
         public:
             ProjectFileParser(std::string _file):file(_file){};
-            std::vector<StarbytesModule *> * parseFile(){
+            DependencyTree * constructDependencyTreeFromParsing(){
 
-                std::vector<StarbytesModule *> * _result = new std::vector<StarbytesModule *>();
-                result = _result;
+                DependencyTree *tree;
                 tokenize();
                 try{
-                    parseToModules();
+                    parseToConfig();
+                    tree = new DependencyTree(entry);
+                    buildDependencyTree(tree);
+
                 }
                 catch(std::string message){
                     std::cerr << "\x1b[31m" << message << "\x1b[0m";
                     exit(1);
                 }
-                return _result;
+                return tree;
             };
     };
 
+    std::vector<StarbytesCompiledModule *> * compileFromTree(DependencyTree *tree){
+        
+    }
+
     std::vector<StarbytesCompiledModule *> * constructAndCompileModulesFromConfig(std::string & module_config_file){
-        auto config_file_buf = readFile(module_config_file);
+        auto config_file_buf = Foundation::readFile(module_config_file);
         if(config_file_buf->empty() == false){
-            auto first_result = ProjectFileParser(*config_file_buf).parseFile();
+            auto first_result = ProjectFileParser(*config_file_buf).constructDependencyTreeFromParsing();
         }
         else{
             exit(1);

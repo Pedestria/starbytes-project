@@ -12,19 +12,5 @@ namespace Starbytes::Foundation {
 
         #endif
     }
-    std::string * readFile(std::string & file) {
-        std::string * buffer = new std::string();
-        std::ifstream input (file);
-        if(input.is_open()){
-            std::ostringstream file;
-            file << input.rdbuf();
-            *buffer = file.str();
-            input.close();
-        }
-        else{
-            *buffer = "";
-        }
-        return buffer;
-        
-    }   
+      
 };

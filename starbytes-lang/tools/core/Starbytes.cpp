@@ -9,32 +9,8 @@
 
 
 //Commeny Break;
-
-#ifdef _WIN32
-#include <Windows.h>
-static HANDLE stdoutHandle;
-static DWORD outModeInit;
-
-void setupConsole(void){
-    DWORD outMode = 0;
-    stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
-
-    if(stdoutHandle == INVALID_HANDLE_VALUE) {
-		exit(GetLastError());
-	}
-
-    if(!GetConsoleMode(stdoutHandle, &outMode)) {
-	    exit(GetLastError());
-	}
-
-    outModeInit = outMode;
-
-    outMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-
-    if(!SetConsoleMode(stdoutHandle, outMode)) {
-		exit(GetLastError());
-	}
-}
+#ifdef _WIN32 
+WINDOWS_INIT_CONSOLE
 #endif
 
 using namespace std;
@@ -124,7 +100,9 @@ Foundation::CommandInput source {"source","s",[](std::string source_file){
 
 int main(int argc,char *argv[]){
 
-	
+	#ifdef _WIN32 
+		setupConsole();
+	#endif
 
 	Foundation::parseCmdArgs(argc,argv,{},{&project_file,&source},[]{
 		cout << help();

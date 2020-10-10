@@ -13,7 +13,6 @@
 
 STARBYTES_FOUNDATION_NAMESPACE
     void execute_cmd(std::string & cmd);
-    std::string * readFile(std::string & file);
     //Type checks variable with another!
     template<typename T1,typename T2>
     bool isa (T2 & subject){
