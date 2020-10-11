@@ -85,6 +85,13 @@ struct StarbytesCoreSettings {
 
 StarbytesCoreSettings settings;
 
+Foundation::CommandOption interpret_only {"no-project","N",[]{
+	if(settings.hasProjectFile){
+		cerr << "\x1b[31mSyntaxError:\n" << "Command Line Args Parse Error:\n\nProject file will be dropped!" << "\x1b[0m";
+		exit(1);
+	}
+}};
+
 Foundation::CommandInput project_file {"project-file","p",[](std::string p_file){
 	settings.hasProjectFile = true;
 	settings.project_file = p_file;
