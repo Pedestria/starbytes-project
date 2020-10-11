@@ -115,10 +115,7 @@ namespace Engine {
         rc->args = _args;
         return rc;
     }
-
-    // std::vector<StoredFunction *> stored_functions;
-    // std::vector<StoredVariable<> *> stored_variables;
-    // std::vector<StarbytesClass *> stored_classes;
+    
     class Scope {
         private:
             std::string name;

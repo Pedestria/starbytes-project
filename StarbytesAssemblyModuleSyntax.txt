@@ -17,36 +17,32 @@ S.otherMethod()
 // lang : starbytes-asm
 
 
-mod (
-    dps({
-       
-    }),
-    symt({
 
-    }),
-    ls(
-        impl("main",[],
-            {   
-                crtvr("var")
-                stvr("var",crtinst("SBNumber",{v = 4}))
-                clfnc(rfgl("print"),{str = rfvr("var")})
-                crtcls("Someclass",[
-                    crtcls_prty("hello",0,0)
-                ],[
-                    rfcls_prty("hello")
-                ],[
-                    crtcls_fnc("otherMethod",[],{
-                        clfnc("print",{str = rfcls_prty("hello")})
-                    })
-                ])
-                crtvr("S")
-                stvr("S",crtinst("Someclass",{hello = "Message"}))
-                clfnc(rfvr("S")*rfvr("otherMethod"),{})
-                end()
-            }
-        )
-    )
-)
+crtvr ("var")
+stvr("var",crtinst("SBNumber",{v = 4}))
+clfnc(rfgl("print"),{str = rfvr("var")})
+crtcls("Someclass",[
+    crtcls_prty("hello",0,0)
+],[
+    rfcls_prty("hello")
+],[
+    crtcls_fnc("otherMethod",[],{
+        clfnc("print",{str = rfcls_prty("hello")})
+    })
+])
+crtvr("S")
+stvr("S",crtinst("Someclass",{hello = "Message"}))
+clfnc(rfvr("S")*rfvr("otherMethod"),{})
+
+
+store a = crt_fnc_args("x","y")
+crt_fnc("Foo",a,{
+    return(ivk_inst_metd(refer_var("x"),"add",{refer_var("y")}))
+})
+ivk_fnc("Foo",{&crt_stb_num(1),&crt_stb_num(2)})
+
+
+
 
 clfnc = Call Function (// Reference to function variable,// Parameters)
 crtcls = Create Class (// Name,//Properties,//Methods)

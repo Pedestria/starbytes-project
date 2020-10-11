@@ -22,14 +22,9 @@ std::string * readFile(std::string & file);
 
 template<typename Lambda>
 void foreachInDirectory(std::string directory,Lambda callback){
-    // #ifdef HAS_DIRENT_H
-    //     dirent *dirent_ptr;
-    //     DIR *dir_ptr;
-
-    // #endif
     const FS::path path_to_it {directory};
     for(auto & entry : FS::directory_iterator(path_to_it)){
-        
+        callback(entry);
     }
 };
 

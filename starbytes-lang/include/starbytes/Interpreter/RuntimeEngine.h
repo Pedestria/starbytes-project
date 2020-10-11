@@ -9,6 +9,7 @@
 
 STARBYTES_INTERPRETER_NAMESPACE
     namespace Engine {
+        class Scope;
         void Program();
     };
 NAMESPACE_END
