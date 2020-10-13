@@ -218,7 +218,7 @@ std::vector<Token> Lexer::tokenize() {
 			*bufptr = c;
 			++bufptr;
 			resolveTokenAndClearCache(TokenType::Typecast);
-			
+
 		}
 		else if (isParen(c)) {
 			// Check to see if tokenbuffer is empty and look behind.
@@ -299,7 +299,7 @@ std::vector<Token> Lexer::tokenize() {
 							resolveTokenAndClearCache(TokenType::BlockCommentEnd);
 							break;
 						}
-						
+
 					}
 					else{
 						*bufptr = c;

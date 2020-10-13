@@ -43,7 +43,7 @@ if(${USE_VCPKG})
 		find_vcpkg(TRUE)
 	else()
 		find_vcpkg(FALSE)
-	endif()	
+	endif()
 endif()
 
 
@@ -75,7 +75,7 @@ elseif()
 	# set(LINK_FLAGS "/SUBSYSTEM:CONSOLE")
 	message(STATUS "MSVC Compiler!")
 	# set(CMAKE_CXX_COMPILER_FLAGS "/link /LIBPATH 'C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Tools/MSVC/14.27.29110/lib/x64' ")
-	
+
 
 endif()
 
@@ -85,7 +85,6 @@ project ("Starbytes" CXX C)
 set(STARBYTES_LIB_INCLUDE ${CMAKE_SOURCE_DIR}/include)
 set(STARBYTES_SOURCE_DIR ${CMAKE_SOURCE_DIR})
 set(STARBYTES_ALL_LIBS "" CACHE INTERNAL "All libs")
-
 
 macro(add_header_macro HEADER FOUND)
     string(REGEX MATCH "([A-Za-z0-9_]+)\\.h" TEST ${HEADER})
@@ -122,10 +121,10 @@ function(add_starbytes_lib)
     set(MULTI SOURCE_FILES HEADER_FILES LIBS_TO_LINK)
     include(CMakeParseArguments)
 
-    cmake_parse_arguments("STARBYTES_LIB" 
-    "${OPTIONS}" 
-    "${oneValue}" 
-    "${MULTI}" 
+    cmake_parse_arguments("STARBYTES_LIB"
+    "${OPTIONS}"
+    "${oneValue}"
+    "${MULTI}"
     ${ARGN})
 
     include_directories(${STARBYTES_LIB_INCLUDE})
@@ -145,14 +144,14 @@ function(add_starbytes_lib)
             add_dependencies(${STARBYTES_LIB_LIB_NAME} ${_LIB})
         endforeach()
         message(${STARBYTES_LIB_LIB_NAME} "- Dependencies:" ${STARBYTES_LIB_LIBS_TO_LINK})
-        target_link_libraries(${STARBYTES_LIB_LIB_NAME} PRIVATE ${STARBYTES_LIB_LIBS_TO_LINK})   
+        target_link_libraries(${STARBYTES_LIB_LIB_NAME} PRIVATE ${STARBYTES_LIB_LIBS_TO_LINK})
     endif()
-        
-    
 
-    
-    
-    
+
+
+
+
+
 endfunction()
 
 function(add_starbytes_tool)
@@ -173,7 +172,7 @@ function(add_starbytes_tool)
     endforeach()
     message(${STARBYTES_TOOL_NAME} "Dependencies - " ${STARBYTES_TOOL_DEPENDENCIES})
     target_link_libraries(${STARBYTES_TOOL_NAME} PRIVATE ${STARBYTES_TOOL_DEPENDENCIES})
-    
+
 endfunction()
 
 function(add_starbytes_test)

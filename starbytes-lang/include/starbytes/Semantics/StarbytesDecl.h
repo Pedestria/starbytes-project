@@ -7,7 +7,15 @@
 
 STARBYTES_SEMANTICS_NAMESPACE
 
-void visitVariableDecl(AST::ASTVariableDeclaration *node,ScopeStore *store);
+class SemanticA;
+
+class VariableDeclVisitor {
+    using NODE = AST::ASTVariableDeclaration;
+    public:
+    VariableDeclVisitor(){};
+    ~VariableDeclVisitor(){};
+    void visit(SemanticA *s,NODE *node);
+};
 
 NAMESPACE_END
 

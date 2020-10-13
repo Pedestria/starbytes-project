@@ -7,15 +7,26 @@
 
 STARBYTES_SEMANTICS_NAMESPACE
         
-    class SemanticAnalyzer {
+    class SemanticA {
+        using Tree = AST::AbstractSyntaxTree;
+
         private:
-            AST::AbstractSyntaxTree *tree;
+            Tree *& tree;
             ScopeStore store;
+            // template<typename _Visitor>
+            // void _visit_visitor(AST::ASTNode *&node){
+            //     _Visitor().visit(this,node);
+            // };
+            void createScope(std::string & name);
+            void registerSymbolInScope(std::string & scope,SemanticSymbol *&symbol);
+            friend class VariableDeclVisitor;
         public:
             void freeSymbolStores();
             void initialize();
-            SemanticAnalyzer(AST::AbstractSyntaxTree * _tree):tree(_tree){};
-            ~SemanticAnalyzer(){};
+            
+            void visitNode(AST::ASTNode *&node);
+            SemanticA(Tree *& _tree):tree(_tree){};
+            ~SemanticA(){};
     };
 
 NAMESPACE_END

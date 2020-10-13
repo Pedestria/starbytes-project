@@ -13,7 +13,7 @@
 - `Semantics` - A collection of libraries for semantic analysis for Starbytes.
 - `Generation` - Code generator
 - `Parser` - Main parser and Lexer.
-- `Project` - Starbytes Project File managment.
+- `Project` - Starbytes Project File management.
 - `Interpeter` - The Interpreter to run the bytecode.
 - #### Tools:
 - `starbytes` - The Compiler/Runtime.
@@ -24,11 +24,11 @@
 - starbytes-vscode - The VSCode extension for Starbytes Language. (Provides Grammar ONLY. Executable `starbytes-lsp` must be externally provided!)
 
 ### Dev/Build Instructions (With CMake)
-- ### To Setup: 
-Run 
+- ### To Setup:
+Run
 ```shell
 cmake -DCMAKE_BUILD_TYPE:STRING="Debug" -S ./starbytes-lang -B ./build
-``` 
+```
 (This will create a build directory where the toolchain libs/exectuables will be outputed to.)
 - ### To build:
 Run

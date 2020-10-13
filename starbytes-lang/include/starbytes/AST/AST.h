@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include "starbytes/Base/Base.h"
+#include <iostream>
 
 #ifndef AST_AST_H
 #define AST_AST_H 
@@ -11,10 +12,14 @@
 STARBYTES_STD_NAMESPACE
     namespace AST {
 
-        #define ASTDECL(name) struct name : ASTDeclaration
+        #define ASTDECL(name) struct name : ASTDeclaration { name(ASTType _Type):ASTDeclaration(_Type){};
+        #define ASTEXPR(name) struct name : ASTExpression { name(ASTType _Type):ASTExpression(_Type){};
+        #define ASTSTATEMENT(name) struct name : ASTStatement { name(ASTType _Type):ASTStatement(_Type){};
+        #define ASTLITERAL(name) struct name : ASTLiteral { name(ASTType _Type):ASTLiteral(_Type){};
 
-        
-        TYPED_ENUM ASTType:int{
+        #define CUSTOM_AST(name,type) struct name : type { name(ASTType _Type):type(_Type){};
+
+        enum class ASTType:int{
             Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,
             TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,
             ClassConstructorParameterDeclaration,TypeArgumentsDeclaration,InterfaceDeclaration,InterfaceBlockStatement,InterfacePropertyDeclaration,InterfaceMethodDeclaration,ReturnDeclaration,EnumDeclaration,EnumBlockStatement,
@@ -40,37 +45,42 @@ STARBYTES_STD_NAMESPACE
 
         struct ASTObject {
             std::vector<ASTComment *> preceding_comments;
+            ASTType type;
+            ASTObject(ASTType _Type):type(_Type){};
         };
         /*Abstract Syntax Tree Node*/
         struct ASTNode : ASTObject {
+            ASTNode(ASTType _type):ASTObject(_type){};
             DocumentPosition position;
-            ASTType type;
         };
-        struct ASTLiteral : ASTNode {};
-        struct ASTStringLiteral : ASTLiteral {
+        struct ASTLiteral : ASTNode {
+            ASTLiteral(ASTType _type):ASTNode(_type){};
+        };
+        ASTLITERAL(ASTStringLiteral)
             static ASTType static_type;
             std::string value;
         };
-        struct ASTNumericLiteral :ASTLiteral {
+        ASTLITERAL(ASTNumericLiteral)
             static ASTType static_type;
             std::string value;
         };
 
-        struct ASTBooleanLiteral : ASTLiteral {
+        ASTLITERAL(ASTBooleanLiteral)
             static ASTType static_type;
             std::string value;
         };
 
         struct ASTStatement : ASTObject {
+            ASTStatement(ASTType _type):ASTObject(_type){};
             DocumentPosition BeginFold;
             DocumentPosition EndFold;
-            ASTType type;
         };
         struct ASTIdentifier : ASTNode {
+            ASTIdentifier():ASTNode(ASTType::Identifier){};
             static ASTType static_type;
             std::string value;
         };
-        struct ASTTypeIdentifier : ASTStatement {
+        ASTSTATEMENT(ASTTypeIdentifier)
             static ASTType static_type;
             std::string type_name;
             bool isGeneric;
@@ -78,75 +88,78 @@ STARBYTES_STD_NAMESPACE
             bool isArrayType;
             unsigned int array_count = 0;  
         };
-        struct ASTTypeCastIdentifier : ASTStatement {
+        ASTSTATEMENT(ASTTypeCastIdentifier)
             static ASTType static_type;
             ASTIdentifier *id;
             ASTTypeIdentifier *tid;
         };
-        struct ASTExpression : ASTStatement {
-        
+        ASTSTATEMENT(ASTExpression)
+            
         };
-        struct ASTExpressionStatement : ASTStatement {
+        ASTSTATEMENT(ASTExpressionStatement)
             static ASTType static_type;
             ASTExpression* expression;
         };
-        struct ASTCallExpression : ASTExpression {
+        ASTEXPR(ASTCallExpression) 
             static ASTType static_type;
             ASTExpression * callee;
             std::vector<ASTExpression *> params;
         };
-        struct ASTNewExpression : ASTExpression {
+        ASTEXPR(ASTNewExpression)
             static ASTType static_type;
             ASTTypeIdentifier* decltid;
             std::vector<ASTExpression *> params;
         };
-        struct ASTArrayExpression : ASTExpression {
+        ASTEXPR(ASTArrayExpression)
             static ASTType static_type;
             std::vector<ASTExpression *> items;
         };
-        struct ASTAssignExpression : ASTExpression {
+        ASTEXPR(ASTAssignExpression)
             static ASTType static_type;
             ASTExpression* subject;
             std::string op;
             ASTExpression* object;
         };
-        struct ASTMemberExpression : ASTExpression {
+        ASTEXPR(ASTMemberExpression)
             static ASTType static_type;
             ASTExpression *object;
             ASTExpression *prop;
         };
 
-        struct ASTUnaryExpression : ASTExpression {
+        ASTEXPR(ASTUnaryExpression)
             static ASTType static_type;
             std::string oprtr;
             ASTExpression *left;
             ASTExpression *right;
         };
-        struct ASTAwaitExpression : ASTExpression {
+        ASTEXPR(ASTAwaitExpression)
             static ASTType static_type;
             ASTCallExpression *callee;
         };
-        struct ASTBlockStatement : ASTStatement {
+        ASTSTATEMENT(ASTBlockStatement)
             static ASTType static_type;
             std::vector<ASTStatement*> nodes;
         };
-        struct ASTDeclaration : ASTStatement {};
-        struct ASTTypeArgumentsDeclaration : ASTDeclaration {
+        ASTSTATEMENT(ASTDeclaration)
+            
+        };
+        ASTDECL(ASTTypeArgumentsDeclaration) 
             static ASTType static_type;
             std::vector<ASTIdentifier *> args;
         };
-        struct ASTClassStatement : ASTStatement {};
-        struct ASTClassConstructorParameterDeclaration : ASTStatement {
+        ASTSTATEMENT(ASTClassStatement)
+        };
+        ASTSTATEMENT(ASTClassConstructorParameterDeclaration)
             static ASTType static_type;
             bool loose;
             bool isConstant;
             ASTTypeCastIdentifier *tcid;
         };
-        struct ASTClassConstructorDeclaration : ASTClassStatement {
+        CUSTOM_AST(ASTClassConstructorDeclaration,ASTClassStatement)
             static ASTType static_type;
             std::vector<ASTClassConstructorParameterDeclaration *> params;
         };
-        struct ASTClassPropertyDeclaration : ASTClassStatement {
+        CUSTOM_AST(ASTClassPropertyDeclaration,ASTClassStatement)
             static ASTType static_type;
             bool loose;
             bool isConstant;
@@ -154,7 +167,7 @@ STARBYTES_STD_NAMESPACE
             ASTNode *id;
             ASTExpression *initializer;
         };
-        struct ASTClassMethodDeclaration : ASTClassStatement {
+        CUSTOM_AST(ASTClassMethodDeclaration,ASTClassStatement)
             static ASTType static_type;
             ASTIdentifier *id;
             bool isGeneric;
@@ -164,10 +177,10 @@ STARBYTES_STD_NAMESPACE
             ASTTypeIdentifier* returnType;
             ASTBlockStatement* body;
         };
-        struct ASTClassBlockStatement : ASTStatement {
+        ASTSTATEMENT(ASTClassBlockStatement)
             std::vector<ASTClassStatement *> nodes;
         };
-        ASTDECL(ASTClassDeclaration) {
+        ASTDECL(ASTClassDeclaration) 
             static ASTType static_type;
             ASTIdentifier * id;
             bool isGeneric;
@@ -178,37 +191,39 @@ STARBYTES_STD_NAMESPACE
             std::vector<ASTTypeIdentifier *> interfaces;
             ASTClassBlockStatement *body;
         };
-        struct ASTInterfaceStatement : ASTStatement {};
+        ASTSTATEMENT(ASTInterfaceStatement)
+        };
 
-        struct ASTReturnDeclaration : ASTStatement {
+        ASTSTATEMENT(ASTReturnDeclaration)
             static ASTType static_type;
             ASTExpression *returnee;
         };
 
-        struct ASTEnumStatement : ASTStatement {};
-        struct ASTEnumerator : ASTEnumStatement {
+        ASTSTATEMENT(ASTEnumStatement)
+        };
+        CUSTOM_AST(ASTEnumerator,ASTEnumStatement)
             static ASTType static_type;
             ASTIdentifier *id;
             bool hasValue;
             ASTNumericLiteral *value;
         };
 
-        struct ASTEnumBlockStatement : ASTStatement {
+        ASTSTATEMENT(ASTEnumBlockStatement)
             static ASTType static_type;
             std::vector<ASTEnumerator *> nodes;
         };
-        struct ASTEnumDeclaration : ASTStatement {
+        ASTSTATEMENT(ASTEnumDeclaration)
             static ASTType static_type;
             ASTIdentifier *id;
             ASTEnumBlockStatement *body;
         };
-        struct ASTInterfacePropertyDeclaration : ASTInterfaceStatement {
+        CUSTOM_AST(ASTInterfacePropertyDeclaration,ASTInterfaceStatement)
             static ASTType static_type;
             bool loose;
             bool isConstant;
             ASTTypeCastIdentifier *tcid;
         };
-        struct ASTInterfaceMethodDeclaration : ASTInterfaceStatement {
+        CUSTOM_AST(ASTInterfaceMethodDeclaration,ASTInterfaceStatement)
             static ASTType static_type;
             ASTIdentifier *id;
             bool isGeneric;
@@ -217,11 +232,11 @@ STARBYTES_STD_NAMESPACE
             std::vector<ASTTypeCastIdentifier*> params;
             ASTTypeIdentifier *returnType;
         };
-        struct ASTInterfaceBlockStatement : ASTStatement {
+        ASTSTATEMENT(ASTInterfaceBlockStatement)
             static ASTType static_type;
             std::vector<ASTInterfaceStatement *> nodes;
         };
-        ASTDECL(ASTInterfaceDeclaration) {
+        ASTDECL(ASTInterfaceDeclaration) 
             static ASTType static_type;
             ASTIdentifier * id;
             bool isGeneric;
@@ -232,52 +247,52 @@ STARBYTES_STD_NAMESPACE
 
         };
 
-        ASTDECL(ASTIfDeclaration) {
+        ASTDECL(ASTIfDeclaration) 
             static ASTType static_type;
             ASTExpression *subject;
             ASTBlockStatement *body;
         };
-        ASTDECL(ASTElseIfDeclaration) {
+        ASTDECL(ASTElseIfDeclaration) 
             static ASTType static_type;
             ASTExpression *subject;
             ASTBlockStatement *body;
         };
 
-        ASTDECL(ASTElseDeclaration) {
+        ASTDECL(ASTElseDeclaration) 
             static ASTType static_type;
             ASTBlockStatement *body;
         };
-        struct ASTVariableSpecifier : ASTStatement {
+        ASTSTATEMENT(ASTVariableSpecifier)
             static ASTType static_type;
             //EITHER a ASTIdentifier or ASTTypeCastIdentifier
-            ASTNode *id;
+            ASTObject *id;
             ASTExpression *initializer;
         };
-        ASTDECL(ASTVariableDeclaration) {
+        ASTDECL(ASTVariableDeclaration) 
             static ASTType static_type;
             std::vector<ASTVariableSpecifier*> specifiers;
         };
-        struct ASTConstantSpecifier : ASTStatement {
+        ASTSTATEMENT(ASTConstantSpecifier)
             static ASTType static_type;
             //EITHER a ASTIdentifier or ASTTypeCastIdentifier
             ASTNode *id;
             ASTExpression *initializer;
         };
-        ASTDECL(ASTConstantDeclaration) {
+        ASTDECL(ASTConstantDeclaration) 
             static ASTType static_type;
             std::vector<ASTConstantSpecifier *> specifiers;
         };
-        ASTDECL(ASTImportDeclaration) {
+        ASTDECL(ASTImportDeclaration) 
             static ASTType static_type;
             ASTIdentifier *id;
         };
 
-        ASTDECL(ASTScopeDeclaration) {
+        ASTDECL(ASTScopeDeclaration) 
             static ASTType static_type;
             ASTIdentifier *id;
             ASTBlockStatement* body;
         };
-        ASTDECL(ASTFunctionDeclaration) {
+        ASTDECL(ASTFunctionDeclaration) 
             static ASTType static_type;
             ASTIdentifier *id;
             bool isAsync;
@@ -293,8 +308,8 @@ STARBYTES_STD_NAMESPACE
             std::string filename;
             std::vector<ASTStatement*> nodes;
         };
-        template<class _NodeTy>
-        inline bool astnode_is(ASTNode *node){
+        template<class _NodeTy,class PtrTy>
+        inline bool astnode_is(PtrTy *node){
             if(node->type == _NodeTy::static_type){
                 return true;
             }
@@ -304,7 +319,7 @@ STARBYTES_STD_NAMESPACE
         }
 
         #define AST_NODE_CAST(ptr) ((ASTNode *)ptr)
-        #define AST_NODE_IS(ptr,type) (astnode_is<type>(AST_NODE_CAST(ptr)))
+        #define AST_NODE_IS(ptr,type) (astnode_is<type>(ptr))
         #define ASSERT_AST_NODE(ptr,type) ((type *)ptr)
     };
 

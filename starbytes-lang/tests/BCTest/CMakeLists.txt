@@ -1,9 +1,9 @@
 add_starbytes_test(
-    NAME 
-    "semantic-engine-test"
     INCLUDE_LIB
+    NAME 
+    "bc-test" 
     FILES
-    "Test.cpp"
+    "main.cpp"
     DEPENDENCIES
     ${STARBYTES_ALL_LIBS} 
     )

@@ -10,27 +10,32 @@ STARBYTES_SEMANTICS_NAMESPACE
     }; 
     struct SemanticSymbol {
         SymbolType type;
+        std::string name;
         SemanticSymbol(SymbolType _type):type(_type){};
-        ~SemanticSymbol();
+        //bool checkWithOther!
+        ~SemanticSymbol(){};
     };
 
-    struct VariableSymbol : public SemanticSymbol{
+    class VariableSymbol : public SemanticSymbol{
         VariableSymbol():SemanticSymbol(SymbolType::Variable){};
-        ~VariableSymbol();
+        ~VariableSymbol(){};
+        bool checkWithOther(VariableSymbol *sym);
         static SymbolType stat_type;
 
     };
 
-    struct ClassSymbol : public SemanticSymbol{
+    class ClassSymbol : public SemanticSymbol{
         ClassSymbol():SemanticSymbol(SymbolType::Class){};
-        ~ClassSymbol();
+        ~ClassSymbol(){};
+        bool checkWithOther(ClassSymbol *sym);
         static SymbolType stat_type;
         
     };
 
-    struct FunctionSymbol : public SemanticSymbol{
+    class FunctionSymbol : public SemanticSymbol{
         FunctionSymbol():SemanticSymbol(SymbolType::Function){};
-        ~FunctionSymbol();
+        ~FunctionSymbol(){};
+        bool checkWithOther(FunctionSymbol *sym);
         static SymbolType stat_type;
         
     };
@@ -44,6 +49,9 @@ STARBYTES_SEMANTICS_NAMESPACE
             return false;
         }
     }
+
+    #define SEMANTIC_SYMBOL_IS(ptr,type) symbol_is<type>((SemanticSymbol *)ptr)
+    #define ASSERT_SEMANTIC_SYMBOL(ptr,type) ((type *)ptr)
     
 NAMESPACE_END
 
