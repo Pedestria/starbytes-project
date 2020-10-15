@@ -5,23 +5,25 @@ branches:
   only:
    - master
 
-image: LLVM
 
-
+environment:
+  matrix:
+    - Generator: Ninja
+      Make-Program: ninja
+      CMake-Config: -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_C_COMPILER=clang-cl
 
 init:
 - call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" x86_amd64
+
 platform: Any CPU
 
 before_build:
-  - cmd: cmake -S./starbytes-lang -B./build 
+  - cmd: cmake -G%Generator% -S./starbytes-lang -B./build %CMake-Config% 
 
 configuration: Release
 
-build:
- verbosity: normal
- project: "./build/Starbytes.sln"
-
+build_script:
+- "%Make-Program% -c ./build"
 
 
 
