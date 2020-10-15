@@ -19,9 +19,13 @@ STARBYTES_SEMANTICS_NAMESPACE
                 // _SymbolTy *sym = ASSERT_SEMANTIC_SYMBOL(sym_2,_SymbolTy);
                 for(auto __sym : symbols){
                     if(SEMANTIC_SYMBOL_IS(__sym,_SymbolTy)){
-                        
+                        if(__sym->name == sym_2->name){
+                            return true;
+                            break;
+                        }
                     }
                 }
+                return false;
             };
         Scope(std::string & _name):name(_name){};
         ~Scope(){};
@@ -31,6 +35,7 @@ STARBYTES_SEMANTICS_NAMESPACE
         private:
             std::vector<std::string> current_scopes;
             std::string exact_current_scope;
+            friend class SemanticA;
         public:
             std::vector<Scope *> scopes;
         template<typename Lambda>
@@ -39,6 +44,8 @@ STARBYTES_SEMANTICS_NAMESPACE
         void setExactCurrentScope(std::string & __exact_current_scope);
         void addToCurrentScopes(Scope *& new_scope);
         void popCurrentScope();
+        template<typename _SymbolTy>
+        bool symbolExistsInCurrentScopes(std::string & symbol_name);
         ScopeStore(){};
         ~ScopeStore(){};
     };
@@ -49,6 +56,17 @@ STARBYTES_SEMANTICS_NAMESPACE
             func(scope);
         }
     };
+    template<typename _SymbolTy>
+    bool ScopeStore::symbolExistsInCurrentScopes(std::string &symbol_name){
+        for(auto & _c_scope : current_scopes){
+            _SymbolTy * sym = new _SymbolTy();
+            sym->name = symbol_name;
+            if(getScopeRef(_c_scope)->symbolExists(sym)){
+                return true;
+            };
+        }
+        return false;
+    }   
     
 NAMESPACE_END
 

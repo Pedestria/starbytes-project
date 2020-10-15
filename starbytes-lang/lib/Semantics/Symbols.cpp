@@ -7,11 +7,22 @@ STARBYTES_SEMANTICS_NAMESPACE
     SET_STATIC_TYPE(FunctionSymbol,Function);
     SET_STATIC_TYPE(VariableSymbol,Variable);
     SET_STATIC_TYPE(ClassSymbol,Class);
+
+    ClassSymbol * create_class_symbol(std::string name){
+        ClassSymbol *c = new ClassSymbol();
+        c->name = name;
+        return c;
+    };
     
     bool VariableSymbol::checkWithOther(VariableSymbol *sym){
         bool returncode;
         if(this->name == sym->name){
-            returncode = true;
+            if(this->value_type == sym->value_type){
+                returncode = true;
+            }
+            else {
+                returncode = true;
+            }
         }
         else {
             returncode = false;

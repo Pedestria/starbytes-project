@@ -16,7 +16,7 @@ int main (){
         SemanticA(tree).initialize();
     }
     catch(std::string error){
-        std::cerr << "SyntaxError:\n" << error;
+        std::cerr << error;
         exit(1);
     }
     return 0;

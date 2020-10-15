@@ -18,7 +18,8 @@ STARBYTES_SEMANTICS_NAMESPACE
             //     _Visitor().visit(this,node);
             // };
             void createScope(std::string & name);
-            void registerSymbolInScope(std::string & scope,SemanticSymbol *&symbol);
+            void registerSymbolInScope(std::string & scope,SemanticSymbol *symbol);
+            void registerSymbolinExactCurrentScope(SemanticSymbol *symbol);
             friend class ScopeDeclVisitor;
             friend class VariableDeclVisitor;
             friend class FunctionDeclVisitor;
@@ -31,6 +32,10 @@ STARBYTES_SEMANTICS_NAMESPACE
             void visitNode(AST::ASTNode * node);
             SemanticA(Tree *& _tree):tree(_tree){};
             ~SemanticA(){};
+    };
+
+    inline std::string StarbytesSemanticsError(std::string message,DocumentPosition & pos){
+        return "SemanticsError:\n"+message.append("\nThis Error Has Occured at {Line:"+std::to_string(pos.line)+",Start:"+std::to_string(pos.start)+",End:"+std::to_string(pos.end)+"}");
     };
 
 NAMESPACE_END

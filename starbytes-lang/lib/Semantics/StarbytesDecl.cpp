@@ -5,6 +5,8 @@
 
 STARBYTES_SEMANTICS_NAMESPACE
 
+using namespace AST;
+
 ScopeDeclVisitor::ScopeDeclVisitor(SemanticA *s):sem(s){
 
 };
@@ -31,9 +33,22 @@ VariableDeclVisitor::~VariableDeclVisitor(){
 
 void VariableDeclVisitor::visit(NODE *node){
     for(auto & specifier : node->specifiers){
-        std::cout << "Varaible Decl IDType:" << int(specifier->id->type) << std::endl;
+        if(AST_NODE_IS(specifier->id,ASTTypeCastIdentifier)){
+            ASTTypeCastIdentifier *tcid = ASSERT_AST_NODE(specifier->id,ASTTypeCastIdentifier);
+            if(sem->store.symbolExistsInCurrentScopes<ClassSymbol>(tcid->tid->type_name) == true){
+                VariableSymbol *sym = new VariableSymbol();
+                sym->name = tcid->id->value;
+                sem->registerSymbolinExactCurrentScope(sym);
+                continue;
+            } 
+            else {
+                throw StarbytesSemanticsError("Unknown Type Reference: "+tcid->tid->type_name,tcid->tid->BeginFold);
+            };
+        }
+        else if(AST_NODE_IS(specifier->id,ASTIdentifier)){
+
+        }
     }
-    std::cout << "VariableDecl Name:" << ASSERT_AST_NODE(node->specifiers[0]->id,AST::ASTTypeCastIdentifier)->id->value << std::endl;
 };
 
 FunctionDeclVisitor::FunctionDeclVisitor(SemanticA *s):sem(s){
