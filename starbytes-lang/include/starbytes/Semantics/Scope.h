@@ -28,10 +28,17 @@ STARBYTES_SEMANTICS_NAMESPACE
     };
 
     class ScopeStore {
+        private:
+            std::vector<std::string> current_scopes;
+            std::string exact_current_scope;
         public:
-        std::vector<Scope *> scopes;
+            std::vector<Scope *> scopes;
         template<typename Lambda>
         void foreach(Lambda func);
+        Scope *& getScopeRef(std::string &name);
+        void setExactCurrentScope(std::string & __exact_current_scope);
+        void addToCurrentScopes(Scope *& new_scope);
+        void popCurrentScope();
         ScopeStore(){};
         ~ScopeStore(){};
     };

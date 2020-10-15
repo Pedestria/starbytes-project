@@ -10,7 +10,7 @@ STARBYTES_SEMANTICS_NAMESPACE
 
     void SemanticA::createScope(std::string & name){
         Scope *scope = new Scope(name);
-        store.scopes.push_back(scope);
+        store.addToCurrentScopes(scope);
     };
 
     void SemanticA::registerSymbolInScope(std::string & scope_name,SemanticSymbol *& symbol){
@@ -21,23 +21,18 @@ STARBYTES_SEMANTICS_NAMESPACE
         });
     };
 
-    void SemanticA::visitNode(AST::ASTNode *& node){
+    void SemanticA::visitNode(AST::ASTNode * node){
         // std::cout << int(node->type) << " ;";
         if(AST_NODE_IS(node,ASTVariableDeclaration)){
             std::cout << "Visiting Variable Decl!";
-            VariableDeclVisitor().visit(this,ASSERT_AST_NODE(node,ASTVariableDeclaration));
+            VariableDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTVariableDeclaration));
         }
     };
 
     void SemanticA::initialize(){
         std::cout << "Starting Semantics";
-
-        ScopeStore *Store;
         for(auto & node : tree->nodes){
-            if(AST_NODE_IS(node,ASTVariableDeclaration)){
-                std::cout << "Visiting Variable Decl!" << std::endl;
-                VariableDeclVisitor().visit(this,ASSERT_AST_NODE(node,ASTVariableDeclaration));
-            }
+            visitNode(AST_NODE_CAST(node));
         }
     }
 

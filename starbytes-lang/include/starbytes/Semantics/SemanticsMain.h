@@ -19,12 +19,16 @@ STARBYTES_SEMANTICS_NAMESPACE
             // };
             void createScope(std::string & name);
             void registerSymbolInScope(std::string & scope,SemanticSymbol *&symbol);
+            friend class ScopeDeclVisitor;
             friend class VariableDeclVisitor;
+            friend class FunctionDeclVisitor;
+            friend class ClassDeclVisitor;
+            
         public:
             void freeSymbolStores();
             void initialize();
             
-            void visitNode(AST::ASTNode *&node);
+            void visitNode(AST::ASTNode * node);
             SemanticA(Tree *& _tree):tree(_tree){};
             ~SemanticA(){};
     };
