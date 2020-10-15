@@ -463,9 +463,9 @@ STARBYTES_STD_NAMESPACE
             };
     };
 
-    std::vector<StarbytesCompiledModule *> * compileFromTree(DependencyTree *tree){
+    // std::vector<StarbytesCompiledModule *> * compileFromTree(DependencyTree *tree){
         
-    }
+    // }
 
     std::vector<StarbytesCompiledModule *> * constructAndCompileModulesFromConfig(std::string & module_config_file){
         auto config_file_buf = Foundation::readFile(module_config_file);
