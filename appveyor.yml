@@ -13,23 +13,24 @@ image:
 environment:
   matrix:
     - Generator: Ninja
-      Make-Program: ninja
-      CMake-Config: -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_C_COMPILER=clang-cl
+      MakeProgram: ninja
+      CMakeConfig: -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_C_COMPILER=clang-cl
 
 init:
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" x86_amd64
+- sh: $MakeProgram --version
 
 platform: Any CPU
 
 before_build:
-  - cmd: cmake -G%Generator% -S./starbytes-lang -B./build %CMake-Config% 
-  - sh: cmake -G$Generator -S./starbytes-lang -B./build $CMake-Config 
+  - cmd: cmake -G%Generator% -S./starbytes-lang -B./build %CMakeConfig% 
+  - sh: cmake -G$Generator -S./starbytes-lang -B./build $CMakeConfig 
 
 configuration: Release
 
 build_script:
-- cmd: "%Make-Program% -C ./build"
-- sh: "$Make-Program -C ./build"
+- cmd: "%MakeProgram% -C ./build"
+- sh: "$MakeProgram -C ./build"
 
 
 
