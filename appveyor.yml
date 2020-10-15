@@ -1,0 +1,27 @@
+version: 0.0.3-{build}
+
+
+branches:
+  only:
+   - master
+
+image: LLVM 10.0.0 x64
+
+
+
+init:
+- call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" x86_amd64
+platform: Any CPU
+
+before_build:
+  - cmd: cmake -S./starbytes-lang -B./build 
+
+configuration: Release
+
+build:
+ verbosity: normal
+ project: "./build/Starbytes.sln"
+
+
+
+
