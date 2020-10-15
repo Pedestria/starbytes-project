@@ -5,6 +5,10 @@ branches:
   only:
    - master
 
+image:
+  - Visual Studio 2019
+  - macos
+  
 
 environment:
   matrix:
@@ -18,7 +22,7 @@ init:
 platform: Any CPU
 
 before_build:
-  - cmd: cmake -G%Generator% -S./starbytes-lang -B./build %CMake-Config% 
+  - cmake -G%Generator% -S./starbytes-lang -B./build %CMake-Config% 
 
 configuration: Release
 
