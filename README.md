@@ -1,5 +1,7 @@
 <img src="./public/STD Logo.png">
 
+![](https://img.shields.io/appveyor/build/Pedestria/starbytes-project?style=flat-square)
+
 
 # Starbytes Project/Toolchain
 ## New Expressive/Simple/Strongly Typed Interpreted Language.
