@@ -22,12 +22,14 @@ init:
 platform: Any CPU
 
 before_build:
-  - cmake -G%Generator% -S./starbytes-lang -B./build %CMake-Config% 
+  - cmd: cmake -G%Generator% -S./starbytes-lang -B./build %CMake-Config% 
+  - sh: cmake -G$Generator -S./starbytes-lang -B./build $CMake-Config 
 
 configuration: Release
 
 build_script:
-- "%Make-Program% -C ./build"
+- cmd: "%Make-Program% -C ./build"
+- sh: "$Make-Program -C ./build"
 
 
 
