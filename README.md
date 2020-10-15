@@ -1,6 +1,6 @@
 <img src="./public/STD Logo.png">
 
-![](https://img.shields.io/appveyor/build/Pedestria/starbytes-project?style=flat-square)
+[![Build status](https://ci.appveyor.com/api/projects/status/83o4yjlju2fh93nf?svg=true)](https://ci.appveyor.com/project/Pedestria/starbytes-project)
 
 
 # Starbytes Project/Toolchain
