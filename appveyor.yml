@@ -23,7 +23,7 @@ before_build:
 configuration: Release
 
 build_script:
-- "%Make-Program% -c ./build"
+- "%Make-Program% -C ./build"
 
 
 
