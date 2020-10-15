@@ -6,7 +6,7 @@ branches:
    - master
 
 image:
-  - Visual Studio 2019
+  # - Visual Studio 2019
   - macos
 
 
@@ -18,7 +18,9 @@ environment:
 
 init:
 - cmd: call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" x86_amd64
-- sh: $MakeProgram --version
+- sh: curl https://github.com/ninja-build/ninja/releases/download/v1.10.1/ninja-mac.zip
+- sh: unzip -a ./ninja-mac.zip 
+- sh: export PATH=./ninja-mac/ninja:"${PATH}"
 
 platform: Any CPU
 
