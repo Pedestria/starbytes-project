@@ -1,6 +1,6 @@
 #include "starbytes/Semantics/SemanticsMain.h"
 #include "starbytes/AST/AST.h"
-#include "starbytes/Semantics/StarbytesDecl.h"
+#include "StarbytesDecl.h"
 #include <iostream>
 
 
@@ -31,9 +31,22 @@ STARBYTES_SEMANTICS_NAMESPACE
 
     void SemanticA::visitNode(AST::ASTNode * node){
         // std::cout << int(node->type) << " ;";
-        if(AST_NODE_IS(node,ASTVariableDeclaration)){
-            std::cout << "Visiting Variable Decl!";
-            VariableDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTVariableDeclaration));
+        try {
+            if(AST_NODE_IS(node,ASTImportDeclaration)){
+                std::cout << "Visiting Import Decl!" << std::endl;
+                ImportDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTImportDeclaration));
+            }
+            else if(AST_NODE_IS(node,ASTVariableDeclaration)){
+                std::cout << "Visiting Variable Decl!" << std::endl;
+                VariableDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTVariableDeclaration));
+            }
+            else if(AST_NODE_IS(node,ASTClassDeclaration)){
+                std::cout << "Visiting Class Decl!" << std::endl;
+                ClassDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTClassDeclaration));
+            }
+        }
+        catch(std::string error){
+            std::cerr << "\x1b[31m" << error << "\x1b[0m" << std::endl;
         }
     };
 
@@ -41,7 +54,10 @@ STARBYTES_SEMANTICS_NAMESPACE
         std::string stdlib = "STARBYTES_GLOBAL";
         createScope(stdlib);
         store.setExactCurrentScope(stdlib);
-        registerSymbolinExactCurrentScope(create_class_symbol("String"));
+        ASTClassDeclaration *p;
+        registerSymbolinExactCurrentScope(create_class_symbol("String",p));
+        registerSymbolinExactCurrentScope(create_class_symbol("Boolean",p));
+        registerSymbolinExactCurrentScope(create_class_symbol("Number",p));
         std::cout << "Starting Semantics";
         for(auto & node : tree->nodes){
             visitNode(AST_NODE_CAST(node));

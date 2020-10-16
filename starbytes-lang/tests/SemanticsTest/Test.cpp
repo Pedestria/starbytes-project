@@ -3,20 +3,40 @@
 #include "starbytes/Parser/Parser.h"
 #include "starbytes/AST/AST.h"
 
-int main (){
-    using Starbytes::Lexer;
-    using Starbytes::Parser;
-    using Starbytes::AST::AbstractSyntaxTree;
-    using Starbytes::Semantics::SemanticA;
-    std::string testcode = "import mylib\nimport otherLibrary\ndecl var:String\ndecl anotherVar:String";
-    auto toks = Lexer(testcode).tokenize();
+//Test
+
+using namespace Starbytes;
+
+#ifdef _WIN32
+WINDOWS_CONSOLE_INIT
+#endif
+
+std::string file_;
+
+Foundation::CommandInput file_input {"test-file","f",[](std::string file){
+    file_ = file;
+}};
+
+int main (int argc,char * argv[]){
+    #ifdef _WIN32
+    setupConsole();
+    #endif
+
+    Foundation::parseCmdArgs(argc,argv,{},{&file_input},[]{
+        std::cout << "HELP! TEST!";
+        exit(1);
+    });
+
+    std::string * testcode = Foundation::readFile(file_);
+
+    auto toks = Lexer(*testcode).tokenize();
     try {
         AbstractSyntaxTree * tree = new AbstractSyntaxTree();
         Parser(toks,tree).convertToAST();
-        SemanticA(tree).initialize();
+        Semantics::SemanticA(tree).initialize();
     }
     catch(std::string error){
-        std::cerr << error;
+        std::cerr << "\x1b[31m" << error << "\x1b[0m" << std::endl;
         exit(1);
     }
     return 0;

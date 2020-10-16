@@ -44,7 +44,7 @@ STARBYTES_SEMANTICS_NAMESPACE
         void setExactCurrentScope(std::string & __exact_current_scope);
         void addToCurrentScopes(Scope *& new_scope);
         void popCurrentScope();
-        template<typename _SymbolTy>
+        template<typename _SymbolTy,typename _PtrNodeTest>
         bool symbolExistsInCurrentScopes(std::string & symbol_name);
         ScopeStore(){};
         ~ScopeStore(){};
@@ -56,10 +56,12 @@ STARBYTES_SEMANTICS_NAMESPACE
             func(scope);
         }
     };
-    template<typename _SymbolTy>
+    /*`_PtrNodeTest` is just the type of node we need to create a mime symbol so we can check if the symbols exist or not!*/
+    template<typename _SymbolTy,typename _PtrNodeTest>
     bool ScopeStore::symbolExistsInCurrentScopes(std::string &symbol_name){
         for(auto & _c_scope : current_scopes){
-            _SymbolTy * sym = new _SymbolTy();
+            _PtrNodeTest *ptr_test;
+            _SymbolTy * sym = new _SymbolTy(ptr_test);
             sym->name = symbol_name;
             if(getScopeRef(_c_scope)->symbolExists(sym)){
                 return true;

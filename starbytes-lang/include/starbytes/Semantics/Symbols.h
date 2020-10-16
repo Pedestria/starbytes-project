@@ -1,10 +1,14 @@
 
 #include "starbytes/Base/Base.h"
+#include "starbytes/AST/AST.h"
 
 #ifndef SEMANTICS_SYMBOLS_H
 #define SEMANTICS_SYMBOLS_H
 
 STARBYTES_SEMANTICS_NAMESPACE
+
+using namespace AST;
+
     enum class SymbolType:int {
         Variable,Class,Function
     }; 
@@ -19,9 +23,10 @@ STARBYTES_SEMANTICS_NAMESPACE
 
     class VariableSymbol : public SemanticSymbol{
         public:
-        VariableSymbol():SemanticSymbol(SymbolType::Variable){};
+        VariableSymbol(ASTVariableSpecifier *& node_ptr_loc):SemanticSymbol(SymbolType::Variable),loc__ptr(node_ptr_loc){};
         ~VariableSymbol(){};
         SemanticSymbol *value_type;
+        ASTVariableSpecifier *& loc__ptr;
         bool checkWithOther(VariableSymbol *sym);
         static SymbolType stat_type;
 
@@ -29,19 +34,21 @@ STARBYTES_SEMANTICS_NAMESPACE
 
     class ClassSymbol : public SemanticSymbol{
         public:
-        ClassSymbol():SemanticSymbol(SymbolType::Class){};
+        ClassSymbol(ASTClassDeclaration *& node_ptr_loc):SemanticSymbol(SymbolType::Class),loc_ptr(node_ptr_loc){};
         ~ClassSymbol(){};
+        ASTClassDeclaration *& loc_ptr;
         bool checkWithOther(ClassSymbol *sym);
         static SymbolType stat_type;
         
     };
 
-    ClassSymbol * create_class_symbol(std::string name);
+    ClassSymbol * create_class_symbol(std::string name,ASTClassDeclaration *&node_ptr);
 
     class FunctionSymbol : public SemanticSymbol{
         public:
-        FunctionSymbol():SemanticSymbol(SymbolType::Function){};
+        FunctionSymbol(ASTFunctionDeclaration *& node_ptr_loc):SemanticSymbol(SymbolType::Function),loc_ptr(node_ptr_loc){};
         ~FunctionSymbol(){};
+        ASTFunctionDeclaration *& loc_ptr;
         bool checkWithOther(FunctionSymbol *sym);
         static SymbolType stat_type;
         

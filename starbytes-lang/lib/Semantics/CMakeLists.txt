@@ -6,10 +6,12 @@ add_starbytes_lib(
     Scope.cpp
     Symbols.cpp 
     StarbytesDecl.cpp
+    StarbytesDecl.h
+    StarbytesExp.cpp
+    StarbytesExp.h
     HEADER_FILES 
     SemanticsMain.h 
     Scope.h
-    StarbytesDecl.h
     Symbols.h 
     Main.h
     LIB_NAME 

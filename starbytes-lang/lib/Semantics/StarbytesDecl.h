@@ -11,6 +11,8 @@ class SemanticA;
 
 #define AST_VISITOR(name,node_to_visit) class name { SemanticA *sem; using NODE = AST::node_to_visit;public:name(SemanticA *s);~name();void visit(NODE *node); }
 
+AST_VISITOR(ImportDeclVisitor,ASTImportDeclaration);
+
 AST_VISITOR(ScopeDeclVisitor,ASTScopeDeclaration);
 
 AST_VISITOR(VariableDeclVisitor,ASTVariableDeclaration);
