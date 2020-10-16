@@ -1,5 +1,6 @@
 #include "starbytes/AST/AST.h"
 #include "starbytes/Semantics/Scope.h"
+#include "TypeCheck.h"
 
 #ifndef SEMANTICS_STARBYTESEXP_H
 #define SEMANTICS_STARBYTESEXP_H
@@ -10,7 +11,7 @@ class SemanticA;
 
 using namespace AST;
 
-#define AST_EXPRESSION_EVALUATOR(type) SemanticSymbol * evaluate##type(type * node_ty,SemanticA *sem)
+#define AST_EXPRESSION_EVALUATOR(type) STBType * evaluate##type(type * node_ty,SemanticA *sem)
 
 AST_EXPRESSION_EVALUATOR(ASTExpressionStatement);
 

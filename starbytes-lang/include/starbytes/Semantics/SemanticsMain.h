@@ -9,8 +9,9 @@ STARBYTES_SEMANTICS_NAMESPACE
 
 using namespace AST;
 
-#define FRIEND_AST_EVALUATOR(type) friend SemanticSymbol * evaluate##type(type * node_ty,SemanticA * sem)
+#define FRIEND_AST_EVALUATOR(type) friend STBType * evaluate##type(type * node_ty,SemanticA * sem)
         
+    class STBType;
     class SemanticA {
         using Tree = AbstractSyntaxTree;
 

@@ -3,20 +3,20 @@
 
 STARBYTES_SEMANTICS_NAMESPACE
 
-SemanticSymbol * evaluateASTExpressionStatement(ASTExpressionStatement *node_ty, SemanticA *sem){
+STBType * evaluateASTExpressionStatement(ASTExpressionStatement *node_ty, SemanticA *sem){
     
 };
 
-SemanticSymbol * evaluateASTCallExpression(ASTCallExpression *node_ty, SemanticA *sem){
+STBType * evaluateASTCallExpression(ASTCallExpression *node_ty, SemanticA *sem){
     
 };
 
-SemanticSymbol * evaluateASTStringLiteral(ASTStringLiteral *node_ty, SemanticA *sem){
+STBType * evaluateASTStringLiteral(ASTStringLiteral *node_ty, SemanticA *sem){
     
 };
 
-SemanticSymbol * evaluateASTNumericLiteral(ASTNumericLiteral *node_ty, SemanticA *sem){
-
+STBType * evaluateASTNumericLiteral(ASTNumericLiteral *node_ty, SemanticA *sem){
+    STBClassType s;
 };
 
 NAMESPACE_END

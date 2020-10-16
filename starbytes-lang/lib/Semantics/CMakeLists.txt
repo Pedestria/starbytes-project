@@ -9,6 +9,8 @@ add_starbytes_lib(
     StarbytesDecl.h
     StarbytesExp.cpp
     StarbytesExp.h
+    TypeCheck.h
+    TypeCheck.cpp
     HEADER_FILES 
     SemanticsMain.h 
     Scope.h
