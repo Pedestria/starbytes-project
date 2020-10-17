@@ -1,6 +1,7 @@
 #include "starbytes/Semantics/SemanticsMain.h"
 #include "starbytes/AST/AST.h"
 #include "StarbytesDecl.h"
+#include "TypeCheck.h"
 #include <iostream>
 
 
@@ -59,9 +60,9 @@ STARBYTES_SEMANTICS_NAMESPACE
         createScope(stdlib);
         store.setExactCurrentScope(stdlib);
         ASTClassDeclaration *p;
-        registerSymbolinExactCurrentScope(create_class_symbol("String",p));
-        registerSymbolinExactCurrentScope(create_class_symbol("Boolean",p));
-        registerSymbolinExactCurrentScope(create_class_symbol("Number",p));
+        registerSymbolinExactCurrentScope(create_class_symbol("String",p,create_stb_standard_class_type("String")));
+        registerSymbolinExactCurrentScope(create_class_symbol("Boolean",p,create_stb_standard_class_type("Boolean")));
+        registerSymbolinExactCurrentScope(create_class_symbol("Number",p,create_stb_standard_class_type("Number")));
         std::cout << "Starting Semantics";
         for(auto & node : tree->nodes){
             visitNode(AST_NODE_CAST(node));

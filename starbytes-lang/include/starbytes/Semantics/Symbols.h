@@ -47,7 +47,7 @@ using namespace AST;
         
     };
 
-    ClassSymbol * create_class_symbol(std::string name,ASTClassDeclaration *&node_ptr);
+    ClassSymbol * create_class_symbol(std::string name,ASTClassDeclaration *&node_ptr,STBClassType *type);
 
     class FunctionSymbol : public SemanticSymbol{
         public:
@@ -56,7 +56,7 @@ using namespace AST;
         ASTFunctionDeclaration *& loc_ptr;
         bool checkWithOther(FunctionSymbol *sym);
         static SymbolType stat_type;
-        STBType *semantic_return_type;
+        SemanticSymbol *return_type;
     };
 
     template<class _SymbolTy>

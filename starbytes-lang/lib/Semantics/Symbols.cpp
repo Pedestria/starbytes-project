@@ -9,9 +9,10 @@ STARBYTES_SEMANTICS_NAMESPACE
     SET_STATIC_TYPE(VariableSymbol,Variable);
     SET_STATIC_TYPE(ClassSymbol,Class);
 
-    ClassSymbol * create_class_symbol(std::string name,ASTClassDeclaration *&node_ptr){
+    ClassSymbol * create_class_symbol(std::string name,ASTClassDeclaration *&node_ptr,STBClassType *type){
         ClassSymbol *c = new ClassSymbol(node_ptr);
         c->name = name;
+        c->semantic_type = type;
         return c;
     };
     

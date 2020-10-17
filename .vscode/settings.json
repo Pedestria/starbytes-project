@@ -1,4 +1,5 @@
 {
     "cmake.configureOnOpen": false,
-    "cmake.sourceDirectory": "${workspaceFolder}/starbytes-lang"
+    "cmake.sourceDirectory": "${workspaceFolder}/starbytes-lang",
+    "todo-tree.tree.showBadges": true
 }

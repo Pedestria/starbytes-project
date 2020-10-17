@@ -12,6 +12,7 @@ class SemanticA;
 using namespace AST;
 
 #define AST_EXPRESSION_EVALUATOR(type) STBType * evaluate##type(type * node_ty,SemanticA *sem)
+#define AST_VISITOR(name,node_to_visit) class name { SemanticA *sem; using NODE = AST::node_to_visit;public:name(SemanticA *s);~name();void visit(NODE *node); }
 
 AST_EXPRESSION_EVALUATOR(ASTExpressionStatement);
 
@@ -23,12 +24,13 @@ AST_EXPRESSION_EVALUATOR(ASTMemberExpression);
 
 AST_EXPRESSION_EVALUATOR(ASTArrayExpression);
 
-
 AST_EXPRESSION_EVALUATOR(ASTStringLiteral);
 
 AST_EXPRESSION_EVALUATOR(ASTBooleanLiteral);
 
 AST_EXPRESSION_EVALUATOR(ASTNumericLiteral);
+
+AST_VISITOR(ExprStatement,ASTExpressionStatement);
 
 #undef AST_EXPRESSION_EVALUATOR
 

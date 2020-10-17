@@ -8,10 +8,10 @@
 STARBYTES_SEMANTICS_NAMESPACE
 
 using namespace AST;
-
-#define FRIEND_AST_EVALUATOR(type) friend STBType * evaluate##type(type * node_ty,SemanticA * sem)
         
     class STBType;
+    struct STBObjectMethod;
+    struct STBObjectProperty;
     class SemanticA {
         using Tree = AbstractSyntaxTree;
 
@@ -31,9 +31,14 @@ using namespace AST;
             friend class FunctionDeclVisitor;
             friend class ClassDeclVisitor;
             friend class ImportDeclVisitor;
+            template<typename _Node>
+            friend inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,std::vector<STBObjectProperty> *props,_Node *node,SemanticA *& sem);
             //Friends AST Evaluator functions!
             FRIEND_AST_EVALUATOR(ASTCallExpression);
             FRIEND_AST_EVALUATOR(ASTMemberExpression);
+            FRIEND_AST_EVALUATOR(ASTStringLiteral);
+            FRIEND_AST_EVALUATOR(ASTBooleanLiteral);
+            FRIEND_AST_EVALUATOR(ASTNumericLiteral);
         public:
             void freeSymbolStores();
             void initialize();

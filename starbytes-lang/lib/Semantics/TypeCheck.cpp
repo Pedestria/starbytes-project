@@ -1,4 +1,5 @@
 #include "TypeCheck.h"
+#include "starbytes/Semantics/SemanticsMain.h"
 
 STARBYTES_SEMANTICS_NAMESPACE
 
@@ -12,7 +13,7 @@ SET_INIT_TYPE(Interface,STBInterfaceType);
 #define ASSERT_STBTYPE(name,type) (type*)name
 
 template<typename _Node>
-inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,std::vector<STBObjectProperty> *props,_Node *node){
+inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,std::vector<STBObjectProperty> *props,_Node *node,SemanticA *& sem){
     for(auto & state : node->body->nodes){
         if(AST_NODE_IS(state,ASTClassPropertyDeclaration)){
             ASTClassPropertyDeclaration *_prop = ASSERT_AST_NODE(state,ASTClassPropertyDeclaration);
@@ -22,11 +23,18 @@ inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,st
             if(AST_NODE_IS(_prop->id,ASTTypeCastIdentifier)){
                 ASTTypeCastIdentifier *tcid = ASSERT_AST_NODE(_prop->id,ASTTypeCastIdentifier);
                 prop.name = tcid->id->value;
-                //TODO: Create Type from TypeIdentifier (Reference it)!
+                if(sem->store.symbolExistsInCurrentScopes<ClassSymbol,ASTClassDeclaration>(tcid->tid->type_name)){
+                    prop.type = sem->store.getSymbolRefFromCurrentScopes<ClassSymbol>(tcid->tid->type_name)->semantic_type;
+                }
+                //TODO: Check for Interface Symbols!
+                else{
+                    throw StarbytesSemanticsError("Unknown Type: "+tcid->tid->type_name,tcid->BeginFold);
+                }
             }
             else if(AST_NODE_IS(_prop->id,ASTIdentifier)){
                 ASTIdentifier *id = ASSERT_AST_NODE(_prop,ASTIdentifier);
                 prop.name = id->value;
+                //TODO: Type Infer from Expression!
             }
             props->push_back(prop);
         }
@@ -35,8 +43,14 @@ inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,st
             STBObjectMethod method;
             method.lazy = _method->isLazy;
             method.name = _method->id->value;
+            if(sem->store.symbolExistsInCurrentScopes<ClassSymbol,ASTClassDeclaration>(_method->returnType->type_name)){
+                method.return_type = sem->store.getSymbolRefFromCurrentScopes<ClassSymbol>(_method->returnType->type_name)->semantic_type;
+            }
+            //TODO: Check for Interface Symbols!
+            else{
+                throw StarbytesSemanticsError("Unknown Type: "+_method->returnType->type_name,_method->returnType->BeginFold);
+            }
             methods->push_back(method);
-            //TODO: Create Type from TypeIdentifier (Reference it)!
         }
         else if(AST_NODE_IS(state,ASTInterfacePropertyDeclaration)){
             ASTInterfacePropertyDeclaration *_prop = ASSERT_AST_NODE(state,ASTInterfacePropertyDeclaration);
@@ -44,6 +58,14 @@ inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,st
             prop.immutable = _prop->isConstant;
             prop.loose = _prop->loose;
             prop.name = _prop->tcid->id->value;
+            ASTTypeCastIdentifier *tcid = _prop->tcid;
+            if(sem->store.symbolExistsInCurrentScopes<ClassSymbol,ASTClassDeclaration>(tcid->tid->type_name)){
+                prop.type = sem->store.getSymbolRefFromCurrentScopes<ClassSymbol>(tcid->tid->type_name)->semantic_type;
+            }
+            //TODO: Check for Interface Symbols!
+            else{
+                throw StarbytesSemanticsError("Unknown Type: "+tcid->tid->type_name,tcid->BeginFold);
+            }
             props->push_back(prop);
         }
         else if(AST_NODE_IS(state,ASTInterfaceMethodDeclaration)){
@@ -57,18 +79,24 @@ inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,st
     }
 };
 
-
-STBClassType * create_stb_class_type(ASTClassDeclaration *node){
+STBClassType * create_stb_standard_class_type(std::string name){
     STBClassType *type = new STBClassType();
-    type->name = node->id->value;
-    construct_methods_and_props(&type->methods,&type->props,node);
+    type->name = name;
     return type;
 };
 
-STBInterfaceType * create_stb_interface_type(ASTInterfaceDeclaration *node){
+
+STBClassType * create_stb_class_type(ASTClassDeclaration *node,SemanticA *sem){
+    STBClassType *type = new STBClassType();
+    type->name = node->id->value;
+    construct_methods_and_props(&type->methods,&type->props,node,sem);
+    return type;
+};
+
+STBInterfaceType * create_stb_interface_type(ASTInterfaceDeclaration *node,SemanticA *sem){
     STBInterfaceType *type = new STBInterfaceType();
     type->name = node->id->value;
-    construct_methods_and_props(&type->methods,&type->props,node);
+    construct_methods_and_props(&type->methods,&type->props,node,sem);
     return type;
 };
 
