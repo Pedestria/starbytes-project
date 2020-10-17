@@ -14,6 +14,7 @@ SET_INIT_TYPE(ASTTypeIdentifier,TypeIdentifier);
 SET_INIT_TYPE(ASTIdentifier,Identifier);
 SET_INIT_TYPE(ASTNumericLiteral,NumericLiteral);
 SET_INIT_TYPE(ASTBooleanLiteral,BooleanLiteral);
+SET_INIT_TYPE(ASTStringLiteral,StringLiteral);
 
 SET_INIT_TYPE(ASTVariableDeclaration,VariableDeclaration);
 SET_INIT_TYPE(ASTVariableSpecifier,VariableSpecifier);

@@ -729,6 +729,7 @@ void Parser::parseClassDeclaration(std::vector<ASTStatement *> *&container){
     if(tok1->getType() == TokenType::Identifier){
         ASTIdentifier * id = new ASTIdentifier();
         parseIdentifier(tok1,id);
+        node->id = id;
         Token *tok2 = aheadToken();
 
         if(tok2->getType() == TokenType::OpenCarrot){

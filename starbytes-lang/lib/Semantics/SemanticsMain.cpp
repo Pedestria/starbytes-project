@@ -1,6 +1,7 @@
 #include "starbytes/Semantics/SemanticsMain.h"
 #include "starbytes/AST/AST.h"
 #include "StarbytesDecl.h"
+#include "StarbytesExp.h"
 #include "TypeCheck.h"
 #include <iostream>
 
@@ -49,6 +50,10 @@ STARBYTES_SEMANTICS_NAMESPACE
                 std::cout << "Visiting Class Decl!" << std::endl;
                 ClassDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTClassDeclaration));
             }
+            else if(AST_NODE_IS(node,ASTExpressionStatement)){
+                std::cout << "Visiting Expr Statement!" << std::endl;
+                ExprStatementVisitor(this).visit(ASSERT_AST_NODE(node,ASTExpressionStatement));
+            }
         }
         catch(std::string error){
             std::cerr << "\x1b[31m" << error << "\x1b[0m" << std::endl;
@@ -63,6 +68,7 @@ STARBYTES_SEMANTICS_NAMESPACE
         registerSymbolinExactCurrentScope(create_class_symbol("String",p,create_stb_standard_class_type("String")));
         registerSymbolinExactCurrentScope(create_class_symbol("Boolean",p,create_stb_standard_class_type("Boolean")));
         registerSymbolinExactCurrentScope(create_class_symbol("Number",p,create_stb_standard_class_type("Number")));
+        //TODO: Create Array class symbol with type args!
         std::cout << "Starting Semantics";
         for(auto & node : tree->nodes){
             visitNode(AST_NODE_CAST(node));

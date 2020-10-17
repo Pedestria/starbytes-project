@@ -16,7 +16,7 @@ class SemanticA;
 TYPED_ENUM STBTypeNumType:int{
     Class,Interface
 };
-
+//TODO: Create way to evaluate and check type arguments (Generics) on Class and Interface Types!
 class STBType {
     protected:
     STBTypeNumType type;

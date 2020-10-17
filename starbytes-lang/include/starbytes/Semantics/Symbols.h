@@ -56,7 +56,7 @@ using namespace AST;
         ASTFunctionDeclaration *& loc_ptr;
         bool checkWithOther(FunctionSymbol *sym);
         static SymbolType stat_type;
-        SemanticSymbol *return_type;
+        STBType *return_type;
     };
 
     template<class _SymbolTy>

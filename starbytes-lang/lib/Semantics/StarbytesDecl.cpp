@@ -96,14 +96,13 @@ ClassDeclVisitor::ClassDeclVisitor(SemanticA *s):sem(s){
 };
 
 ClassDeclVisitor::~ClassDeclVisitor(){
-    sem->store.popCurrentScope();
+    // sem->store.popCurrentScope();
 };
 
 void ClassDeclVisitor::visit(NODE *node){
     ClassSymbol *sym = new ClassSymbol(node);
     sym->name = node->id->value;
     sem->registerSymbolinExactCurrentScope(sym);
-
 };
 
 NAMESPACE_END

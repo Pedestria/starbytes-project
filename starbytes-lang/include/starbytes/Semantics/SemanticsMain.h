@@ -39,6 +39,7 @@ using namespace AST;
             FRIEND_AST_EVALUATOR(ASTStringLiteral);
             FRIEND_AST_EVALUATOR(ASTBooleanLiteral);
             FRIEND_AST_EVALUATOR(ASTNumericLiteral);
+            FRIEND_AST_EVALUATOR(ASTArrayExpression);
         public:
             void freeSymbolStores();
             void initialize();
