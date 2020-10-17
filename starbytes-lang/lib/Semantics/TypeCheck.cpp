@@ -62,12 +62,14 @@ STBClassType * create_stb_class_type(ASTClassDeclaration *node){
     STBClassType *type = new STBClassType();
     type->name = node->id->value;
     construct_methods_and_props(&type->methods,&type->props,node);
+    return type;
 };
 
 STBInterfaceType * create_stb_interface_type(ASTInterfaceDeclaration *node){
     STBInterfaceType *type = new STBInterfaceType();
     type->name = node->id->value;
     construct_methods_and_props(&type->methods,&type->props,node);
+    return type;
 };
 
 

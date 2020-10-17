@@ -1,0 +1,12 @@
+import JSONLib
+
+
+decl var:Number
+
+
+decl var:Boolean
+
+
+
+
+

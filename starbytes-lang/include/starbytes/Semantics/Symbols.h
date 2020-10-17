@@ -9,6 +9,10 @@ STARBYTES_SEMANTICS_NAMESPACE
 
 using namespace AST;
 
+    class STBType;
+    class STBClassType;
+    class STBInterfaceType;
+
     enum class SymbolType:int {
         Variable,Class,Function
     }; 
@@ -37,6 +41,7 @@ using namespace AST;
         ClassSymbol(ASTClassDeclaration *& node_ptr_loc):SemanticSymbol(SymbolType::Class),loc_ptr(node_ptr_loc){};
         ~ClassSymbol(){};
         ASTClassDeclaration *& loc_ptr;
+        STBClassType *semantic_type;
         bool checkWithOther(ClassSymbol *sym);
         static SymbolType stat_type;
         
@@ -51,7 +56,7 @@ using namespace AST;
         ASTFunctionDeclaration *& loc_ptr;
         bool checkWithOther(FunctionSymbol *sym);
         static SymbolType stat_type;
-        
+        STBType *semantic_return_type;
     };
 
     template<class _SymbolTy>

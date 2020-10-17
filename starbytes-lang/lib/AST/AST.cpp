@@ -30,6 +30,7 @@ SET_INIT_TYPE(ASTClassConstructorDeclaration,ClassConstructorDeclaration);
 SET_INIT_TYPE(ASTFunctionDeclaration,FunctionDeclaration);
 SET_INIT_TYPE(ASTConstantDeclaration,ConstantDeclaration);
 SET_INIT_TYPE(ASTConstantSpecifier,ConstantSpecifier);
+SET_INIT_TYPE(ASTScopeDeclaration,ScopeDeclaration);
 
 SET_INIT_TYPE(ASTAssignExpression,AssignExpression);
 SET_INIT_TYPE(ASTExpressionStatement,ExpressionStatement);

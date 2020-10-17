@@ -36,6 +36,10 @@ STARBYTES_SEMANTICS_NAMESPACE
                 std::cout << "Visiting Import Decl!" << std::endl;
                 ImportDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTImportDeclaration));
             }
+            else if(AST_NODE_IS(node,ASTScopeDeclaration)){
+                std::cout << "Visiting Scope Decl!" << std::endl;
+                ScopeDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTScopeDeclaration));
+            }
             else if(AST_NODE_IS(node,ASTVariableDeclaration)){
                 std::cout << "Visiting Variable Decl!" << std::endl;
                 VariableDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTVariableDeclaration));

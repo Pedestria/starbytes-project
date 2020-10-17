@@ -1,4 +1,5 @@
 #include "starbytes/Semantics/Symbols.h"
+#include "TypeCheck.h"
 
 STARBYTES_SEMANTICS_NAMESPACE
 
