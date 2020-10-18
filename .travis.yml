@@ -2,10 +2,6 @@ language: cpp
 compiler: clang
 os: osx
 osx_image: xcode12.2
-env:
-  - CXX = clang++
-  - C = clang
-
-script: cmake -B./build -S./starbytes-lang -G"Ninja"" && ninja -C ./build
+script: cmake -B./build -S./starbytes-lang -G"Ninja" && ninja -C ./build
 
 
