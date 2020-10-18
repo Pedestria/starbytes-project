@@ -44,7 +44,7 @@ using namespace AST;
             void freeSymbolStores();
             void initialize();
             
-            void visitNode(ASTNode * node);
+            void visitNode(ASTNode * node,bool is_function = false);
             SemanticA(Tree *& _tree):tree(_tree){};
             ~SemanticA(){};
     };

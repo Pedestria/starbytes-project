@@ -73,8 +73,14 @@ inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,st
             STBObjectMethod method;
             method.lazy = _method->isLazy;
             method.name = _method->id->value;
+            if(sem->store.symbolExistsInCurrentScopes<ClassSymbol,ASTClassDeclaration>(_method->returnType->type_name)){
+                method.return_type = sem->store.getSymbolRefFromCurrentScopes<ClassSymbol>(_method->returnType->type_name)->semantic_type;
+            }
+            //TODO: Check for Interface Symbols!
+            else{
+                throw StarbytesSemanticsError("Unknown Type: "+_method->returnType->type_name,_method->returnType->BeginFold);
+            }
             methods->push_back(method);
-            //TODO: Create Type from TypeIdentifier (Reference it)!
         }
     }
 };

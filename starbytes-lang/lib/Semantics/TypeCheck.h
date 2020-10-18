@@ -67,8 +67,8 @@ bool stbtype_is_interface(STBType *type);
 
 STBClassType * create_stb_standard_class_type(std::string name);
 
-STBClassType * create_stb_class_type(AST::ASTClassDeclaration *node);
-STBInterfaceType * create_stb_interface_type(AST::ASTInterfaceDeclaration *node);
+STBClassType * create_stb_class_type(AST::ASTClassDeclaration *node,SemanticA *sem);
+STBInterfaceType * create_stb_interface_type(AST::ASTInterfaceDeclaration *node,SemanticA *sem);
 template<typename SymTy, typename SemType>
 bool type_check_symbol(SymTy & symbol,SemType *& type){
     bool returncode = false;

@@ -31,7 +31,7 @@ STARBYTES_SEMANTICS_NAMESPACE
         }
     };
 
-    void SemanticA::visitNode(AST::ASTNode * node){
+    void SemanticA::visitNode(AST::ASTNode * node,bool is_function){
         // std::cout << int(node->type) << " ;";
         try {
             if(AST_NODE_IS(node,ASTImportDeclaration)){

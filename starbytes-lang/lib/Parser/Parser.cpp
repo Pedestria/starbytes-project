@@ -1266,6 +1266,7 @@ void Parser::parseVariableDeclaration(std::vector<ASTStatement *> *& container){
         if(aheadToken()->getType() == TokenType::Comma){
             while(true){
                 if(aheadToken()->getType() == TokenType::Comma){
+                    incrementToNextToken();
                     ASTVariableSpecifier *node1 = new ASTVariableSpecifier(ASTType::VariableSpecifier);
                     parseVariableSpecifier(node1);
                     node->specifiers.push_back(node1);

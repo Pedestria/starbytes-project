@@ -1,6 +1,7 @@
 #include "StarbytesDecl.h"
 #include "starbytes/Semantics/Scope.h"
 #include "starbytes/Semantics/SemanticsMain.h"
+#include "TypeCheck.h"
 #include <iostream>
 
 STARBYTES_SEMANTICS_NAMESPACE
@@ -87,6 +88,9 @@ void FunctionDeclVisitor::visit(NODE *node){
     std::string name = node->id->value + "_FUNCTION";
     sem->createScope(name);
     for(auto & body_statement : node->body->nodes){
+        if(AST_NODE_IS(body_statement,ASTReturnDeclaration)){
+            
+        }
         sem->visitNode(AST_NODE_CAST(body_statement));
     }
 };
@@ -102,6 +106,7 @@ ClassDeclVisitor::~ClassDeclVisitor(){
 void ClassDeclVisitor::visit(NODE *node){
     ClassSymbol *sym = new ClassSymbol(node);
     sym->name = node->id->value;
+    sym->semantic_type = create_stb_class_type(node,sem);
     sem->registerSymbolinExactCurrentScope(sym);
 };
 
