@@ -3,7 +3,6 @@
 #include "ADT.h"
 #include "ANSIColors.h"
 #include "Macros.h"
-#include "StarbytesError.h"
 #include "Document.h"
 #include "CmdLine.h"
 #include "FS.h"

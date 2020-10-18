@@ -8,7 +8,5 @@ add_starbytes_lib(
     HEADER_FILES
     "Project.h"
     LIBS_TO_LINK
-    "starbytesBase"
-    "starbytesAST"
-    "starbytesParser"
+    ${STARBYTES_ALL_LIBS}
 )

@@ -7,12 +7,10 @@ add_starbytes_lib(
     ANSIColors.h
     Base.h
     Macros.h
-    StarbytesError.h
     CmdLine.h
     FS.h
     SOURCE_FILES
     ADT.cpp
-    StarbytesError.cpp
     CmdLine.cpp
     FS.cpp
     )

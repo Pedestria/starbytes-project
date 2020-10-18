@@ -21,6 +21,7 @@ STARBYTES_STD_NAMESPACE
     struct TargetDependency {
         std::string name;
         ModuleType type;
+        std::string source_dir;
         std::vector<std::string> dependents;
         std::string dump_loc;
     };

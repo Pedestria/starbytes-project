@@ -1,0 +1,10 @@
+add_starbytes_lib(
+    LIB_NAME
+    "starbytesCore"
+    SOURCE_FILES
+    Core.cpp
+    HEADER_FILES
+    Core.h
+    LIBS_TO_LINK
+    ${STARBYTES_ALL_LIBS}
+    )

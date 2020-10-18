@@ -3,8 +3,9 @@ import JSONLib
 
 decl var:Number
 
+class Custom {}
 
-decl var:Boolean
+decl var:Boolean,var2:Custom
 
 
 

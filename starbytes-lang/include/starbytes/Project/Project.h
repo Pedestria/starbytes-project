@@ -10,6 +10,8 @@
 
 STARBYTES_STD_NAMESPACE
 
+    class DependencyTree;
+
     struct StarbytesCompiledModule {
         //BYTE CODE CALL STACK!
         ByteCode::BCProgram *program;
@@ -17,8 +19,7 @@ STARBYTES_STD_NAMESPACE
         std::string dest;
     };
 
-    // std::vector<StarbytesModule *> * constructModule(std::string & module_config_file);
-    std::vector<StarbytesCompiledModule *> * constructAndCompileModulesFromConfig(std::string & module_config_file);
+    DependencyTree * buildTreeFromConfig(std::string & module_config_file);
 
 
 NAMESPACE_END

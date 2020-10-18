@@ -2,6 +2,10 @@
 #include "starbytes/Parser/Lookup.h"
 #include "starbytes/Base/Document.h"
 #include "starbytes/Base/Base.h"
+#include "starbytes/Parser/Parser.h"
+#include "starbytes/Parser/Lexer.h"
+#include "starbytes/Semantics/Main.h"
+#include "starbytes/ByteCode/BCGenerator.h"
 #include "DependencyTree.h"
 #include <fstream>
 #include <iostream>
@@ -415,6 +419,7 @@ STARBYTES_STD_NAMESPACE
                     TargetDependency dep {};
                     dep.name = node->name;
                     dep.type = node->type;
+                    dep.source_dir = node->directory;
                     tree->add(dep);
                 }
                 //Figure out each TG's dependents!
@@ -463,20 +468,49 @@ STARBYTES_STD_NAMESPACE
             };
     };
 
-    // std::vector<StarbytesCompiledModule *> * compileFromTree(DependencyTree *tree){
-        
-    // }
+    ByteCode::BCProgram * compileTarget(TargetDependency &tg){
+        using DIRENT = std::filesystem::directory_entry;
+        std::vector<AbstractSyntaxTree *> source_trees;
+        Foundation::foreachInDirectory(tg.source_dir,[&source_trees](DIRENT dirent_ref){
+            if(dirent_ref.is_regular_file()){
+                std::string file = dirent_ref.path().generic_string();
+                std::string *code_ptr = Foundation::readFile(file);
+                std::vector<Token> tokens = Lexer(*code_ptr).tokenize();
+                AbstractSyntaxTree *file_ast = new AbstractSyntaxTree();
+                file_ast->filename = file;
+                try {
+                    Parser(tokens,file_ast).convertToAST();
+                    Semantics::SemanticA (file_ast).initialize();
+                    //TODO: Return ScopeStore when running SemanticA on any AST!
+                }
+                catch (std::string error){
+                    std::cerr << error << std::endl;
+                }
+                source_trees.push_back(file_ast);
+            }
+        });
+        return ByteCode::generateToBCProgram(source_trees);
+    };
 
-    std::vector<StarbytesCompiledModule *> * constructAndCompileModulesFromConfig(std::string & module_config_file){
+    void compileFromTree(DependencyTree *tree,std::vector<StarbytesCompiledModule> *vector_ptr){
+        std::vector<AbstractSyntaxTree *> temp_asts;
+        tree->foreach([&tree](TargetDependency &tg){
+            if(tg.name == tree->entry_point_target){
+                StarbytesCompiledModule mod;
+                mod.program = compileTarget(tg);
+            }
+        });
+    }
+
+    DependencyTree * buildTreeFromConfig(std::string & module_config_file){
         auto config_file_buf = Foundation::readFile(module_config_file);
         if(config_file_buf->empty() == false){
             auto first_result = ProjectFileParser(*config_file_buf).constructDependencyTreeFromParsing();
+            return first_result;
         }
         else{
             exit(1);
         }
-        auto * result = new std::vector<StarbytesCompiledModule *>();
-        return result;
     }
 
 NAMESPACE_END
