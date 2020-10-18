@@ -1,6 +1,10 @@
 <img src="./public/STD Logo.png">
+##### AppVeyor:
 
 [![Build status](https://ci.appveyor.com/api/projects/status/83o4yjlju2fh93nf?svg=true)](https://ci.appveyor.com/project/Pedestria/starbytes-project)
+
+##### Travis CI:
+![](https://travis-ci.com/Pedestria/starbytes-project.svg?token=5K8gmsoNtkbUcnKi4R5v&branch=master)
 
 
 # Starbytes Project/Toolchain
