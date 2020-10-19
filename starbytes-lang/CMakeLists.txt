@@ -56,6 +56,9 @@ endif()
 
 
 option(MSVC_BUILD "Whether to Build With MSVC Or clang++" NO)
+set(CMAKE_CXX_COMPILER_FLAGS "-fansi-escape-codes -fms-compatibility")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 # if(NOT ${MSVC_BUILD})
 # 	if(APPLE)
