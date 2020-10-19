@@ -2,6 +2,6 @@ language: cpp
 compiler: clang
 os: osx
 osx_image: xcode12.2
-script: cmake -B./build -S./starbytes-lang -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang -G"Unix Makefiles" && cd ./build && make
+script: cmake -B./build -S./starbytes-lang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -G"Unix Makefiles" && cd ./build && make
 
 
