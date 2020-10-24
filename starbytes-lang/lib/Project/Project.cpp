@@ -497,16 +497,20 @@ STARBYTES_STD_NAMESPACE
         tree->foreach([&tree](TargetDependency &tg){
             if(tg.name == tree->entry_point_target){
                 StarbytesCompiledModule mod;
+                mod.name = tg.name;
                 mod.program = compileTarget(tg);
             }
         });
     }
 
-    DependencyTree * buildTreeFromConfig(std::string & module_config_file){
+    ProjectCompileResult buildTreeFromConfig(std::string & module_config_file){
         auto config_file_buf = Foundation::readFile(module_config_file);
         if(config_file_buf->empty() == false){
             auto first_result = ProjectFileParser(*config_file_buf).constructDependencyTreeFromParsing();
-            return first_result;
+            std::vector<StarbytesCompiledModule> compiled_mods;
+            compileFromTree(first_result,&compiled_mods);
+            ProjectCompileResult result (compiled_mods,first_result);
+            return result;
         }
         else{
             exit(1);

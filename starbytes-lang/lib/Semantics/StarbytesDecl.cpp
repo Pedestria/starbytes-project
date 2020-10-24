@@ -1,4 +1,5 @@
 #include "StarbytesDecl.h"
+#include "StarbytesExp.h"
 #include "starbytes/Semantics/Scope.h"
 #include "starbytes/Semantics/SemanticsMain.h"
 #include "TypeCheck.h"
@@ -88,10 +89,29 @@ void FunctionDeclVisitor::visit(NODE *node){
     std::string name = node->id->value + "_FUNCTION";
     sem->createScope(name);
     for(auto & body_statement : node->body->nodes){
-        if(AST_NODE_IS(body_statement,ASTReturnDeclaration)){
-            
+        sem->visitNode(AST_NODE_CAST(body_statement),true);
+    }
+};
+
+ReturnDeclVisitor::ReturnDeclVisitor(SemanticA *s):sem(s){
+
+};
+
+ReturnDeclVisitor::~ReturnDeclVisitor(){
+
+};
+
+void ReturnDeclVisitor::visit(NODE *node,ASTNode *& func_ptr){
+    if(AST_NODE_IS(func_ptr,ASTFunctionDeclaration)){
+        ASTFunctionDeclaration *parent = ASSERT_AST_NODE(func_ptr, ASTFunctionDeclaration);
+        FunctionSymbol *& func_sym = sem->store.getSymbolRefFromCurrentScopes<FunctionSymbol>(parent->id->value);
+
+        //TODO: Type check func return-type with expression type here!
+        STBType *ty = evaluateASTExpression(node->returnee,sem);
+        if(stbtype_is_class(ty) && stbtype_is_interface(func_sym->return_type)){
+            if(((STBClassType *)ty)->match((STBClassType *)func_sym->return_type))
+                return;
         }
-        sem->visitNode(AST_NODE_CAST(body_statement));
     }
 };
 

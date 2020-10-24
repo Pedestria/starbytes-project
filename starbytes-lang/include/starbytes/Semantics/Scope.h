@@ -11,7 +11,7 @@ STARBYTES_SEMANTICS_NAMESPACE
 
 class SemanticA;
 
-#define FRIEND_AST_EVALUATOR(type) friend STBType * evaluate##type(type * node_ty,SemanticA * sem)
+#define FRIEND_AST_EVALUATOR(type) friend STBType * evaluate##type(type * node_ty,SemanticA *& sem)
     class Scope {
         private:
             std::vector<SemanticSymbol *> symbols; 
@@ -82,6 +82,8 @@ class SemanticA;
         bool symbolExistsInCurrentScopes(std::string & symbol_name);
         template<typename SymTy>
         SymTy *& getSymbolRefFromCurrentScopes(std::string & name);
+        template<typename SymTy>
+        SymTy *& getSymbolRefFromExactCurrentScope(std::string & name);
         ScopeStore(){};
         ~ScopeStore(){};
     };
@@ -116,6 +118,19 @@ class SemanticA;
                         SymTy *ref = ASSERT_SEMANTIC_SYMBOL(_sym,SymTy);
                         return ref;
                     }
+                }
+            }
+        }
+    };
+
+    template<typename SymTy>
+    SymTy *& ScopeStore::getSymbolRefFromExactCurrentScope(std::string &name){
+        Scope *& scope_ref = getScopeRef(exact_current_scope);
+        for(auto & _sym : scope_ref->getIterator()){
+            if(SEMANTIC_SYMBOL_IS(_sym,SymTy)){
+                if(_sym->name == name){
+                    SymTy *ref = ASSERT_SEMANTIC_SYMBOL(_sym,SymTy);
+                    return ref;
                 }
             }
         }

@@ -619,7 +619,7 @@ namespace Engine {
     }
 
     StarbytesObject * invoke_instance_method_return_guaranteed(StarbytesObject * _instance_refer,std::string name,std::vector<StarbytesObject **> args){
-        StarbytesObject *return_ptr;
+        StarbytesObject *return_ptr = nullptr;
         if(_instance_refer->isType(SBObjectType::ClassInstance)){
             StarbytesClassInstance * ptr = (StarbytesClassInstance *) _instance_refer;
             for(auto & m : ptr->methods){
@@ -666,7 +666,7 @@ namespace Engine {
     }
 
     StarbytesObject * clone_object(StarbytesObject *_obj){
-        StarbytesObject *ptr;
+        StarbytesObject *ptr = nullptr;
         if(_obj->isType(SBObjectType::String)){
             ptr = create_starbytes_string(((StarbytesString *)_obj)->__get_interal());
         }

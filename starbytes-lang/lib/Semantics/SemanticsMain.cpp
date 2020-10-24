@@ -31,9 +31,15 @@ STARBYTES_SEMANTICS_NAMESPACE
         }
     };
 
-    void SemanticA::visitNode(AST::ASTNode * node,bool is_function){
+    void SemanticA::visitNode(AST::ASTNode * node,bool is_function,ASTNode *func_ptr){
         // std::cout << int(node->type) << " ;";
         try {
+            if(is_function){
+                if(AST_NODE_IS(node,ASTReturnDeclaration)){
+                    std::cout << "Visiting Return Decl!";
+                    ReturnDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTReturnDeclaration),func_ptr);
+                }
+            }
             if(AST_NODE_IS(node,ASTImportDeclaration)){
                 std::cout << "Visiting Import Decl!" << std::endl;
                 ImportDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTImportDeclaration));

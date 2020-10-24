@@ -1,3 +1,4 @@
+configure_file("Starbytes.cpp.in" ${CMAKE_CURRENT_SOURCE_DIR}/Starbytes.cpp)
 add_starbytes_tool(
     NAME 
     starbytes 

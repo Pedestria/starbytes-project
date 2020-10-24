@@ -13,9 +13,20 @@ class SemanticA;
 
 AST_VISITOR(ImportDeclVisitor,ASTImportDeclaration);
 
+
+
 AST_VISITOR(ScopeDeclVisitor,ASTScopeDeclaration);
 
 AST_VISITOR(VariableDeclVisitor,ASTVariableDeclaration);
+
+class ReturnDeclVisitor {
+    SemanticA *sem;
+    using NODE = AST::ASTReturnDeclaration;
+    public:
+    ReturnDeclVisitor(SemanticA *s);
+    ~ReturnDeclVisitor();
+    void visit(NODE *node,ASTNode *&func_ptr);
+};
 
 AST_VISITOR(FunctionDeclVisitor,ASTFunctionDeclaration);
 

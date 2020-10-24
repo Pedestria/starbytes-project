@@ -5,7 +5,7 @@ cmake_policy(SET CMP0079 NEW)
 
 option(USE_VCPKG "Use vcpkg manager!" OFF)
 option(USE_VCPKG_AS_TOOLCHAIN "Use vcpkg cmake toolchain file" OFF)
-set(STARBYTES_PROJECT_VERSION "0.0.4")
+set(STARBYTES_PROJECT_VERSION "v0.0.4")
 message("Starbytes Project Version " ${STARBYTES_PROJECT_VERSION})
 
 macro(find_vcpkg USE_TOOLCHAIN)
@@ -47,61 +47,24 @@ if(${USE_VCPKG})
 endif()
 
 
-if(APPLE)
-	set(STARBYTES_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules)
-	list(APPEND CMAKE_MODULE_PATH ${STARBYTES_MODULE_PATH})
 
+set(STARBYTES_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules)
+list(APPEND CMAKE_MODULE_PATH ${STARBYTES_MODULE_PATH})
+
+if(APPLE)
 	include(AddClangCXXLib)
 endif()
 
+include(Starbytes)
 
-option(MSVC_BUILD "Whether to Build With MSVC Or clang++" NO)
+
 set(CMAKE_CXX_COMPILER_FLAGS "-fansi-escape-codes -fms-compatibility")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
-# if(NOT ${MSVC_BUILD})
-# 	if(APPLE)
-# 		set(CMAKE_CXX_COMPILER "/Library/Developer/Toolchains/swift-5.3-DEVELOPMENT-SNAPSHOT-2020-08-18-a.xctoolchain/usr/bin/clang++")
-# 		# set(CMAKE_CXX_COMPILER "clang++")
-# 	else()
-# 		set(CMAKE_CXX_COMPILER "clang++")
-# 		set(CMAKE_C_COMPILER "clang")
-# 	endif()
 
-# 	set(CMAKE_CXX_COMPILER_FLAGS "-fansi-escape-codes -fms-compatibility")
-# 	set(CMAKE_CXX_STANDARD 17)
-# 	set(CMAKE_CXX_STANDARD_REQUIRED YES)
-# 	message(STATUS "Clang Compiler!")
-# elseif()
-# 	set(CMAKE_GENERATOR "Visual Studio 16 2019")
-# 	# set(LINK_FLAGS "/SUBSYSTEM:CONSOLE")
-# 	message(STATUS "MSVC Compiler!")
-# 	# set(CMAKE_CXX_COMPILER_FLAGS "/link /LIBPATH 'C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Tools/MSVC/14.27.29110/lib/x64' ")
-
-
-# endif()
 
 project ("Starbytes" CXX C)
-#
-#
-set(STARBYTES_LIB_INCLUDE ${CMAKE_SOURCE_DIR}/include)
-set(STARBYTES_SOURCE_DIR ${CMAKE_SOURCE_DIR})
-set(STARBYTES_ALL_LIBS "" CACHE INTERNAL "All libs")
-
-macro(add_header_macro HEADER FOUND)
-    string(REGEX MATCH "([A-Za-z0-9_]+)\\.h" TEST ${HEADER})
-    if(TEST)
-        if(${TEST} STREQUAL ${HEADER})
-            get_filename_component(FINAL_HEADER ${TEST} NAME_WE)
-        endif()
-    else()
-        set(FINAL_HEADER ${HEADER})
-    endif()
-    string(TOUPPER ${FINAL_HEADER} UPPER_HEADER)
-    message("HAS_${UPPER_HEADER}_H")
-    add_compile_definitions("HAS_${UPPER_HEADER}_H")
-endmacro()
 
 include(CheckIncludeFile)
 # add_header_macro("unistd.h")
@@ -117,96 +80,6 @@ endif()
 if(FILESYSTEM_H_FOUND)
     add_header_macro("filesystem" ${FILESYSTEM_H_FOUND})
 endif()
-
-function(add_starbytes_lib)
-    set(OPTIONS STATIC)
-    set(oneValue LIB_NAME)
-    set(MULTI SOURCE_FILES HEADER_FILES LIBS_TO_LINK)
-    include(CMakeParseArguments)
-
-    cmake_parse_arguments("STARBYTES_LIB"
-    "${OPTIONS}"
-    "${oneValue}"
-    "${MULTI}"
-    ${ARGN})
-
-    include_directories(${STARBYTES_LIB_INCLUDE})
-    file(RELATIVE_PATH includePath ${STARBYTES_SOURCE_DIR}/lib ${CMAKE_CURRENT_SOURCE_DIR})
-    list(TRANSFORM STARBYTES_LIB_HEADER_FILES PREPEND ${STARBYTES_SOURCE_DIR}/include/starbytes/${includePath}/)
-    add_library(${STARBYTES_LIB_LIB_NAME} STATIC ${STARBYTES_LIB_HEADER_FILES} ${STARBYTES_LIB_SOURCE_FILES})
-    set_target_properties(${STARBYTES_LIB_LIB_NAME} PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-    message("Adding Starbytes Library - " ${STARBYTES_LIB_LIB_NAME})
-
-    set(STARBYTES_ALL_LIBS ${STARBYTES_ALL_LIBS} ${STARBYTES_LIB_LIB_NAME} CACHE INTERNAL "All libs")
-    if(APPLE)
-        add_clang_lib(${STARBYTES_LIB_LIB_NAME})
-    endif()
-    list(LENGTH STARBYTES_LIB_LIBS_TO_LINK LENGTH_LIST)
-    if(${LENGTH_LIST} GREATER 0)
-        foreach(_LIB IN ITEMS ${STARBYTES_LIB_LIBS_TO_LINK})
-            add_dependencies(${STARBYTES_LIB_LIB_NAME} ${_LIB})
-        endforeach()
-        message(${STARBYTES_LIB_LIB_NAME} "- Dependencies:" ${STARBYTES_LIB_LIBS_TO_LINK})
-        target_link_libraries(${STARBYTES_LIB_LIB_NAME} PRIVATE ${STARBYTES_LIB_LIBS_TO_LINK})
-    endif()
-
-
-
-
-
-
-endfunction()
-
-function(add_starbytes_tool)
-    cmake_parse_arguments("STARBYTES_TOOL" "INCLUDE_LIB" "NAME" "FILES;DEPENDENCIES" ${ARGN})
-    add_executable(${STARBYTES_TOOL_NAME} ${STARBYTES_TOOL_FILES})
-    set_target_properties(${STARBYTES_TOOL_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-    message("Adding Tool - " ${STARBYTES_TOOL_NAME})
-    if(${STARBYTES_TOOL_INCLUDE_LIB})
-        target_include_directories(${STARBYTES_TOOL_NAME} PUBLIC ${STARBYTES_LIB_INCLUDE})
-    endif()
-    if(APPLE)
-        add_clang_lib(${STARBYTES_TOOL_NAME})
-    endif()
-    foreach(DEP IN ITEMS ${STARBYTES_TOOL_DEPENDENCIES})
-        if(TARGET ${DEP})
-            add_dependencies(${STARBYTES_TOOL_NAME} ${DEP})
-        endif()
-    endforeach()
-    message(${STARBYTES_TOOL_NAME} "Dependencies - " ${STARBYTES_TOOL_DEPENDENCIES})
-    target_link_libraries(${STARBYTES_TOOL_NAME} PRIVATE ${STARBYTES_TOOL_DEPENDENCIES})
-
-endfunction()
-
-function(add_starbytes_test)
-    cmake_parse_arguments("STARBYTES_TEST" "INCLUDE_LIB" "NAME" "FILES;DEPENDENCIES" ${ARGN})
-    add_executable(${STARBYTES_TEST_NAME} ${STARBYTES_TEST_FILES})
-    set_target_properties(${STARBYTES_TEST_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
-    message("Adding Test - " ${STARBYTES_TEST_NAME})
-    if(${STARBYTES_TEST_INCLUDE_LIB})
-        target_include_directories(${STARBYTES_TEST_NAME} PUBLIC ${STARBYTES_LIB_INCLUDE})
-    endif()
-    if(APPLE)
-        add_clang_lib(${STARBYTES_TEST_NAME})
-    endif()
-    foreach(DEP IN ITEMS ${STARBYTES_TEST_DEPENDENCIES})
-        if(TARGET ${DEP})
-            add_dependencies(${STARBYTES_TEST_NAME} ${DEP})
-        endif()
-    endforeach()
-    message(${STARBYTES_TEST_NAME} "Dependencies - " ${STARBYTES_TEST_DEPENDENCIES})
-    target_link_libraries(${STARBYTES_TEST_NAME} PRIVATE ${STARBYTES_TEST_DEPENDENCIES})
-
-    add_test(NAME "Test-${STARBYTES_TEST_NAME}" COMMAND ${STARBYTES_TEST_NAME})
-endfunction()
-
-function(create_lib_set set_name)
-    set(${set_name} "" CACHE INTERNAL "LIB_SET")
-endfunction()
-
-function(add_to_lib_set set_name item)
-    set(${set_name} ${set_name} ${item} CACHE INTERNAL "LIB_SET")
-endfunction()
 
 add_subdirectory("lib")
 add_subdirectory("tools")

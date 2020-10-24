@@ -15,11 +15,18 @@ STARBYTES_STD_NAMESPACE
     struct StarbytesCompiledModule {
         //BYTE CODE CALL STACK!
         ByteCode::BCProgram *program;
+        std::string name;
         bool to_dest;
         std::string dest;
     };
 
-    DependencyTree * buildTreeFromConfig(std::string & module_config_file);
+    struct ProjectCompileResult{
+        std::vector<StarbytesCompiledModule> & compiled_programs;
+        DependencyTree *& original_tree;
+        ProjectCompileResult(std::vector<StarbytesCompiledModule> & progs, DependencyTree *& tree):compiled_programs(progs),original_tree(tree){};
+    };
+
+    ProjectCompileResult buildTreeFromConfig(std::string & module_config_file);
 
 
 NAMESPACE_END

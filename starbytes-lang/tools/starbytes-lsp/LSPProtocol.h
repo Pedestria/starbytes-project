@@ -1,4 +1,4 @@
-#pragma once
+
 /*
     Language Server Protocol Defintions
     (Does Not Include Language Features!)
@@ -8,6 +8,9 @@
 #include <map>
 #include <optional>
 #include "JSONOutput.h"
+
+#ifndef STARBYTES_LSP_LSPPROTOCOL_H
+#define STARBYTES_LSP_LSPPROTOCOL_H
 
 namespace Starbytes {
     namespace LSP {
@@ -666,3 +669,6 @@ namespace Starbytes {
 
     }
 }
+
+#endif
+

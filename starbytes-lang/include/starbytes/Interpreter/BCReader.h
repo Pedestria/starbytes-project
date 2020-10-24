@@ -6,7 +6,7 @@
 
 STARBYTES_INTERPRETER_NAMESPACE
 
-void execBCProgram(ByteCode::BCProgram *program);
+void execBCProgram(ByteCode::BCProgram *& program);
 
 NAMESPACE_END
 

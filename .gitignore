@@ -6,3 +6,7 @@ build
 compile_commands.json
 .cache
 config.sh
+vc.bat
+config.bat
+
+starbytes-lang/tools/main/Starbytes.cpp

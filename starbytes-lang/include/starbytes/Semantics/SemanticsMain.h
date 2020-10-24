@@ -31,6 +31,7 @@ using namespace AST;
             friend class FunctionDeclVisitor;
             friend class ClassDeclVisitor;
             friend class ImportDeclVisitor;
+            friend class ReturnDeclVisitor;
             template<typename _Node>
             friend inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,std::vector<STBObjectProperty> *props,_Node *node,SemanticA *& sem);
             //Friends AST Evaluator functions!
@@ -44,7 +45,7 @@ using namespace AST;
             void freeSymbolStores();
             void initialize();
             
-            void visitNode(ASTNode * node,bool is_function = false);
+            void visitNode(ASTNode * node,bool is_function = false,ASTNode *func_ptr = nullptr);
             SemanticA(Tree *& _tree):tree(_tree){};
             ~SemanticA(){};
     };

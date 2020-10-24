@@ -14,7 +14,7 @@ class BCReader {
     void read(ByteCode::BCProgram *prog);
 };
 
-void execBCProgram(ByteCode::BCProgram *program){
+void execBCProgram(ByteCode::BCProgram *& program){
 
 };
 
