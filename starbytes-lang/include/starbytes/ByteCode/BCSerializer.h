@@ -7,7 +7,7 @@
 
 STARBYTES_BYTECODE_NAMESPACE
 
-void serializeBCProgram(std::ostringstream & output_stream,BCProgram *program);
+void serializeBCProgram(std::ofstream & output_loc,BCProgram *program);
 
 void deserializeBCProgram(std::ifstream & input,BCProgram *& program_loc);
 

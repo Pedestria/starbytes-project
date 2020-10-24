@@ -1,7 +1,7 @@
 ﻿// CPlusPlus.h : Include file for standard system include files,
 // or project specific include files.
 
-#pragma once
+
 
 #include "starbytes/Parser/Lookup.h"
 #include "starbytes/Parser/Token.h"
@@ -20,6 +20,12 @@
 #include <map>
 #include <array>
 
+#ifndef STARBYTES_STARBYTES_H
+#define STARBYTES_STARBYTES_H
+
+#define STARBYTES_PROJECT_VERSION std::string("${STARBYTES_PROJECT_VERSION}") 
+
+#endif
 
 // TODO: Reference additional headers your program requires here.
 

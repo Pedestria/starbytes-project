@@ -49,10 +49,38 @@ function(add_starbytes_lib)
     endif()
 
 
+endfunction()
 
+function(add_external_starbytes_lib)
+    set(OPTIONS STATIC)
+    set(oneValue LIB_NAME INCLUDE_PATH)
+    set(MULTI SOURCE_FILES HEADER_FILES LIBS_TO_LINK)
+    include(CMakeParseArguments)
 
+    cmake_parse_arguments("STARBYTES_LIB"
+    "${OPTIONS}"
+    "${oneValue}"
+    "${MULTI}"
+    ${ARGN})
 
+    include_directories(${CMAKE_SOURCE_DIR}/include)
+    list(TRANSFORM STARBYTES_LIB_HEADER_FILES PREPEND ${STARBYTES_LIB_INCLUDE_PATH})
+    add_library(${STARBYTES_LIB_LIB_NAME} STATIC ${STARBYTES_LIB_HEADER_FILES} ${STARBYTES_LIB_SOURCE_FILES})
+    set_target_properties(${STARBYTES_LIB_LIB_NAME} PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+    message("Adding Starbytes Library - " ${STARBYTES_LIB_LIB_NAME})
 
+    set(STARBYTES_ALL_LIBS ${STARBYTES_ALL_LIBS} ${STARBYTES_LIB_LIB_NAME} CACHE INTERNAL "All libs")
+    if(APPLE)
+        add_clang_lib(${STARBYTES_LIB_LIB_NAME})
+    endif()
+    list(LENGTH STARBYTES_LIB_LIBS_TO_LINK LENGTH_LIST)
+    if(${LENGTH_LIST} GREATER 0)
+        foreach(_LIB IN ITEMS ${STARBYTES_LIB_LIBS_TO_LINK})
+            add_dependencies(${STARBYTES_LIB_LIB_NAME} ${_LIB})
+        endforeach()
+        message(${STARBYTES_LIB_LIB_NAME} "- Dependencies:" ${STARBYTES_LIB_LIBS_TO_LINK})
+        target_link_libraries(${STARBYTES_LIB_LIB_NAME} PRIVATE ${STARBYTES_LIB_LIBS_TO_LINK})
+    endif()
 endfunction()
 
 function(add_starbytes_tool)
@@ -61,7 +89,7 @@ function(add_starbytes_tool)
     set_target_properties(${STARBYTES_TOOL_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
     message("Adding Tool - " ${STARBYTES_TOOL_NAME})
     if(${STARBYTES_TOOL_INCLUDE_LIB})
-        target_include_directories(${STARBYTES_TOOL_NAME} PUBLIC ${STARBYTES_LIB_INCLUDE})
+        target_include_directories(${STARBYTES_TOOL_NAME} PUBLIC "${CMAKE_SOURCE_DIR}/include")
     endif()
     if(APPLE)
         add_clang_lib(${STARBYTES_TOOL_NAME})

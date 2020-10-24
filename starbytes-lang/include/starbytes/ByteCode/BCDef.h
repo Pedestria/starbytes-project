@@ -10,39 +10,50 @@
 STARBYTES_BYTECODE_NAMESPACE
 
 
-
 TYPED_ENUM BCType:int {
-    Identifier,Digit
+    CodeBegin,CodeEnd,VectorBegin,VectorEnd,Reference
+};
+
+TYPED_ENUM BCRefType:int {
+    Direct,Indirect
 };
 
 struct BCUnit {
-    BCType type; 
-    BCUnit(BCType _type):type(_type){};
+    BCType type;
 };
 
-struct BCIdentifier : BCUnit {
+struct BCReference : BCUnit {
     static BCType static_type;
-    BCIdentifier():BCUnit(BCType::Identifier){};
+    BCRefType ref_type;
+    std::string var_name;
 };
 
-struct BCDigit : BCUnit {
+struct BCVectorBegin : BCUnit {
     static BCType static_type;
-    BCDigit():BCUnit(BCType::Digit){};
-    unsigned value;
+    std::string name;
 };
+
+struct BCVectorEnd : BCUnit {
+    static BCType static_type;
+    std::string name;
+};
+
+struct BCCodeBegin: BCUnit {
+    static BCType static_type;
+    std::string code_node_name;
+};
+
+struct BCCodeEnd : BCUnit {
+     static BCType static_type;
+     std::string code_node_name;
+};
+
 
 struct BCProgram {
     std::string program_name;
-    std::vector<BCUnit *> units;
+    std::vector<BCUnit> units;
 };
 
-template<typename _BCTy>
-bool bc_unit_is(BCUnit *unit){
-    return unit->type == _BCTy::static_type;
-};
-
-#define BC_UNIT_IS(ptr,type) bc_unit_is<type>((BCUnit *)ptr)
-#define ASSERT_BC_UNIT(ptr,type) ((type *)ptr)
 
 NAMESPACE_END
 

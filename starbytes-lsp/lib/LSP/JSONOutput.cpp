@@ -1,4 +1,4 @@
-#include "JSONOutput.h"
+#include "LSP/JSONOutput.h"
 #include "LSPProtocol.h"
 #include <cctype>
 #include <cstdio>

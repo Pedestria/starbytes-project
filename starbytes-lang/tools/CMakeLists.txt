@@ -4,4 +4,3 @@
 # Linter
 
 add_subdirectory("main")
-add_subdirectory("starbytes-lsp")

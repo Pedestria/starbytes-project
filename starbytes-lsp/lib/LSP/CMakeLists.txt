@@ -1,0 +1,17 @@
+add_external_starbytes_lib(
+    LIB_NAME
+    "starbytesLanguageService"
+    HEADER_FILES
+    Starbytes-LSP.h
+    JSONOutput.h
+    INCLUDE_PATH
+    "${STARBYTES_LSP_INCLUDE}"
+    SOURCE_FILES
+    Starbytes-LSP.cpp 
+    JSONOutput.cpp 
+    LSPProtocol.h
+    LSPProtocol.cpp 
+    LIBS_TO_LINK
+    "starbytesBase"
+    "starbytesAST"
+    )

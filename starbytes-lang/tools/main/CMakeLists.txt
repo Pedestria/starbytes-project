@@ -1,4 +1,4 @@
-configure_file("Starbytes.cpp.in" ${CMAKE_CURRENT_SOURCE_DIR}/Starbytes.cpp)
+configure_file("Starbytes.h.in" "Starbytes.h")
 add_starbytes_tool(
     NAME 
     starbytes 
@@ -8,4 +8,4 @@ add_starbytes_tool(
     "Starbytes.h" 
     DEPENDENCIES 
     ${STARBYTES_ALL_LIBS})
-
+target_include_directories(starbytes PRIVATE ${CMAKE_CURRENT_BINARY_DIR}) 

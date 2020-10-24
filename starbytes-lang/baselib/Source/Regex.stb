@@ -1,0 +1,14 @@
+
+data RegexMatch {
+    matchData:String
+};
+
+class RegularExpression {
+    new (code:String,flags:String)
+    match(subject:String) >> RegexMatch[] {
+        decl array = [RegexMatch(),RegexMatch()];
+        return array
+    };
+};
+
+alias Regex = RegularExpression

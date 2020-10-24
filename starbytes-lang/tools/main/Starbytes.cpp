@@ -20,7 +20,7 @@ string convertPosition(DocumentPosition pos){
 }
 
 string help(){
-	return "\n \u001b[35m\u001b[4mThe Starbytes BC Interpreter (v0.0.4)\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help information \n --execute ";
+	return "\n \u001b[35m\u001b[4mThe Starbytes BC Interpreter ("+STARBYTES_PROJECT_VERSION+")\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help information \n --execute ";
 }
 // Wraps ANSI Escape Code around message!
 string createStarbytesError(string message,string escc = RED){

@@ -5,6 +5,7 @@ cmake_policy(SET CMP0079 NEW)
 
 option(USE_VCPKG "Use vcpkg manager!" OFF)
 option(USE_VCPKG_AS_TOOLCHAIN "Use vcpkg cmake toolchain file" OFF)
+set(ENABLE_STARBYTES_LSP TRUE)
 set(STARBYTES_PROJECT_VERSION "v0.0.4")
 message("Starbytes Project Version " ${STARBYTES_PROJECT_VERSION})
 
@@ -25,8 +26,7 @@ macro(find_vcpkg USE_TOOLCHAIN)
 				if(EXISTS ${VCPKG_TOOLCHAIN_FILE_DIR}/vcpkg.cmake)
 					message(STATUS "Locating vcpkg toolchain file - found")
 					message(STATUS "Loading toolchain")
-					list(APPEND CMAKE_MODULE_PATH ${VCPKG_TOOLCHAIN_FILE_DIR})
-					include(vcpkg)
+					include(${VCPKG_TOOLCHAIN_FILE_DIR}/vcpkg.cmake)
 				else()
 					message(STATUS "Locating vcpkg toolchain file - not found")
 				endif()
@@ -85,7 +85,9 @@ add_subdirectory("lib")
 add_subdirectory("tools")
 add_subdirectory("tests")
 
-
+if(ENABLE_STARBYTES_LSP)
+	add_subdirectory(../starbytes-lsp "lsp")
+endif()
 
 #target_link_libraries(CPlusPlus PRIVATE nlohmann_json nlohmann_json::nlohmann_json)
 # TODO: Add tests and install targets if needed.

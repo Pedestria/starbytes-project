@@ -1,0 +1,10 @@
+add_starbytes_tool(
+    NAME
+    "starbytes-lsp"
+    INCLUDE_LIB
+    FILES
+    Server.cpp 
+    DEPENDENCIES
+    "starbytesBase"
+    "starbytesLanguageService"
+)

@@ -7,7 +7,7 @@
 #include <vector>
 #include <map>
 #include <optional>
-#include "JSONOutput.h"
+#include "LSP/JSONOutput.h"
 
 #ifndef STARBYTES_LSP_LSPPROTOCOL_H
 #define STARBYTES_LSP_LSPPROTOCOL_H
