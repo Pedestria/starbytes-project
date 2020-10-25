@@ -84,6 +84,19 @@ void StarbytesLSPServer::replaceFile(LSPTextDocumentIdentifier &id_ref,
   }
 };
 
+bool StarbytesLSPServer::deallocFile(LSPTextDocumentIdentifier & id_ref){
+  bool returncode = false;
+  for(int i = 0;i < files.size();++i){
+    auto & txt_dcmt = files[i];
+    if(txt_dcmt.id == id_ref){
+      files.erase(files.begin()+i);
+      returncode = true;
+      break;
+    }
+  }
+  return returncode;
+};
+
 }; // namespace LSP
 
 NAMESPACE_END

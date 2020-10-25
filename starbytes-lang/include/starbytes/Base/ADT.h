@@ -12,7 +12,6 @@
 
 
 STARBYTES_FOUNDATION_NAMESPACE
-    void execute_cmd(std::string & cmd);
     //Type checks variable with another!
     template<typename T1,typename T2>
     bool isa (T2 & subject){

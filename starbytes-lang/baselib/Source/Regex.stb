@@ -1,7 +1,7 @@
 
-data RegexMatch {
-    matchData:String
-};
+// data RegexMatch {
+//     matchData:String
+// };
 
 class RegularExpression {
     new (code:String,flags:String)

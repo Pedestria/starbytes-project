@@ -44,7 +44,7 @@ STARBYTES_STD_NAMESPACE
                 bool fileExists(LSPTextDocumentIdentifier & id_ref);
                 LSPTextDocumentItem & getTextDocumentOfFile(LSPTextDocumentIdentifier & id_ref);
                 void replaceFile(LSPTextDocumentIdentifier & id_ref,LSPTextDocumentItem & item_ref);
-
+                bool deallocFile(LSPTextDocumentIdentifier & id_ref);
 
         };
     }

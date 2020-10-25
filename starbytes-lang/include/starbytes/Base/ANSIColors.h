@@ -12,6 +12,9 @@ STARBYTES_FOUNDATION_NAMESPACE
     #define PURPLE "35m"
     #define CYAN "36m"
 
+    #define ERROR_ANSI_ESC "\x1b[31m"
+    #define ANSI_ESC_RESET "\x1b[0m"
+
 NAMESPACE_END
 
 #endif
