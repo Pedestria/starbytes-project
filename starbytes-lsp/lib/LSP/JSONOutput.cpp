@@ -1,5 +1,5 @@
 #include "LSP/JSONOutput.h"
-#include "LSPProtocol.h"
+#include "LSP/LSPProtocol.h"
 #include <cctype>
 #include <cstdio>
 #include <iostream>

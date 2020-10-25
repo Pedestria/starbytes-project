@@ -1,5 +1,5 @@
 #include "LSP/Starbytes-LSP.h"
-#include "LSPProtocol.h"
+#include "LSP/LSPProtocol.h"
 #include "starbytes/Base/Base.h"
 // #include "Parser/Lexer.h"
 // #include "Parser/Parser.h"
@@ -23,10 +23,6 @@ using namespace std;
 
 namespace LSP {
 
-struct StarbytesLSPServerTextDocument {
-  LSPTextDocumentIdentifier id;
-  LSPTextDocumentItem content;
-};
 
 void LSPQueue::queueMessage(LSPServerMessage *msg) { messages.push_back(msg); };
 

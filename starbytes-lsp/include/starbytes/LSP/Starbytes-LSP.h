@@ -1,15 +1,13 @@
 #include <iostream>
 #include "JSONOutput.h"
 #include "starbytes/Base/Base.h"
+#include "LSPProtocol.h"
 
 #ifndef STARBYTES_LSP_STARBYTES_LSP_H
 #define STARBYTES_LSP_STARBYTES_LSP_H
 
 STARBYTES_STD_NAMESPACE
    namespace LSP {
-       struct LSPTextDocumentIdentifier;
-       struct LSPTextDocumentItem;
-       struct StarbytesLSPServerTextDocument;
         
         class LSPQueue {
             private:
@@ -25,6 +23,11 @@ STARBYTES_STD_NAMESPACE
         };
         struct LSPServerSettings {
             CompletionItemStyle completion_item_style;
+        };
+
+        struct StarbytesLSPServerTextDocument {
+            LSPTextDocumentIdentifier id;
+            LSPTextDocumentItem content;
         };
         class StarbytesLSPServer {
             public:

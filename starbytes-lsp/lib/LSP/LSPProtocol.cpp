@@ -1,4 +1,4 @@
-#include "LSPProtocol.h"
+#include "LSP/LSPProtocol.h"
 
 STARBYTES_STD_NAMESPACE
 
