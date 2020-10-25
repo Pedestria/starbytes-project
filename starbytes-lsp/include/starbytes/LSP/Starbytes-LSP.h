@@ -7,7 +7,10 @@
 
 STARBYTES_STD_NAMESPACE
    namespace LSP {
-
+       struct LSPTextDocumentIdentifier;
+       struct LSPTextDocumentItem;
+       struct StarbytesLSPServerTextDocument;
+        
         class LSPQueue {
             private:
                 std::vector<LSPServerMessage *> messages;
@@ -32,7 +35,14 @@ STARBYTES_STD_NAMESPACE
                 void init();
                 void getMessageFromStdin();
             private:
+                std::vector<StarbytesLSPServerTextDocument> files;
                 Messenger json_transit;
+                void addFile(StarbytesLSPServerTextDocument & file_ref);
+                bool fileExists(LSPTextDocumentIdentifier & id_ref);
+                LSPTextDocumentItem & getTextDocumentOfFile(LSPTextDocumentIdentifier & id_ref);
+                void replaceFile(LSPTextDocumentIdentifier & id_ref,LSPTextDocumentItem & item_ref);
+
+
         };
     }
 

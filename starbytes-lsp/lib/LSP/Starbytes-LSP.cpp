@@ -18,37 +18,76 @@
 // #include <unistd.h>
 // #endif
 
-
-
-using namespace Starbytes;
+STARBYTES_STD_NAMESPACE
 using namespace std;
 
-using namespace LSP;
+namespace LSP {
 
-void LSPQueue::queueMessage(LSPServerMessage * msg){
-    messages.push_back(msg);
+struct StarbytesLSPServerTextDocument {
+  LSPTextDocumentIdentifier id;
+  LSPTextDocumentItem content;
 };
 
-LSPServerMessage * LSPQueue::getLatest(){
-    LSPServerMessage * rc =  messages.back();
-    messages.pop_back();
-    return rc;
+void LSPQueue::queueMessage(LSPServerMessage *msg) { messages.push_back(msg); };
+
+LSPServerMessage *LSPQueue::getLatest() {
+  LSPServerMessage *rc = messages.back();
+  messages.pop_back();
+  return rc;
 };
 
-void StarbytesLSPServer::init(){
-    getMessageFromStdin();
-    LSPServerMessage *INITAL = queue.getLatest();
-    if(INITAL->type == Request){
-        LSPServerRequest *RQ = (LSPServerRequest *)INITAL;
-        if(RQ->method == INITIALIZE){
-            json_transit.sendIntializeMessage(RQ->id);
-        }
+void StarbytesLSPServer::init() {
+  getMessageFromStdin();
+  LSPServerMessage *INITAL = queue.getLatest();
+  if (INITAL->type == Request) {
+    LSPServerRequest *RQ = (LSPServerRequest *)INITAL;
+    if (RQ->method == INITIALIZE) {
+      json_transit.sendIntializeMessage(RQ->id);
     }
+  }
 };
 
-void StarbytesLSPServer::getMessageFromStdin(){
-    LSP::LSPServerMessage *cntr = json_transit.read();
-    queue.queueMessage(cntr);
+void StarbytesLSPServer::getMessageFromStdin() {
+  LSP::LSPServerMessage *cntr = json_transit.read();
+  queue.queueMessage(cntr);
 };
 
+void StarbytesLSPServer::addFile(StarbytesLSPServerTextDocument &file_ref) {
+  files.push_back(file_ref);
+};
 
+bool StarbytesLSPServer::fileExists(LSPTextDocumentIdentifier &id_ref) {
+  for (auto &txt_dcmt : files) {
+    if (txt_dcmt.id == id_ref) {
+      return true;
+    }
+  }
+  return false;
+};
+
+LSPTextDocumentItem NULL_ITEM;
+/*If file does not exist, will return null `textDocumentItem`*/
+LSPTextDocumentItem &
+StarbytesLSPServer::getTextDocumentOfFile(LSPTextDocumentIdentifier &id_ref) {
+  LSPTextDocumentItem &nulldoc = NULL_ITEM;
+  for (auto &txt_dcmt : files) {
+    if (txt_dcmt.id == id_ref) {
+      return txt_dcmt.content;
+    }
+  }
+  return nulldoc;
+};
+
+void StarbytesLSPServer::replaceFile(LSPTextDocumentIdentifier &id_ref,
+                                     LSPTextDocumentItem &item_ref) {
+  for (auto &txt_dcmt : files) {
+    if (txt_dcmt.id == id_ref) {
+      txt_dcmt.content = item_ref;
+      break;
+    }
+  }
+};
+
+}; // namespace LSP
+
+NAMESPACE_END

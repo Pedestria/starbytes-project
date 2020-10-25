@@ -1,6 +1,0 @@
-
-
-#ifndef STARBYTES_LSP_LSPHOVER_H
-#define STARBYTES_LSP_LSPHOVER_H
-
-#endif

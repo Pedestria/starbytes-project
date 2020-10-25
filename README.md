@@ -1,15 +1,19 @@
 <img src="./public/STD Logo.png">
-##### AppVeyor:
 
-[![Build status](https://ci.appveyor.com/api/projects/status/83o4yjlju2fh93nf?svg=true)](https://ci.appveyor.com/project/Pedestria/starbytes-project)
 
-##### Travis CI:
-![](https://travis-ci.com/Pedestria/starbytes-project.svg?token=5K8gmsoNtkbUcnKi4R5v&branch=master)
+<!-- ##### AppVeyor:
+
+[![Build status](https://ci.appveyor.com/api/projects/status/83o4yjlju2fh93nf?svg=true)](https://ci.appveyor.com/project/Pedestria/starbytes-project) -->
+
+
 
 
 # Starbytes Project/Toolchain
 ## New Expressive/Simple/Strongly Typed Interpreted Language.
 ---
+
+##### Travis CI (macOS X):
+![](https://travis-ci.com/Pedestria/starbytes-project.svg?token=5K8gmsoNtkbUcnKi4R5v&branch=master)
 
 ### Main Directory Contents (`starbytes-lang` Directory):
 - #### Libraries:
@@ -23,7 +27,8 @@
 - `Interpeter` - The Interpreter to run the bytecode.
 - #### Tools:
 - `starbytes` - The Compiler/Runtime.
-- `starbytes-lsp` - The LSP Implementation for Starbytes
+### Language Server Protocol (`starbytes-lsp` Directory)
+- The Language Server Protocol Implementation for Starbytes
 ### Extra (`starbytes-extra` Directory)
 - #### VSCode
 - starbytes-grammar - The Textmate Syntax Grammar for Starbytes.
