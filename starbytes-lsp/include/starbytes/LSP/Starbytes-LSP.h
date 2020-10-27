@@ -26,8 +26,8 @@ STARBYTES_STD_NAMESPACE
         };
 
         struct StarbytesLSPServerTextDocument {
-            LSPTextDocumentIdentifier id;
-            LSPTextDocumentItem content;
+            LSPTextDocumentItem & content;
+            StarbytesLSPServerTextDocument(LSPTextDocumentItem & _content):content(_content){};
         };
         class StarbytesLSPServer {
             public:
@@ -38,6 +38,7 @@ STARBYTES_STD_NAMESPACE
                 void init();
                 void getMessageFromStdin();
             private:
+                void mainLoop();
                 std::vector<StarbytesLSPServerTextDocument> files;
                 Messenger json_transit;
                 void addFile(StarbytesLSPServerTextDocument & file_ref);

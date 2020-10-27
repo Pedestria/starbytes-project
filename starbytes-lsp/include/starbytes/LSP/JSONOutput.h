@@ -1,5 +1,7 @@
+#include <optional>
 #include <string>
 #include <vector>
+#include <map>
 #include "starbytes/Base/Base.h"
 
 #ifndef STARBYTES_LSP_JSON_OUTPUT_H
@@ -7,7 +9,44 @@
 
 STARBYTES_STD_NAMESPACE
 
+    
+
+    template <typename T >using Optional = std::optional<T>;
+
     namespace LSP {
+        namespace JSON {
+            TYPED_ENUM JSONNodeType:int {
+        Object,Array,String,Number,Null,Boolean,NullString
+    };
+            struct JSONNode {
+                JSONNodeType type;
+            };
+
+            struct JSONNull : JSONNode {};
+            struct JSONNullString : JSONNode {};
+            struct JSONBoolean : JSONNode {
+                bool value;
+            };
+            struct JSONNumber : JSONNode {
+                std::string value;
+            };
+
+            struct JSONString : JSONNode {
+                std::string value;
+            };
+            typedef std::pair<std::string,JSONNode *> JSONObjEntry;
+            struct JSONObject : JSONNode {
+                std::map<std::string,JSONNode*> entries;
+            };
+            struct JSONArray : JSONNode {
+                std::vector<JSONNode*> objects;
+            };
+
+            TYPED_ENUM JSONTokType:int {
+                CloseBrace,CloseBracket,OpenBrace,OpenBracket,Numeric,String,Colon,Comma,Boolean,Null,NullString
+            };
+
+        };
 
     enum LSPObjectType:int {
         CancellParams,IntializeParams,ClientInfo,ClientCapabilities,WorkspaceFolder,InitializeResult,CompletionOptions,HoverOptions,ReplyError
@@ -49,8 +88,10 @@ STARBYTES_STD_NAMESPACE
     struct LSPServerRequest : LSPServerMessage {
         std::string id;
         std::string method;
-        std::vector<LSPServerObject *> params_array;
-        LSPServerObject * params_object;
+        //Unparsed Args!
+        Optional<JSON::JSONArray *> params_array;
+        //Unparsed Args!
+        Optional<JSON::JSONObject *> params_object;
     };
 
     typedef std::string ProgressToken;
@@ -66,15 +107,15 @@ STARBYTES_STD_NAMESPACE
     };
     struct LSPServerNotification : LSPServerMessage {
         std::string method;
-        std::vector<LSPServerObject*> params_array;
-        LSPServerObject * params_object;
+        Optional<JSON::JSONArray *> params_array;
+        Optional<JSON::JSONObject *> params_object;
     };
 
     class Messenger {
         private:
 
         public:
-            void sendIntializeMessage(std::string id);
+            void sendIntializeMessage(std::string & id);
             void reply(LSPServerReply *result);
             LSPServerMessage * read();
             Messenger(){};

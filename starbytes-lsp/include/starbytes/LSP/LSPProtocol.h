@@ -17,9 +17,10 @@ namespace LSP {
 
 typedef std::string LSPDocumentURI;
 // std::vector<std::string> LSPEOLChars = {"\r\n","\n","\r"};
-#define INITIALIZE "initalize"
+#define INITIALIZE "initialize"
 #define DOC_COMPLETION "textDocument/completion"
 #define DOC_HOVER "textDocument/hover"
+#define OPEN_TEXT_DOCUMENT "textDocument/didOpen"
 struct LSPPosition : LSPServerObject {
   int line;
   int character;
@@ -99,7 +100,7 @@ struct LSPTextDocumentIdentifier : LSPServerObject {
 struct LSPTextDocumentItem : LSPServerObject {
   LSPDocumentURI uri;
   std::string language_id;
-  int version;
+  std::string version;
   std::string text;
 };
 

@@ -1,9 +1,12 @@
 #include "LSP/JSONOutput.h"
 #include "LSP/LSPProtocol.h"
+#include "starbytes/Base/Macros.h"
 #include <cctype>
 #include <cstdio>
 #include <iostream>
+#include <iomanip>
 #include <sstream>
+#include <streambuf>
 #include <string>
 #include <map>
 #include <array>
@@ -11,42 +14,10 @@
 
 using namespace std;
 
-namespace Starbytes {
+STARBYTES_STD_NAMESPACE
 namespace LSP {
 
 namespace JSON {
-
-    enum class JSONNodeType:int {
-        Object,Array,String,Number,Null,Boolean,NullString
-    };
-    struct JSONNode {
-        JSONNodeType type;
-    };
-
-    struct JSONNull : JSONNode {};
-    struct JSONNullString : JSONNode {};
-    struct JSONBoolean : JSONNode {
-        bool value;
-    };
-    struct JSONNumber : JSONNode {
-        string value;
-    };
-
-    struct JSONString : JSONNode {
-        string value;
-    };
-    struct JSONObject : JSONNode {
-        map<string,JSONNode*> entries;
-    };
-    struct JSONArray : JSONNode {
-        vector<JSONNode*> objects;
-    };
-
-    enum class JSONTokType:int {
-        CloseBrace,CloseBracket,OpenBrace,OpenBracket,Numeric,String,Colon,Comma,Boolean,Null,NullString
-    };
-
-    typedef pair<string,JSONNode *> JSONObjEntry;
 
     string StarbytesLSPJsonError(string message){
         return "\u001b[31mJSONParser Error: \n"+message + "\u001b[0m";
@@ -576,95 +547,11 @@ namespace JSON {
     };
     //Translates From JSON to LSPServerObject and Back.
     class JSONTranslator{
-        private:
-            void translateLSPWorkspaceFolder(JSONObject *obj,LSPWorkspaceFolder *node){
-                node->type = WorkspaceFolder;
-                for(auto ent : obj->entries){
-                    if(ent.first == "uri"){
-                        node->uri = ((JSONString *)ent.second)->value;
-                    } else if(ent.first == "name"){
-                        node->name = ((JSONString *)ent.second)->value;
-                    }
-                }
-            };
-            LSPServerObject * translateJSONObject(JSONObject *node,string& methodToInvoke){
-                LSPServerObject *obj;
-                if(methodToInvoke == "initialize"){
-                    LSPIntializeParams *Node = new LSPIntializeParams();
-                    Node->type = IntializeParams;
-                    obj = Node;
-                    for(auto ent : node->entries){
-                        if(ent.first == "processId"){
-                            Node->process_id = ((JSONString*)ent.second)->value;
-                        } else if(ent.first == "clientInfo"){
-                            Node->hasClientInfo = true;
-                            LSPClientInfo *info = new LSPClientInfo();
-                            info->type = ClientInfo;
-                            for(auto ent2 : ((JSONObject*)ent.second)->entries){
-                                if(ent2.first == "name"){
-                                    info->name = ((JSONString *)ent2.second)->value;
-                                } else if(ent2.first == "version"){
-                                    info->hasVersion = true;
-                                    info->version = ((JSONString*)ent2.second)->value;
-                                }
-                            }
-                            Node->client_info = info;
-                        } else if(ent.first == "rootPath"){
-                            Node->hasRootPath = true;
-                            Node->root_path = ((JSONString *)ent.second)->value;
-                        } else if(ent.first == "rootUri"){
-                            if(ent.second->type == JSONNodeType::String){
-                                Node->hasRootUri = true;
-                                Node->root_uri = ((JSONString *)ent.second)->value;
-                            }
-                        } else if(ent.first == "capabilities"){
-                            LSPClientCapabilities *clientcap = new LSPClientCapabilities();
-                            for(auto ent2 : ((JSONObject *)ent.second)->entries){
-                                if(ent2.first == "workspace"){
-                                    clientcap->hasWorkspace = true;
-                                    LSPClientCapabilitiesWorkspace *wrkspce = new LSPClientCapabilitiesWorkspace();
-                                    
-                                }
-                            }
-                        } else if(ent.first == "trace"){
-                            Node->hasTrace = true;
-                            JSONString * s = (JSONString*)ent.second;
-                            if(s->value == "off"){
-                                Node->trace = LSPTraceSetting::Off;
-                            } else if(s->value == "messages"){
-                                Node->trace = LSPTraceSetting::Messages;
-                            } else if(s->value == "verbose"){
-                                Node->trace = LSPTraceSetting::Verbose;
-                            }
-                        } else if(ent.first == "workspaceFolders"){
-                            Node->hasWorkspacefolders = true;
-                            if(ent.second->type == JSONNodeType::Array){
-                                for(auto obj : ((JSONArray *)ent.second)->objects){
-                                    LSPWorkspaceFolder *folder = new LSPWorkspaceFolder();
-                                    translateLSPWorkspaceFolder((JSONObject *)obj,folder);
-                                    Node->workspace_folders.push_back(folder);
-                                }
-                            }else {
-                                Node->hasWorkspacefolders = false;
-                            }
-                        }
-                    }
-                }
-                return obj;
-            };
-            void translateJSONArray(JSONArray *node,std::vector<LSPServerObject *> *resloc,string& methodToInvoke){
-                for(auto NODE : node->objects){
-                    if(NODE->type == JSONNodeType::Object){
-                        LSPServerObject *cntr = translateJSONObject((JSONObject *)NODE,methodToInvoke);;
-                        resloc->push_back(cntr);
-                    }
-                }
-            };
         public:
             JSONTranslator(){};
             LSPServerMessage * translateFromJSON(string &message){
                 LSPServerMessage *msgcntr;
-                JSONObject *messagec = JSONParser(message,message.find("{")).parse();
+                JSONObject *messagec = JSONParser(message,0).parse();
                 // map<string,JSONNode*>::iterator it = messagec->entries.find("id");
                 // if(it != messagec->entries.end()){
                 LSPServerRequest *req = new LSPServerRequest();
@@ -676,13 +563,12 @@ namespace JSON {
                     } else if(entry.first == "method"){
                         req->method = ((JSONString *)entry.second)->value;
                     } else if(entry.first == "params"){
-                        JSONNodeType &Type = entry.second->type;
-                        if(Type == JSONNodeType::Object){
-                            LSPServerObject *cntr = translateJSONObject((JSONObject *)entry.second,req->method);;
-                            req->params_object = cntr;
-                        } else if(Type == JSONNodeType::Array){
-                            translateJSONArray((JSONArray *)entry.second,&req->params_array,req->method);
+                        if(entry.second->type == JSONNodeType::Array){
+                            req->params_array = ((JSONArray *)entry.second);
                         }
+                        else if(entry.second->type == JSONNodeType::Object){
+                            req->params_object = ((JSONObject *)entry.second);
+                        }   
                     }
                 }
                 // }
@@ -690,33 +576,6 @@ namespace JSON {
 
                 // }
                 return msgcntr;
-            };
-            string * compileToJSON(LSPServerReply *msgtosnd,bool beautify){
-                JSONGenerator g = JSONGenerator(translateToJSON(msgtosnd));
-                return g.generate(beautify);
-            }
-            JSONObject * translateLSPObjectToJSON(LSPServerObject *obj){
-                JSONObject *result;
-                if(obj->type == ReplyError){
-                    LSPReplyError *err = (LSPReplyError *)obj;
-                    result = createJSONObject({
-                        JSONObjEntry ("code",createJSONNumber(to_string(err->code))),
-                        JSONObjEntry ("message",createJSONString(true,err->message))
-                    });
-                }
-                return result;
-            }
-            JSONObject * translateToJSON(LSPServerReply *msgtosnd){
-                JSONObject *result = createJSONObject({
-                    JSONObjEntry ("id",createJSONNumber(to_string(msgtosnd->id))),
-                });
-                if(msgtosnd->error != nullptr){
-                    result->entries.insert(JSONObjEntry("error",translateLSPObjectToJSON(msgtosnd->error)));
-                }
-                else if(msgtosnd->object_result != nullptr){
-                    result->entries.insert(JSONObjEntry ("result",translateLSPObjectToJSON(msgtosnd->object_result)));
-                }
-                return result;
             };
     };
 
@@ -732,26 +591,26 @@ LSPServerMessage * Messenger::read(){
         getline(cin,header);
         size_t found = header.find("Content-Length:");
         if(found == string::npos){
-            cout << "Header Expected!";
+            cout << "Header Expected!" << std::flush;
             continue;
         }
+        int num = stoi(header.substr(found+16));
         std::string ch;
         getline(cin,ch);
-        
-        getline(cin,ch);
-        if(ch == "{"){
-            message.append(ch);
-            while(true){
-                getline(cin,ch);
-                if(ch == "}"){
-                    message.append(ch);
-                    break;
-                } else {
-                    message.append(ch);
-                }
+        std::string buffer;
+        int idx = 0;
+        while(true){
+            if(idx == num){
+                break;
             }
-        } else {
-            message.append(ch);
+            else{
+                getline(cin,buffer);
+                idx += buffer.size();
+                message.append(buffer);
+                buffer.clear();
+                std::cout << "SIZE OF CONTENT:" << idx << std::endl;
+            }
+            
         }
 
         if(!message.empty()){
@@ -769,16 +628,16 @@ void Messenger::reply(LSPServerReply *result){
     using namespace JSON;
     JSONTranslator t;
     string *r;
-    t.compileToJSON(result,false);
+    // t.compileToJSON(result,false);
     cout << "Content-Length: " << r->length() << "\r\n\r\n" << *r;
 }
 
-void Messenger::sendIntializeMessage(string id){
+void Messenger::sendIntializeMessage(string & id){
     using namespace JSON;
 
     JSONObject *json_init = createJSONObject({
         JSONObjEntry ("jsonrpc",createJSONString(true,"2.0")),
-        JSONObjEntry ("id",createJSONString(false,id)),
+        JSONObjEntry ("id",createJSONString(true,id)),
         JSONObjEntry ("result",createJSONObject({
             JSONObjEntry ("capabilities",createJSONObject({
                 JSONObjEntry("textDocumentSync",createJSONObject({
@@ -813,6 +672,6 @@ void Messenger::sendIntializeMessage(string id){
 
 
 };
-};
+NAMESPACE_END
 
 

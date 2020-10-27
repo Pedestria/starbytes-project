@@ -1,8 +1,6 @@
 import JSONLib
 
 
-alias FS = use FileSystem
-
 decl var:Number
 
 func function(hello:String,other:Number) >> String {
