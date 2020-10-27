@@ -11,7 +11,7 @@
 STARBYTES_STD_NAMESPACE
 	class Lexer {
 	public:
-		Lexer(std::string _code) : code(_code),currentIndex(0),TokenBuffer(),line(1), bufptr(), start(),column(0),raw_index(0) {}
+		Lexer(std::string & _code,std::vector<Token> & tok_stream_ref) : code(_code),currentIndex(0),TokenBuffer(),line(1), bufptr(), start(),column(0),raw_index(0),tree(tok_stream_ref) {}
 		/*Move to next char in code*/
 		char & nextChar() {
 			++column;
@@ -23,7 +23,7 @@ STARBYTES_STD_NAMESPACE
 			return code[currentIndex + 1];
 		};
 		void resolveTokenAndClearCache(TokenType tokT = TokenType::Identifier);
-		std::vector<Token> tokenize();
+		void tokenize();
 		std::string saveTokenBuffer(size_t size);
 	private:
 		char TokenBuffer[500];
@@ -34,7 +34,7 @@ STARBYTES_STD_NAMESPACE
 		int column;
 		char* start;
 		std::string code;
-		std::vector<Token> tree;
+		std::vector<Token> & tree;
 	};
 NAMESPACE_END
 

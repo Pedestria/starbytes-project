@@ -33,7 +33,8 @@ export function activate(context:ExtensionContext){
     console.log("Yipee");
     console.log(context.asAbsolutePath("../../build/bin/starbytes-lsp"))
     const serverOptions:ServerOptions = {
-        command:context.asAbsolutePath("../../build/bin/starbytes-lsp")
+        command:context.asAbsolutePath("../../build/bin/starbytes-lsp"),
+        options:{detached:true}
     };
 
 

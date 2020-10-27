@@ -28,8 +28,8 @@ int main (int argc,char * argv[]){
     });
 
     std::string * testcode = Foundation::readFile(file_);
-
-    auto toks = Lexer(*testcode).tokenize();
+    std::vector<Token> toks;
+    Lexer(*testcode,toks).tokenize();
     try {
         AbstractSyntaxTree * tree = new AbstractSyntaxTree();
         Parser(toks,tree).convertToAST();

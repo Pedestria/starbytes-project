@@ -1,4 +1,8 @@
 #include "starbytes/Core/Core.h"
+#include "starbytes/Interpreter/BCReader.h"
+#include "starbytes/Parser/Lexer.h"
+#include "starbytes/Parser/Parser.h"
+#include "starbytes/Semantics/Main.h"
 
 STARBYTES_STD_NAMESPACE
 
@@ -53,5 +57,17 @@ void logError(std::string message,std::string code, std::vector<Token> &tokens){
 	string result = highlightCode(code,tokens);
 	std::cerr << message << "\n\n" << result << "\n";
 }
+
+AbstractSyntaxTree * parseCode(std::string & code){
+	std::vector<Token> tok_stream;
+	Lexer(code,tok_stream).tokenize();
+	AbstractSyntaxTree *_ast = new AbstractSyntaxTree();
+	Parser(tok_stream,_ast).convertToAST();
+	Semantics::SemanticA(_ast).initialize();
+	return _ast;
+};
+void runBC(ByteCode::BCProgram *& prog){
+	Interpreter::execBCProgram(prog);
+};
 
 NAMESPACE_END

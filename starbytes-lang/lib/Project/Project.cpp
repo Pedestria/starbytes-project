@@ -475,7 +475,8 @@ STARBYTES_STD_NAMESPACE
             if(dirent_ref.is_regular_file()){
                 std::string file = dirent_ref.path().generic_string();
                 std::string *code_ptr = Foundation::readFile(file);
-                std::vector<Token> tokens = Lexer(*code_ptr).tokenize();
+                std::vector<Token> tokens;
+                Lexer(*code_ptr,tokens).tokenize();
                 AbstractSyntaxTree *file_ast = new AbstractSyntaxTree();
                 file_ast->filename = file;
                 try {

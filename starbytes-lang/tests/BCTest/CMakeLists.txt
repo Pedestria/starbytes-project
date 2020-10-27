@@ -1,9 +1,0 @@
-add_starbytes_test(
-    INCLUDE_LIB
-    NAME 
-    "bc-test" 
-    FILES
-    "main.cpp"
-    DEPENDENCIES
-    ${STARBYTES_ALL_LIBS} 
-    )

@@ -8,5 +8,6 @@ compile_commands.json
 config.sh
 vc.bat
 config.bat
+starbytes-docs
 
 starbytes-lang/tools/main/Starbytes.cpp

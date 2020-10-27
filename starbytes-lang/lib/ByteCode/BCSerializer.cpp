@@ -1,5 +1,6 @@
 #include "starbytes/ByteCode/BCSerializer.h"
 #include "starbytes/ByteCode/BCDef.h"
+#include <fstream>
 
 STARBYTES_BYTECODE_NAMESPACE
 /*Starbytes Bytecode Serializer!*/
@@ -39,7 +40,7 @@ class BCSerializer {
 //     }
 // };
 
-void serializeBCProgram(std::ostringstream & output_stream,BCProgram *program){
+void serializeBCProgram(std::ofstream & output_stream,BCProgram *program){
     // BCSerializer(program,output_stream).serialize();
 }
 

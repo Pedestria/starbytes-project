@@ -51,9 +51,21 @@ struct BCCodeEnd : BCUnit {
 
 struct BCProgram {
     std::string program_name;
-    std::vector<BCUnit> units;
+    std::vector<BCUnit *> units;
 };
 
+template<typename _BcTy,typename _InBCTy>
+inline bool bc_unit_is(_InBCTy * unit){
+    if(unit->type == _BcTy::static_type){
+        return true;
+    }
+    else{
+        return false;
+    }
+};
+
+#define BC_UNIT_IS(ptr,type) bc_unit_is<type>(ptr)
+#define ASSERT_BC_UNIT(ptr,type) static_cast<type *>(ptr)
 
 NAMESPACE_END
 

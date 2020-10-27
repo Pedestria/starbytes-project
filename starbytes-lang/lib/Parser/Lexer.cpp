@@ -4,8 +4,6 @@
 #include "starbytes/Parser/Lexer.h"
 #include <iostream>
 #include "starbytes/Parser/Lookup.h"
-//#include <algorithm>
-//#include <iterator>
 
 using namespace Starbytes;
 
@@ -126,7 +124,7 @@ void Lexer::resolveTokenAndClearCache(TokenType tokT) {
 	start = bufptr;
 }
 
-std::vector<Token> Lexer::tokenize() {
+void Lexer::tokenize() {
 	bufptr = TokenBuffer;
 	char c = code[0];
 	start = bufptr;
@@ -319,5 +317,5 @@ std::vector<Token> Lexer::tokenize() {
 
 		c = nextChar();
 	}
-	return tree;
+	
 }

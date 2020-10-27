@@ -1,4 +1,4 @@
-#include "starbytes/Interpreter/RTTypeCheck.h"
+#include "RTTypeCheck.h"
 
 STARBYTES_INTERPRETER_NAMESPACE
 

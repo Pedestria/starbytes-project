@@ -1,5 +1,5 @@
 #include "starbytes/Base/Base.h"
-#include "starbytes/Interpreter/STDObjects.h"
+#include "STDObjects.h"
 
 #ifndef INTERPRETER_RTTYPECHECK_H
 #define INTERPRETER_RTTYPECHECK_H

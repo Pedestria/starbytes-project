@@ -2,14 +2,14 @@ add_starbytes_lib(
     LIB_NAME
     "starbytesBCInterpreter"
     SOURCE_FILES
+    "RuntimeEngine.h"
+    "RTTypeCheck.h"
+    "STDObjects.h"
     "RuntimeEngine.cpp"
     "RTTypeCheck.cpp"
     "STDObjects.cpp"
     "BCReader.cpp"
     HEADER_FILES
-    "RuntimeEngine.h"
-    "RTTypeCheck.h"
-    "STDObjects.h"
     "BCReader.h"
     LIBS_TO_LINK
     "starbytesBase"

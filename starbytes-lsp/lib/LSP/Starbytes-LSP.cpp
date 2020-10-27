@@ -150,18 +150,19 @@ void StarbytesLSPServer::replaceFile(LSPTextDocumentIdentifier &id_ref,
   }
 };
 
-bool StarbytesLSPServer::deallocFile(LSPTextDocumentIdentifier & id_ref){
-  bool returncode = false;
-  for(int i = 0;i < files.size();++i){
-    auto & txt_dcmt = files[i];
-    if(txt_dcmt.content.uri == id_ref.uri){
-      files.erase(files.begin()+i);
-      returncode = true;
-      break;
-    }
-  }
-  return returncode;
-};
+// bool StarbytesLSPServer::deallocFile(LSPTextDocumentIdentifier & id_ref){
+//   bool returncode = false;
+//   for(int i = 0;i < files.size();++i){
+//     auto & txt_dcmt = files[i];
+//     if(txt_dcmt.content.uri == id_ref.uri){
+//       auto it = files.begin();
+//       files.erase(it + i);
+//       returncode = true;
+//       break;
+//     }
+//   }
+//   return returncode;
+// };
 
 void StarbytesLSPServer::mainLoop(){
   while(true){

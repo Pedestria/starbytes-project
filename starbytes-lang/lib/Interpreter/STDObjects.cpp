@@ -1,4 +1,4 @@
-#include "starbytes/Interpreter/STDObjects.h"
+#include "STDObjects.h"
 
 STARBYTES_INTERPRETER_NAMESPACE
 
