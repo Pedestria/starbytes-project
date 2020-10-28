@@ -83,6 +83,7 @@ endif()
 add_subdirectory("lib")
 add_subdirectory("tools")
 add_subdirectory("tests")
+add_subdirectory("baselib")
 
 if(ENABLE_STARBYTES_LSP)
 	add_subdirectory(../starbytes-lsp "lsp")

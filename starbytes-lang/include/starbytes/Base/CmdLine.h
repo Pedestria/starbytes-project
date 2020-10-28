@@ -16,8 +16,8 @@ void execute_child_process(std::string name,std::string & args);
 struct CommandInput {
     std::string first_flag_match;
     std::string second_flag_match;
-    void (*func_ptr)(std::string);
-    CommandInput(std::string first,std::string second,void (*func)(std::string)):first_flag_match(first),second_flag_match(second),func_ptr(func){};
+    void (*func_ptr)(std::string &);
+    CommandInput(std::string first,std::string second,void (*func)(std::string &)):first_flag_match(first),second_flag_match(second),func_ptr(func){};
     ~CommandInput(){};
 };
 

@@ -9,5 +9,5 @@ config.sh
 vc.bat
 config.bat
 starbytes-docs
-
+linux-build
 starbytes-lang/tools/main/Starbytes.cpp

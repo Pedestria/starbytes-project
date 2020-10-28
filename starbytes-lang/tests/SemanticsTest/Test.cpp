@@ -13,7 +13,7 @@ WINDOWS_CONSOLE_INIT
 
 std::string file_;
 
-Foundation::CommandInput file_input {"test-file","f",[](std::string file){
+Foundation::CommandInput file_input {"test-file","f",[](std::string & file){
     file_ = file;
 }};
 

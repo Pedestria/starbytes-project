@@ -54,8 +54,8 @@ struct BCProgram {
     std::vector<BCUnit *> units;
 };
 
-template<typename _BcTy,typename _InBCTy>
-inline bool bc_unit_is(_InBCTy * unit){
+template<class _BcTy,class _BCTyTst>
+inline bool bc_unit_is(_BCTyTst & unit){
     if(unit->type == _BcTy::static_type){
         return true;
     }
@@ -64,7 +64,7 @@ inline bool bc_unit_is(_InBCTy * unit){
     }
 };
 
-#define BC_UNIT_IS(ptr,type) bc_unit_is<type>(ptr)
+#define BC_UNIT_IS(ptr,type) (bc_unit_is<type>(ptr))
 #define ASSERT_BC_UNIT(ptr,type) static_cast<type *>(ptr)
 
 NAMESPACE_END

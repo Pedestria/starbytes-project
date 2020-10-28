@@ -1,5 +1,6 @@
 #include "STDObjects.h"
 #include "starbytes/Base/Base.h"
+#include "starbytes/ByteCode/BCDef.h"
 #include <any>
 #include <optional>
 #include <string>
@@ -108,6 +109,8 @@ public:
   Scope(std::string &_name) : name(_name){};
   ~Scope(){};
 };
+/*Passes Program to BCEngine*/
+void _internal_exec_bc_program(ByteCode::BCProgram *& executable);
 
 }; // namespace Engine
 NAMESPACE_END

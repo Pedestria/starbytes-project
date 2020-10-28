@@ -41,7 +41,7 @@ StarbytesCoreSettings settings;
 // 	}
 // }};
 
-Foundation::CommandInput executable_input {"execute","e",[](std::string _file){
+Foundation::CommandInput executable_input {"execute","e",[](std::string & _file){
 	if(!settings.hasExec){
 		settings.hasExec = true;
 		settings.executable_input = _file;
