@@ -56,6 +56,7 @@ STARBYTES_STD_NAMESPACE
             void parseTypecastIdentifier(ASTTypeCastIdentifier *&ptr);
 
             //DECLARATIONS!
+            void parseAcquireDeclaration(std::vector<ASTStatement *> *& container);
             void parseVariableSpecifier(ASTVariableSpecifier *& ptr);
             void parseVariableDeclaration(std::vector<ASTStatement *> *& container);
             void parseConstantSpecifier(ASTConstantSpecifier *& ptr);

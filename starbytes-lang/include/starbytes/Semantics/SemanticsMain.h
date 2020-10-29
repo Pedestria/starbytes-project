@@ -33,6 +33,7 @@ using namespace AST;
             friend class ClassDeclVisitor;
             friend class ImportDeclVisitor;
             friend class ReturnDeclVisitor;
+            friend class ConstantDeclVistior;
             template<typename _Node>
             friend inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,std::vector<STBObjectProperty> *props,_Node *node,SemanticA *& sem);
             //Friends AST Evaluator functions!

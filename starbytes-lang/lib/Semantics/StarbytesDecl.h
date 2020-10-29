@@ -19,6 +19,8 @@ AST_VISITOR(ScopeDeclVisitor,ASTScopeDeclaration);
 
 AST_VISITOR(VariableDeclVisitor,ASTVariableDeclaration);
 
+AST_VISITOR(ConstantDeclVistior,ASTConstantDeclaration);
+
 class ReturnDeclVisitor {
     SemanticA *sem;
     using NODE = AST::ASTReturnDeclaration;

@@ -9,13 +9,13 @@ using namespace Starbytes;
 using namespace AST;
 
 TYPED_ENUM KeywordType:int {
-    Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case,Extends,Utilizes,Loose,Enum,For,While,Lazy,Await
+    Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case,Extends,Utilizes,Loose,Enum,For,While,Lazy,Await,Acquire
 };
 
 // std::vector<ASTComment *> commentBuffer;
 
 /*Creates Error Message For Console*/
-inline std::string StarbytesParseError(std::string message,DocumentPosition position){
+inline std::string StarbytesParseError(std::string message,DocumentPosition & position){
     return message.append(" \n Error Occured at Position:{\nLine:"+std::to_string(position.line)+"\n Start Column:"+std::to_string(position.start)+"\n End Column:"+std::to_string(position.end)+"\n}");
 }
 
@@ -61,6 +61,8 @@ KeywordType matchKeyword(std::string subject) {
         returncode = KeywordType::Await;
     } else if(subject == "lazy"){
         returncode = KeywordType::Lazy;
+    } else if(subject == "acquire"){
+        returncode = KeywordType::Acquire;
     }
     return returncode;
 }
@@ -168,12 +170,39 @@ bool Parser::parseDeclaration(std::vector<ASTStatement *> *& container,Scope sco
                 return false;
             }
             break;
+        case KeywordType::Acquire:
+            if(scope == Scope::Global){
+                parseAcquireDeclaration(container);
+                return true;
+            }
+            else{
+                StarbytesParseError("Cannot use `acquire` outside Top level scope!",currentToken()->getPosition());
+                return false;
+            }
+            break;
         default :
             return false;
             break;
     }
 }
 
+void Parser::parseAcquireDeclaration(std::vector<ASTStatement *> *& container){
+    ASTAcquireDeclaration * node = new ASTAcquireDeclaration(ASTType::AcquireDeclaration);
+
+    node->BeginFold = currentToken()->getPosition();
+    Token * tok = nextToken();
+    if(tok->getType() == TokenType::Identifier){
+        ASTIdentifier *id = new ASTIdentifier();
+        parseIdentifier(tok,id);
+        node->id = id;
+        node->EndFold = currentToken()->getPosition();
+        checkForComments(node);
+        container->push_back(node);
+    }
+    else {
+        throw StarbytesParseError("Expected Identifier!",tok->getPosition());
+    }
+};
 
 
 void Parser::parseNumericLiteral(ASTNumericLiteral *&ptr){
@@ -1217,10 +1246,10 @@ void Parser::parseConstantSpecifier(ASTConstantSpecifier *&ptr){
     if(tok->getType() == TokenType::Identifier){
         //CurrentToken: ID Before Colon or Equals
         if(aheadToken()->getType() == TokenType::Typecast){
-            ASTTypeCastIdentifier *tid = new ASTTypeCastIdentifier(ASTType::TypecastIdentifier);
-            ASTNode *id = (ASTNode *) tid;
+            ASTTypeCastIdentifier *tcid = new ASTTypeCastIdentifier(ASTType::TypecastIdentifier);
             //CurrentToken: ID before Colon
-            parseTypecastIdentifier(tid);
+            parseTypecastIdentifier(tcid);
+            ptr->id = tcid;
             //CurrentToken: ID After Colon Just Before Equals
         }
         else {

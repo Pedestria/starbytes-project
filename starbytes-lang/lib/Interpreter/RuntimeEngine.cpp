@@ -650,24 +650,25 @@ void internal_if(StarbytesBoolean *_bool, std::string _func_to_invoke,
 // StarbytesBoolean * convert_conditional_to_bool(){
 
 // };
+using namespace ByteCode;
 
 class BCEngine {
 private:
   std::vector<Engine::Scope *> scopes;
   std::vector<std::string> scope_heirarchy;
-  ByteCode::BCProgram *& program;
+  BCProgram *& program;
   unsigned currentindex = 0;
-  ByteCode::BCUnit *& nextUnit(){
+  BCUnit *& nextUnit(){
       return program->units[++currentindex];
   };
   /*Gets ahead unit but does not move `currentindex`*/
-  ByteCode::BCUnit *& aheadUnit(){
+  BCUnit *& aheadUnit(){
       return program->units[currentindex + 1];
   };
-  ByteCode::BCUnit *& currentUnit(){
+  BCUnit *& currentUnit(){
       return program->units[currentindex];
   };
-  ByteCode::BCUnit *& behindUnit(){
+  BCUnit *& behindUnit(){
       return program->units[currentindex-1];
   };
 
@@ -697,7 +698,7 @@ private:
   void read_bc_crtvr();
   void read_bc_stvr();
 
-  void read_bc_code_unit(ByteCode::BCCodeBegin * unit_begin){
+  void read_bc_code_unit(BCCodeBegin * unit_begin){
       std::string & subject = unit_begin->code_node_name;
       if(subject == "crtvr"){
           read_bc_crtvr();
@@ -711,14 +712,14 @@ private:
 
   };
 
-  void read_starting_bc_unit(ByteCode::BCUnit *& unit){
-      if(BC_UNIT_IS(unit,ByteCode::BCCodeBegin)){
-          read_bc_code_unit(ASSERT_BC_UNIT(unit,ByteCode::BCCodeBegin));
+  void read_starting_bc_unit(BCUnit *& unit){
+      if(BC_UNIT_IS(unit,BCCodeBegin)){
+          read_bc_code_unit(ASSERT_BC_UNIT(unit,BCCodeBegin));
       }
   };
 
 public:
-  BCEngine(ByteCode::BCProgram *& executable):program(executable){};
+  BCEngine(BCProgram *& executable):program(executable){};
   ~BCEngine(){};
   void read(){
       std::cout << "STARBYTES_RUNTIME_ENGINE -->\x1b[33mStarting Executable: " << program->program_name << "\x1b[0m" << std::endl;
@@ -729,7 +730,7 @@ public:
   };
 };
 
-void _internal_exec_bc_program(ByteCode::BCProgram *&executable) {
+void _internal_exec_bc_program(BCProgram *&executable) {
   BCEngine(executable).read();
 };
 

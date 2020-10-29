@@ -14,7 +14,7 @@ using namespace AST;
     class STBInterfaceType;
 
     enum class SymbolType:int {
-        Variable,Class,Function
+        Variable,Class,Function,ConstVariable
     }; 
     struct SemanticSymbol {
         SymbolType type;
@@ -34,6 +34,16 @@ using namespace AST;
         bool checkWithOther(VariableSymbol *sym);
         static SymbolType stat_type;
 
+    };
+
+    class ConstVariableSymbol : public SemanticSymbol {
+        public:
+        ConstVariableSymbol(ASTConstantSpecifier *& node_ptr_loc):SemanticSymbol(SymbolType::Variable),loc__ptr(node_ptr_loc){};
+        ~ConstVariableSymbol(){};
+        SemanticSymbol *value_type;
+        ASTConstantSpecifier *& loc__ptr;
+        bool checkWithOther(ConstVariableSymbol *sym);
+        static SymbolType stat_type;
     };
 
     class ClassSymbol : public SemanticSymbol{

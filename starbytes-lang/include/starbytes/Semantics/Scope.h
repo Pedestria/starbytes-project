@@ -11,7 +11,7 @@ STARBYTES_SEMANTICS_NAMESPACE
 
 class SemanticA;
 
-#define FRIEND_AST_EVALUATOR(type) friend STBType * evaluate##type(type * node_ty,SemanticA *& sem)
+#define FRIEND_AST_EVALUATOR(type) friend SemanticSymbol * evaluate##type(type * node_ty,SemanticA *& sem)
     class Scope {
         private:
             std::vector<SemanticSymbol *> symbols; 

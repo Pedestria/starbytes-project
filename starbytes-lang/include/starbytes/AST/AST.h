@@ -4,6 +4,7 @@
 #include <string>
 #include "starbytes/Base/Base.h"
 #include <iostream>
+#include <optional>
 
 #ifndef AST_AST_H
 #define AST_AST_H 
@@ -23,7 +24,7 @@ STARBYTES_STD_NAMESPACE
             Identifier,TypecastIdentifier,ImportDeclaration,ScopeDeclaration,NumericLiteral,VariableDeclaration,VariableSpecifier,ConstantDeclaration,ConstantSpecifier,StringLiteral,FunctionDeclaration,BlockStatement,
             TypeIdentifier,AssignExpression,ArrayExpression,NewExpression,MemberExpression,CallExpression,ClassDeclaration,ClassPropertyDeclaration,ClassBlockStatement,ClassMethodDeclaration,ClassConstructorDeclaration,
             ClassConstructorParameterDeclaration,TypeArgumentsDeclaration,InterfaceDeclaration,InterfaceBlockStatement,InterfacePropertyDeclaration,InterfaceMethodDeclaration,ReturnDeclaration,EnumDeclaration,EnumBlockStatement,
-            Enumerator,IfDeclaration,ElseIfDeclaration,ElseDeclaration,BooleanLiteral,AwaitExpression,ExpressionStatement
+            Enumerator,IfDeclaration,ElseIfDeclaration,ElseDeclaration,BooleanLiteral,AwaitExpression,ExpressionStatement,AcquireDeclaration
         };
 
         TYPED_ENUM CommentType:int {
@@ -266,7 +267,7 @@ STARBYTES_STD_NAMESPACE
             static ASTType static_type;
             //EITHER a ASTIdentifier or ASTTypeCastIdentifier
             ASTObject *id;
-            ASTExpression *initializer;
+            std::optional<ASTExpression *> initializer;
         };
         ASTDECL(ASTVariableDeclaration) 
             static ASTType static_type;
@@ -275,8 +276,8 @@ STARBYTES_STD_NAMESPACE
         ASTSTATEMENT(ASTConstantSpecifier)
             static ASTType static_type;
             //EITHER a ASTIdentifier or ASTTypeCastIdentifier
-            ASTNode *id;
-            ASTExpression *initializer;
+            ASTTypeCastIdentifier *id;
+            std::optional<ASTExpression *> initializer;
         };
         ASTDECL(ASTConstantDeclaration) 
             static ASTType static_type;
@@ -301,6 +302,11 @@ STARBYTES_STD_NAMESPACE
             std::vector<ASTTypeCastIdentifier*> params;
             ASTTypeIdentifier *returnType;
             ASTBlockStatement* body;
+        };
+
+        ASTDECL(ASTAcquireDeclaration)
+            static ASTType static_type;
+            ASTIdentifier *id;
         };
         
         struct AbstractSyntaxTree {
