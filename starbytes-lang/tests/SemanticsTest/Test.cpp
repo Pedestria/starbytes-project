@@ -38,7 +38,10 @@ int main (int argc,char * argv[]){
     try {
         AbstractSyntaxTree * tree = new AbstractSyntaxTree();
         Parser(toks,tree).convertToAST();
-        Semantics::SemanticA(tree).initialize();
+        Semantics::SemanticA sem;
+        sem.initialize();
+        sem.analyzeFileForModule(tree);
+        sem.finish();
     }
     catch(std::string error){
         std::cerr << "\x1b[31m" << error << "\x1b[0m" << std::endl;

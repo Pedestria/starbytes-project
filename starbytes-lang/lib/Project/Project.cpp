@@ -481,7 +481,6 @@ STARBYTES_STD_NAMESPACE
                 file_ast->filename = file;
                 try {
                     Parser(tokens,file_ast).convertToAST();
-                    Semantics::SemanticA (file_ast).initialize();
                     //TODO: Return ScopeStore when running SemanticA on any AST!
                 }
                 catch (std::string error){
@@ -490,6 +489,12 @@ STARBYTES_STD_NAMESPACE
                 source_trees.push_back(file_ast);
             }
         });
+        Semantics::SemanticA sem;
+        sem.initialize();
+        for(auto & ast : source_trees){
+            sem.analyzeFileForModule(ast);
+        }
+        sem.finish();
         return ByteCode::generateToBCProgram(source_trees);
     };
 

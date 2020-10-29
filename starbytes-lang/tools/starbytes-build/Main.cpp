@@ -3,6 +3,7 @@
 #include "starbytes/Core/Core.h"
 #include "starbytes/ByteCode/BCGenerator.h"
 #include "starbytes/ByteCode/BCSerializer.h"
+#include "starbytes/Semantics/Main.h"
 #include <vector>
 #include <fstream>
 #include <iostream>
@@ -64,7 +65,7 @@ int main(int argc,char * argv[]){
     });
     using FSEntry = std::filesystem::directory_entry;
     std::vector<AST::AbstractSyntaxTree *> module_asts;
-    Foundation::foreachInDirectory(settings.source_dir,[&module_asts](FSEntry & entry){
+    Foundation::foreachInDirectory(settings.source_dir,[&module_asts](FSEntry entry){
         if(entry.is_regular_file()){
             std::string file_path = entry.path().generic_string();
             std::string * file_buf = Foundation::readFile(file_path);
@@ -72,9 +73,17 @@ int main(int argc,char * argv[]){
             module_asts.push_back(tree);
         }
     });
+
+    Semantics::SemanticA sem;
+    sem.initialize();
+    for(auto & ast : module_asts){
+        sem.analyzeFileForModule(ast);
+    }
+    sem.finish();
+    AbstractSyntaxTree *tree;
     ByteCode::BCProgram *module = ByteCode::generateToBCProgram(module_asts);
     std::string out = settings.out_dir+"/"+settings.module_name+".stbxm";
-    std::ofstream module_stream (out);
+    std::ofstream module_stream (out,std::ios::app);
     ByteCode::serializeBCProgram(module_stream,module);
     module_stream.close();
 

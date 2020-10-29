@@ -20,10 +20,10 @@ void BCCreator::createByteCode(){
 
 class BCGenerator {
     private:  
-        AbstractSyntaxTree *& AST;
+        std::vector<AbstractSyntaxTree *> & trees;
         BCProgram * out;
     public:
-        BCGenerator(AbstractSyntaxTree *& ast):AST(ast){};
+        BCGenerator(std::vector<AbstractSyntaxTree *> & __trees):trees(__trees){};
         ~BCGenerator(){};
         void generate(BCProgram *& Out);
 };
@@ -46,19 +46,18 @@ void generateStatement(BCGenerator *gen,ASTStatement *node){
 
 
 
-void BCGenerator::generate(BCProgram *&Out){
-    out = Out;
-    for(auto n : AST->nodes){
-        generateStatement(this,n);
-    }
-}
+// void BCGenerator::generate(BCProgram *&Out){
+//     out = Out;
+//     for(auto n : AST->nodes){
+//         generateStatement(this,n);
+//     }
+// }
 
 
 
 
-BCProgram * generateToBCProgram(AST::AbstractSyntaxTree *ast){
+BCProgram * generateToBCProgram(std::vector<AbstractSyntaxTree *> & module_sources){
     BCProgram *result = new BCProgram();
-    BCGenerator(ast).generate(result);
     return result;
 };
 
