@@ -11,7 +11,7 @@
 
 STARBYTES_FOUNDATION_NAMESPACE
 
-void execute_child_process(std::string name,std::string & args);
+void execute_child_process(std::string name,std::string & args,bool inPlace,char * const * argv_unix = nullptr);
 
 struct CommandInput {
     std::string first_flag_match;

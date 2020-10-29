@@ -14,11 +14,12 @@ using namespace AST;
     struct STBObjectProperty;
     class SemanticA {
         using Tree = AbstractSyntaxTree;
-
+        using SemanticAError = std::string;
         private:
-            Tree *& tree;
+            Tree * tree;
             ScopeStore store;
             std::vector<std::string> modules;
+            std::vector<SemanticAError> errors;
             // template<typename _Visitor>
             // void _visit_visitor(AST::ASTNode *&node){
             //     _Visitor().visit(this,node);
@@ -44,9 +45,11 @@ using namespace AST;
         public:
             void freeSymbolStores();
             void initialize();
-            
+            void analyzeFileForModule(Tree *& tree_ptr);
+            void finish();
+
             void visitNode(ASTNode * node,bool is_function = false,ASTNode *func_ptr = nullptr);
-            SemanticA(Tree *& _tree):tree(_tree){};
+            SemanticA(){};
             ~SemanticA(){};
     };
 

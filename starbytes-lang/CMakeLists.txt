@@ -84,7 +84,7 @@ add_subdirectory("lib")
 add_subdirectory("tools")
 add_subdirectory("tests")
 # TODO : Get Starbytes Compilation to work!
-# add_subdirectory("baselib")
+# add_subdirectory("starbytes-modules")
 
 if(ENABLE_STARBYTES_LSP)
 	add_subdirectory(../starbytes-lsp "lsp")

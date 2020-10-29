@@ -76,9 +76,17 @@ STARBYTES_SEMANTICS_NAMESPACE
         registerSymbolinExactCurrentScope(create_class_symbol("Number",p,create_stb_standard_class_type("Number")));
         //TODO: Create Array class symbol with type args!
         std::cout << "Starting Semantics";
+    }
+
+    void SemanticA::analyzeFileForModule(Tree *& tree_ptr){
+        tree = tree_ptr;
         for(auto & node : tree->nodes){
             visitNode(AST_NODE_CAST(node));
         }
-    }
+    };
+
+    void SemanticA::finish(){
+
+    };
 
 NAMESPACE_END

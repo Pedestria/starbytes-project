@@ -1,25 +1,34 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include "starbytes/Base/Base.h"
+#include "starbytes/ByteCode/BCDef.h"
+#include "starbytes/ByteCode/BCSerializer.h"
 
-struct AnotherStruct {
-    std::string other_name;
+
+using namespace Starbytes;
+
+using namespace ByteCode;
+
+BCCodeBegin * tst1(std::string name){
+    BCCodeBegin * rc = new BCCodeBegin();
+    rc->code_node_name = name;
+    return rc;
 };
 
-struct TestStruct {
-    std::string name;
-    AnotherStruct *test;
-    int otherThing;
+BCCodeEnd * tst2(std::string name){
+    BCCodeEnd * rc = new BCCodeEnd();
+    rc->code_node_name = name;
+    return rc;
 };
 
 int main(){
     std::ofstream output ("./Test.txt",std::ios::app);
-    TestStruct s;
-    s.name = "Hello World!";
-    s.otherThing = 15;
-    AnotherStruct s1;
-    s1.other_name = "Another Message";
-    s.test = &s1;
-    output.write((char *)&s,sizeof(s));
+    BCCodeBegin * a = tst1("crtvr");
+    BCCodeEnd * b = tst2("crtvr");
+    output.write((char *)a,sizeof(*a));
+    output.write((char *)b,sizeof(*b));
+    output.close();
+    std::cout << "Successfully Wrote to ./Text.txt" << std::endl;
     return 0;
 };

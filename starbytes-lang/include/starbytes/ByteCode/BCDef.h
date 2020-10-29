@@ -11,7 +11,7 @@ STARBYTES_BYTECODE_NAMESPACE
 
 
 TYPED_ENUM BCType:int {
-    CodeBegin,CodeEnd,VectorBegin,VectorEnd,Reference
+    CodeBegin,CodeEnd,VectorBegin,VectorEnd,Reference,String
 };
 
 TYPED_ENUM BCRefType:int {
@@ -20,6 +20,11 @@ TYPED_ENUM BCRefType:int {
 
 struct BCUnit {
     BCType type;
+};
+
+struct BCString : BCUnit {
+    static BCType static_type;
+    std::string value;
 };
 
 struct BCReference : BCUnit {

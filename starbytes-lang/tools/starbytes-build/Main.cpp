@@ -1,6 +1,10 @@
 #include "Main.h"
 #include "starbytes/Base/CmdLine.h"
+#include "starbytes/Core/Core.h"
+#include "starbytes/ByteCode/BCGenerator.h"
+#include "starbytes/ByteCode/BCSerializer.h"
 #include <vector>
+#include <fstream>
 #include <iostream>
 
 #ifdef _WIN32
@@ -12,6 +16,8 @@ struct StarbytesBuildSettings {
     std::vector<std::string> modules_to_link;
     bool hasModuleName;
     std::string module_name;
+    std::string source_dir;
+    std::string out_dir;
     bool library_mode;
     bool exec_mode;
 } settings;
@@ -39,6 +45,11 @@ Foundation::CommandInput module_name {"module-name","n",[](std::string & input){
         settings.module_name = input;
 }};
 
+Foundation::CommandInput out_dir {"out-dir","d",[](std::string & input){
+    if(!settings.out_dir.empty())
+        settings.out_dir = input;
+}};
+
 Foundation::CommandInput link_module {"link-module","l",[](std::string & input){
     settings.modules_to_link.push_back(input);
 }};
@@ -51,7 +62,21 @@ int main(int argc,char * argv[]){
         std::cout << "\x1b[34mStarbytes Build\x1b[0m" << std::endl;
         exit(1);
     });
-
+    using FSEntry = std::filesystem::directory_entry;
+    std::vector<AST::AbstractSyntaxTree *> module_asts;
+    Foundation::foreachInDirectory(settings.source_dir,[&module_asts](FSEntry & entry){
+        if(entry.is_regular_file()){
+            std::string file_path = entry.path().generic_string();
+            std::string * file_buf = Foundation::readFile(file_path);
+            AST::AbstractSyntaxTree * tree = parseCode(*file_buf);
+            module_asts.push_back(tree);
+        }
+    });
+    ByteCode::BCProgram *module = ByteCode::generateToBCProgram(module_asts);
+    std::string out = settings.out_dir+"/"+settings.module_name+".stbxm";
+    std::ofstream module_stream (out);
+    ByteCode::serializeBCProgram(module_stream,module);
+    module_stream.close();
 
     return 0;
 };

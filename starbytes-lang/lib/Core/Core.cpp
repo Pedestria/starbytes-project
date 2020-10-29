@@ -62,8 +62,12 @@ AbstractSyntaxTree * parseCode(std::string & code){
 	std::vector<Token> tok_stream;
 	Lexer(code,tok_stream).tokenize();
 	AbstractSyntaxTree *_ast = new AbstractSyntaxTree();
-	Parser(tok_stream,_ast).convertToAST();
-	Semantics::SemanticA(_ast).initialize();
+	try {
+		Parser(tok_stream,_ast).convertToAST();
+	}
+	catch (std::string error) {
+		std::cerr << error << std::endl;
+	};
 	return _ast;
 };
 void runBC(ByteCode::BCProgram *& prog){

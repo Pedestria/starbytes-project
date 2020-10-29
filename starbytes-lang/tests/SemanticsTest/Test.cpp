@@ -23,9 +23,14 @@ int main (int argc,char * argv[]){
     #endif
 
     Foundation::parseCmdArgs(argc,argv,{},{&file_input},[]{
-        std::cout << "HELP! TEST!";
+        std::cout << "HELP! TEST!" << std::endl;
         exit(1);
     });
+
+    if(file_.empty()){
+        std::cout << ERROR_ANSI_ESC  <<"No test file provided!\nExiting..." << ANSI_ESC_RESET << std::endl;
+        exit(1);
+    }
 
     std::string * testcode = Foundation::readFile(file_);
     std::vector<Token> toks;

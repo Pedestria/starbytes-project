@@ -19,7 +19,7 @@ STARBYTES_FOUNDATION_NAMESPACE
 #include <sys/wait.h>
 #endif
 
-void execute_child_process(std::string name,std::string & args,bool inPlace,char * const * argv_unix = nullptr){
+void execute_child_process(std::string name,std::string & args,bool inPlace,char * const * argv_unix){
   #ifdef _WIN32
     STARTUPINFO si;
     PROCESS_INFORMATION pi;
