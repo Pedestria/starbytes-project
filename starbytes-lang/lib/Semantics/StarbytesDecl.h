@@ -13,7 +13,7 @@ class SemanticA;
 
 AST_VISITOR(ImportDeclVisitor,ASTImportDeclaration);
 
-
+AST_VISITOR(AcquireDeclVisitor,ASTAcquireDeclaration);
 
 AST_VISITOR(ScopeDeclVisitor,ASTScopeDeclaration);
 

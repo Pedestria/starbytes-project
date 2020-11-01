@@ -55,52 +55,52 @@ VariableDeclVisitor::~VariableDeclVisitor(){
 };
 
 void VariableDeclVisitor::visit(NODE *node){
-    for(auto & specifier : node->specifiers){
-        if(AST_NODE_IS(specifier->id,ASTTypeCastIdentifier)){
-            ASTTypeCastIdentifier *tcid = ASSERT_AST_NODE(specifier->id,ASTTypeCastIdentifier);
-            if(specifier->initializer.has_value()){
-                if(sem->store.symbolExistsInCurrentScopes<ClassSymbol,ASTClassDeclaration>(tcid->tid->type_name)){
-                    VariableSymbol *sym = new VariableSymbol(specifier);
-                    sym->name = tcid->id->value;
-                    SemanticSymbol *type_to_compare = evaluateASTExpression(specifier->initializer.value(),sem);
-                    if(SEMANTIC_SYMBOL_IS(type_to_compare,ClassSymbol)){
-                        ClassSymbol * class_ty = ASSERT_SEMANTIC_SYMBOL(type_to_compare,ClassSymbol);
-                        ClassSymbol * test_val_ty = sem->store.getSymbolRefFromCurrentScopes<ClassSymbol>(tcid->tid->type_name);
-                        if(class_ty->semantic_type->match(test_val_ty->semantic_type))  
-                            sym->value_type = test_val_ty;
-                        else
-                           throw StarbytesSemanticsError("Type:`"+tcid->tid->type_name+"` does not match type: `"+class_ty->name,specifier->EndFold);
-                    }
-                    else
-                      sem->registerSymbolinExactCurrentScope(sym);
-                    continue;
-                } 
-                else 
-                  throw StarbytesSemanticsError("Unknown Type: "+tcid->tid->type_name,tcid->tid->BeginFold);
-            }
-            else{
-                if(sem->store.symbolExistsInCurrentScopes<ClassSymbol,ASTClassDeclaration>(tcid->tid->type_name)){
-                    VariableSymbol *sym = new VariableSymbol(specifier);
-                    sym->name = tcid->id->value;
-                    sem->registerSymbolinExactCurrentScope(sym);
-                    continue;
-                } 
-                else {
-                    throw StarbytesSemanticsError("Unknown Type: "+tcid->tid->type_name,tcid->tid->BeginFold);
-                };
-            }
-        }
-        else if(AST_NODE_IS(specifier->id,ASTIdentifier)){
-            ASTIdentifier *id = ASSERT_AST_NODE(specifier->id,ASTIdentifier);
-            ASTExpression * expr_to_eval = specifier->initializer.value();
-            SemanticSymbol *type_to_compare = evaluateASTExpression(expr_to_eval,sem);
-            VariableSymbol *sym = new VariableSymbol(specifier);
-            sym->name = id->value;
-            sym->value_type = type_to_compare;
-            sem->registerSymbolinExactCurrentScope(sym);
-            continue; 
-        }
-    }
+    // for(auto & specifier : node->specifiers){
+    //     if(AST_NODE_IS(specifier->id,ASTTypeCastIdentifier)){
+    //         ASTTypeCastIdentifier *tcid = ASSERT_AST_NODE(specifier->id,ASTTypeCastIdentifier);
+    //         if(specifier->initializer.has_value()){
+    //             if(sem->store.symbolExistsInCurrentScopes<ClassSymbol,ASTClassDeclaration>(tcid->tid->type_name)){
+    //                 VariableSymbol *sym = new VariableSymbol(specifier);
+    //                 sym->name = tcid->id->value;
+    //                 SemanticSymbol *type_to_compare = evaluateASTExpression(specifier->initializer.value(),sem);
+    //                 if(SEMANTIC_SYMBOL_IS(type_to_compare,ClassSymbol)){
+    //                     ClassSymbol * class_ty = ASSERT_SEMANTIC_SYMBOL(type_to_compare,ClassSymbol);
+    //                     ClassSymbol * test_val_ty = sem->store.getSymbolRefFromCurrentScopes<ClassSymbol>(tcid->tid->type_name);
+    //                     if(class_ty->semantic_type->match(test_val_ty->semantic_type))  
+    //                         sym->value_type = test_val_ty;
+    //                     else
+    //                        throw StarbytesSemanticsError("Type:`"+tcid->tid->type_name+"` does not match type: `"+class_ty->name,specifier->EndFold);
+    //                 }
+    //                 else
+    //                   sem->registerSymbolinExactCurrentScope(sym);
+    //                 continue;
+    //             } 
+    //             else 
+    //               throw StarbytesSemanticsError("Unknown Type: "+tcid->tid->type_name,tcid->tid->BeginFold);
+    //         }
+    //         else{
+    //             if(sem->store.symbolExistsInCurrentScopes<ClassSymbol,ASTClassDeclaration>(tcid->tid->type_name)){
+    //                 VariableSymbol *sym = new VariableSymbol(specifier);
+    //                 sym->name = tcid->id->value;
+    //                 sem->registerSymbolinExactCurrentScope(sym);
+    //                 continue;
+    //             } 
+    //             else {
+    //                 throw StarbytesSemanticsError("Unknown Type: "+tcid->tid->type_name,tcid->tid->BeginFold);
+    //             };
+    //         }
+    //     }
+    //     else if(AST_NODE_IS(specifier->id,ASTIdentifier)){
+    //         ASTIdentifier *id = ASSERT_AST_NODE(specifier->id,ASTIdentifier);
+    //         ASTExpression * expr_to_eval = specifier->initializer.value();
+    //         SemanticSymbol *type_to_compare = evaluateASTExpression(expr_to_eval,sem);
+    //         VariableSymbol *sym = new VariableSymbol(specifier);
+    //         sym->name = id->value;
+    //         sym->value_type = type_to_compare;
+    //         sem->registerSymbolinExactCurrentScope(sym);
+    //         continue; 
+    //     }
+    // }
 };
 
 ConstantDeclVistior::ConstantDeclVistior(SemanticA *s):sem(s){
@@ -156,6 +156,18 @@ void FunctionDeclVisitor::visit(NODE *node){
     }
 };
 
+AcquireDeclVisitor::AcquireDeclVisitor(SemanticA *s):sem(s){
+
+};
+
+AcquireDeclVisitor::~AcquireDeclVisitor(){
+
+};
+
+void AcquireDeclVisitor::visit(NODE *node){
+
+};
+
 ReturnDeclVisitor::ReturnDeclVisitor(SemanticA *s):sem(s){
 
 };
@@ -184,7 +196,7 @@ ClassDeclVisitor::ClassDeclVisitor(SemanticA *s):sem(s){
 };
 
 ClassDeclVisitor::~ClassDeclVisitor(){
-    // sem->store.popCurrentScope();
+    //sem->store.popCurrentScope();
 };
 
 void ClassDeclVisitor::visit(NODE *node){

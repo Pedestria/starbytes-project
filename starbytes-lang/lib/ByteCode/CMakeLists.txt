@@ -6,8 +6,10 @@ add_starbytes_lib(
     "BCSerializer.cpp"
     "BCDef.cpp"
     "BCGenerator.cpp"
+    "BCLink.cpp"
     HEADER_FILES
     "BCDef.h"
+    "BCLink.h"
     "BCParser.h"
     "BCSerializer.h"
     "BCGenerator.h"

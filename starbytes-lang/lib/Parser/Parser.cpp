@@ -19,7 +19,7 @@ inline std::string StarbytesParseError(std::string message,DocumentPosition & po
     return message.append(" \n Error Occured at Position:{\nLine:"+std::to_string(position.line)+"\n Start Column:"+std::to_string(position.start)+"\n End Column:"+std::to_string(position.end)+"\n}");
 }
 
-KeywordType matchKeyword(std::string subject) {
+KeywordType matchKeyword(std::string & subject) {
     KeywordType returncode;
     if(subject == "import"){
         returncode = KeywordType::Import;
@@ -98,6 +98,8 @@ void Parser::parseStatement(std::vector<ASTStatement *> * container,Scope scope)
 bool Parser::parseDeclaration(std::vector<ASTStatement *> *& container,Scope scope){
     switch (matchKeyword(currentToken()->getContent())) {
         case KeywordType::Import :
+            std::cout << "IMPORT DECL!" << std::endl;
+
             if(scope == Scope::Global){
                 parseImportDeclaration(container);
                 return true;
@@ -129,7 +131,7 @@ bool Parser::parseDeclaration(std::vector<ASTStatement *> *& container,Scope sco
             parseFunctionDeclaration(container,false);
             return true;
             break;
-        case KeywordType::Lazy:
+        case KeywordType::Lazy :
             incrementToNextToken();
             if(currentToken()->getType() == TokenType::Keyword && matchKeyword(currentToken()->getContent()) == KeywordType::Function){
                 parseFunctionDeclaration(container,true);
@@ -170,7 +172,8 @@ bool Parser::parseDeclaration(std::vector<ASTStatement *> *& container,Scope sco
                 return false;
             }
             break;
-        case KeywordType::Acquire:
+        case KeywordType::Acquire :
+            std::cout << "ACQUIRE DECL!" << std::endl;
             if(scope == Scope::Global){
                 parseAcquireDeclaration(container);
                 return true;

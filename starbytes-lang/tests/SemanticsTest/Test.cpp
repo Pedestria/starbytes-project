@@ -38,6 +38,9 @@ int main (int argc,char * argv[]){
     try {
         AbstractSyntaxTree * tree = new AbstractSyntaxTree();
         Parser(toks,tree).convertToAST();
+        for(auto & node : tree->nodes){
+            std::cout << "NODETYPE:" << int(node->type) << std::endl;
+        }
         Semantics::SemanticA sem;
         sem.initialize();
         sem.analyzeFileForModule(tree);
