@@ -42,31 +42,31 @@ void execute_child_process(std::string name,std::string & args,bool inPlace,char
     CloseHandle(pi.hThread);
   #endif
 
-  #ifdef HAS_UNISTD_H
-    if(inPlace){
-      int exec_id = execvP(name.c_str(),name.c_str(),argv_unix);
-      if(wait(&exec_id)){
+  // #ifdef HAS_UNISTD_H
+  //   if(inPlace){
+  //     int exec_id = execvP(name.c_str(),name.c_str(),argv_unix);
+  //     if(wait(&exec_id)){
         
-      }
-    }
-    // pid_t child_process_id = fork();
-    // switch(child_process_id){
-    //   case -1:
-    //     std::cerr << ERROR_ANSI_ESC << "Failed to Create Unix Fork";
-    //   case 0: {
-    //     int exec_id = execv(name.c_str(),argv_unix);
-    //     if(!exec_id){
-    //       std::cerr << ERROR_ANSI_ESC << "Failed to Invoke Process:" << name << ANSI_ESC_RESET;
-    //     }
+  //     }
+  //   }
+  //   // pid_t child_process_id = fork();
+  //   // switch(child_process_id){
+  //   //   case -1:
+  //   //     std::cerr << ERROR_ANSI_ESC << "Failed to Create Unix Fork";
+  //   //   case 0: {
+  //   //     int exec_id = execv(name.c_str(),argv_unix);
+  //   //     if(!exec_id){
+  //   //       std::cerr << ERROR_ANSI_ESC << "Failed to Invoke Process:" << name << ANSI_ESC_RESET;
+  //   //     }
 
-    //     if(wait(&exec_id) == child_process_id){
-    //       std::cerr << "Child Process:" << name << "Timed out!";
-    //     };
+  //   //     if(wait(&exec_id) == child_process_id){
+  //   //       std::cerr << "Child Process:" << name << "Timed out!";
+  //   //     };
 
-    //   };
-    // };
+  //   //   };
+  //   // };
 
-  #endif
+  // #endif
 };
 
 void parseCmdArgs(int &arg_count, char **&argv,
