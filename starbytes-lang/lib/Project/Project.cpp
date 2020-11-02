@@ -469,10 +469,11 @@ STARBYTES_STD_NAMESPACE
     };
 
     ByteCode::BCProgram * compileTarget(TargetDependency &tg){
-        using DIRENT = std::filesystem::directory_entry;
         std::vector<AbstractSyntaxTree *> source_trees;
-        
+
         #ifdef HAS_FILESYSTEM_H
+
+        using DIRENT = std::filesystem::directory_entry;
 
         Foundation::foreachInDirectory(tg.source_dir,[&source_trees](DIRENT dirent_ref){
             if(dirent_ref.is_regular_file()){

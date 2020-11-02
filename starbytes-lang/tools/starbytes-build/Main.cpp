@@ -63,10 +63,12 @@ int main(int argc,char * argv[]){
         std::cout << "\x1b[34mStarbytes Build\x1b[0m" << std::endl;
         exit(1);
     });
-    using FSEntry = std::filesystem::directory_entry;
-    std::vector<AST::AbstractSyntaxTree *> module_asts;
     
+    std::vector<AST::AbstractSyntaxTree *> module_asts;
+
     #ifdef HAS_FILESYSTEM_H
+
+    using FSEntry = std::filesystem::directory_entry;
 
     Foundation::foreachInDirectory(settings.source_dir,[&module_asts](FSEntry entry){
         if(entry.is_regular_file()){
