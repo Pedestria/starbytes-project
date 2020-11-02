@@ -1,4 +1,4 @@
-name: CMake
+name: Starbytes macOSX Catalina
 
 on: [push]
 

@@ -1,4 +1,4 @@
-name: CMake
+name: Starbytes Windows x86
 
 on: [push]
 
