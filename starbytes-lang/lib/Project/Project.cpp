@@ -471,6 +471,9 @@ STARBYTES_STD_NAMESPACE
     ByteCode::BCProgram * compileTarget(TargetDependency &tg){
         using DIRENT = std::filesystem::directory_entry;
         std::vector<AbstractSyntaxTree *> source_trees;
+        
+        #ifdef HAS_FILESYSTEM_H
+
         Foundation::foreachInDirectory(tg.source_dir,[&source_trees](DIRENT dirent_ref){
             if(dirent_ref.is_regular_file()){
                 std::string file = dirent_ref.path().generic_string();
@@ -489,6 +492,9 @@ STARBYTES_STD_NAMESPACE
                 source_trees.push_back(file_ast);
             }
         });
+
+        #endif
+
         Semantics::SemanticA sem;
         sem.initialize();
         for(auto & ast : source_trees){

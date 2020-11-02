@@ -65,6 +65,9 @@ int main(int argc,char * argv[]){
     });
     using FSEntry = std::filesystem::directory_entry;
     std::vector<AST::AbstractSyntaxTree *> module_asts;
+    
+    #ifdef HAS_FILESYSTEM_H
+
     Foundation::foreachInDirectory(settings.source_dir,[&module_asts](FSEntry entry){
         if(entry.is_regular_file()){
             std::string file_path = entry.path().generic_string();
@@ -73,6 +76,8 @@ int main(int argc,char * argv[]){
             module_asts.push_back(tree);
         }
     });
+
+    #endif
 
     Semantics::SemanticA sem;
     sem.initialize();
