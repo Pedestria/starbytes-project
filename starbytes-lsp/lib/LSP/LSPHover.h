@@ -5,7 +5,7 @@ STARBYTES_STD_NAMESPACE
 
 namespace LSP {
 
-    LSPHover * create_hover(LSPHoverParams & params);
+    // LSPHover * create_hover(LSPHoverParams & params);
 
 };
 

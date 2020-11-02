@@ -716,8 +716,7 @@ struct LSPUnregistrationParams : LSPServerObject {
   std::vector<LSPUnregistration> unregistrations;
 };
 
-LSPCompletionItem *create_completion_item(LSPCompletionParams &params);
-LSPHover *create_hover(LSPHoverParams &params);
+// LSPCompletionItem *create_completion_item(LSPCompletionParams &params);
 
 } // namespace LSP
 } // namespace Starbytes
