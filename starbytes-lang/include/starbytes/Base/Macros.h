@@ -7,6 +7,7 @@
 #define STARBYTES_INTERPRETER_NAMESPACE namespace Starbytes::Interpreter {
 #define STARBYTES_SEMANTICS_NAMESPACE namespace Starbytes::Semantics {
 #define STARBYTES_BYTECODE_NAMESPACE namespace Starbytes::ByteCode {
+#define STARBYTES_GEN_NAMESPACE namespace Starbytes::CodeGen {
 #define NAMESPACE_END }
 #define TYPED_ENUM enum class
 

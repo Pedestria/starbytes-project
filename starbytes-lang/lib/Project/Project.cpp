@@ -5,7 +5,7 @@
 #include "starbytes/Parser/Parser.h"
 #include "starbytes/Parser/Lexer.h"
 #include "starbytes/Semantics/Main.h"
-#include "starbytes/ByteCode/BCGenerator.h"
+#include "starbytes/Gen/Gen.h"
 #include "DependencyTree.h"
 #include <fstream>
 #include <iostream>
@@ -502,7 +502,7 @@ STARBYTES_STD_NAMESPACE
             sem.analyzeFileForModule(ast);
         }
         sem.finish();
-        return ByteCode::generateToBCProgram(source_trees);
+        return CodeGen::generateToBCProgram(source_trees);
     };
 
     void compileFromTree(DependencyTree *tree,std::vector<StarbytesCompiledModule> *vector_ptr){

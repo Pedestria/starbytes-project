@@ -1,0 +1,14 @@
+add_starbytes_lib(
+    LIB_NAME
+    "starbytesCodeGeneration"
+    SOURCE_FILES
+    "Gen.cpp"
+    "GenDecl.h"
+    "GenDecl.cpp"
+    HEADER_FILES
+    "Gen.h"
+    LIBS_TO_LINK
+    "starbytesBase"
+    "starbytesAST"
+    "starbytesByteCode"
+)
