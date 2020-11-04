@@ -13,6 +13,10 @@ void CodeGenR::_pushNodeToOut(ByteCode::BCUnit *unit){
     result->units.push_back(unit);
 };
 
+unsigned & CodeGenR::flushArgsCount(){
+    return bc_args_count;
+};
+
 #define VISIT_NODE(node,_node_ptr) visit##node(ASSERT_AST_NODE(_node_ptr,node),this)
 
 void CodeGenR::_generateAST(AST::AbstractSyntaxTree *& src){

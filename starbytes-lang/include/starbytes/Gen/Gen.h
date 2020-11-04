@@ -16,10 +16,12 @@ class CodeGenR {
         using _program_out = ByteCode::BCProgram *; 
         using _program_src = AST::AbstractSyntaxTree *;
         using _program_in = std::vector<_program_src> &;
+        unsigned bc_args_count;
         _program_out result;
         _program_in module_sources;
         void _generateAST(_program_src & src);
         void _pushNodeToOut(ByteCode::BCUnit *unit);
+        unsigned & flushArgsCount();
     public:
         CodeGenR(_program_in m_srcs);
         _program_out & generate();

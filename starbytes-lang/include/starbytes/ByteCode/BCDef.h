@@ -19,36 +19,43 @@ TYPED_ENUM BCRefType:int {
 };
 
 struct BCUnit {
+    BCUnit(BCType _type):type(_type){};
     BCType type;
 };
 
 struct BCString : BCUnit {
+    BCString():BCUnit(BCType::String){};
     static BCType static_type;
     std::string value;
 };
 
 struct BCReference : BCUnit {
+    BCReference():BCUnit(BCType::Reference){};
     static BCType static_type;
     BCRefType ref_type;
     std::string var_name;
 };
 
 struct BCVectorBegin : BCUnit {
+    BCVectorBegin():BCUnit(BCType::VectorBegin){};
     static BCType static_type;
     std::string name;
 };
 
 struct BCVectorEnd : BCUnit {
+    BCVectorEnd():BCUnit(BCType::VectorEnd){};
     static BCType static_type;
     std::string name;
 };
 
 struct BCCodeBegin: BCUnit {
+    BCCodeBegin():BCUnit(BCType::CodeBegin){};
     static BCType static_type;
     std::string code_node_name;
 };
 
 struct BCCodeEnd : BCUnit {
+    BCCodeEnd():BCUnit(BCType::CodeEnd){};
      static BCType static_type;
      std::string code_node_name;
 };

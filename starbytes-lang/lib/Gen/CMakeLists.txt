@@ -5,6 +5,10 @@ add_starbytes_lib(
     "Gen.cpp"
     "GenDecl.h"
     "GenDecl.cpp"
+    "GenExp.h"
+    "GenExp.cpp"
+    "MakeByteCode.h"
+    "MakeByteCode.cpp"
     HEADER_FILES
     "Gen.h"
     LIBS_TO_LINK

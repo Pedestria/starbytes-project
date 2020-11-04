@@ -40,6 +40,18 @@ STARBYTES_FOUNDATION_NAMESPACE
             }
             
     };
+    /*Stores a reference to a string that exists, but it is a temporary!*/
+    class TmpString {
+        private:
+            std::string & value;
+        public:
+            TmpString(std::string & string_value):value(string_value){};
+            std::string & getValue ();
+            bool exists();
+            bool operator == (TmpString & str_subject);
+            bool operator == (std::string & str_subject);
+    };
+
 NAMESPACE_END
 
 

@@ -17,6 +17,7 @@ AST_GEN_VISITOR(ASTVariableDeclaration);
 
 
 
+#undef AST_GEN_VISITOR
 
 NAMESPACE_END
 

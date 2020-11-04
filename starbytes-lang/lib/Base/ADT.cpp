@@ -4,13 +4,21 @@
 #include <sstream>
 
 namespace Starbytes::Foundation {
-    void execute_cmd(std::string &cmd){
-        
-        #ifdef _WIN32
-        
-        #elif __APPLE__
 
-        #endif
-    }
+    std::string & TmpString::getValue(){
+        return value;
+    };
+
+    bool TmpString::exists(){
+        
+    };
+    
+    bool TmpString::operator==(TmpString &str_subject){
+        return str_subject == value;
+    };
+
+    bool TmpString::operator==(std::string &str_subject){
+        return str_subject == value;
+    };
       
 };
