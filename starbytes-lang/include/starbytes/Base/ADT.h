@@ -41,16 +41,22 @@ STARBYTES_FOUNDATION_NAMESPACE
             
     };
     /*Stores a reference to a string that exists, but it is a temporary!*/
-    class TmpString {
-        private:
-            std::string & value;
-        public:
-            TmpString(std::string & string_value):value(string_value){};
-            std::string & getValue ();
-            bool exists();
-            bool operator == (TmpString & str_subject);
-            bool operator == (std::string & str_subject);
-    };
+    // class TmpString {
+    //     private:
+    //         const char * value;
+    //         bool has_val = false;
+    //     public:
+    //         TmpString() = default;
+    //         TmpString(std::string & str_value);
+    //         TmpString(const char * str);
+    //         using iterator = const char *;
+    //         iterator begin();
+    //         iterator end();
+    //         const char *& getValue ();
+    //         bool exists();
+    //         bool operator == (TmpString & str_subject);
+    //         bool operator == (std::string & str_subject);
+    // };
 
 NAMESPACE_END
 

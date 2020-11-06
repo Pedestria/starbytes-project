@@ -39,6 +39,7 @@ struct BCReference : BCUnit {
 struct BCVectorBegin : BCUnit {
     BCVectorBegin():BCUnit(BCType::VectorBegin){};
     static BCType static_type;
+    unsigned length;
     std::string name;
 };
 
@@ -61,9 +62,18 @@ struct BCCodeEnd : BCUnit {
 };
 
 
-struct BCProgram {
-    std::string program_name;
-    std::vector<BCUnit *> units;
+class BCProgram {
+    public:
+        std::string program_name;
+        BCProgram(){};
+        std::vector<BCUnit *> units;
+        using iterator = std::vector<BCUnit *>::iterator;
+        iterator begin(){
+            return units.begin();
+        };
+        iterator end(){
+            return units.end();
+        };
 };
 
 template<class _BcTy,class _BCTyTst>

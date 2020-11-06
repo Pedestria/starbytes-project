@@ -6,5 +6,5 @@ add_starbytes_tool(
     Server.cpp 
     DEPENDENCIES
     "starbytesBase"
-    "starbytesLanguageService"
+    "starbytesLSPServer"
 )

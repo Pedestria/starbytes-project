@@ -192,7 +192,7 @@ InternalFuncPtr<> *create_func_ptr(PtrType _type, _Type args) {
   rc->args = args;
   return reinterpret_cast<InternalFuncPtr<> *>(rc);
 }
-void create_variable(std::string name, Scope *&current_scope) {
+void create_variable(std::string name, Scope *current_scope) {
   StoredVariable<> *val = new StoredVariable<>;
   val->name = name;
   current_scope->stored_variables.push_back(val);
@@ -222,7 +222,7 @@ StarbytesObject **get_address_of_starbytes_object(StarbytesObject *t) {
   return ptr;
 }
 // Returns `address` of pointer to variable!
-StarbytesObject **refer_variable_a(std::string name, Scope *&current_scope) {
+StarbytesObject **refer_variable_a(std::string name, Scope *current_scope) {
   for (auto &v : current_scope->stored_variables) {
     if (v->name == name) {
       return &v->val;
@@ -231,7 +231,7 @@ StarbytesObject **refer_variable_a(std::string name, Scope *&current_scope) {
   return nullptr;
 }
 // Returns pointer to variable!
-StarbytesObject *refer_variable_d(std::string name, Scope *&current_scope) {
+StarbytesObject *refer_variable_d(std::string name, Scope *current_scope) {
   for (auto &v : current_scope->stored_variables) {
     if (v->name == name) {
       return v->val;
@@ -277,8 +277,8 @@ void create_function(std::string name, std::vector<StoredVariable<> *> args,
   current_scope->stored_functions.push_back(func);
 }
 
-void invoke_function(std::string name, std::vector<StarbytesObject **> args,
-                     Scope *&current_scope) {
+void invoke_function(std::string name, std::vector<StarbytesObject **> & args,
+                     Scope *current_scope) {
   if (name == "Log") {
     starbytes_log(starbytes_object_to_string(*args[0]));
   } else {
@@ -320,7 +320,7 @@ void invoke_function(std::string name, std::vector<StarbytesObject **> args,
 StarbytesObject *
 invoke_function_return_guaranteed(std::string name,
                                   std::vector<StarbytesObject **> args,
-                                  Scope *&current_scope) {
+                                  Scope *current_scope) {
   StarbytesObject *return_ptr;
   for (auto &stfnc : current_scope->stored_functions) {
     if (stfnc->name == name) {
@@ -467,7 +467,7 @@ void release_class_property(std::string name,
 
 void invoke_instance_method(StarbytesObject *_instance_refer, std::string name,
                             std::vector<StarbytesObject **> args,
-                            Scope *&current_scope) {
+                            Scope *current_scope) {
   if (_instance_refer->isType(SBObjectType::ClassInstance)) {
     StarbytesClassInstance *ptr = (StarbytesClassInstance *)_instance_refer;
     for (auto &m : ptr->methods) {
@@ -656,6 +656,41 @@ class BCEngine {
 private:
   std::vector<Engine::Scope *> scopes;
   std::vector<std::string> scope_heirarchy;
+
+  class TempAllocator {
+      private:
+        struct AllocEntry {
+          StarbytesObject *& obj;
+          std::string & temp_obj_name;
+          AllocEntry(std::string & name,StarbytesObject *& obj_ptr):obj(obj_ptr),temp_obj_name(name){};
+        };
+        std::vector<AllocEntry *> objects;
+      public:
+        void alloc_object(std::string & name,StarbytesObject * obj_ptr){
+          objects.push_back(new AllocEntry(name,obj_ptr));
+        };
+        StarbytesObject *& refer_object(std::string & name){
+          for(auto & e : objects){
+            if(e->temp_obj_name == name){
+              return e->obj;
+            }
+          }
+        };
+        bool dealloc_object(std::string & name){
+          bool returncode = false;
+          for(int i = 0;i < objects.size();++i){
+            AllocEntry * _a_entry = objects[i];
+            if(_a_entry->temp_obj_name == name){
+              delete _a_entry;
+              objects.erase(objects.begin()+i);
+              returncode = true;
+            }
+          }
+          return returncode;
+        };
+  };
+  std::vector<StarbytesObject **> args_alloc;
+
   BCProgram *& program;
   unsigned currentindex = 0;
   BCUnit *& nextUnit(){
@@ -686,7 +721,7 @@ private:
     scopes.push_back(c);
   }
 
-  Engine::Scope *get_scope(std::string name) {
+  Engine::Scope * get_scope(std::string name) {
     for (auto &s : scopes) {
       if (s->getName() == name) {
         return s;
@@ -695,8 +730,37 @@ private:
     return nullptr;
   }
 
-  void read_bc_crtvr();
-  void read_bc_stvr();
+  void read_bc_crtvr(){
+    BCString * bc_str = static_cast<BCString *>(nextUnit());
+    create_variable(bc_str->value,get_scope(get_current_scope()));
+    BCCodeEnd * end = static_cast<BCCodeEnd *>(nextUnit());
+    if(end->code_node_name != "crtvr")
+      throw "Runtime Engine Error: Bytecode does not match!";
+  };
+
+  void read_bc_stvr(){
+
+  };
+
+  void read_bc_ivkfn(){
+    BCString * bc_str = static_cast<BCString *>(nextUnit());
+    BCVectorBegin *bc_vec_bg = static_cast<BCVectorBegin *>(nextUnit());
+    for(int i = 0; i < bc_vec_bg->length;++i){
+        BCReference * ref = static_cast<BCReference *>(nextUnit());
+        StarbytesObject ** ref_ptr;
+        if(ref->ref_type == ByteCode::BCRefType::Indirect)
+          ref_ptr = refer_variable_a(ref->var_name,get_scope(get_current_scope()));
+        else if (ref->ref_type == ByteCode::BCRefType::Direct)
+         throw "Runtime Engine Error: Can't use Direct Reference in this context!";
+        args_alloc.push_back(ref_ptr);
+      //TODO: Analyze args!
+    };
+    BCVectorEnd *bc_vec_ed = static_cast<BCVectorEnd *>(nextUnit());
+    invoke_function(bc_str->value,args_alloc,get_scope(get_current_scope()));
+    BCCodeEnd * end = static_cast<BCCodeEnd *>(nextUnit());
+    if(end->code_node_name != "ivkfn")
+      throw "Runtime Engine Error: Bytecode does not match!";
+  };
 
   void read_bc_code_unit(BCCodeBegin * unit_begin){
       std::string & subject = unit_begin->code_node_name;
@@ -705,6 +769,9 @@ private:
       }
       else if(subject == "stvr"){
           read_bc_stvr();
+      }
+      else if(subject == "ivkfn"){
+          read_bc_ivkfn();
       }
   };
 
@@ -726,6 +793,8 @@ public:
       auto & current_bc_unit = currentUnit();
       while(true){
           current_bc_unit = nextUnit();
+          read_starting_bc_unit(current_bc_unit);
+
       }
   };
 };

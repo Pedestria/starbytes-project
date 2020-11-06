@@ -1,6 +1,6 @@
 add_external_starbytes_lib(
     LIB_NAME
-    "starbytesLanguageService"
+    "starbytesLSPServer"
     HEADER_FILES
     Starbytes-LSP.h
     JSONOutput.h

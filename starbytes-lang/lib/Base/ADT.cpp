@@ -2,23 +2,28 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <cassert>
 
 namespace Starbytes::Foundation {
 
-    std::string & TmpString::getValue(){
-        return value;
-    };
+    // TmpString::TmpString(std::string & str_value){
+    //     value = str_value.data();
+    // };
 
-    bool TmpString::exists(){
+    // const char *& TmpString::getValue(){
+    //     return value;
+    // };
+
+    // bool TmpString::exists(){
         
-    };
+    // };
     
-    bool TmpString::operator==(TmpString &str_subject){
-        return str_subject == value;
-    };
+    // bool TmpString::operator==(TmpString &str_subject){
+    //     return str_subject == value;
+    // };
 
-    bool TmpString::operator==(std::string &str_subject){
-        return str_subject == value;
-    };
+    // bool TmpString::operator==(std::string &str_subject){
+    //     return str_subject == value;
+    // };
       
 };
