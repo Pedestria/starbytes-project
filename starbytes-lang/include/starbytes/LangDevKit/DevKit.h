@@ -1,0 +1,5 @@
+
+#ifndef LANGDEVKIT_DEVKIT_H
+#define LANGDEVKIT_DEVKIT_H
+
+#endif

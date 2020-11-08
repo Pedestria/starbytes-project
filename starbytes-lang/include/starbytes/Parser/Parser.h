@@ -12,7 +12,7 @@
 
 STARBYTES_STD_NAMESPACE
     using namespace AST;
-    typedef unsigned int UInt;
+
     TYPED_ENUM Scope:int {
         Global,BlockStatement,FunctionBlockStatement
     };
@@ -20,7 +20,7 @@ STARBYTES_STD_NAMESPACE
         private:
             /*Pointer to AST*/
             AbstractSyntaxTree *Treeptr;
-            UInt currentIndex;
+            unsigned currentIndex;
             std::vector<Token> & tokens;
             Token * currentToken(){
                 return &tokens[currentIndex];

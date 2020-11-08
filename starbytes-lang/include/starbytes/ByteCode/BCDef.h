@@ -67,13 +67,7 @@ class BCProgram {
         std::string program_name;
         BCProgram(){};
         std::vector<BCUnit *> units;
-        using iterator = std::vector<BCUnit *>::iterator;
-        iterator begin(){
-            return units.begin();
-        };
-        iterator end(){
-            return units.end();
-        };
+        
 };
 
 template<class _BcTy,class _BCTyTst>

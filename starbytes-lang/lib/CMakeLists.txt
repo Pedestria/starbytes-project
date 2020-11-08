@@ -7,3 +7,5 @@ add_subdirectory("Interpreter")
 add_subdirectory("Gen")
 add_subdirectory("Project")
 add_subdirectory("Core")
+
+# add_subdirector("LangDevKit") // For starbytes-lsp

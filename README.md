@@ -20,13 +20,16 @@
 - `AST` - The AST Library
 - `Base` - Provides macros and standard functions used throughout the toolchain.
 - `ByteCode` - Bytecode parsing and generation.
+- `Core` - Central library for starbytes.
 - `Semantics` - A collection of libraries for semantic analysis for Starbytes.
-- `Generation` - Code generator
+- `Gen` - Code generator
 - `Parser` - Main parser and Lexer.
 - `Project` - Starbytes Project File management.
-- `Interpeter` - The Interpreter to run the bytecode.
+- `Interpreter` - The Interpreter to run the bytecode.
+- `LangDevKit` - Starbytes internal IDE language features provider. (Used by `starbytes-lsp`)
 - #### Tools:
-- `starbytes` - The Compiler/Runtime.
+- `starbytes-b` - The Compiler.
+- `starbytes-r` - The Interpreter.
 ### Language Server Protocol (`starbytes-lsp` Directory)
 - The Language Server Protocol Implementation for Starbytes
 ### Extra (`starbytes-extra` Directory)

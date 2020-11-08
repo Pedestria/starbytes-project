@@ -1,0 +1,12 @@
+add_starbytes_lib(
+    LIB_NAME
+    "starbytesLanguageDevKit"
+    SOURCE_FILES 
+    "DevKit.cpp"
+    HEADER_FILES 
+    "DevKit.h"
+    LIBS_TO_LINK 
+    "starbytesBase"
+    "starbytesCore"
+    "starbytesSemanticsEngine"
+)
