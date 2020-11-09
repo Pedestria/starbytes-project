@@ -8,4 +8,7 @@ add_subdirectory("Gen")
 add_subdirectory("Project")
 add_subdirectory("Core")
 
+# Extra libs
+
+add_subdirectory("Formatter")
 # add_subdirector("LangDevKit") // For starbytes-lsp

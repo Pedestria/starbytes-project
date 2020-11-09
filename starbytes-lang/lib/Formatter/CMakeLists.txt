@@ -7,6 +7,6 @@ add_starbytes_lib(
     "WriteOut.h"
     LIBS_TO_LINK
     "starbytesBase"
-    "starbtytesCore"
+    "starbytesCore"
     "starbytesAST"
 )
