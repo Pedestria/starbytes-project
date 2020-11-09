@@ -1,0 +1,12 @@
+add_starbytes_lib(
+    LIB_NAME
+    "starbytesSyntaxFormatter"
+    SOURCE_FILES 
+    "WriteOut.cpp"
+    HEADER_FILES 
+    "WriteOut.h"
+    LIBS_TO_LINK
+    "starbytesBase"
+    "starbtytesCore"
+    "starbytesAST"
+)
