@@ -75,8 +75,8 @@ bool is_starbytes_array(StarbytesObject *&ptr) {
 }
 
 template <typename _NumT>
-StarbytesNumber<_NumT> *create_starbytes_number(_NumT _num) {
-  StarbytesNumber<_NumT> *num = new StarbytesNumber<_NumT>(_num);
+StarbytesNumber*create_starbytes_number(_NumT _num,int ty) {
+  StarbytesNumber *num = new StarbytesNumber(_num,ty);
   return num;
 }
 
@@ -136,7 +136,7 @@ std::string starbytes_object_to_string(StarbytesObject *obj) {
     }
     out << "]";
   } else if (is_starbytes_number(obj)) {
-    out << "\x1b[38;5;210m" << ((StarbytesNumber<int> *)obj)->__get_interal()
+    out << "\x1b[38;5;210m" << *((char *)((StarbytesNumber *)obj)->__get_interal())
         << "\x1b[0m";
   } else if (is_starbytes_dictionary(obj)) {
     out << "{";
@@ -507,14 +507,14 @@ void invoke_instance_method(StarbytesObject *_instance_refer, std::string name,
       }
     }
   } else if (is_starbytes_number(_instance_refer)) {
-    StarbytesNumber<int> *num = (StarbytesNumber<int> *)_instance_refer;
+    StarbytesNumber *num = (StarbytesNumber*)_instance_refer;
     if (name == "add") {
       if (is_starbytes_number(*args[0])) {
-        num->add((StarbytesNumber<int> *)*args[0]);
+        num->add((StarbytesNumber *)*args[0]);
       }
     } else if (name == "subtract") {
       if (is_starbytes_number(*args[0])) {
-        num->subtract((StarbytesNumber<int> *)*args[0]);
+        num->subtract((StarbytesNumber *)*args[0]);
       }
     }
   } else if (is_starbytes_array(_instance_refer)) {
@@ -597,8 +597,25 @@ StarbytesObject *clone_object(StarbytesObject *_obj) {
     }
     ptr = new StarbytesArray(vals);
   } else if (_obj->isType(SBObjectType::Number)) {
-    ptr = create_starbytes_number(
-        ((StarbytesNumber<int> *)_obj)->__get_interal());
+    StarbytesNumber * ptr = (StarbytesNumber *)_obj;
+    int num_ty = ptr->get_dyn_num_type();
+    if(num_ty == 0){
+      int * val = (int *)ptr->__get_interal();
+      ptr = create_starbytes_number(*val, num_ty);
+    }
+    else if(num_ty == 1){
+      float * val = (float *)ptr->__get_interal();
+      ptr = create_starbytes_number(*val,num_ty);
+    }
+    else if(num_ty == 2){
+      long * val = (long *)ptr->__get_interal();
+      ptr = create_starbytes_number(*val,num_ty);
+    }
+    else if(num_ty == 3){
+      double * val = (double *)ptr->__get_interal();
+      ptr = create_starbytes_number(*val,num_ty);
+    }
+    
   }
   return ptr;
 }

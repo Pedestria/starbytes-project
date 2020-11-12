@@ -3,6 +3,8 @@ add_starbytes_lib(
     "starbytesLanguageDevKit"
     SOURCE_FILES 
     "DevKit.cpp"
+    "Suggestions.h"
+    "Suggestions.cpp"
     HEADER_FILES 
     "DevKit.h"
     LIBS_TO_LINK 

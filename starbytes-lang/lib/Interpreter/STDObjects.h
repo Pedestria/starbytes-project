@@ -1,4 +1,5 @@
 #include "starbytes/Base/Base.h"
+#include <optional>
 
 #ifndef INTERPRETER_STDOBJECTS_H
 #define INTERPRETER_STDOBJECTS_H
@@ -22,26 +23,237 @@ STARBYTES_INTERPRETER_NAMESPACE
                     };
                     
         };
-        template<typename _numType>
         class StarbytesNumber : public StarbytesObject {
             private:
-                _numType INTERNAL_VALUE;
+                class DynNum {
+                    typedef void * AnyNum;
+                    private:
+                    bool retainDyNumType;
+                    TYPED_ENUM DynNumTy:int {
+                        INT,FLOAT,LONG,DOUBLE
+                    };
+                    DynNumTy type;
+
+                    int * _int_val;
+                    double * _double_val;
+                    float * _float_val;
+                    long * _long_val;
+                    inline void __cast_dyn_num_to_this_type(DynNum & other){
+                        if(type == DynNumTy::FLOAT)
+                            other.toFloat();
+                        
+                        else if(type == DynNumTy::DOUBLE)
+                            other.toDouble();
+                        
+                        else if(type == DynNumTy::INT)
+                            other.toInt();
+                        
+                        else if(type == DynNumTy::LONG)
+                            other.toLong();
+                    };
+
+                    inline void __cast_this_dyn_num_to_other_type(DynNum & other){
+                        if(other.type == DynNumTy::FLOAT)
+                            toFloat();
+                        
+                        else if(other.type == DynNumTy::DOUBLE)
+                            toDouble();
+                        
+                        else if(other.type == DynNumTy::INT)
+                            toInt();
+                        
+                        else if(other.type == DynNumTy::LONG)
+                            toLong();
+                    };
+
+                    public:
+                    template<typename NUMTY>
+                    DynNum(int _type,NUMTY & val,bool _retainDyNumType = true):type(DynNumTy(_type)){
+                        if(type == DynNumTy::INT)
+                            _int_val = new int(val);
+                        else if(type == DynNumTy::DOUBLE)
+                            _double_val = new double(val);
+                        
+                        else if(type == DynNumTy::FLOAT)
+                            _float_val = new float(val);
+                        
+                        else if(type == DynNumTy::LONG)
+                            _long_val = new long(val);
+
+                        retainDyNumType = _retainDyNumType;
+                    };
+                    ~DynNum(){
+                        if(type == DynNumTy::INT){
+                            delete _int_val;
+                        }
+                        else if(type == DynNumTy::FLOAT){
+                            delete _float_val;
+                        }
+                        else if(type == DynNumTy::LONG){
+                            delete _long_val;
+                        }
+                        else if(type == DynNumTy::DOUBLE){
+                            delete _double_val;
+                        }
+                    };
+                    int _get_type(){
+                        return int(type);
+                    };
+                    void toInt(){
+                        if(type == DynNumTy::FLOAT){
+                            float tmp = *_float_val;
+                            _int_val = new int(tmp);
+                            delete _float_val;
+                        }
+                        else if(type == DynNumTy::LONG){
+                            long tmp = *_long_val;
+                            _int_val = new int(tmp);
+                            delete _long_val;
+                        }
+                        else if(type == DynNumTy::DOUBLE){
+                            double tmp = *_double_val;
+                            _int_val = new int(tmp);
+                            delete _double_val;
+                        }
+                        type = DynNumTy::INT;
+                    };
+                    void toFloat(){
+                        if(type == DynNumTy::INT){
+                            int tmp = *_int_val;
+                            _float_val = new float(tmp);
+                            delete _int_val;
+                        }
+                        else if(type == DynNumTy::LONG){
+                            long tmp = *_long_val;
+                            _float_val = new float(tmp);
+                            delete _long_val;
+                        }
+                        else if(type == DynNumTy::DOUBLE){
+                            double tmp = *_double_val;
+                            _float_val = new float(tmp);
+                            delete _double_val;
+                        }
+                        type = DynNumTy::FLOAT;
+                    };
+                    void toLong(){
+                        if(type == DynNumTy::INT){
+                            int tmp = *_int_val;
+                            _long_val = new long(tmp);
+                            delete _int_val;
+                        }
+                        if(type == DynNumTy::FLOAT){
+                            float tmp = *_float_val;
+                            _long_val = new long(tmp);
+                            delete _float_val;
+                        }
+                        else if(type == DynNumTy::DOUBLE){
+                            double tmp = *_double_val;
+                            _long_val = new long(tmp);
+                            delete _double_val;
+                        }
+                        type = DynNumTy::LONG;
+                    };
+                    void toDouble(){
+                        if(type == DynNumTy::FLOAT){
+                            float tmp = *_float_val;
+                            _double_val = new double(tmp);
+                            delete _float_val;
+                        }
+                        else if(type == DynNumTy::LONG){
+                            long tmp = *_long_val;
+                            _double_val = new double(tmp);
+                            delete _long_val;
+                        }
+                        else if(type == DynNumTy::INT){
+                            int tmp = *_int_val;
+                            _double_val = new double(tmp);
+                            delete _int_val;
+                        }
+                        type = DynNumTy::DOUBLE;
+                    };
+                    void operator +=(DynNum & num){
+                        //If type is same as `this` number!
+                        if(type == num.type){
+                            if(num.type == DynNumTy::DOUBLE){
+                                double * tmp_loc = num._double_val;
+                                (*_double_val) += *tmp_loc;
+                            }
+                            else if(num.type == DynNumTy::FLOAT){
+                                float * tmp_loc = num._float_val;
+                                (*_float_val) += *tmp_loc;
+                            }
+                            else if(num.type == DynNumTy::INT){
+                                int * tmp_loc = num._int_val;
+                                (*_int_val) += *tmp_loc;
+                            }
+                            else if(num.type == DynNumTy::LONG){
+                                long * tmp_loc = num._long_val;
+                                (*_long_val) += *tmp_loc;
+                            }
+                        }
+                        else{
+                            if(retainDyNumType)
+                                __cast_dyn_num_to_this_type(num);
+                            else 
+                                __cast_this_dyn_num_to_other_type(num);
+
+                            //Peform Addition!
+
+                            if(type == DynNumTy::DOUBLE){
+                                double * tmp_loc = num._double_val;
+                                (*_double_val) += *tmp_loc;
+                            }
+                            else if(type == DynNumTy::FLOAT){
+                                float * tmp_loc = num._float_val;
+                                (*_float_val) += *tmp_loc;
+                            }
+                            else if(type == DynNumTy::INT){
+                                int * tmp_loc = num._int_val;
+                                (*_int_val) += *tmp_loc;
+                            }
+                            else if(type == DynNumTy::LONG){
+                                long * tmp_loc = num._long_val;
+                                (*_long_val) += *tmp_loc;
+                            }
+                        }
+                    };
+                    void operator -=(DynNum & num){
+
+                    };
+                    bool operator ==(DynNum & num){
+
+                    };
+                    void * __get_val(){
+                        if(type == DynNumTy::DOUBLE)
+                            return _double_val;
+                        else if(type == DynNumTy::INT)
+                            return _int_val;
+                        else if(type == DynNumTy::FLOAT)
+                            return _float_val;
+                        else if(type == DynNumTy::LONG)
+                            return _long_val;
+                    };
+                };
+                DynNum INTERNAL_VALUE;
             public: 
-                void add(StarbytesNumber<_numType> * _otherNum){
+                void add(StarbytesNumber * _otherNum){
                     INTERNAL_VALUE += _otherNum->INTERNAL_VALUE;
                 };
-                void subtract(StarbytesNumber<_numType> *_otherNum){
+                void subtract(StarbytesNumber *_otherNum){
                     INTERNAL_VALUE -= _otherNum->INTERNAL_VALUE;
                 }
-                _numType & __get_interal(){
-                    return INTERNAL_VALUE;
+                void * __get_interal(){
+                    return INTERNAL_VALUE.__get_val();
                 }
-                StarbytesNumber(_numType num):INTERNAL_VALUE(num),StarbytesObject(SBObjectType::Number){};
+                template<typename NumTy>
+                StarbytesNumber(NumTy num,int t):StarbytesObject(SBObjectType::Number),INTERNAL_VALUE(DynNum(t,num)){
+                    
+                };
                 ~StarbytesNumber(){};
                 bool __is_equal(StarbytesObject *_obj) override{
                     bool return_code;
                     if(_obj->isType(SBObjectType::Number)){
-                        StarbytesNumber<_numType> *n = (StarbytesNumber<_numType> *)_obj;
+                        StarbytesNumber *n = (StarbytesNumber *)_obj;
                         if(n->INTERNAL_VALUE == INTERNAL_VALUE){
                             return_code = true;
                         }
@@ -53,6 +265,9 @@ STARBYTES_INTERPRETER_NAMESPACE
                         return_code = false;
                     }
                     return return_code;
+                };
+                int get_dyn_num_type(){
+                    return INTERNAL_VALUE._get_type();
                 };
         };
         

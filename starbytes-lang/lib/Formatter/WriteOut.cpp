@@ -31,8 +31,48 @@ class STBFormatter {
         //Format Functions!!
         //
 
-        inline void formatTypeId(ASTTypeIdentifier *tid){
+        inline void formatTypeId(ASTTypeIdentifier *& tid){
+            writeToOutStream(tid->type_name,tid->type_name.size());
+            if(tid->isGeneric) {
+                writeToOutStream('<');
+                for(auto i = 0; i < tid->typeargs.size();++i){
+                    formatTypeId(tid->typeargs[i]);
+                    if(i > 0)
+                        writeToOutStream(',');
+                }
+                writeToOutStream('>');
+            }
+            
+            if(tid->isArrayType)
+                for(int i = 0;i < tid->array_count;++i){
+                    writeToOutStream("[]",2);
+                }
+        };
 
+        inline void formatId(ASTIdentifier * id){
+            writeToOutStream(id->value,id->value.size());
+        };
+
+
+
+        void formatExpr(ASTExpression *& exp){
+            if(AST_NODE_IS(exp,ASTIdentifier)){
+                formatId(ASSERT_AST_NODE(exp,ASTIdentifier));
+            }
+            else if(AST_NODE_IS(exp,ASTNumericLiteral)){
+                ASTNumericLiteral *ptr = ASSERT_AST_NODE(exp,ASTNumericLiteral);
+                writeToOutStream(ptr->value,ptr->value.size());
+            }
+            else if(AST_NODE_IS(exp,ASTBooleanLiteral)){
+                ASTBooleanLiteral * ptr = ASSERT_AST_NODE(exp,ASTBooleanLiteral);
+                writeToOutStream(ptr->value,ptr->value.size());
+            }
+            else if(AST_NODE_IS(exp,ASTStringLiteral)){
+                ASTStringLiteral * ptr =  ASSERT_AST_NODE(exp,ASTStringLiteral);
+                writeToOutStream('"');
+                writeToOutStream(ptr->value,ptr->value.size());
+                writeToOutStream('"');
+            }
         };
 
         void formatVariableDecl(ASTVariableDeclaration * node){
@@ -44,21 +84,70 @@ class STBFormatter {
                 if(AST_NODE_IS(spec->id,ASTTypeCastIdentifier)){
                     writeToOutStream(' ');
                     ASTTypeCastIdentifier * _id = ASSERT_AST_NODE(spec->id,ASTTypeCastIdentifier);
-                    writeToOutStream(_id->id->value,_id->id->value.size());
+                    formatId(_id->id);
+                    writeToOutStream(':');
+                    formatTypeId(_id->tid);
+                    if(spec->initializer.has_value()){
+                        writeToOutStream(' ');
+                        writeToOutStream("= ",2);
+                        formatExpr(spec->initializer.value());
+                    }
                 }
                 else if(AST_NODE_IS(spec->id,ASTIdentifier)){
                     writeToOutStream(' ');
                     ASTIdentifier * _id = ASSERT_AST_NODE(spec->id,ASTIdentifier);
-                    writeToOutStream(_id->value,_id->value.size());
+                    formatId(_id);
+                    if(spec->initializer.has_value()){
+                        writeToOutStream(' ');
+                        writeToOutStream("= ",2);
+                        formatExpr(spec->initializer.value());
+                    }
                 }
                 ++index;
                 if(index < len)
-                    writeToOutStream(',',1);
+                    writeAndCheck(',',1);
+            }
+        };
+
+        void formatConstantDecl(ASTConstantDeclaration * node){
+            writeToOutStream("decl immutable",14);
+            unsigned int len = node->specifiers.size();
+            unsigned int index = 1;
+            for(auto & spec : node->specifiers){
+                
+                if(AST_NODE_IS(spec->id,ASTTypeCastIdentifier)){
+                    writeToOutStream(' ');
+                    ASTTypeCastIdentifier * _id = ASSERT_AST_NODE(spec->id,ASTTypeCastIdentifier);
+                    formatId(_id->id);
+                    writeToOutStream(':');
+                    formatTypeId(_id->tid);
+                    if(spec->initializer.has_value()){
+                        writeToOutStream(' ');
+                        writeToOutStream("= ",2);
+                        formatExpr(spec->initializer.value());
+                    }
+                }
+                else if(AST_NODE_IS(spec->id,ASTIdentifier)){
+                    writeToOutStream(' ');
+                    ASTIdentifier * _id = ASSERT_AST_NODE(spec->id,ASTIdentifier);
+                    formatId(_id);
+                    if(spec->initializer.has_value()){
+                        writeToOutStream(' ');
+                        writeToOutStream("= ",2);
+                        formatExpr(spec->initializer.value());
+                    }
+                }
+                ++index;
+                if(index < len)
+                    writeAndCheck(',',1);
             }
         };
         void formatStatement(ASTStatement *& node){
             if(AST_NODE_IS(node,ASTVariableDeclaration)){
                 formatVariableDecl(ASSERT_AST_NODE(node,ASTVariableDeclaration));
+            }
+            else if(AST_NODE_IS(node,ASTConstantDeclaration)){
+                formatConstantDecl(ASSERT_AST_NODE(node,ASTConstantDeclaration));
             }
         };
     public:

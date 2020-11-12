@@ -3,11 +3,11 @@ import JSONLib
 
 decl var:Number
 
-func function(hello:String,other:Number) >> String {
+func function(hello:String,other:Number) >? String {
     return "Hello World!"
 }
 
-decl var:Boolean = true
+decl var = true
 decl var1:Number
 decl var2:Number[] = [1,4,40.2342,5343]
 
@@ -16,8 +16,12 @@ decl var3:String[] = ["Gello","AnotherString"]
 hello(var3,var2)
 
 class Hello {
-    immutable  sd;
-    loose oppo
+    new() {
+
+    }
+    new(test:String) {
+
+    }
     method() >> String{
 
     }
