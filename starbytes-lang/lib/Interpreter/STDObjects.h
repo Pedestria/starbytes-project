@@ -209,7 +209,7 @@ STARBYTES_INTERPRETER_NAMESPACE
                             }
                             else if(type == DynNumTy::INT){
                                 int * tmp_loc = num._int_val;
-                                (*_int_val) += *tmp_loc;
+                                (*_int_val) -= *tmp_loc;
                             }
                             else if(type == DynNumTy::LONG){
                                 long * tmp_loc = num._long_val;
@@ -218,10 +218,71 @@ STARBYTES_INTERPRETER_NAMESPACE
                         }
                     };
                     void operator -=(DynNum & num){
+                        if(type == num.type){
+                            if(num.type == DynNumTy::DOUBLE){
+                                double * tmp_loc = num._double_val;
+                                (*_double_val) -= *tmp_loc;
+                            }
+                            else if(num.type == DynNumTy::FLOAT){
+                                float * tmp_loc = num._float_val;
+                                (*_float_val) -= *tmp_loc;
+                            }
+                            else if(num.type == DynNumTy::INT){
+                                int * tmp_loc = num._int_val;
+                                (*_int_val) -= *tmp_loc;
+                            }
+                            else if(num.type == DynNumTy::LONG){
+                                long * tmp_loc = num._long_val;
+                                (*_long_val) -= *tmp_loc;
+                            }
+                        }
+                        else{
+                            if(retainDyNumType)
+                                __cast_dyn_num_to_this_type(num);
+                            else 
+                                __cast_this_dyn_num_to_other_type(num);
 
+                            //Peform Addition!
+
+                            if(type == DynNumTy::DOUBLE){
+                                double * tmp_loc = num._double_val;
+                                (*_double_val) -= *tmp_loc;
+                            }
+                            else if(type == DynNumTy::FLOAT){
+                                float * tmp_loc = num._float_val;
+                                (*_float_val) -= *tmp_loc;
+                            }
+                            else if(type == DynNumTy::INT){
+                                int * tmp_loc = num._int_val;
+                                (*_int_val) -= *tmp_loc;
+                            }
+                            else if(type == DynNumTy::LONG){
+                                long * tmp_loc = num._long_val;
+                                (*_long_val) -= *tmp_loc;
+                            }
+                        }
                     };
                     bool operator ==(DynNum & num){
-
+                        if(type == num.type){
+                            if(type == DynNumTy::DOUBLE){
+                                double * tmp_loc = num._double_val;
+                                return (*_double_val) == *tmp_loc;
+                            }
+                            else if(type == DynNumTy::FLOAT){
+                                float * tmp_loc = num._float_val;
+                                return (*_float_val) == *tmp_loc;
+                            }
+                            else if(type == DynNumTy::INT){
+                                int * tmp_loc = num._int_val;
+                                return (*_int_val) == *tmp_loc;
+                            }
+                            else if(type == DynNumTy::LONG){
+                                long * tmp_loc = num._long_val;
+                                return (*_long_val) == *tmp_loc;
+                            }
+                        }
+                        else
+                            return false;
                     };
                     void * __get_val(){
                         if(type == DynNumTy::DOUBLE)
