@@ -13,4 +13,5 @@ add_starbytes_lib(
     ADT.cpp
     CmdLine.cpp
     FS.cpp
+    Document.cpp
     )
