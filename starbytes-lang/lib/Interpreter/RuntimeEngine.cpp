@@ -705,6 +705,13 @@ private:
           }
           return returncode;
         };
+        void dealloc_all_objects(){
+          for(int i = 0;i < objects.size();++i){
+            AllocEntry * _a_entry = objects[i];
+            delete _a_entry;
+          }
+          objects.clear();
+        };
   };
   std::vector<StarbytesObject **> args_alloc;
 
