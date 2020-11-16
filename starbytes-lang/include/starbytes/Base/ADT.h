@@ -19,7 +19,7 @@ STARBYTES_FOUNDATION_NAMESPACE
     class AdvVector_Iterator {
         private:
         size_t obj_size;
-        _Obj *& ptr;
+        _Obj * ptr;
         public:
         AdvVector_Iterator(_Obj *& _data_ptr):ptr(_data_ptr){
             obj_size = sizeof(_Obj);
@@ -57,7 +57,6 @@ STARBYTES_FOUNDATION_NAMESPACE
     class AdvVector {
         private:
         T * __data;
-        AdvVector_Iterator<T> _internal_it {__data};
         unsigned current_len = 0;
         template<class _Cont>
         inline void _alloc_objs(_Cont & container){
@@ -76,10 +75,10 @@ STARBYTES_FOUNDATION_NAMESPACE
         using l_value_ref = T &;
 
         iterator begin(){
-            return _internal_it;
+            return iterator(__data);
         };
         iterator end(){
-            return _internal_it += current_len;
+            return (iterator(__data) += current_len);
         };
 
         l_value_ref firstEl(){
