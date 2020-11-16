@@ -6,3 +6,13 @@
 
 > The Starbytes Syntax is represented interally as an Abstract Syntax Tree (AST).
 
+IfDeclaration
+
+if(condition)
+    //Do Something
+
+-----
+
+if(condition){
+    
+}

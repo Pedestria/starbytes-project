@@ -12,7 +12,6 @@ TYPED_ENUM KeywordType:int {
     Scope,Import,Variable,Immutable,Class,Function,Interface,Alias,Type,Return,If,Else,New,Switch,Case,Extends,Utilizes,Loose,Enum,For,While,Lazy,Await,Acquire
 };
 
-// std::vector<ASTComment *> commentBuffer;
 
 /*Creates Error Message For Console*/
 inline std::string StarbytesParseError(std::string message,DocumentPosition & position){

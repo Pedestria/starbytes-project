@@ -11,4 +11,8 @@
 #define NAMESPACE_END }
 #define TYPED_ENUM enum class
 
+#define __NO_DISCARD [[nodiscard]]
+#define __UNLIKELY(expr) [[unlikely]] expr
+
+
 #endif
