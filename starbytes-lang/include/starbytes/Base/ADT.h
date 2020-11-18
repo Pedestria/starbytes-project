@@ -8,6 +8,8 @@
 #include <cassert>
 #include <iostream>
 #include <cstring>
+#include <any>
+#include <array>
 #include "Macros.h"
 
 #ifndef BASE_ADT_H
@@ -40,8 +42,6 @@ STARBYTES_FOUNDATION_NAMESPACE
             return ptr == it_ref.ptr;
         };
         bool operator!=(const AdvVector_Iterator<_Obj> & it_ref){
-            std::cout << "Self_ptr:" << ptr << std::endl;
-            std::cout << "Other_ptr:" << it_ref.ptr << std::endl;
             return ptr != it_ref.ptr;
         };
         _Obj & operator * (){
@@ -100,7 +100,7 @@ STARBYTES_FOUNDATION_NAMESPACE
         
 
         void push(const T & item){
-            std::cout << "Pushing Item!" << std::endl; 
+            // std::cout << "Pushing Item!" << std::endl; 
             
             if(isEmpty()) {
                 current_len += 1;
@@ -110,14 +110,29 @@ STARBYTES_FOUNDATION_NAMESPACE
                 current_len += 1;
                 __data = static_cast<T *>(realloc(__data,(current_len) * sizeof(T)));  
             }
-            std::cout << "mem allocated!" << std::endl;
+            // std::cout << "mem allocated!" << std::endl;
             memcpy(__data + ((current_len-1) * sizeof(T)),&item,sizeof(T));
-            std::cout << "Item Pushed!" << std::endl;
+            // std::cout << "Item Pushed!" << std::endl;
         };
 
-        // void push(T && item){
-
-        // };
+        void push(T && item){
+            //  std::cout << "Pushing Item!" << std::endl; 
+            
+            if(isEmpty()) {
+                current_len += 1;
+                __data = static_cast<T *>(malloc(sizeof(T)));
+            }
+            else {
+                current_len += 1;
+                __data = static_cast<T *>(realloc(__data,(current_len) * sizeof(T)));  
+            }
+            // std::cout << "mem allocated!" << std::endl;
+            memcpy(__data + ((current_len-1) * sizeof(T)),&item,sizeof(T));
+            // std::cout << "Item Pushed!" << std::endl;
+        };
+        T & operator [](unsigned n){
+            return begin()[n];
+        };
 
         AdvVector() = default;
 
@@ -126,35 +141,108 @@ STARBYTES_FOUNDATION_NAMESPACE
             _alloc_objs(ilist);
         };
     };
+    
+    // class SmartVector {
+    //     AdvVector<size_t> obj_sizes;
+    //     AdvVector<std::type_info> obj_ty_ids;
+    //     void * __data;
+    //     unsigned current_len = 0;
+    //     size_t _sum_obj_sizes(unsigned to_idx){
+    //         size_t result = 0;
+    //         for(auto i = 0;i < to_idx;++i){
+    //             result += obj_sizes[i];
+    //         }
+    //         return result;
+    //     };
+    //     public:
+    //     SmartVector() = default;
+    //     template<class _obj>
+    //     void push(_obj & item){
+    //         size_t size = sizeof(_obj);
+    //         obj_sizes.push(size);
+    //         obj_ty_ids.push(typeid(_obj));
 
-    template<typename _Key,typename _Value>
-    class OrderedMap {
-        private:
-            std::vector<std::pair<_Key,_Value>> map;
+    //         if(isEmpty()) {
+    //             current_len += 1;
+    //             __data = malloc(size);
+    //         }
+    //         else {
+    //             current_len += 1;
+    //            __data = realloc(__data,_sum_obj_sizes(current_len));  
+    //         }
+    //         // std::cout << "mem allocated!" << std::endl;
+    //         memcpy(static_cast<std::any *>(__data) + _sum_obj_sizes(current_len - 1),&item,size);
+    //     };
+    //     template<class _Objtest>
+    //     _Objtest & firstEl(){
+    //         if(obj_ty_ids[0].hash_code() == typeid(_Objtest).hash_code()){
+    //             return *__data;
+    //         }
+    //     };
+
+    // };
+    template<class _key,class __val>
+    class DictionaryEntry : public std::pair<_key,__val> {};
+    template<class _Key,class _Val,unsigned len = 0>
+    class ImutDictionary {
+        using _Entry =  DictionaryEntry<_Key,_Val>;
+        std::vector<_Entry> data;
         public:
-            OrderedMap(std::initializer_list<std::pair<_Key,_Value>> ilist): map(ilist){}
-            ~OrderedMap(){};
-            void set(std::pair<_Key,_Value> & val){
-                map.push_back(val);
-            }
-            const _Value & get(const _Key & k){
-                for(std::pair<_Key,_Value> p : map){
-                    if(p.first == k){
-                        return p.second;
-                    }
-                }
-                return nullptr;
-            }
-             void remove(const _Key & k){
-                for(int i = 0;i < map.size();++i){
-                    if(map[i].first == k){
-                        map.erase(map.begin()+i);
-                        break;
-                    }
+        ImutDictionary() = delete;
+        ImutDictionary(std::initializer_list<_Entry> list):data(list){};
+        _Val & find(_Key & key){
+            _Val *ptr = nullptr;
+            for(auto & ent : data){
+                if(ent.first == key){
+                    ptr = &ent.second;
+                    break;
                 }
             }
-            
+            if(ptr == nullptr){
+                
+            }
+            return *ptr;
+        };
     };
+
+    template<class _Key,class _Val>
+    class DictionaryVec {
+        using _Entry =  DictionaryEntry<_Key,_Val>;
+        std::vector<_Entry> data;
+        public:
+        using null_val = _Val;
+        void pushEntry(_Entry entry){
+            data.push_back(entry);
+        };
+        _Val & find(_Key & key){
+            _Val *ptr = nullptr;
+            for(auto & ent : data){
+                if(ent.first == key){
+                    ptr = &ent.second;
+                    break;
+                }
+            }
+            if(ptr == nullptr){
+                return null_val();
+            }
+            return *ptr;
+        };
+        bool replace(_Key & key,_Val & replacement){
+            bool returncode = false;
+            for(auto & ent : data){
+                if(ent.first == key){
+                    returncode = true;
+                    //Destroy Val;
+                    ent.second.~_Val();
+                    ent.second = replacement;
+                }
+            }
+            return returncode;
+        };
+        DictionaryVec<_Key,_Val>() = default;
+        
+    };
+    
 
 NAMESPACE_END
 

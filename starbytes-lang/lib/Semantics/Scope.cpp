@@ -6,12 +6,16 @@ void Scope::addSymbol(SemanticSymbol *& sym){
     symbols.push_back(sym);
 };
 
-Scope *& ScopeStore::getScopeRef(std::string &name){
+Scope * ScopeStore::getScopeRef(std::string &name){
+    Scope * result;
     for(auto & _scope : scopes){
         if(_scope->name == name){
-            return _scope;
+            result = _scope;
+            break;
         }
     }
+    return result;
+
 };
 
 void ScopeStore::setExactCurrentScope(std::string &__exact_current_scope){

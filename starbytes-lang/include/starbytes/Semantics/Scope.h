@@ -74,7 +74,7 @@ class SemanticA;
             std::vector<Scope *> scopes;
         template<typename Lambda>
         void foreach(Lambda func);
-        Scope *& getScopeRef(std::string &name);
+        Scope * getScopeRef(std::string &name);
         void setExactCurrentScope(std::string & __exact_current_scope);
         void addToCurrentScopes(Scope *& new_scope);
         void popCurrentScope();
@@ -111,7 +111,7 @@ class SemanticA;
     template<typename SymTy>
     SymTy *& ScopeStore::getSymbolRefFromCurrentScopes(std::string & name){
         for(auto & _c_scope : current_scopes){
-            Scope *& scope_ref = getScopeRef(_c_scope);
+            Scope * scope_ref = getScopeRef(_c_scope);
             for(auto & _sym : scope_ref->getIterator()){
                 if(SEMANTIC_SYMBOL_IS(_sym,SymTy)){
                     if(_sym->name == name){
@@ -125,7 +125,7 @@ class SemanticA;
 
     template<typename SymTy>
     SymTy *& ScopeStore::getSymbolRefFromExactCurrentScope(std::string &name){
-        Scope *& scope_ref = getScopeRef(exact_current_scope);
+        Scope * scope_ref = getScopeRef(exact_current_scope);
         for(auto & _sym : scope_ref->getIterator()){
             if(SEMANTIC_SYMBOL_IS(_sym,SymTy)){
                 if(_sym->name == name){

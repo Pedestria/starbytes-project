@@ -18,7 +18,7 @@ STARBYTES_STD_NAMESPACE
 			LookupArray(std::initializer_list<Item> _input) : internalLookup(_input) {}
 			// Lookup an item in the dictionary
 			bool lookup(const Item& item) {
-				for (Item it : internalLookup) {
+				for (Item & it : internalLookup) {
 					if (it == item) {
 						return true;
 					}
