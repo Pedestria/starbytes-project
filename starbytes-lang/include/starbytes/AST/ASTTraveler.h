@@ -11,7 +11,7 @@ namespace AST {
 struct ContexualAction {};
 struct ASTVistorResponse {
   bool success;
-  ContexualAction * action;
+  ContexualAction *action;
 };
 
 struct ASTTravelContext {
@@ -27,65 +27,112 @@ struct ASTTravelSettings {};
 
 #define AST_TRAVEL_FUNC(name) bool visit##name()
 
-using ASTContextualMemoryBank = Foundation::DictionaryVec<unsigned,ASTNode *>;
+using ASTContextualMemoryBank = Foundation::DictionaryVec<unsigned, ASTNode *>;
 
 class ASTContextualMemory {
-  private:
+private:
   ASTContextualMemoryBank parent_heirarchy_mem;
   ASTContextualMemoryBank next_node_heirarchy_mem;
   ASTContextualMemoryBank previous_node_heirarchy_mem;
-  public:
-  enum class MemType:int {
-    Parent,NextNode,PreviousNode
+  static bool mem_bank_has_ent(ASTContextualMemoryBank &mem_bank_ref,
+                               unsigned &key) {
+    return mem_bank_ref.hasEntry(key);
   };
-  void set_node(unsigned & level,MemType type,ASTNode *& node_ptr){
-    if(type == MemType::Parent){
-      parent_heirarchy_mem.pushEntry(Foundation::DictionaryEntry<unsigned,ASTNode *>(level,node_ptr));
-    }
-    else if(type == MemType::NextNode){
-      next_node_heirarchy_mem.pushEntry(Foundation::DictionaryEntry<unsigned,ASTNode *>(level,node_ptr));
-    }
-    else if(type == MemType::PreviousNode){
-      previous_node_heirarchy_mem.pushEntry(Foundation::DictionaryEntry<unsigned,ASTNode *>(level,node_ptr));
+  static void
+  push_ent_to_vec(ASTContextualMemoryBank &mem_bank_ref,
+                  Foundation::DictionaryEntry<unsigned, ASTNode *> &ent) {
+    if (mem_bank_has_ent(mem_bank_ref, ent.first)) {
+      mem_bank_ref.replace(ent.first, ent.second);
+    } else {
+      mem_bank_ref.pushEntry(ent);
     }
   };
-  ASTNode * get_node(unsigned & level,MemType type){
-      ASTNode *n = nullptr;
-      if(type == MemType::Parent){
-         n = parent_heirarchy_mem.find(level); 
-      }
-      else if(type == MemType::NextNode){
-        n = next_node_heirarchy_mem.find(level);
-      }
-      else if(type == MemType::PreviousNode){
-        n = previous_node_heirarchy_mem.find(level);
-      }
-      return n;
+
+public:
+  enum class MemType : int { Parent, NextNode, PreviousNode };
+  void set_node(unsigned &level, MemType type, ASTNode *&node_ptr) {
+    Foundation::DictionaryEntry<unsigned, ASTNode *> ENT(level, node_ptr);
+    if (type == MemType::Parent) {
+      push_ent_to_vec(parent_heirarchy_mem, ENT);
+    } else if (type == MemType::NextNode) {
+      push_ent_to_vec(next_node_heirarchy_mem, ENT);
+    } else if (type == MemType::PreviousNode) {
+      push_ent_to_vec(previous_node_heirarchy_mem, ENT);
+    }
+  };
+  ASTNode *get_node(unsigned &level, MemType type) {
+    ASTNode *n = nullptr;
+    if (type == MemType::Parent) {
+      n = parent_heirarchy_mem.find(level);
+    } else if (type == MemType::NextNode) {
+      n = next_node_heirarchy_mem.find(level);
+    } else if (type == MemType::PreviousNode) {
+      n = previous_node_heirarchy_mem.find(level);
+    }
+    return n;
   };
 };
 
+using ASTContextualActionCallback = void (*)(ContexualAction * action);
+
 class ASTTraveler {
-  Foundation::ImutDictionary<ASTType, ASTFuncCallback,2> ast_lookup;
+  Foundation::ImutDictionary<ASTType, ASTFuncCallback, 2> ast_lookup;
   ASTTravelSettings options;
   ASTTravelContext cntxt;
   ASTContextualMemory cntxtl_memory;
-  //TODO: Contextual Memory!!!
+  unsigned current_level = 0;
+
   AbstractSyntaxTree *&tree;
-  void setParentNode(ASTNode *node_ptr) { cntxt.parent = node_ptr; };
-  void setCurrentNode(ASTNode * node_ptr) {cntxt.current = node_ptr;};
-  void setNextNode(ASTNode * node_ptr) {cntxt.next = node_ptr;};
-  void nextNodeAndSetAheadNode(ASTNode *node_ptr = nullptr) {
-    cntxt.previous = cntxt.current;
+  /*
+    Callback called when Contexual Is NOT a nullptr 
+    (When an action must be taken! or when the visit to each node returns {success = false})
+  */
+  ASTContextualActionCallback action_callback;
+  void moveDown(){
+    ++current_level;
+  };
+  void moveUp(){
+    --current_level;
+  };
+  void setParentNode(ASTNode *node_ptr) {
+    cntxtl_memory.set_node(current_level,ASTContextualMemory::MemType::Parent,cntxt.parent.value());
+    cntxt.parent = node_ptr; 
+  };
+  void recoverPriorParentNode(){
+    cntxt.parent = cntxtl_memory.get_node(current_level,ASTContextualMemory::MemType::Parent);
+  };
+  void setPreviousNode(ASTNode * node_ptr,bool store_in_mem = false) {
+    if(store_in_mem && cntxt.previous.has_value()){
+      cntxtl_memory.set_node(current_level,ASTContextualMemory::MemType::PreviousNode,cntxt.previous.value());
+    }
+    cntxt.previous = node_ptr;
+  };
+  void recoverPriorPreviousNode(){
+    cntxt.previous = cntxtl_memory.get_node(current_level,ASTContextualMemory::MemType::PreviousNode);
+  };
+  void setCurrentNode(ASTNode *node_ptr) { cntxt.current = node_ptr; };
+  void setNextNode(ASTNode *node_ptr,bool store_in_mem = false) { 
+    if(store_in_mem && cntxt.next.has_value()){
+      cntxtl_memory.set_node(current_level,ASTContextualMemory::MemType::NextNode,cntxt.next.value());
+    }
+    cntxt.next = node_ptr; 
+  };
+  void recoverPriorNextNode(){
+    cntxt.next = cntxtl_memory.get_node(current_level,ASTContextualMemory::MemType::NextNode);
+  };
+  void nextNodeAndSetAheadNode(ASTNode *node_ptr = nullptr,bool remember_next_and_previous_node = false) {
+    setPreviousNode(cntxt.current,remember_next_and_previous_node);
     if (cntxt.next.has_value())
-      cntxt.current = cntxt.next.value();
+      setCurrentNode(cntxt.next.value());
     else
       return;
-
-    cntxt.next = node_ptr;
+    if(node_ptr == nullptr)
+      recoverPriorNextNode();
+    setNextNode(node_ptr,remember_next_and_previous_node);
   };
-  bool invokeCallback(ASTType & t){
-      ASTFuncCallback & cb = ast_lookup.find(t);
-      return cb(cntxt).success;
+  bool invokeCallback(ASTType &t) {
+    ASTFuncCallback &cb = ast_lookup.find(t);
+    return cb(cntxt).success;
   };
 
   AST_TRAVEL_FUNC(Statement);
@@ -109,6 +156,8 @@ class ASTTraveler {
 
 public:
   ASTTraveler() = delete;
+  ASTTraveler(const ASTTraveler &) = delete;
+  ASTTraveler(ASTTraveler &&) = delete;
   ASTTraveler(AbstractSyntaxTree *&ast,
               std::initializer_list<
                   Foundation::DictionaryEntry<ASTType, ASTFuncCallback>>

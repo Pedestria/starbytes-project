@@ -211,8 +211,18 @@ STARBYTES_FOUNDATION_NAMESPACE
         using _Entry =  DictionaryEntry<_Key,_Val>;
         std::vector<_Entry> data;
         public:
-        void pushEntry(_Entry entry){
+        void pushEntry(_Entry & entry){
             data.push_back(entry);
+        };
+        bool hasEntry(_Key & key){
+            bool returncode = false;
+            for(auto & ent : data){
+                if(ent.first == key){
+                    returncode = true;
+                    break;
+                }
+            }
+            return returncode;
         };
         _Val & find(_Key & key){
             _Val *ptr = nullptr;
@@ -244,7 +254,6 @@ STARBYTES_FOUNDATION_NAMESPACE
             for(auto idx = 0;idx < len;++idx){
                 auto elem = data[idx];
                 if(elem.first == key){
-                    elem.second.~_Val();
                     data.erase(data.begin()+idx);
                     break;
                 }
