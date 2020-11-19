@@ -182,7 +182,8 @@ STARBYTES_FOUNDATION_NAMESPACE
 
     // };
     template<class _key,class __val>
-    class DictionaryEntry : public std::pair<_key,__val> {};
+    using DictionaryEntry = std::pair<_key,__val>;
+      
     template<class _Key,class _Val,unsigned len = 0>
     class ImutDictionary {
         using _Entry =  DictionaryEntry<_Key,_Val>;
@@ -210,7 +211,6 @@ STARBYTES_FOUNDATION_NAMESPACE
         using _Entry =  DictionaryEntry<_Key,_Val>;
         std::vector<_Entry> data;
         public:
-        using null_val = _Val;
         void pushEntry(_Entry entry){
             data.push_back(entry);
         };
@@ -223,7 +223,7 @@ STARBYTES_FOUNDATION_NAMESPACE
                 }
             }
             if(ptr == nullptr){
-                return null_val();
+                
             }
             return *ptr;
         };
@@ -238,6 +238,17 @@ STARBYTES_FOUNDATION_NAMESPACE
                 }
             }
             return returncode;
+        };
+        void popEntry(_Key & key){
+            const size_t len = data.size();
+            for(auto idx = 0;idx < len;++idx){
+                auto elem = data[idx];
+                if(elem.first == key){
+                    elem.second.~_Val();
+                    data.erase(data.begin()+idx);
+                    break;
+                }
+            }
         };
         DictionaryVec<_Key,_Val>() = default;
         
