@@ -4,7 +4,6 @@ add_starbytes_lib(
     SOURCE_FILES
     AST.cpp
     ASTDumper.cpp
-    ASTTraveler.cpp
     HEADER_FILES
     AST.h
     ASTDumper.h

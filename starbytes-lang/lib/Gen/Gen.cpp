@@ -1,5 +1,4 @@
 #include "starbytes/Gen/Gen.h"
-#include "GenDecl.h"
 
 STARBYTES_GEN_NAMESPACE
 
@@ -17,20 +16,9 @@ unsigned & CodeGenR::flushArgsCount(){
     return bc_args_count;
 };
 
-#define VISIT_NODE(node,_node_ptr) visit##node(ASSERT_AST_NODE(_node_ptr,node),this)
-
 void CodeGenR::_generateAST(AST::AbstractSyntaxTree *& src){
-    for(auto & node : src->nodes){
-        if(AST_NODE_IS(node,ASTFunctionDeclaration)){
-            VISIT_NODE(ASTFunctionDeclaration,node);
-        }
-        else if(AST_NODE_IS(node,ASTClassDeclaration)){
-            VISIT_NODE(ASTClassDeclaration, node);
-        }
-    }
+   
 };
-
-#undef VISIT_NODE
 
 ByteCode::BCProgram *& CodeGenR::generate(){
     //TODO Generate!

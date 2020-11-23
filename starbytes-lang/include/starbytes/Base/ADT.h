@@ -183,6 +183,11 @@ STARBYTES_FOUNDATION_NAMESPACE
     // };
     template<class _key,class __val>
     using DictionaryEntry = std::pair<_key,__val>;
+
+    template<class _Key,class _Val>
+    inline DictionaryEntry<_Key,_Val> dict_vec_entry(_Key k,_Val v){
+        return DictionaryEntry<_Key,_Val>(k,v);
+    };
       
     template<class _Key,class _Val,unsigned len = 0>
     class ImutDictionary {

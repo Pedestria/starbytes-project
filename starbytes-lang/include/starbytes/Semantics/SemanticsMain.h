@@ -1,6 +1,8 @@
 #include "starbytes/AST/AST.h"
 #include "starbytes/Base/Base.h"
 #include "Scope.h"
+#include "starbytes/AST/ASTTraveler.h"
+#include "starbytes/Semantics/StarbytesDecl.h"
 
 #ifndef SEMANTICS_SEMANTICS_MAIN_H
 #define SEMANTICS_SEMANTICS_MAIN_H
@@ -8,6 +10,8 @@
 STARBYTES_SEMANTICS_NAMESPACE
 
 using namespace AST;
+
+#define SEMANTICA_FUNC(name) ASTVisitorResponse at##name(ASTTravelContext * context)
         
     class STBType;
     struct STBObjectMethod;
@@ -20,36 +24,22 @@ using namespace AST;
             ScopeStore store;
             std::vector<std::string> modules;
             std::vector<SemanticAError> errors;
-            // template<typename _Visitor>
-            // void _visit_visitor(AST::ASTNode *&node){
-            //     _Visitor().visit(this,node);
-            // };
             void createScope(std::string & name);
             void registerSymbolInScope(std::string & scope,SemanticSymbol *symbol);
             void registerSymbolinExactCurrentScope(SemanticSymbol *symbol);
-            friend class ScopeDeclVisitor;
-            friend class VariableDeclVisitor;
-            friend class FunctionDeclVisitor;
-            friend class ClassDeclVisitor;
-            friend class ImportDeclVisitor;
-            friend class ReturnDeclVisitor;
-            friend class ConstantDeclVistior;
+
             template<typename _Node>
             friend inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,std::vector<STBObjectProperty> *props,_Node *node,SemanticA *& sem);
-            //Friends AST Evaluator functions!
-            FRIEND_AST_EVALUATOR(ASTCallExpression);
-            FRIEND_AST_EVALUATOR(ASTMemberExpression);
-            FRIEND_AST_EVALUATOR(ASTStringLiteral);
-            FRIEND_AST_EVALUATOR(ASTBooleanLiteral);
-            FRIEND_AST_EVALUATOR(ASTNumericLiteral);
-            FRIEND_AST_EVALUATOR(ASTArrayExpression);
+            ASTTraveler<SemanticA> traveler = ASTTraveler(this,{
+                Foundation::dict_vec_entry(ASTType::VariableSpecifier,&atVarSpec),
+                Foundation::dict_vec_entry(ASTType::FunctionDeclaration,&atFuncDecl)
+            });
+
         public:
             void freeSymbolStores();
             void initialize();
             void analyzeFileForModule(Tree *& tree_ptr);
             void finish();
-
-            void visitNode(ASTNode * node,bool is_function = false,ASTNode *func_ptr = nullptr);
             SemanticA(){};
             ~SemanticA(){};
     };

@@ -1,7 +1,5 @@
 #include "starbytes/Semantics/SemanticsMain.h"
 #include "starbytes/AST/AST.h"
-#include "StarbytesDecl.h"
-#include "StarbytesExp.h"
 #include "TypeCheck.h"
 #include <iostream>
 
@@ -31,45 +29,6 @@ STARBYTES_SEMANTICS_NAMESPACE
         }
     };
 
-    void SemanticA::visitNode(AST::ASTNode * node,bool is_function,ASTNode *func_ptr){
-        // std::cout << int(node->type) << " ;";
-        try {
-            if(is_function){
-                if(AST_NODE_IS(node,ASTReturnDeclaration)){
-                    std::cout << "Visiting Return Decl!";
-                    ReturnDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTReturnDeclaration),func_ptr);
-                }
-            }
-            if(AST_NODE_IS(node,ASTImportDeclaration)){
-                std::cout << "Visiting Import Decl!" << std::endl;
-                ImportDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTImportDeclaration));
-            }
-            else if(AST_NODE_IS(node,ASTAcquireDeclaration)){
-                std::cout << "Visiting Acquire Decl!" << std::endl;
-                AcquireDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTAcquireDeclaration));
-            }
-            else if(AST_NODE_IS(node,ASTScopeDeclaration)){
-                std::cout << "Visiting Scope Decl!" << std::endl;
-                ScopeDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTScopeDeclaration));
-            }
-            else if(AST_NODE_IS(node,ASTVariableDeclaration)){
-                std::cout << "Visiting Variable Decl!" << std::endl;
-                VariableDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTVariableDeclaration));
-            }
-            else if(AST_NODE_IS(node,ASTClassDeclaration)){
-                std::cout << "Visiting Class Decl!" << std::endl;
-                ClassDeclVisitor(this).visit(ASSERT_AST_NODE(node,ASTClassDeclaration));
-            }
-            else if(AST_NODE_IS(node,ASTExpressionStatement)){
-                std::cout << "Visiting Expr Statement!" << std::endl;
-                ExprStatementVisitor(this).visit(ASSERT_AST_NODE(node,ASTExpressionStatement));
-            }
-        }
-        catch(std::string error){
-            std::cerr << "\x1b[31m" << error << "\x1b[0m" << std::endl;
-        }
-    };
-
     void SemanticA::initialize(){
         std::string stdlib = "STARBYTES_GLOBAL";
         createScope(stdlib);
@@ -84,9 +43,7 @@ STARBYTES_SEMANTICS_NAMESPACE
 
     void SemanticA::analyzeFileForModule(Tree *& tree_ptr){
         tree = tree_ptr;
-        for(auto & node : tree->nodes){
-            visitNode(AST_NODE_CAST(node));
-        }
+        traveler.travel(tree);
     };
 
     void SemanticA::finish(){

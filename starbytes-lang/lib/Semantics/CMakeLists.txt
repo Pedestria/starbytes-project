@@ -6,9 +6,7 @@ add_starbytes_lib(
     Scope.cpp
     Symbols.cpp 
     StarbytesDecl.cpp
-    StarbytesDecl.h
     StarbytesExp.cpp
-    StarbytesExp.h
     TypeCheck.h
     TypeCheck.cpp
     HEADER_FILES 

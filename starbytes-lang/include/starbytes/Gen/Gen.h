@@ -9,8 +9,6 @@ STARBYTES_GEN_NAMESPACE
 
 using namespace AST;
 
-#define FRIEND_AST_VISITOR(name) friend void visit##name(name * _node,CodeGenR * _gen)
-
 class CodeGenR {
     private:
         using _program_out = ByteCode::BCProgram *; 
@@ -25,9 +23,6 @@ class CodeGenR {
     public:
         CodeGenR(_program_in m_srcs);
         _program_out & generate();
-        FRIEND_AST_VISITOR(ASTClassDeclaration);
-        FRIEND_AST_VISITOR(ASTFunctionDeclaration);
-        FRIEND_AST_VISITOR(ASTVariableDeclaration);
 };
 
 ByteCode::BCProgram * generateToBCProgram(std::vector<AST::AbstractSyntaxTree *> &module_sources);
