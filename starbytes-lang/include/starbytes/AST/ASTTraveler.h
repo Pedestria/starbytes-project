@@ -75,6 +75,8 @@ public:
   };
 };
 using ASTContextualActionCallback = void (*)(ContextualAction *action);
+template<class _ParentTy>
+using ASTTravelerCallbackList = std::initializer_list<Foundation::DictionaryEntry<ASTType,ASTFuncCallback<_ParentTy>>>;
 template <class _ParentTy> class ASTTraveler {
   Foundation::ImutDictionary<ASTType, ASTFuncCallback<_ParentTy>, 2> ast_lookup;
   ASTTravelSettings options;
@@ -180,12 +182,12 @@ public:
   // ASTTraveler(ASTTraveler &&) = delete;
   // void operator=(ASTTraveler &) = delete;
   ASTTraveler(_ParentTy *ptr_to_parent,
-              std::initializer_list<
-                  Foundation::DictionaryEntry<ASTType, ASTFuncCallback<_ParentTy>>>
-                  list)
+              ASTTravelerCallbackList<_ParentTy>
+                   & list)
       : parent_ptr(ptr_to_parent), ast_lookup(list){};
   void travel(AbstractSyntaxTree *__tree);
 };
+
 
 template <class _ParentTy> void ASTTraveler<_ParentTy>::visitImportDecl() {
   // bool retr_code = true;

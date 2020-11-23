@@ -1,5 +1,6 @@
 #include "starbytes/Base/Base.h"
 #include "starbytes/AST/AST.h"
+#include "starbytes/AST/ASTTraveler.h"
 #include "starbytes/ByteCode/BCDef.h"
 
 #ifndef GEN_GEN_H
@@ -9,7 +10,7 @@ STARBYTES_GEN_NAMESPACE
 
 using namespace AST;
 
-class CodeGenR {
+class CodeGenR : public ASTTraveler<CodeGenR> {
     private:
         using _program_out = ByteCode::BCProgram *; 
         using _program_src = AST::AbstractSyntaxTree *;

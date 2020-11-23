@@ -8,6 +8,14 @@ STARBYTES_SEMANTICS_NAMESPACE
 
     using namespace AST;
 
+    ASTTravelerCallbackList<SemanticA> cb_list = {
+                Foundation::dict_vec_entry(ASTType::VariableSpecifier,&atVarSpec),
+                Foundation::dict_vec_entry(ASTType::FunctionDeclaration,&atFuncDecl)
+            };
+
+    SemanticA::SemanticA():ASTTraveler<SemanticA>(this,cb_list){};
+
+    
     void SemanticA::createScope(std::string & name){
         Scope *scope = new Scope(name);
         store.addToCurrentScopes(scope);
@@ -43,7 +51,7 @@ STARBYTES_SEMANTICS_NAMESPACE
 
     void SemanticA::analyzeFileForModule(Tree *& tree_ptr){
         tree = tree_ptr;
-        traveler.travel(tree);
+        travel(tree);
     };
 
     void SemanticA::finish(){

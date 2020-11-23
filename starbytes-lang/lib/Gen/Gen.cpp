@@ -4,7 +4,9 @@ STARBYTES_GEN_NAMESPACE
 
 using namespace AST;
 
-CodeGenR::CodeGenR(std::vector<AST::AbstractSyntaxTree *> & m_srcs):module_sources(m_srcs){
+ASTTravelerCallbackList<CodeGenR> callback_list = {};
+
+CodeGenR::CodeGenR(std::vector<AST::AbstractSyntaxTree *> & m_srcs):ASTTraveler<CodeGenR>(this,callback_list),module_sources(m_srcs){
     result = new ByteCode::BCProgram();
 };
 
@@ -17,7 +19,7 @@ unsigned & CodeGenR::flushArgsCount(){
 };
 
 void CodeGenR::_generateAST(AST::AbstractSyntaxTree *& src){
-   
+   travel(src);
 };
 
 ByteCode::BCProgram *& CodeGenR::generate(){

@@ -16,7 +16,7 @@ using namespace AST;
     class STBType;
     struct STBObjectMethod;
     struct STBObjectProperty;
-    class SemanticA {
+    class SemanticA : public ASTTraveler<SemanticA> {
         using Tree = AbstractSyntaxTree;
         using SemanticAError = std::string;
         private:
@@ -30,17 +30,14 @@ using namespace AST;
 
             template<typename _Node>
             friend inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,std::vector<STBObjectProperty> *props,_Node *node,SemanticA *& sem);
-            ASTTraveler<SemanticA> traveler = ASTTraveler(this,{
-                Foundation::dict_vec_entry(ASTType::VariableSpecifier,&atVarSpec),
-                Foundation::dict_vec_entry(ASTType::FunctionDeclaration,&atFuncDecl)
-            });
+            
 
         public:
             void freeSymbolStores();
             void initialize();
             void analyzeFileForModule(Tree *& tree_ptr);
             void finish();
-            SemanticA(){};
+            SemanticA();
             ~SemanticA(){};
     };
 
