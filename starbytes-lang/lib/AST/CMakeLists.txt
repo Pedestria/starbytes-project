@@ -8,6 +8,7 @@ add_starbytes_lib(
     AST.h
     ASTDumper.h
     ASTTraveler.h
+    TreePrinter.h
     LIBS_TO_LINK
     "starbytesBase"
     )

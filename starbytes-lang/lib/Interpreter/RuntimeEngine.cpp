@@ -669,11 +669,18 @@ void internal_if(StarbytesBoolean *_bool, std::string _func_to_invoke,
 // };
 using namespace ByteCode;
 
+class BCEngine;
+
+using BCInternalExtensionFuncCallback = void(*)(BCEngine * bc_engine);
+
 class BCEngine {
-private:
+  private:
+
   std::vector<Engine::Scope *> scopes;
   std::vector<std::string> scope_heirarchy;
+  Foundation::DictionaryVec<std::string,BCInternalExtensionFuncCallback> extensions;
 
+  protected:
   class TempAllocator {
       private:
         struct AllocEntry {

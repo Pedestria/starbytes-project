@@ -28,7 +28,7 @@ inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,st
                 }
                 //TODO: Check for Interface Symbols!
                 else{
-                    throw StarbytesSemanticsError("Unknown Type: "+tcid->tid->type_name,tcid->BeginFold);
+                    // throw StarbytesSemanticsError("Unknown Type: "+tcid->tid->type_name,tcid->BeginFold);
                 }
             }
             else if(AST_NODE_IS(_prop->id,ASTIdentifier)){
@@ -48,7 +48,7 @@ inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,st
             }
             //TODO: Check for Interface Symbols!
             else{
-                throw StarbytesSemanticsError("Unknown Type: "+_method->returnType->type_name,_method->returnType->BeginFold);
+                // throw StarbytesSemanticsError("Unknown Type: "+_method->returnType->type_name,_method->returnType->BeginFold);
             }
             methods->push_back(method);
         }
@@ -64,7 +64,7 @@ inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,st
             }
             //TODO: Check for Interface Symbols!
             else{
-                throw StarbytesSemanticsError("Unknown Type: "+tcid->tid->type_name,tcid->BeginFold);
+                // throw StarbytesSemanticsError("Unknown Type: "+tcid->tid->type_name,tcid->BeginFold);
             }
             props->push_back(prop);
         }
@@ -78,7 +78,7 @@ inline void construct_methods_and_props(std::vector<STBObjectMethod> *methods,st
             }
             //TODO: Check for Interface Symbols!
             else{
-                throw StarbytesSemanticsError("Unknown Type: "+_method->returnType->type_name,_method->returnType->BeginFold);
+                // throw StarbytesSemanticsError("Unknown Type: "+_method->returnType->type_name,_method->returnType->BeginFold);
             }
             methods->push_back(method);
         }

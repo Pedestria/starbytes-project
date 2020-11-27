@@ -32,17 +32,27 @@ int main(){
     // output.write((char *)b,sizeof(*b));
     // output.close();
     
-    AdvVector<std::string> vec;
-    std::string s = "hello";
-    std::string o = "other";
-    vec.push(s);
-    vec.push(o);
-    AdvVector<std::string>::iterator it = vec.begin();
-    std::cout << "size:" << vec.size();
-    while(it != vec.end()){
-        std::cout << *it << std::endl;
-        ++it;
-    }
+    // AdvVector<std::string> vec;
+    // std::string s = "hello";
+    // std::string o = "other";
+    // vec.push(s);
+    // vec.push(o);
+    // AdvVector<std::string>::iterator it = vec.begin();
+    // std::cout << "size:" << vec.size();
+    // while(it != vec.end()){
+    //     std::cout << *it << std::endl;
+    //     ++it;
+    // }
+
+    std::string test = "TestString!";
+    RString s(test);
+    
+    // RString::iterator it = s.begin();
+    // while(it != s.end()){
+    //     std::cout << *it << std::endl;
+    //     ++it;
+    // }
+    std::cout << s[3];
 
     return 0;
 };

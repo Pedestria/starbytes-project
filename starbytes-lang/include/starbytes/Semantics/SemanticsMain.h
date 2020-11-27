@@ -12,13 +12,18 @@ STARBYTES_SEMANTICS_NAMESPACE
 using namespace AST;
 
 #define SEMANTICA_FUNC(name) ASTVisitorResponse at##name(ASTTravelContext * context)
+
+    struct SemanticAError {
+        std::string message;
+        std::string file;
+        SrcLocation pos;
+    };
         
     class STBType;
     struct STBObjectMethod;
     struct STBObjectProperty;
     class SemanticA : public ASTTraveler<SemanticA> {
         using Tree = AbstractSyntaxTree;
-        using SemanticAError = std::string;
         private:
             Tree * tree;
             ScopeStore store;
@@ -37,12 +42,9 @@ using namespace AST;
             void initialize();
             void analyzeFileForModule(Tree *& tree_ptr);
             void finish();
+            ScopeStore finishAndDumpStore();
             SemanticA();
             ~SemanticA(){};
-    };
-
-    inline std::string StarbytesSemanticsError(std::string message,DocumentPosition & pos){
-        return "SemanticsError:\n"+message.append("\nThis Error Has Occured at {Line:"+std::to_string(pos.line)+",Start:"+std::to_string(pos.start)+",End:"+std::to_string(pos.end)+"}");
     };
 
 NAMESPACE_END

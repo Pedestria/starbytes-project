@@ -15,9 +15,6 @@ WINDOWS_CONSOLE_INIT
 using namespace std;
 using namespace Starbytes;
 /*Serializes Position into String*/
-string convertPosition(DocumentPosition pos){
-	return string("{Line:" +to_string(pos.line)+",Start:"+to_string(pos.start)+",End:"+to_string(pos.end)+",RawIndex:"+to_string(pos.raw_index)+"}");
-}
 
 string help(){
 	return "\n \u001b[35m\u001b[4mThe Starbytes BC Interpreter ("+STARBYTES_PROJECT_VERSION+")\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help information \n --execute ";

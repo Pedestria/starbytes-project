@@ -467,8 +467,8 @@ STARBYTES_STD_NAMESPACE
                 return tree;
             };
     };
-
-    ByteCode::BCProgram * compileTarget(TargetDependency &tg){
+//ByteCode::BCProgram *
+    Semantics::ScopeStore compileTargetDep(TargetDependency &tg){
         std::vector<AbstractSyntaxTree *> source_trees;
 
         #ifdef HAS_FILESYSTEM_H
@@ -481,11 +481,13 @@ STARBYTES_STD_NAMESPACE
                 std::string *code_ptr = Foundation::readFile(file);
                 std::vector<Token> tokens;
                 Lexer(*code_ptr,tokens).tokenize();
+                std::vector<AbstractSyntaxTree *> module_sources;
                 AbstractSyntaxTree *file_ast = new AbstractSyntaxTree();
                 file_ast->filename = file;
                 try {
                     Parser(tokens,file_ast).convertToAST();
                     //TODO: Return ScopeStore when running SemanticA on any AST!
+                    
                 }
                 catch (std::string error){
                     std::cerr << error << std::endl;
@@ -497,23 +499,23 @@ STARBYTES_STD_NAMESPACE
         #endif
 
         Semantics::SemanticA sem;
+        
         sem.initialize();
         for(auto & ast : source_trees){
             sem.analyzeFileForModule(ast);
         }
-        sem.finish();
-        return CodeGen::generateToBCProgram(source_trees);
+        return sem.finishAndDumpStore();
+        // return CodeGen::generateToBCProgram(source_trees);
     };
 
     void compileFromTree(DependencyTree *tree,std::vector<StarbytesCompiledModule> *vector_ptr){
-        std::vector<AbstractSyntaxTree *> temp_asts;
-        tree->foreach([&tree](TargetDependency &tg){
-            if(tg.name == tree->entry_point_target){
-                StarbytesCompiledModule mod;
-                mod.name = tg.name;
-                mod.program = compileTarget(tg);
-            }
-        });
+        // tree->foreach([&tree](TargetDependency &tg){
+        //     if(tg.name == tree->entry_point_target){
+        //         StarbytesCompiledModule mod;
+        //         mod.name = tg.name;
+        //         mod.program = compileTargetDep(tg);
+        //     }
+        // });
     }
 
     ProjectCompileResult buildTreeFromConfig(std::string & module_config_file){

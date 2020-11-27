@@ -22,7 +22,9 @@ STARBYTES_STD_NAMESPACE
 
     #define MAKE_SRC_LOCATION(id,pos) SrcLocation src_loc; loc.id = id; loc.pos = pos;
 
-    void src_location_to_str(std::string & result,SrcLocation & loc_ref);
+    std::string document_position_to_str(DocumentPosition & pos);
+
+    // void src_location_to_str(std::string & result,SrcLocation & loc_ref);
 NAMESPACE_END
 
 #endif

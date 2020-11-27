@@ -58,4 +58,9 @@ STARBYTES_SEMANTICS_NAMESPACE
 
     };
 
+    ScopeStore SemanticA::finishAndDumpStore(){
+        finish();
+        return store;
+    };
+
 NAMESPACE_END

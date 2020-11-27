@@ -9,6 +9,8 @@ add_starbytes_lib(
     Macros.h
     CmdLine.h
     FS.h
+    Optional.h 
+    Xor.h 
     SOURCE_FILES
     ADT.cpp
     CmdLine.cpp
