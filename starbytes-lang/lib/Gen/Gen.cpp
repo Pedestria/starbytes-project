@@ -7,7 +7,7 @@ using namespace AST;
 
 ASTTravelerCallbackList<CodeGenR> callback_list = {};
 
-CodeGenR::CodeGenR(std::vector<AST::AbstractSyntaxTree *> & m_srcs,std::ofstream & _output):ASTTraveler<CodeGenR>(this,callback_list),out(_output),module_sources(m_srcs){
+CodeGenR::CodeGenR(std::ofstream & _output):ASTTraveler<CodeGenR>(this,callback_list),out(_output){
   
 };
 
@@ -17,6 +17,13 @@ unsigned & CodeGenR::flushArgsCount(){
 
 void CodeGenR::_generateAST(AST::AbstractSyntaxTree *& src){
    travel(src);
+};
+
+void generateToBCProgram(std::vector<AST::AbstractSyntaxTree *> &module_sources,std::ofstream & out){
+    CodeGenR gen(out);
+    for(auto & src : module_sources){
+        gen._generateAST(src);
+    }
 };
 
 NAMESPACE_END

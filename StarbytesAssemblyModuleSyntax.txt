@@ -50,6 +50,10 @@ stvr = Set Variable (// Variable to refer,// Class instance to set)
 crtcls_prty = Create Class Property(// Name,//Immutable ?,//Loose ?)
 rfcls_prty = Reference Class Property(// Name)
 rfvr = Reference Variable (//Name)
+crt_stb_num = Create Starbytes Number (//Type,//Val)
+crt_stb_str = Create Starbytes String (//Val)
+crt_stb_bool = Create Starbytes Boolean (//Val)
+
 
 crtvr = 01
 stvr = 02
@@ -58,10 +62,11 @@ crtcls = 04
 crtcls_prty = 05
 rfvr = 06
 
-11 = create stb String
-12 = create stb Number
+11 = crt_stb_str
+12 = crt_stb_num
 
-11 Hello 00
+11 Hello
+100 = PROG_END
 
 end = End Program
 end = 00

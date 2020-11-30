@@ -86,11 +86,10 @@ int main(int argc,char * argv[]){
         sem.analyzeFileForModule(ast);
     }
     sem.finish();
-    AbstractSyntaxTree *tree;
-    // ByteCode::BCProgram *module = CodeGen::generateToBCProgram(module_asts);
+    
     std::string out = settings.out_dir+"/"+settings.module_name+".stbxm";
     std::ofstream module_stream (out,std::ios::out);
-    // ByteCode::serializeBCProgram(module_stream,module);
+    CodeGen::generateToBCProgram(module_asts,module_stream);
     module_stream.close();
 
     return 0;

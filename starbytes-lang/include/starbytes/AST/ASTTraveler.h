@@ -145,14 +145,21 @@ template <class _ParentTy> class ASTTraveler {
     setNextNode(node_ptr, remember_next_and_previous_node);
   };
   bool invokeCallback(ASTType &t) {
-    ASTFuncCallback <_ParentTy> &cb = ast_lookup.find(t);
+    //If callback entry for ASTType `t` has not been put in, then skip!
+    if(ast_lookup.hasEntry(t)){
+      ASTFuncCallback <_ParentTy> &cb = ast_lookup.find(t);
 
-    ASTVisitorResponse response = cb(cntxt,parent_ptr);
-    if (!response.success)
-      action_to_take = response.action;
-    else
-      action_to_take = nullptr;
-    return response.success;
+      ASTVisitorResponse response = cb(cntxt,parent_ptr);
+      if (!response.success)
+        action_to_take = response.action;
+      else
+        action_to_take = nullptr;
+      return response.success;
+    }
+    else {
+      return true;
+    };
+    
   };
 
   void takeAction() { action_callback(action_to_take); };

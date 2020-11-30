@@ -141,6 +141,30 @@ STARBYTES_FOUNDATION_NAMESPACE
             _alloc_objs(ilist);
         };
     };
+    template<class T>
+    class UniqVector {
+        TinyVector<T> data;
+        bool hasVal(T & val){
+            bool rc = false;
+            for(auto i : data){
+                if(i == val){
+                    rc = true;
+                    break;
+                }
+            }
+            return rc;
+        };
+        public:
+        UniqVector() = default;
+        void add(const T &item){
+            if(!hasVal(item))
+                data.push(item);
+        };
+        void add(T && item){
+            if(!hasVal(item))
+                data.push(item);
+        };
+    };
     
     
     template<class _key,class __val>
@@ -158,6 +182,16 @@ STARBYTES_FOUNDATION_NAMESPACE
         public:
         ImutDictionary() = delete;
         ImutDictionary(std::initializer_list<_Entry> list):data(list){};
+        bool hasEntry(_Key & key){
+            bool returncode = false;
+            for(auto & ent : data){
+                if(ent.first == key){
+                    returncode = true;
+                    break;
+                }
+            }
+            return returncode;
+        };
         _Val & find(_Key & key){
             _Val *ptr = nullptr;
             for(auto & ent : data){

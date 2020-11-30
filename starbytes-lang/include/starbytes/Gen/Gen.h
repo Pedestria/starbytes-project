@@ -16,11 +16,10 @@ class CodeGenR : public ASTTraveler<CodeGenR> {
         using _program_src = AST::AbstractSyntaxTree *;
         using _program_in = std::vector<_program_src> &;
         unsigned bc_args_count;
-        _program_in module_sources;
-        void _generateAST(_program_src & src);
         unsigned & flushArgsCount();
     public:
-        CodeGenR(_program_in m_srcs,_program_out & _output);
+        CodeGenR(_program_out & _output);
+        void _generateAST(_program_src & src);
         _program_out & out;
 };
 
