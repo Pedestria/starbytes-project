@@ -3,7 +3,6 @@
 #include <string>
 #include <vector>
 #include "starbytes/Base/Base.h"
-#include "starbytes/ByteCode/BCDef.h"
 
 #ifndef PROJECT_PROJECT_H
 #define PROJECT_PROJECT_H
@@ -14,7 +13,6 @@ STARBYTES_STD_NAMESPACE
 
     struct StarbytesCompiledModule {
         //BYTE CODE CALL STACK!
-        ByteCode::BCProgram *program;
         std::string name;
         bool to_dest;
         std::string dest;

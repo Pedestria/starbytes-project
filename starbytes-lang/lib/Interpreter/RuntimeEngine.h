@@ -1,10 +1,10 @@
 #include "STDObjects.h"
 #include "starbytes/Base/Base.h"
-#include "starbytes/ByteCode/BCDef.h"
 #include <any>
 #include <optional>
 #include <string>
 #include <vector>
+#include <fstream>
 
 #ifndef INTERPRETER_RUNTIME_ENGINE_H
 #define INTERPRETER_RUNTIME_ENGINE_H
@@ -109,8 +109,27 @@ public:
   Scope(std::string &_name) : name(_name){};
   ~Scope(){};
 };
-/*Passes Program to BCEngine*/
-void _internal_exec_bc_program(ByteCode::BCProgram *& executable);
+
+
+class BCEngine {
+  Foundation::TinyVector<Scope *> scopes;
+  Foundation::TinyVector<std::string> scope_heirarchy;
+  std::string current_scope;
+  private:
+  Scope * get_scope_ref(std::string & name){
+    Scope * scope_ptr = nullptr;
+    for(auto s : scopes){
+      if(s->getName() == name){
+        scope_ptr = s;
+        break;
+      }
+    }
+    return scope_ptr;
+  };
+  public:
+  BCEngine() = default;
+  void readProgram(std::ifstream & input);
+};
 
 }; // namespace Engine
 NAMESPACE_END

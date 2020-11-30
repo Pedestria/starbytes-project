@@ -4,7 +4,6 @@
 #include <fstream>
 #include <string>
 #include "starbytes/Interpreter/BCReader.h"
-#include "starbytes/ByteCode/BCSerializer.h"
 
 
 //Commeny Break;
@@ -65,9 +64,6 @@ int main(int argc,char *argv[]){
 	});
 
 	std::ifstream INPUT (settings.executable_input);
-	ByteCode::BCProgram *program_to_exec = new ByteCode::BCProgram();
-	ByteCode::deserializeBCProgram(INPUT,program_to_exec);
-	Interpreter::execBCProgram(program_to_exec);
 
 	return 0;
 }

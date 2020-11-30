@@ -2,7 +2,6 @@
 #include "starbytes/Base/CmdLine.h"
 #include "starbytes/Core/Core.h"
 #include "starbytes/Gen/Gen.h"
-#include "starbytes/ByteCode/BCSerializer.h"
 #include "starbytes/Semantics/Main.h"
 #include <vector>
 #include <fstream>
@@ -88,10 +87,10 @@ int main(int argc,char * argv[]){
     }
     sem.finish();
     AbstractSyntaxTree *tree;
-    ByteCode::BCProgram *module = CodeGen::generateToBCProgram(module_asts);
+    // ByteCode::BCProgram *module = CodeGen::generateToBCProgram(module_asts);
     std::string out = settings.out_dir+"/"+settings.module_name+".stbxm";
-    std::ofstream module_stream (out,std::ios::app);
-    ByteCode::serializeBCProgram(module_stream,module);
+    std::ofstream module_stream (out,std::ios::out);
+    // ByteCode::serializeBCProgram(module_stream,module);
     module_stream.close();
 
     return 0;

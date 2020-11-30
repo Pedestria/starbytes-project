@@ -2,9 +2,6 @@
 #include <fstream>
 #include <string>
 #include "starbytes/Base/Base.h"
-#include "starbytes/ByteCode/BCDef.h"
-#include "starbytes/ByteCode/BCSerializer.h"
-
 
 using namespace Starbytes;
 
@@ -25,7 +22,11 @@ using namespace Foundation;
 // };
 
 int main(){
-    // std::ofstream output ("./Test.txt",std::ios::app);
+    std::ofstream output ("./Test.txt",std::ios::app);
+    int test = 2523452;
+    output.write((char *)&output,sizeof(test));
+    output.close();
+    std::cout << "Wrote to Test.txt";
     // BCCodeBegin * a = tst1("crtvr");
     // BCCodeEnd * b = tst2("crtvr");
     // output.write((char *)a,sizeof(*a));
@@ -44,15 +45,15 @@ int main(){
     //     ++it;
     // }
 
-    std::string test = "TestString!";
-    RString s(test);
+    // std::string test = "TestString!";
+    // RString s(test);
     
     // RString::iterator it = s.begin();
     // while(it != s.end()){
     //     std::cout << *it << std::endl;
     //     ++it;
     // }
-    std::cout << s[3];
+    // std::cout << s[3];
 
     return 0;
 };

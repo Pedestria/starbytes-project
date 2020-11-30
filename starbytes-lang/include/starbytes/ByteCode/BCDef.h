@@ -1,87 +1,28 @@
 #include "starbytes/Base/Base.h"
-#include <string>
-#include <vector>
 
 #ifndef BYTECODE_BCDEF_H
 #define BYTECODE_BCDEF_H
 
-
-
 STARBYTES_BYTECODE_NAMESPACE
 
+#define END 0
+#define CRTVR 1
+#define STVR 2
+#define CLFNC 3
+#define RFVR_A 4
+#define RFVR_D 5
 
-TYPED_ENUM BCType:int {
-    CodeBegin,CodeEnd,VectorBegin,VectorEnd,Reference,String
-};
+#define CRT_STB_STR 10
+#define CRT_STB_BOOL 11
+#define CRT_STB_NUM  12
 
-TYPED_ENUM BCRefType:int {
-    Direct,Indirect
-};
+#define TMP_STORE 20
+#define LST_BEG 21
+#define LST_END 22
 
-struct BCUnit {
-    BCUnit(BCType _type):type(_type){};
-    BCType type;
-};
+using BCId = std::string;
 
-struct BCString : BCUnit {
-    BCString():BCUnit(BCType::String){};
-    static BCType static_type;
-    std::string value;
-};
-
-struct BCReference : BCUnit {
-    BCReference():BCUnit(BCType::Reference){};
-    static BCType static_type;
-    BCRefType ref_type;
-    std::string var_name;
-};
-
-struct BCVectorBegin : BCUnit {
-    BCVectorBegin():BCUnit(BCType::VectorBegin){};
-    static BCType static_type;
-    unsigned length;
-    std::string name;
-};
-
-struct BCVectorEnd : BCUnit {
-    BCVectorEnd():BCUnit(BCType::VectorEnd){};
-    static BCType static_type;
-    std::string name;
-};
-
-struct BCCodeBegin: BCUnit {
-    BCCodeBegin():BCUnit(BCType::CodeBegin){};
-    static BCType static_type;
-    std::string code_node_name;
-};
-
-struct BCCodeEnd : BCUnit {
-    BCCodeEnd():BCUnit(BCType::CodeEnd){};
-     static BCType static_type;
-     std::string code_node_name;
-};
-
-
-class BCProgram {
-    public:
-        std::string program_name;
-        BCProgram(){};
-        std::vector<BCUnit *> units;
-        
-};
-
-template<class _BcTy,class _BCTyTst>
-inline bool bc_unit_is(_BCTyTst & unit){
-    if(unit->type == _BcTy::static_type){
-        return true;
-    }
-    else{
-        return false;
-    }
-};
-
-#define BC_UNIT_IS(ptr,type) (bc_unit_is<type>(ptr))
-#define ASSERT_BC_UNIT(ptr,type) static_cast<type *>(ptr)
+#define PROG_END 100
 
 NAMESPACE_END
 

@@ -70,8 +70,5 @@ AbstractSyntaxTree * parseCode(std::string & code){
 	};
 	return _ast;
 };
-void runBC(ByteCode::BCProgram *& prog){
-	Interpreter::execBCProgram(prog);
-};
 
 NAMESPACE_END

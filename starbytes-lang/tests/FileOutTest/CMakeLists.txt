@@ -5,5 +5,4 @@ add_starbytes_test(
     "Test.cpp"
     INCLUDE_LIB
     DEPENDENCIES
-    "starbytesBase"
-    "starbytesByteCode")
+    "starbytesBase")

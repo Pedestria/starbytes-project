@@ -76,8 +76,13 @@ bool isSlash(char &c){
 	}
 }
 
+bool isAt(char &c){
+	return c == '@';
+};
+
+LookupArray<std::string> keywordLookup = {"import","scope","func","lazy","interface","class","struct","return","if","else","alias","deftype","immutable","decl","extends","utilizes","new","loose","enum","for","while","catch","secure"};
+
 bool isKeyword(std::string &subject){
-	LookupArray<std::string> keywordLookup = {"import","scope","func","lazy","interface","class","struct","return","if","else","alias","deftype","immutable","decl","extends","utilizes","new","loose","enum","for","while","catch","secure"};
 	return keywordLookup.lookup(subject);
 }
 
@@ -144,9 +149,23 @@ void Lexer::tokenize() {
 			++bufptr;
 			resolveTokenAndClearCache();
 		}
+		else if(isAt(c)){
+			*bufptr = c;
+			++bufptr;
+			char & a = lookAhead();
+			if(a == '['){
+				++currentIndex;
+				*bufptr = a;
+				++bufptr;
+				resolveTokenAndClearCache(TokenType::TemplateBegin);
+			}
+		}
 		else if (isalnum(c)) {
 			*bufptr = c;
 			++bufptr;
+			char & a = lookAhead();
+			if(!isalnum(a))
+				resolveTokenAndClearCache();
 		}
 		else if (isQuote(c)){
 			//Essesntially String Literal!

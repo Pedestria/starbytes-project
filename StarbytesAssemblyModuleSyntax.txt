@@ -13,8 +13,7 @@ class Someclass {
 decl S = new Someclass("Message")
 S.otherMethod()
 
-
-// lang : starbytes-asm
+// lang : starbytes-asm-Dissasseblemed
 
 
 
@@ -52,5 +51,29 @@ crtcls_prty = Create Class Property(// Name,//Immutable ?,//Loose ?)
 rfcls_prty = Reference Class Property(// Name)
 rfvr = Reference Variable (//Name)
 
+crtvr = 01
+stvr = 02
+clfnc = 03
+crtcls = 04
+crtcls_prty = 05
+rfvr = 06
+
+11 = create stb String
+12 = create stb Number
+
+11 Hello 00
+
 end = End Program
+end = 00
+
+// lang : starbytes-asm
+
+01 Var 00 02 Var 11 TestString 00 00 03 Log 06 Var 00 00
+
+Dissassembled:
+
+crtvr Var end
+stvr Var crt_stb_string TestString end end
+clfnc Log rfvr Var end end 
+
 

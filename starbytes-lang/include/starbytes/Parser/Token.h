@@ -10,7 +10,7 @@ STARBYTES_STD_NAMESPACE
 	TYPED_ENUM TokenType:int {
 		Keyword, Identifier, Operator,Comma,Typecast,DoubleOperator,Quote,Dot,Semicolon,Numeric,
 		EndOfFile,OpenBrace,CloseBrace,OpenBracket,CloseBracket,OpenParen,CloseParen,OpenCarrot,
-		CloseCarrot,Comment,LineCommentDBSlash,BlockCommentStart,BlockCommentEnd
+		CloseCarrot,Comment,LineCommentDBSlash,BlockCommentStart,BlockCommentEnd,TemplateBegin
 	};
 	class Token {
 		private:

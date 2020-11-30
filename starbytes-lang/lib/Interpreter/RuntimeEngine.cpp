@@ -12,6 +12,7 @@
 #include <thread>
 #include <type_traits>
 #include <vector>
+#include <fstream>
 
 
 STARBYTES_INTERPRETER_NAMESPACE
@@ -172,7 +173,7 @@ void starbytes_log(std::string message) {
 #ifdef __APPLE__
   gmtime_r(&t, &buf);
   asctime_r(&buf, RESULT);
-#elif _WIN32
+#elif defined(_WIN32)
   gmtime_s(&buf, &t);
   asctime_s(RESULT, sizeof(RESULT), &buf);
 #endif
@@ -198,7 +199,7 @@ void create_variable(std::string name, Scope *current_scope) {
   current_scope->stored_variables.push_back(val);
 }
 template <typename _Type>
-void set_variable(std::string name, _Type *value, Scope *&current_scope) {
+void set_variable(std::string name, _Type *value, Scope *current_scope) {
   for (auto &v : current_scope->stored_variables) {
     if (v->name == name) {
       v->val = value;
@@ -206,7 +207,7 @@ void set_variable(std::string name, _Type *value, Scope *&current_scope) {
     }
   }
 }
-bool dealloc_variable(std::string name, Scope *&current_scope) {
+bool dealloc_variable(std::string name, Scope *current_scope) {
   for (auto var : current_scope->stored_variables) {
     if (var->name == name) {
       delete var->val;
@@ -667,172 +668,6 @@ void internal_if(StarbytesBoolean *_bool, std::string _func_to_invoke,
 // StarbytesBoolean * convert_conditional_to_bool(){
 
 // };
-using namespace ByteCode;
-
-class BCEngine;
-
-using BCInternalExtensionFuncCallback = void(*)(BCEngine * bc_engine);
-
-class BCEngine {
-  private:
-
-  std::vector<Engine::Scope *> scopes;
-  std::vector<std::string> scope_heirarchy;
-  Foundation::DictionaryVec<std::string,BCInternalExtensionFuncCallback> extensions;
-
-  protected:
-  class TempAllocator {
-      private:
-        struct AllocEntry {
-          StarbytesObject *& obj;
-          std::string & temp_obj_name;
-          AllocEntry(std::string & name,StarbytesObject *& obj_ptr):obj(obj_ptr),temp_obj_name(name){};
-        };
-        std::vector<AllocEntry *> objects;
-      public:
-        void alloc_object(std::string & name,StarbytesObject * obj_ptr){
-          objects.push_back(new AllocEntry(name,obj_ptr));
-        };
-        StarbytesObject *& refer_object(std::string & name){
-          for(auto & e : objects){
-            if(e->temp_obj_name == name){
-              return e->obj;
-            }
-          }
-        };
-        bool dealloc_object(std::string & name){
-          bool returncode = false;
-          for(int i = 0;i < objects.size();++i){
-            AllocEntry * _a_entry = objects[i];
-            if(_a_entry->temp_obj_name == name){
-              delete _a_entry;
-              objects.erase(objects.begin()+i);
-              returncode = true;
-            }
-          }
-          return returncode;
-        };
-        void dealloc_all_objects(){
-          for(int i = 0;i < objects.size();++i){
-            AllocEntry * _a_entry = objects[i];
-            delete _a_entry;
-          }
-          objects.clear();
-        };
-  };
-  std::vector<StarbytesObject **> args_alloc;
-
-  BCProgram *& program;
-  unsigned currentindex = 0;
-  BCUnit *& nextUnit(){
-      return program->units[++currentindex];
-  };
-  /*Gets ahead unit but does not move `currentindex`*/
-  BCUnit *& aheadUnit(){
-      return program->units[currentindex + 1];
-  };
-  BCUnit *& currentUnit(){
-      return program->units[currentindex];
-  };
-  BCUnit *& behindUnit(){
-      return program->units[currentindex-1];
-  };
-
-
-  void set_current_scope(std::string &_scope_name) {
-    scope_heirarchy.push_back(_scope_name);
-  }
-
-  void remove_current_scope() { scope_heirarchy.pop_back(); }
-
-  std::string & get_current_scope() { return scope_heirarchy.front(); }
-
-  void create_scope(std::string name) {
-    Engine::Scope *c = new Engine::Scope(name);
-    scopes.push_back(c);
-  }
-
-  Engine::Scope * get_scope(std::string name) {
-    for (auto &s : scopes) {
-      if (s->getName() == name) {
-        return s;
-      }
-    }
-    return nullptr;
-  }
-
-  void read_bc_crtvr(){
-    BCString * bc_str = static_cast<BCString *>(nextUnit());
-    create_variable(bc_str->value,get_scope(get_current_scope()));
-    BCCodeEnd * end = static_cast<BCCodeEnd *>(nextUnit());
-    if(end->code_node_name != "crtvr")
-      throw "Runtime Engine Error: Bytecode does not match!";
-  };
-
-  void read_bc_stvr(){
-
-  };
-
-  void read_bc_ivkfn(){
-    BCString * bc_str = static_cast<BCString *>(nextUnit());
-    BCVectorBegin *bc_vec_bg = static_cast<BCVectorBegin *>(nextUnit());
-    for(int i = 0; i < bc_vec_bg->length;++i){
-        BCReference * ref = static_cast<BCReference *>(nextUnit());
-        StarbytesObject ** ref_ptr;
-        if(ref->ref_type == ByteCode::BCRefType::Indirect)
-          ref_ptr = refer_variable_a(ref->var_name,get_scope(get_current_scope()));
-        else if (ref->ref_type == ByteCode::BCRefType::Direct)
-         throw "Runtime Engine Error: Can't use Direct Reference in this context!";
-        args_alloc.push_back(ref_ptr);
-      //TODO: Analyze args!
-    };
-    BCVectorEnd *bc_vec_ed = static_cast<BCVectorEnd *>(nextUnit());
-    invoke_function(bc_str->value,args_alloc,get_scope(get_current_scope()));
-    BCCodeEnd * end = static_cast<BCCodeEnd *>(nextUnit());
-    if(end->code_node_name != "ivkfn")
-      throw "Runtime Engine Error: Bytecode does not match!";
-  };
-
-  void read_bc_code_unit(BCCodeBegin * unit_begin){
-      std::string & subject = unit_begin->code_node_name;
-      if(subject == "crtvr"){
-          read_bc_crtvr();
-      }
-      else if(subject == "stvr"){
-          read_bc_stvr();
-      }
-      else if(subject == "ivkfn"){
-          read_bc_ivkfn();
-      }
-  };
-
-  void read_bc_vector_unit(){
-
-  };
-
-  void read_starting_bc_unit(BCUnit *& unit){
-      if(BC_UNIT_IS(unit,BCCodeBegin)){
-          read_bc_code_unit(ASSERT_BC_UNIT(unit,BCCodeBegin));
-      }
-  };
-
-public:
-  BCEngine(BCProgram *& executable):program(executable){};
-  ~BCEngine(){};
-  void read(){
-      std::cout << "STARBYTES_RUNTIME_ENGINE -->\x1b[33mStarting Executable: " << program->program_name << "\x1b[0m" << std::endl;
-      auto & current_bc_unit = currentUnit();
-      while(true){
-          current_bc_unit = nextUnit();
-          read_starting_bc_unit(current_bc_unit);
-
-      }
-  };
-};
-
-void _internal_exec_bc_program(BCProgram *&executable) {
-  BCEngine(executable).read();
-};
 
 // void Program(){
 //     create_scope("GLOBAL");
@@ -886,6 +721,75 @@ void _internal_exec_bc_program(BCProgram *&executable) {
 //     // std::vector<StarbytesObject **> args3 {refer_variable_a("test")};
 //     // invoke_function("TestFunc",args3);
 // }
+
+using namespace ByteCode;
+
+inline void buildArgList(std::vector<StarbytesObject **> & args_listm,std::ifstream & input,Scope * current_scope){
+  while(true){
+    int code_n;
+    input.read((char *)&code_n,sizeof(code_n));
+    if(code_n == LST_END){
+      break;
+    }
+    else if(code_n == RFVR_A){
+      BCId val;
+      input.read((char *)&val,sizeof(val));
+      args_listm.push_back(refer_variable_a(val,current_scope));
+    }
+    // else if(code_n == RFVR_D){
+    //   BCId val;
+    //   input.read((char *)&val,sizeof(val));
+    //   // args_listm.push_back(refer_variable_d(val,current_scope));
+    // }
+  }
+};
+
+void BCEngine::readProgram(std::ifstream &input){
+  if(input.is_open()){
+    while(true) { 
+      int code;
+      input.read((char *)&code,sizeof(code));
+      if(code == PROG_END){
+        break;
+      }
+      else if(code == CRTVR){
+        BCId val;
+        input.read((char *)&val,sizeof(val));
+        create_variable(val,get_scope_ref(current_scope));
+      }
+      else if(code == STVR){
+        BCId var_to_set;
+        input.read((char *)&var_to_set,sizeof(var_to_set));
+        int code_two;
+        input.read((char *)&code_two,sizeof(code_two));
+        if(code_two == CRT_STB_STR){
+          BCId val;
+          input.read((char *)&val,sizeof(val));
+          set_variable(var_to_set,create_starbytes_string(val),get_scope_ref(current_scope));
+        }
+        else if(code_two == CRT_STB_BOOL){
+          bool val;
+          input.read((char *)&val,sizeof(val));
+          set_variable(var_to_set,create_starbytes_boolean(val),get_scope_ref(current_scope));
+        }
+        else if(code_two == CRT_STB_NUM){
+          
+        };
+      }
+      else if(code == CLFNC){
+        BCId func_name;
+        input.read((char *)&func_name,sizeof(func_name));
+        int code_two;
+        input.read((char *)&code_two,sizeof(code_two));
+        if(code_two == LST_BEG){
+          std::vector<StarbytesObject **> args;
+          buildArgList(args,input,get_scope_ref(current_scope));
+          invoke_function(func_name,args,get_scope_ref(current_scope));
+        }
+      }
+    }
+  }
+};
 
 }; // namespace Engine
 

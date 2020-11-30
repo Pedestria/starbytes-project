@@ -8,5 +8,4 @@ add_starbytes_lib(
     LIBS_TO_LINK
     "starbytesBase"
     "starbytesAST"
-    "starbytesByteCode"
 )
