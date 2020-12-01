@@ -5,7 +5,9 @@ STARBYTES_GEN_NAMESPACE
 
 using namespace AST;
 
-ASTTravelerCallbackList<CodeGenR> callback_list = {};
+ASTTravelerCallbackList<CodeGenR> callback_list = {
+    Foundation::dict_vec_entry(ASTType::VariableDeclaration,&genVarDecl)
+};
 
 CodeGenR::CodeGenR(std::ofstream & _output):ASTTraveler<CodeGenR>(this,callback_list),out(_output){
   

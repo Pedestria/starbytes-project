@@ -234,24 +234,7 @@ template <class _ParentTy> void ASTTraveler<_ParentTy>::visitVariableDecl() {
   // bool retr_code = true;
   ASTVariableDeclaration *_current =
       ASSERT_AST_NODE(cntxt.current, ASTVariableDeclaration);
-  // if(invokeCallback(_current->type))
-  if (true) {
-    setParentNode(ASSERT_AST_NODE(_current, ASTNode));
-    moveDown();
-    auto it = _current->specifiers.begin();
-    setNextNode(ASSERT_AST_NODE(_current->specifiers[0], ASTNode));
-    while (it != _current->specifiers.end()) {
-      // TODO: Ensure next node is to next node and NOT nullptr!
-      nextNodeAndSetAheadNode(ASSERT_AST_NODE(*(it + 1), ASTNode), true);
-      if (invokeCallback((*it)->type))
-        ++it;
-      else {
-        takeAction();
-      }
-    }
-    moveUp();
-    recoverPriorParentNode();
-  } else
+  if(!invokeCallback(_current->type))
     takeAction();
   //  retr_code = false;
   // setParentNode(nullptr);

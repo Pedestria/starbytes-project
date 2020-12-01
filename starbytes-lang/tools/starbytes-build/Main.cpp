@@ -3,6 +3,7 @@
 #include "starbytes/Core/Core.h"
 #include "starbytes/Gen/Gen.h"
 #include "starbytes/Semantics/Main.h"
+#include "starbytes/Base/Optional.h"
 #include <vector>
 #include <fstream>
 #include <iostream>
@@ -14,9 +15,8 @@
 using namespace Starbytes;
 struct StarbytesBuildSettings {
     std::vector<std::string> modules_to_link;
-    bool hasModuleName;
-    std::string module_name;
-    std::string source_dir;
+    Foundation::Optional<std::string> module_name;
+    Foundation::Optional<std::string> source_dir;
     std::string out_dir;
     bool library_mode;
     bool exec_mode;
@@ -41,8 +41,13 @@ Foundation::CommandOption exec_mode {"Exec","E",[](){
 }};
 
 Foundation::CommandInput module_name {"module-name","n",[](std::string & input){
-    if(settings.hasModuleName)
+    if(settings.module_name.hasVal())
         settings.module_name = input;
+}};
+
+Foundation::CommandInput src_dir {"src-dir","s",[](std::string & input){
+    if(!input.empty())
+        settings.source_dir = input;
 }};
 
 Foundation::CommandInput out_dir {"out-dir","d",[](std::string & input){
@@ -54,6 +59,8 @@ Foundation::CommandInput link_module {"link-module","l",[](std::string & input){
     settings.modules_to_link.push_back(input);
 }};
 
+std::string backup_module_name = "MyModule";
+
 int main(int argc,char * argv[]){
     #ifdef _WIN32
         setupConsole();
@@ -62,6 +69,16 @@ int main(int argc,char * argv[]){
         std::cout << "\x1b[34mStarbytes Build\x1b[0m" << std::endl;
         exit(1);
     });
+
+    if(!settings.module_name.hasVal()){
+        std::cerr << ERROR_ANSI_ESC << "No Module Name Provided!" << ANSI_ESC_RESET << std::endl;
+        settings.module_name = backup_module_name;
+    }
+
+    if(!settings.source_dir.hasVal()){
+        std::cerr << ERROR_ANSI_ESC << "No Module Source Directory Provided!\nExiting..." << ANSI_ESC_RESET << std::endl;
+        exit(1);
+    };
     
     std::vector<AST::AbstractSyntaxTree *> module_asts;
 
@@ -69,7 +86,7 @@ int main(int argc,char * argv[]){
 
     using FSEntry = std::filesystem::directory_entry;
 
-    Foundation::foreachInDirectory(settings.source_dir,[&module_asts](FSEntry entry){
+    Foundation::foreachInDirectory(settings.source_dir.value(),[&module_asts](FSEntry entry){
         if(entry.is_regular_file()){
             std::string file_path = entry.path().generic_string();
             std::string * file_buf = Foundation::readFile(file_path);
@@ -87,7 +104,7 @@ int main(int argc,char * argv[]){
     }
     sem.finish();
     
-    std::string out = settings.out_dir+"/"+settings.module_name+".stbxm";
+    std::string out = settings.out_dir+"/"+settings.module_name.value()+".stbxm";
     std::ofstream module_stream (out,std::ios::out);
     CodeGen::generateToBCProgram(module_asts,module_stream);
     module_stream.close();

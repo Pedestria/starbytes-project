@@ -1,16 +1,41 @@
 #include "starbytes/Interpreter/BCReader.h"
+#include "starbytes/Core/Core.h"
+#include "starbytes/Gen/Gen.h"
+#include "starbytes/Base/Optional.h"
 
-using namespace Starbytes::Interpreter;
+using namespace Starbytes;
 
 #ifdef _WIN32
  WINDOWS_CONSOLE_INIT
 #endif
 
+struct Input {
+    Foundation::Optional<std::string> file;
+} input;
 
-int main(){
+Foundation::CommandInput test_file {"file","f",[](std::string & _input){
+    input.file = _input;
+}};
+
+int main(int argc,char *argv[]){
     #ifdef _WIN32
         setupConsole(); 
     #endif
+    Foundation::parseCmdArgs(argc,argv,{},{&test_file},[](){
+        std::cout << "Runtime Test!" << std::endl;
+    });
+    if(input.file.hasVal()) {
+        std::string * fileBuf = Foundation::readFile(input.file.value());
+        AbstractSyntaxTree * tree = parseCode(*fileBuf);
+        std::ofstream o("test.stbxm",std::ios::out);
+        std::vector<AbstractSyntaxTree *> srcs;
+        srcs.push_back(tree);
+        CodeGen::generateToBCProgram(srcs,o);
+    }
+    else {
+        std::cerr << ERROR_ANSI_ESC << "No input file!\nExiting..." << ANSI_ESC_RESET << std::endl;
+        exit(1);
+    }
     // std::vector<BCUnit *> units;
     // std::string m = "ivkfn";
     // units.push_back(make_bc_code_begin(m));
@@ -20,4 +45,5 @@ int main(){
     // prog->program_name = "test";
     // prog->units = units;
     // execBCProgram(prog);
+    return 0;
 }

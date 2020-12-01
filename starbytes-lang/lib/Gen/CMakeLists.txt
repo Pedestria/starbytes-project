@@ -3,6 +3,10 @@ add_starbytes_lib(
     "starbytesCodeGeneration"
     SOURCE_FILES
     "Gen.cpp"
+    "GenDecl.h"
+    "GenDecl.cpp"
+    "GenExpr.h"
+    "GenExpr.cpp"
     HEADER_FILES
     "Gen.h"
     LIBS_TO_LINK

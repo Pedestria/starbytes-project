@@ -17,7 +17,7 @@ class Optional {
         return _constructed;
     };
     Obj & value(){ return _value;};
-    Optional() = delete;
+    Optional():_constructed(false){};
     Optional(VoidTy v):_constructed(false),_value(v){};
     Optional(Obj v):_constructed(true),_value(v){};
 };
