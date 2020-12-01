@@ -147,6 +147,7 @@ template <class _ParentTy> class ASTTraveler {
   bool invokeCallback(ASTType &t) {
     //If callback entry for ASTType `t` has not been put in, then skip!
     if(ast_lookup.hasEntry(t)){
+      std::cout << "Invoking Callback" << std::endl;
       ASTFuncCallback <_ParentTy> &cb = ast_lookup.find(t);
 
       ASTVisitorResponse response = cb(cntxt,parent_ptr);
@@ -234,6 +235,7 @@ template <class _ParentTy> void ASTTraveler<_ParentTy>::visitVariableDecl() {
   // bool retr_code = true;
   ASTVariableDeclaration *_current =
       ASSERT_AST_NODE(cntxt.current, ASTVariableDeclaration);
+      std::cout << "Visit Variable Decl!" << std::endl;
   if(!invokeCallback(_current->type))
     takeAction();
   //  retr_code = false;

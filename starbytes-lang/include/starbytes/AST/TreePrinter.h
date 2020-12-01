@@ -13,7 +13,7 @@ namespace AST {
         unsigned indent_count = 0;
         std::string tabs = "";
         inline void moveDown(){
-            tabs.append("\t");
+            tabs.append(" ");
         };
         inline void moveUp(){
             tabs.pop_back();
@@ -23,7 +23,7 @@ namespace AST {
             std::cout << tabs << message << std::endl;
         };
         inline void printDocPos(DocumentPosition & pos,const char * start_text){
-            std::cout << start_text <<": {StartChar:" << std::to_string(pos.start) << " ,EndChar:" << std::to_string(pos.end) << " ,LineNum:" << std::to_string(pos.line) << "}" << std::endl;
+            std::cout << tabs << start_text <<": {StartChar:" << std::to_string(pos.start) << " ,EndChar:" << std::to_string(pos.end) << " ,LineNum:" << std::to_string(pos.line) << "}" << std::endl;
         };
         void printId(ASTIdentifier * node){
             ln_msg_to_stdout("Identifier {");
@@ -35,11 +35,13 @@ namespace AST {
         };
         void printTypeId(ASTTypeCastIdentifier * node){
             ln_msg_to_stdout("TypeIdentifier {");
-            std::cout << tabs << "Id:";
             moveDown();
             printDocPos(node->BeginFold,"BeginFold");
+            std::cout << tabs << "Id:";
+            moveDown();
             printId(node->id);
             printDocPos(node->EndFold,"EndFold");
+            moveUp();
             moveUp();
             ln_msg_to_stdout("}");
         };
@@ -51,7 +53,7 @@ namespace AST {
                 ln_msg_to_stdout("NumLiteral {");
                 moveDown();
                 printDocPos(node->BeginFold,"BeginFold");
-                std::cout << "Value:" << ASSERT_AST_NODE(node,ASTNumericLiteral)->value << std::endl;
+                std::cout << tabs << "Value:" << ASSERT_AST_NODE(node,ASTNumericLiteral)->value << std::endl;
                 printDocPos(node->EndFold,"EndFold");
                 moveUp();
                 ln_msg_to_stdout("}");
@@ -60,7 +62,7 @@ namespace AST {
                 ln_msg_to_stdout("BoolLiteral {");
                 moveDown();
                 printDocPos(node->BeginFold,"BeginFold");
-                std::cout << "Value:" << ASSERT_AST_NODE(node,ASTBooleanLiteral)->value << std::endl;
+                std::cout << tabs << "Value:" << ASSERT_AST_NODE(node,ASTBooleanLiteral)->value << std::endl;
                 printDocPos(node->EndFold,"EndFold");
                 moveUp();
                 ln_msg_to_stdout("}");
@@ -69,7 +71,7 @@ namespace AST {
                 ln_msg_to_stdout("StrLiteral {");
                 moveDown();
                 printDocPos(node->BeginFold,"BeginFold");
-                std::cout << "Value:" <<  ASSERT_AST_NODE(node,ASTStringLiteral)->value << std::endl;
+                std::cout << tabs << "Value:" <<  ASSERT_AST_NODE(node,ASTStringLiteral)->value << std::endl;
                 printDocPos(node->EndFold,"EndFold");
                 moveUp();
                 ln_msg_to_stdout("}");
@@ -141,10 +143,15 @@ namespace AST {
         };
         public:
         TreePrinter() = default;
-        ~TreePrinter();
+        ~TreePrinter(){};
         void operator=(TreePrinter &) = delete;
         void print(AbstractSyntaxTree *& _tree){
             tree = _tree;
+            for(auto & n : tree->nodes){
+                if(AST_NODE_IS(n,ASTVariableDeclaration)){
+                    printVarDecl(ASSERT_AST_NODE(n,ASTVariableDeclaration));
+                }
+            };
         };
     };
 

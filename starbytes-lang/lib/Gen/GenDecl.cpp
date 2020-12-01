@@ -10,10 +10,14 @@ using namespace ByteCode;
 ASTVisitorResponse genVarDecl(ASTTravelContext & context,CodeGenR *ptr){
     
     ASTVariableDeclaration * node = ASSERT_AST_NODE(context.current,ASTVariableDeclaration);
+    //Visiting!
+    std::cout << "Generating Var Decl!" << std::endl;
     int code;
     for(auto & spec : node->specifiers){
+        std::cout << "Generating Var Spec" << std::endl;
         code = CRTVR;
         ptr->out.write((char *)&code,sizeof(code));
+        std::cout << "Did not Find the Problem!" << std::endl;
         BCId var_name;
         if(AST_NODE_IS(spec->id,ASTIdentifier)){
             ASTIdentifier *node = ASSERT_AST_NODE(spec->id,ASTIdentifier);
