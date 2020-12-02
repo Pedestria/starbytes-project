@@ -11,6 +11,8 @@ add_starbytes_lib(
     FS.h
     Optional.h 
     Xor.h 
+	Unsafe.h
+	Graph.h
     SOURCE_FILES
     ADT.cpp
     CmdLine.cpp

@@ -7,6 +7,7 @@
 STARBYTES_SEMANTICS_NAMESPACE
 
 using namespace AST;
+
 //TODO: Implement!
 ASTVisitorResponse atVarSpec(ASTTravelContext & context,SemanticA *sem){
     ASTVariableSpecifier *current = ASSERT_AST_NODE(context.current,ASTVariableSpecifier);
