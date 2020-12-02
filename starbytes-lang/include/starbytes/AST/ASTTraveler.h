@@ -62,16 +62,31 @@ public:
       push_ent_to_vec(previous_node_heirarchy_mem, ENT);
     }
   };
-  ASTNode *get_node(unsigned &level, MemType type) {
-    ASTNode *n = nullptr;
+  Foundation::Unsafe<ASTNode *> get_node(unsigned &level, MemType type) {
+    ASTNode *possibleResult;
     if (type == MemType::Parent) {
-      n = parent_heirarchy_mem.find(level);
+      Foundation::Unsafe<ASTNode *> node = parent_heirarchy_mem.find(level);
+      if(node.hasError()){
+        return node.getError();
+      }
+      else 
+       possibleResult = node.getResult();
     } else if (type == MemType::NextNode) {
-      n = next_node_heirarchy_mem.find(level);
+      Foundation::Unsafe<ASTNode *> node = next_node_heirarchy_mem.find(level);
+      if(node.hasError()){
+        return node.getError();
+      }
+      else 
+       possibleResult = node.getResult();
     } else if (type == MemType::PreviousNode) {
-      n = previous_node_heirarchy_mem.find(level);
+      Foundation::Unsafe<ASTNode *> node = previous_node_heirarchy_mem.find(level);
+      if(node.hasError()){
+        return node.getError();
+      }
+      else 
+       possibleResult = node.getResult();
     }
-    return n;
+    return possibleResult;
   };
 };
 using ASTContextualActionCallback = void (*)(ContextualAction *action);
@@ -105,8 +120,14 @@ template <class _ParentTy> class ASTTraveler {
     cntxt.parent = node_ptr;
   };
   void recoverPriorParentNode() {
-    cntxt.parent = cntxtl_memory.get_node(current_level,
+    Foundation::Unsafe<ASTNode *> res = cntxtl_memory.get_node(current_level,
                                           ASTContextualMemory::MemType::Parent);
+    if(res.hasError()){
+      //TODO: Log Error!
+    }
+    else {
+      cntxt.parent = res.getResult();
+    };
   };
   void setPreviousNode(ASTNode *node_ptr, bool store_in_mem = false) {
     if (store_in_mem && cntxt.previous.has_value()) {
@@ -117,8 +138,14 @@ template <class _ParentTy> class ASTTraveler {
     cntxt.previous = node_ptr;
   };
   void recoverPriorPreviousNode() {
-    cntxt.previous = cntxtl_memory.get_node(
+    Foundation::Unsafe<ASTNode *> res = cntxtl_memory.get_node(
         current_level, ASTContextualMemory::MemType::PreviousNode);
+    if(res.hasError()){
+      //TODO: Log Error!
+    }
+    else {
+      cntxt.previous = res.getResult();
+    }
   };
   void setCurrentNode(ASTNode *node_ptr) { cntxt.current = node_ptr; };
   void setNextNode(ASTNode *node_ptr, bool store_in_mem = false) {
@@ -130,8 +157,14 @@ template <class _ParentTy> class ASTTraveler {
     cntxt.next = node_ptr;
   };
   void recoverPriorNextNode() {
-    cntxt.next = cntxtl_memory.get_node(current_level,
+    Foundation::Unsafe<ASTNode *> res = cntxtl_memory.get_node(current_level,
                                         ASTContextualMemory::MemType::NextNode);
+    if(res.hasError()){
+      //TODO: Log Error!
+    }
+    else {
+      cntxt.next = res.getResult();
+    };
   };
   void nextNodeAndSetAheadNode(ASTNode *node_ptr = nullptr,
                                bool remember_next_and_previous_node = false) {
@@ -148,14 +181,19 @@ template <class _ParentTy> class ASTTraveler {
     //If callback entry for ASTType `t` has not been put in, then skip!
     if(ast_lookup.hasEntry(t)){
       std::cout << "Invoking Callback" << std::endl;
-      ASTFuncCallback <_ParentTy> &cb = ast_lookup.find(t);
-
-      ASTVisitorResponse response = cb(cntxt,parent_ptr);
-      if (!response.success)
-        action_to_take = response.action;
-      else
-        action_to_take = nullptr;
-      return response.success;
+      Foundation::Unsafe<ASTFuncCallback<_ParentTy>> cb_res = ast_lookup.find(t);
+      if(cb_res.hasError()){
+        //TODO: Skip! No Error To Return Other than "Callback Not FOund!"
+      }
+      else {
+        ASTFuncCallback<_ParentTy> & cb = cb_res.getResult();
+        ASTVisitorResponse response = cb(cntxt,parent_ptr);
+        if (!response.success)
+          action_to_take = response.action;
+        else
+          action_to_take = nullptr;
+        return response.success;
+      };
     }
     else {
       return true;

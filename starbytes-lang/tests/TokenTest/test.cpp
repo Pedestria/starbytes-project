@@ -7,7 +7,7 @@ WINDOWS_CONSOLE_INIT
 
 using namespace Starbytes;
 
-std::string file_path;
+Foundation::Optional<std::string> file_path;
 
 Foundation::CommandInput file ("file","f",[](std::string & s){
     file_path = s;
@@ -23,12 +23,12 @@ int main(int argc,char * argv[]){
         std::cout << "Token Test!\n\nInput a file to test via flag -> -f or --file" << std::endl;
     });
 
-    if(file_path.empty()) {
+    if(!file_path.hasVal()) {
         std::cerr << ERROR_ANSI_ESC << "Error: No input file!\nExiting!  " << ANSI_ESC_RESET << std::endl;
         exit(1);
     }
     else {
-        std::string * file_buf = Foundation::readFile(file_path);
+        std::string * file_buf = Foundation::readFile(file_path.value());
         std::vector<Token> toks;
         Lexer(*file_buf,toks).tokenize();
         std::cout << "Token Count: " << toks.size() << std::endl << "Lexer Result:" << std::endl;

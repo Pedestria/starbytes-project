@@ -11,6 +11,7 @@
 #include <any>
 #include <array>
 #include "Macros.h"
+#include "Unsafe.h"
 
 #ifndef BASE_ADT_H
 #define BASE_ADT_H
@@ -192,7 +193,7 @@ STARBYTES_FOUNDATION_NAMESPACE
             }
             return returncode;
         };
-        _Val & find(_Key & key){
+        Unsafe<_Val> find(_Key & key){
             _Val *ptr = nullptr;
             for(auto & ent : data){
                 if(ent.first == key){
@@ -201,7 +202,7 @@ STARBYTES_FOUNDATION_NAMESPACE
                 }
             }
             if(ptr == nullptr){
-                
+                return Error("Cannot find val with given key!");
             }
             return *ptr;
         };
@@ -225,7 +226,7 @@ STARBYTES_FOUNDATION_NAMESPACE
             }
             return returncode;
         };
-        _Val & find(_Key & key){
+        Unsafe<_Val> find(_Key & key){
             _Val *ptr = nullptr;
             for(auto & ent : data){
                 if(ent.first == key){
@@ -234,7 +235,7 @@ STARBYTES_FOUNDATION_NAMESPACE
                 }
             }
             if(ptr == nullptr){
-                
+                return Error("Cannpt find key!");
             }
             return *ptr;
         };

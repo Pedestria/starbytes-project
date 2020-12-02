@@ -1,4 +1,5 @@
 #include "Macros.h"
+#include "Optional.h"
 #ifndef BASE_XOR_H
 #define BASE_XOR_H
 
@@ -6,8 +7,8 @@ STARBYTES_FOUNDATION_NAMESPACE
 template<class A_Ty,class B_Ty>
 class XOR {
     private:
-        A_Ty a;
-        B_Ty b;
+        Optional<A_Ty> a;
+        Optional<B_Ty> b;
         bool _a_xor_b;
     public:
         XOR(A_Ty _a):a(_a),_a_xor_b(true){};
@@ -20,16 +21,16 @@ class XOR {
         template<>
         A_Ty & getValue<A_Ty>(){
             A_Ty * ptr;
-            if(isFirstTy())
-                ptr = &a;
+            if(isFirstTy() && a.hasVal())
+                ptr = &(a.value());
             return *ptr;
         };
         // Template Specialization
         template<>
         B_Ty & getValue<B_Ty>(){
             B_Ty * ptr;
-            if(isSecondTy())
-                ptr = &b;
+            if(isSecondTy() && b.hasVal())
+                ptr = &(b.value());
             return *ptr;
         };
 };
