@@ -81,9 +81,9 @@ class SemanticA;
         template<typename _SymbolTy,typename _PtrNodeTest>
         bool symbolExistsInCurrentScopes(std::string & symbol_name);
         template<typename SymTy>
-        SymTy *& getSymbolRefFromCurrentScopes(std::string & name);
+        Foundation::Unsafe<SymTy *> getSymbolRefFromCurrentScopes(std::string & name);
         template<typename SymTy>
-        SymTy *& getSymbolRefFromExactCurrentScope(std::string & name);
+        Foundation::Unsafe<SymTy *> getSymbolRefFromExactCurrentScope(std::string & name);
         ScopeStore(){};
         ~ScopeStore(){};
     };
@@ -109,10 +109,10 @@ class SemanticA;
     } 
 
     template<typename SymTy>
-    SymTy *& ScopeStore::getSymbolRefFromCurrentScopes(std::string & name){
+    Foundation::Unsafe<SymTy *> ScopeStore::getSymbolRefFromCurrentScopes(std::string & name){
         for(auto & _c_scope : current_scopes){
             Scope * scope_ref = getScopeRef(_c_scope);
-            for(auto & _sym : scope_ref->getIterator()){
+            for(auto _sym : scope_ref->getIterator()){
                 if(SEMANTIC_SYMBOL_IS(_sym,SymTy)){
                     if(_sym->name == name){
                         SymTy *ref = ASSERT_SEMANTIC_SYMBOL(_sym,SymTy);
@@ -121,10 +121,11 @@ class SemanticA;
                 }
             }
         }
+        return Foundation::Error("Cannot Find Symbol!");
     };
 
     template<typename SymTy>
-    SymTy *& ScopeStore::getSymbolRefFromExactCurrentScope(std::string &name){
+    Foundation::Unsafe<SymTy *> ScopeStore::getSymbolRefFromExactCurrentScope(std::string &name){
         Scope * scope_ref = getScopeRef(exact_current_scope);
         for(auto & _sym : scope_ref->getIterator()){
             if(SEMANTIC_SYMBOL_IS(_sym,SymTy)){
