@@ -13,10 +13,6 @@ CodeGenR::CodeGenR(std::ofstream & _output):ASTTraveler<CodeGenR>(this,callback_
   
 };
 
-unsigned & CodeGenR::flushArgsCount(){
-    return bc_args_count;
-};
-
 void CodeGenR::_generateAST(AST::AbstractSyntaxTree *& src){
    travel(src);
 };

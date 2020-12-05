@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <cassert>
 
 
 #ifndef AST_AST_H
@@ -398,9 +399,6 @@ public:
   std::vector<ASTStatement *> nodes;
   AbstractSyntaxTree(){};
   // AbstractSyntaxTree(std::string & str_ref):filename(str_ref){};
-  using iterator = std::vector<ASTStatement *>::iterator;
-  iterator begin() { return nodes.begin(); };
-  iterator end() { return nodes.end(); };
 };
 
 template <class _NodeTy, class PtrTy> inline bool astnode_is(PtrTy *node) {
@@ -410,6 +408,11 @@ template <class _NodeTy, class PtrTy> inline bool astnode_is(PtrTy *node) {
     return false;
   }
 }
+
+// template<class _NodeTy,class PtrT> inline _NodeTy * astnode_assert(PtrT *node){
+//   assert((node->type == _NodeTy::static_type) && "ASTNode cannot be downcasted!");
+//   return (_NodeTy *)node;
+// };
 
 #define AST_NODE_CAST(ptr) ((ASTNode *)ptr)
 #define AST_NODE_IS(ptr, type) (astnode_is<type>(ptr))

@@ -153,7 +153,7 @@ class STBFormatter {
     public:
         STBFormatter(std::ofstream & o,AbstractSyntaxTree *& _tree):_file_out(o),tree(_tree){};
         void format(){
-            for(auto & n : *tree){
+            for(auto & n : tree->nodes){
                 formatStatement(n);
             }
         };

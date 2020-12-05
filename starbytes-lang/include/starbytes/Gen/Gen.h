@@ -11,13 +11,10 @@ STARBYTES_GEN_NAMESPACE
 using namespace AST;
 
 class CodeGenR : public ASTTraveler<CodeGenR> {
-    private:
+    public:
         using _program_out = std::ofstream;
         using _program_src = AST::AbstractSyntaxTree *;
         using _program_in = std::vector<_program_src> &;
-        unsigned bc_args_count;
-        unsigned & flushArgsCount();
-    public:
         CodeGenR(_program_out & _output);
         void _generateAST(_program_src & src);
         _program_out & out;

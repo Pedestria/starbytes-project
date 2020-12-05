@@ -29,11 +29,11 @@ int main(int argc,char *argv[]){
     if(input.file.hasVal()) {
         std::string * fileBuf = Foundation::readFile(input.file.value());
         AbstractSyntaxTree * tree = parseCode(*fileBuf);
-         TreePrinter().print(tree);
-//        std::ofstream out("./test.stbxm");
-//        std::vector<AbstractSyntaxTree *> srcs;
-//        srcs.push_back(tree);
-//        CodeGen::generateToBCProgram(srcs,out);
+        //  TreePrinter().print(tree);
+       std::ofstream out("./test.stbxm");
+       std::vector<AbstractSyntaxTree *> srcs;
+       srcs.push_back(tree);
+       CodeGen::generateToBCProgram(srcs,out);
     }
     else {
         std::cerr << ERROR_ANSI_ESC << "No input file!\nExiting..." << ANSI_ESC_RESET << std::endl;

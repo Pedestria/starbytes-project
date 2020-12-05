@@ -6,10 +6,15 @@
 STARBYTES_BYTECODE_NAMESPACE
 
 #define END 0
+/// Create Variable (Name:BCId)
 #define CRTVR 1
+/// Set Variable (Var:BCId,Val:StarbytesObject)
 #define STVR 2
+/// Call Function (Name:BCId,Args:List<StarbytesObject> )
 #define CLFNC 3
+/// Refer Variable Address (Name:BCId)
 #define RFVR_A 4
+/// Refer Variable Direct (Name:BCId)
 #define RFVR_D 5
 /// Create Starbytes String (Val:BCId)
 #define CRT_STB_STR 10
