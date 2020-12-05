@@ -11,4 +11,3 @@ config.bat
 starbytes-docs
 linux-build
 starbytes-lang/tools/main/Starbytes.cpp
-starbytes-native-gui
