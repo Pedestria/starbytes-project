@@ -425,8 +425,12 @@ STARBYTES_STD_NAMESPACE
                 //Figure out each TG's dependents!
                 for(auto & mod : modules){
                     for(auto & dep_name : mod->dependencies){
-                        TargetDependency & tg_ref = tree->getDependencyByName(dep_name);
-                        tg_ref.dependents.push_back(mod->name); 
+                        Foundation::Unsafe<TargetDependency> tg_ref = tree->getDependencyByName(dep_name);
+                        if(tg_ref.hasError()){
+                            //TODO: Log Error!
+                        }
+                        else
+                            tg_ref.getResult().dependents.push_back(mod->name); 
                     }
                 }
 
@@ -434,8 +438,13 @@ STARBYTES_STD_NAMESPACE
                 for(auto & dump : dumps){
                     if(!dump->all){
                         for(auto & t_name : dump->targets_to_dump){
-                            TargetDependency & t_dep = tree->getDependencyByName(t_name);
-                            t_dep.dump_loc = dump->dump_dest;
+                            Foundation::Unsafe<TargetDependency> t_dep = tree->getDependencyByName(t_name);
+                            if(t_dep.hasError()){
+                                //TODO: Log Error!
+                            }
+                            else 
+                                t_dep.getResult().dump_loc = dump->dump_dest;
+                            
                         }
                     }
                     else {
@@ -498,7 +507,9 @@ STARBYTES_STD_NAMESPACE
 
         #endif
 
-        Semantics::SemanticA sem;
+        Semantics::SemanticASettings settings;
+
+        Semantics::SemanticA sem(settings);
         
         sem.initialize();
         for(auto & ast : source_trees){

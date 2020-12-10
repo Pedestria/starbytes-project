@@ -8,6 +8,8 @@
 #include "FS.h"
 #include "Optional.h"
 #include "Xor.h"
+#include "Unsafe.h"
+#include "WorkerPool.h"
 
 #ifndef BASE_BASE_H
 #define BASE_BASE_H

@@ -41,7 +41,8 @@ int main (int argc,char * argv[]){
         for(auto & node : tree->nodes){
             std::cout << "NODETYPE:" << int(node->type) << std::endl;
         }
-        Semantics::SemanticA sem;
+        Semantics::SemanticASettings settings;
+        Semantics::SemanticA sem(settings);
         sem.initialize();
         sem.analyzeFileForModule(tree);
         sem.finish();

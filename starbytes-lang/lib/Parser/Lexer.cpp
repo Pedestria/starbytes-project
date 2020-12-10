@@ -4,8 +4,9 @@
 #include "starbytes/Parser/Lexer.h"
 #include <iostream>
 #include "starbytes/Parser/Lookup.h"
+#include "starbytes/Base/Base.h"
 
-using namespace Starbytes;
+STARBYTES_STD_NAMESPACE
 
 bool isBracket(char &c) {
 	if (c == ']' || c == '[') {
@@ -97,10 +98,8 @@ bool isNumeric(std::string &subject){
 }
 
 
-std::string Lexer::saveTokenBuffer(size_t size) {
-	std::string result;
-	result.append(TokenBuffer, size);
-	return result;
+inline void Lexer::saveTokenBuffer(size_t size,std::string & str_ref) {
+	str_ref.append(TokenBuffer, size);
 }
 /*Copies token from buffer, clears buffer, and resets pointer.*/
 void Lexer::resolveTokenAndClearCache(TokenType tokT) {
@@ -108,7 +107,10 @@ void Lexer::resolveTokenAndClearCache(TokenType tokT) {
 	if (bufptr == TokenBuffer) {
 		return;
 	}
-	std::string result = saveTokenBuffer(size);
+	std::string result;
+	
+	saveTokenBuffer(size,result);
+
 	if (isKeyword(result)) {
 		tokT = TokenType::Keyword;
 	}
@@ -338,3 +340,5 @@ void Lexer::tokenize() {
 	}
 	
 }
+
+NAMESPACE_END

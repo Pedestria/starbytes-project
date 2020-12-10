@@ -13,7 +13,7 @@ STARBYTES_SEMANTICS_NAMESPACE
                 Foundation::dict_vec_entry(ASTType::FunctionDeclaration,&atFuncDecl)
             };
 
-    SemanticA::SemanticA():ASTTraveler<SemanticA>(this,cb_list){};
+    SemanticA::SemanticA(SemanticASettings & _settings):ASTTraveler<SemanticA>(this,cb_list),settings(_settings){};
 
     
     void SemanticA::createScope(std::string & name){

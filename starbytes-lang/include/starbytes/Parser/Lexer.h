@@ -24,7 +24,7 @@ STARBYTES_STD_NAMESPACE
 		};
 		void resolveTokenAndClearCache(TokenType tokT = TokenType::Identifier);
 		void tokenize();
-		std::string saveTokenBuffer(size_t size);
+		void inline saveTokenBuffer(size_t size,std::string & str_ref);
 	private:
 		char TokenBuffer[500];
 		char * bufptr;

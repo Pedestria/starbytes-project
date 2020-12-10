@@ -73,7 +73,7 @@ STARBYTES_FOUNDATION_NAMESPACE
         };
         public:
         using iterator = Tiny_Vector_Iterator<T>;
-        using l_value_ref = T &;
+        using reference = T &;
 
         iterator begin(){
             return iterator(__data);
@@ -82,10 +82,10 @@ STARBYTES_FOUNDATION_NAMESPACE
             return (iterator(__data) += current_len);
         };
 
-        l_value_ref firstEl(){
+        reference firstEl(){
             return begin()[0];
         };
-        l_value_ref lastEl(){
+        reference lastEl(){
             return end()[-1];
         };
         __NO_DISCARD bool isEmpty(){
@@ -142,6 +142,73 @@ STARBYTES_FOUNDATION_NAMESPACE
             _alloc_objs(ilist);
         };
     };
+
+    template<class _Ty>
+    class TinyQueue {
+        _Ty * __data;
+    public:
+        using size_ty = unsigned;
+        using pointer = _Ty *;
+    private:
+        size_ty len = 0;
+        inline pointer get_last_ptr(){
+            return __data + ((len-1) * sizeof(_Ty));
+        };
+    public:
+        using reference = _Ty &;
+        bool isEmpty(){
+            return len == 0;
+        };
+        const size_ty & size(){
+            return len;
+        };
+        reference first(){
+            return *__data;
+        };
+        reference last(){
+            return *get_last_ptr();
+        };
+    private:
+        void _push_el(const _Ty & el){
+            if(!isEmpty()){
+                ++len;
+                __data = (_Ty *)malloc(sizeof(_Ty));
+            }
+            else {
+                ++len;
+                __data = (_Ty*)realloc(__data,sizeof(_Ty) * len);
+            };
+
+            memcpy(get_last_ptr(),&el, sizeof(_Ty));
+        };
+    public:
+        void push(const _Ty & el){
+            _push_el(el);
+        };
+        void push(_Ty && el){
+            _push_el(el);
+        };
+        void pop(){
+            __data->~_Ty();
+            //First element is deleted!
+            pointer end = __data + (sizeof(_Ty) * len);
+            pointer begin = __data + sizeof(_Ty);
+
+            if(len == 1){
+                --len;
+                return;
+            };
+            //Move all elements to front!
+            while(begin != end){
+                memmove(begin - sizeof(_Ty),begin,sizeof(_Ty));
+                begin += sizeof(_Ty);
+            };
+            --len;
+            __data = realloc(__data,sizeof(_Ty) * len);
+        };
+        TinyQueue(){};
+    };
+
     template<class T>
     class UniqVector {
         TinyVector<T> data;

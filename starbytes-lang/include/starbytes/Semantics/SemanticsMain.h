@@ -13,6 +13,10 @@ using namespace AST;
 
 #define SEMANTICA_FUNC(name) ASTVisitorResponse at##name(ASTTravelContext * context)
 
+    struct SemanticASettings {
+
+    };
+
     struct SemanticAError {
         std::string message;
         std::string file;
@@ -22,9 +26,11 @@ using namespace AST;
     class STBType;
     struct STBObjectMethod;
     struct STBObjectProperty;
+    
     class SemanticA : public ASTTraveler<SemanticA> {
         using Tree = AbstractSyntaxTree;
         private:
+            SemanticASettings & settings;
             Tree * tree;
             ScopeStore store;
             std::vector<std::string> modules;
@@ -43,7 +49,10 @@ using namespace AST;
             void analyzeFileForModule(Tree *& tree_ptr);
             void finish();
             ScopeStore finishAndDumpStore();
-            SemanticA();
+            SemanticA() = delete;
+            SemanticA(const SemanticA &) = delete;
+            SemanticA operator=(SemanticA &&) = delete;
+            SemanticA(SemanticASettings & _settings);
             ~SemanticA(){};
     };
 

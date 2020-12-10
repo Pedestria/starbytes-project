@@ -97,7 +97,9 @@ int main(int argc,char * argv[]){
 
     #endif
 
-    Semantics::SemanticA sem;
+    Semantics::SemanticASettings sett;
+
+    Semantics::SemanticA sem(sett);
     sem.initialize();
     for(auto & ast : module_asts){
         sem.analyzeFileForModule(ast);

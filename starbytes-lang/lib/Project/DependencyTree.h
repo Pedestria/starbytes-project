@@ -36,7 +36,7 @@ STARBYTES_STD_NAMESPACE
             };
             std::string entry_point_target;
             void add(TargetDependency & dep);
-            TargetDependency & getDependencyByName(std::string & name);
+            Foundation::Unsafe<TargetDependency> getDependencyByName(std::string & name);
             template<typename Lambda>
             void foreach(Lambda func){
                 for(auto & dep : dependencies){

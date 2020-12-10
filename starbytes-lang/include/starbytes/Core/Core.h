@@ -9,6 +9,9 @@ STARBYTES_STD_NAMESPACE
 
 AbstractSyntaxTree * parseCode(std::string & code);
 
+class Driver {
+    
+};
 
 NAMESPACE_END
 

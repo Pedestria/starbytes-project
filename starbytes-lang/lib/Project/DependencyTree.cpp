@@ -19,12 +19,13 @@ bool DependencyTree::remove(std::string name) {
     return return_code;
 };
 
-TargetDependency & DependencyTree::getDependencyByName(std::string &name){
+Foundation::Unsafe<TargetDependency> DependencyTree::getDependencyByName(std::string &name){
     for(auto & dep : dependencies){
         if(dep.name == name){
             return dep;
         }
     }
+    return Foundation::Error("Dependency Not Found!");
 }
 
 NAMESPACE_END

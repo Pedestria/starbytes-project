@@ -24,11 +24,8 @@ string createStarbytesError(string message,string escc = RED){
 }
 
 struct StarbytesCoreSettings {
-	bool hasExec = false;
-	string executable_input;
-};
-
-StarbytesCoreSettings settings;
+	Foundation::Optional<std::string> executable_input;
+} settings;
 
 // Foundation::CommandOption interpret_only {"no-project","N",[]{
 // 	if(settings.hasProjectFile){
@@ -37,20 +34,11 @@ StarbytesCoreSettings settings;
 // 	}
 // }};
 
+
 Foundation::CommandInput executable_input {"execute","e",[](std::string & _file){
-	if(!settings.hasExec){
-		settings.hasExec = true;
+	if(!settings.executable_input.hasVal())
 		settings.executable_input = _file;
-	}
 }};
-
-// Foundation::CommandInput source {"source","s",[](std::string source_file){
-// 	if(!settings.hasSources){
-// 		settings.hasSources = true;
-// 	}
-// 	settings.files.push_back(source_file);
-// }};
-
 
 int main(int argc,char *argv[]){
 
@@ -62,8 +50,12 @@ int main(int argc,char *argv[]){
 		cout << help();
 		exit(0);
 	});
-
-	std::ifstream INPUT (settings.executable_input);
+	if(settings.executable_input.hasVal()) {
+		std::ifstream INPUT (settings.executable_input.value());
+	}
+	else {
+		std::cerr << ERROR_ANSI_ESC << "No input module\nExiting..." << ANSI_ESC_RESET;
+	};
 
 	return 0;
 }

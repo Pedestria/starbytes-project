@@ -1,7 +1,7 @@
 add_starbytes_test(
     INCLUDE_LIB
     NAME 
-    "runtime-test"
+    "full-compile-test"
     FILES
     "Run.cpp"
     DEPENDENCIES
