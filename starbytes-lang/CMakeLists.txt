@@ -51,9 +51,12 @@ endif()
 set(STARBYTES_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules)
 list(APPEND CMAKE_MODULE_PATH ${STARBYTES_MODULE_PATH})
 
-if(APPLE)
+
+if(UNIX)
 	include(AddClangCXXLib)
 endif()
+
+
 
 include(Starbytes)
 

@@ -1,4 +1,3 @@
-
 #include "starbytes/Base/Base.h"
 #include <initializer_list>
 #include <iostream>

@@ -22,6 +22,12 @@ STARBYTES_BYTECODE_NAMESPACE
 #define CRT_STB_BOOL 11
 /// Create Starbytes Number (Type:int,Val:Number)
 #define CRT_STB_NUM  12
+// Starbytes Number Types
+#define STB_NUM_INT 1
+#define STB_NUM_FLOAT 2
+#define STB_NUM_LONG 3
+#define STB_NUM_DOUBLE 4
+
 /// Store a value.
 #define TMP_STORE 20
 /// List Begin

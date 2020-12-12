@@ -467,12 +467,13 @@ void ASTTraveler<_ParentTy>::travel(AbstractSyntaxTree *__tree) {
       ASTStatement *&node = tree->nodes[idx];
       setCurrentNode(ASSERT_AST_NODE(node, ASTNode));
       setNextNode(ASSERT_AST_NODE(tree->nodes[idx + 1], ASTNode));
-    } else {
-      if (ast_top_level_len == (idx + 1))
+    } 
+    else if (ast_top_level_len == (idx + 1)) {
         nextNodeAndSetAheadNode();
-
-      nextNodeAndSetAheadNode(ASSERT_AST_NODE(tree->nodes[idx + 1], ASTNode));
+        //Escape!
     }
+    else 
+        nextNodeAndSetAheadNode(ASSERT_AST_NODE(tree->nodes[idx + 1], ASTNode));
 
     visitStatement();
     ++idx;

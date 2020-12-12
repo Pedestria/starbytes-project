@@ -19,9 +19,12 @@ void CodeGenR::_generateAST(AST::AbstractSyntaxTree *& src){
 
 void generateToBCProgram(std::vector<AST::AbstractSyntaxTree *> &module_sources,std::ofstream & out){
     CodeGenR gen(out);
-    for(auto & src : module_sources){
-        gen._generateAST(src);
+    if(out.is_open()) {
+        for(auto & src : module_sources){
+            gen._generateAST(src);
+        }
     }
+    out.close();
 };
 
 NAMESPACE_END

@@ -208,7 +208,7 @@ void Parser::parseAcquireDeclaration(std::vector<ASTStatement *> *& container){
 
 
 void Parser::parseNumericLiteral(ASTNumericLiteral *&ptr){
-    Token * tok = nextToken();
+    Token * tok = currentToken();
     //CurrentToken: All of the Numeric or 1/3 of the numeric tokens!
     ptr->type = ASTType::NumericLiteral;
     ptr->position = tok->getPosition();
@@ -228,9 +228,8 @@ void Parser::parseNumericLiteral(ASTNumericLiteral *&ptr){
             }
 
         }else{
-            std::string numvalue;
-            numvalue = tok->getContent();
-            ptr->value = numvalue;
+            ptr->value = tok->getContent();
+            
         }
         ptr->position.end = currentToken()->getPosition().end;
     } else{

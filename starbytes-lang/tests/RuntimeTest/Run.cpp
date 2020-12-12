@@ -20,6 +20,7 @@ Foundation::CommandInput test_file {"file","f",[](std::string & _input){
 }};
 
 int main(int argc,char *argv[]){
+    std::cout << argc << std::endl;
     #ifdef _WIN32
         setupConsole(); 
     #endif
@@ -29,7 +30,7 @@ int main(int argc,char *argv[]){
     if(input.file.hasVal()) {
         std::string * fileBuf = Foundation::readFile(input.file.value());
         AbstractSyntaxTree * tree = parseCode(*fileBuf);
-        //  TreePrinter().print(tree);
+         TreePrinter().print(tree);
        std::ofstream out("./test.stbxm");
        std::vector<AbstractSyntaxTree *> srcs;
        srcs.push_back(tree);

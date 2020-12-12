@@ -31,12 +31,23 @@ void genBoolLiteral(ASTBooleanLiteral * node,CodeGenR *ptr){
     // VISITOR_RETURN
 };
 
+void genNumLiteral(ASTNumericLiteral * node,CodeGenR * ptr){
+    int code = CRT_STB_NUM;
+    ptr->out.write((char*)&code,sizeof(code));
+    int code1 = STB_NUM_INT;
+    ptr->out.write((char *)&code1,sizeof(code1));
+    ptr->out.write((char *)&(node->value),sizeof(node->value));
+};
+
 void genExpr(ASTExpression *exp,CodeGenR * ptr){
     if(AST_NODE_IS(exp,ASTStringLiteral)){
         genStrLiteral(ASSERT_AST_NODE(exp,ASTStringLiteral),ptr);
     }
     else if(AST_NODE_IS(exp,ASTBooleanLiteral)){
         genBoolLiteral(ASSERT_AST_NODE(exp,ASTBooleanLiteral),ptr);
+    }
+    else if(AST_NODE_IS(exp,ASTNumericLiteral)){
+        genNumLiteral(ASSERT_AST_NODE(exp,ASTNumericLiteral),ptr);
     }
 };
 

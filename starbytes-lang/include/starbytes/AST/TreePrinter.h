@@ -147,6 +147,7 @@ namespace AST {
         void operator=(TreePrinter &) = delete;
         void print(AbstractSyntaxTree *& _tree){
             tree = _tree;
+            std::cout << "TreeSize:" << tree->nodes.size() << std::endl;
             for(auto & n : tree->nodes){
                 if(AST_NODE_IS(n,ASTVariableDeclaration)){
                     printVarDecl(ASSERT_AST_NODE(n,ASTVariableDeclaration));

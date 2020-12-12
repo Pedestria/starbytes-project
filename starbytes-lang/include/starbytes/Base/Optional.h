@@ -24,8 +24,7 @@ public:
         _value = (Obj*)new VoidTy(v);
     };
     Optional(Obj v):_constructed(true){
-        _value = (Obj *)malloc(sizeof(Obj));
-        memcpy(_value,&v,sizeof(Obj));
+        _value = new Obj(v);
     };
 };
 

@@ -1,5 +1,4 @@
 #include "starbytes/Base/Base.h"
-#include <optional>
 
 #ifndef INTERPRETER_STDOBJECTS_H
 #define INTERPRETER_STDOBJECTS_H
@@ -280,6 +279,8 @@ STARBYTES_INTERPRETER_NAMESPACE
                                 long * tmp_loc = num._long_val;
                                 return (*_long_val) == *tmp_loc;
                             }
+                            else
+                              return false;
                         }
                         else
                             return false;
@@ -293,6 +294,8 @@ STARBYTES_INTERPRETER_NAMESPACE
                             return _float_val;
                         else if(type == DynNumTy::LONG)
                             return _long_val;
+                        else 
+                            return nullptr;
                     };
                 };
                 DynNum INTERNAL_VALUE;
