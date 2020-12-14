@@ -1,0 +1,9 @@
+add_starbytes_tool(
+    NAME
+    "bc-disasm"
+    INCLUDE_LIB
+    FILES 
+    "main.cpp"
+    DEPENDENCIES 
+    "starbytesBase"
+)

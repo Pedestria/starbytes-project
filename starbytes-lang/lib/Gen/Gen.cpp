@@ -1,5 +1,6 @@
 #include "starbytes/Gen/Gen.h"
 #include "GenDecl.h"
+#include "starbytes/ByteCode/BCDef.h"
 
 STARBYTES_GEN_NAMESPACE
 
@@ -19,9 +20,11 @@ void CodeGenR::_generateAST(AST::AbstractSyntaxTree *& src){
 
 void generateToBCProgram(std::vector<AST::AbstractSyntaxTree *> &module_sources,std::ofstream & out){
     CodeGenR gen(out);
+    int code = PROG_END;
     if(out.is_open()) {
         for(auto & src : module_sources){
             gen._generateAST(src);
+            out.write((char *)&code,sizeof(code));
         }
     }
     out.close();
