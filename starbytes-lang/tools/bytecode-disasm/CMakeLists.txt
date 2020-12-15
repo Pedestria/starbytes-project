@@ -6,4 +6,5 @@ add_starbytes_tool(
     "main.cpp"
     DEPENDENCIES 
     "starbytesBase"
+	"starbytesBytecode"
 )

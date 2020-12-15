@@ -1,7 +1,12 @@
 #include "starbytes/Base/Base.h"
+#include <string>
+#include <cstdlib>
+#include <cstring>
 
 #ifndef BYTECODE_BCDEF_H
 #define BYTECODE_BCDEF_H
+
+
 
 STARBYTES_BYTECODE_NAMESPACE
 
@@ -36,8 +41,12 @@ STARBYTES_BYTECODE_NAMESPACE
 #define LST_BEG 0x12
 /// List End
 #define LST_END 0x13
+// ByteCode (32 Bit Integer)
+using BC = unsigned int;
 /// Bytecode Identifier!
 using BCId = std::string;
+
+void bcid_to_cpp_str(BCId & id_ref,std::string & str_ref);
 /// Defines the End of the Program!
 #define PROG_END 0xff
 

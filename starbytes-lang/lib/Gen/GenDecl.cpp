@@ -11,7 +11,7 @@ ASTVisitorResponse genVarDecl(ASTTravelContext & context,CodeGenR *ptr){
     
     ASTVariableDeclaration * node = ASSERT_AST_NODE(context.current,ASTVariableDeclaration);
     //Visiting!
-    int code;
+    BC code;
     for(auto & spec : node->specifiers){
         code = CRTVR;
         ptr->out.write((char *)&code,sizeof(code));
@@ -28,7 +28,7 @@ ASTVisitorResponse genVarDecl(ASTTravelContext & context,CodeGenR *ptr){
         }
 
         if(spec->initializer.has_value()){
-            int code = STVR;
+            BC code = STVR;
             ptr->out.write((char *)&code,sizeof(code));
             ptr->out.write((char *)&var_name,sizeof(var_name));
             //Wait For Initializer to Generate!
@@ -41,7 +41,7 @@ ASTVisitorResponse genVarDecl(ASTTravelContext & context,CodeGenR *ptr){
 ASTVisitorResponse genConstDecl(ASTTravelContext & context,CodeGenR * ptr){
     ASTConstantDeclaration * node = ASSERT_AST_NODE(context.current,ASTConstantDeclaration);
     //Visiting!
-    int code;
+    BC code;
     for(auto & spec : node->specifiers){
         code = CRTVR;
         ptr->out.write((char *)&code,sizeof(code));
@@ -57,7 +57,7 @@ ASTVisitorResponse genConstDecl(ASTTravelContext & context,CodeGenR * ptr){
             ptr->out.write((char *)&var_name,sizeof(var_name));
         }
         if(spec->initializer.has_value()){
-            int code = STVR;
+            BC code = STVR;
             ptr->out.write((char *)&code,sizeof(code));
             ptr->out.write((char *)&var_name,sizeof(var_name));
             //Wait For Initializer to Generate!

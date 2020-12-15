@@ -44,8 +44,7 @@ void execute_child_process(std::string name,std::string & args,bool inPlace,char
 
   #ifdef HAS_UNISTD_H
     if(inPlace){
-
-      int exec_id = execve(name.c_str(),argv_unix,nullptr);
+      int exec_id = execvp(name.c_str(),argv_unix);
       if(wait(&exec_id)){
         return;
       }

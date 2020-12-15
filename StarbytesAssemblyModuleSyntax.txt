@@ -73,12 +73,10 @@ end = 00
 
 // lang : starbytes-asm
 
-01 Var 00 02 Var 11 TestString 00 00 03 Log 06 Var 00 00
+01 Var 02 Var 11 TestString
 
 Dissassembled:
 
-crtvr Var end
-stvr Var crt_stb_string TestString end end
-clfnc Log rfvr Var end end 
-
+crtvr Var 
+stvr Var crt_stb_str TestString 
 

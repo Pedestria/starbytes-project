@@ -8,7 +8,7 @@ using namespace ByteCode;
 
 void genStrLiteral(ASTStringLiteral * node,CodeGenR *ptr){
     // ASTStringLiteral * node = ASSERT_AST_NODE(context.current,ASTStringLiteral);
-    int code = CRT_STB_STR;
+    BC code = CRT_STB_STR;
     ptr->out.write((char *)&code,sizeof(code));
     ptr->out.write((char *)&(node->value),sizeof(node->value));
 
@@ -17,7 +17,7 @@ void genStrLiteral(ASTStringLiteral * node,CodeGenR *ptr){
 
 void genBoolLiteral(ASTBooleanLiteral * node,CodeGenR *ptr){
     // ASTBooleanLiteral * node = ASSERT_AST_NODE(context.current,ASTBooleanLiteral);
-    int code = CRT_STB_BOOL;
+    BC code = CRT_STB_BOOL;
     ptr->out.write((char *)&code,sizeof(code));
     bool val;
     if(node->value == "true"){
@@ -32,9 +32,9 @@ void genBoolLiteral(ASTBooleanLiteral * node,CodeGenR *ptr){
 };
 
 void genNumLiteral(ASTNumericLiteral * node,CodeGenR * ptr){
-    int code = CRT_STB_NUM;
+    BC code = CRT_STB_NUM;
     ptr->out.write((char*)&code,sizeof(code));
-    int code1 = STB_NUM_INT;
+    BC code1 = STB_NUM_INT;
     ptr->out.write((char *)&code1,sizeof(code1));
     ptr->out.write((char *)&(node->value),sizeof(node->value));
 };

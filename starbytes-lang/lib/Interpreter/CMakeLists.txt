@@ -13,4 +13,5 @@ add_starbytes_lib(
     "BCReader.h"
     LIBS_TO_LINK
     "starbytesBase"
+	"starbytesBytecode"
 )

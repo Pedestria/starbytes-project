@@ -15,11 +15,11 @@ class XOR {
     public:
         XOR(A_Ty _a):_a_xor_b(true){
             a = (A_Ty *)malloc(sizeof(A_Ty));
-            memcpy(a,&_a,sizeof(A_Ty));
+            memmove(a,std::addressof(_a),sizeof(A_Ty));
         };
         XOR(B_Ty _b):_a_xor_b(false){
             b = (B_Ty *)malloc(sizeof(B_Ty));
-            memcpy(b,&_b,sizeof(B_Ty));
+            memmove(b,std::addressof(_b),sizeof(B_Ty));
         };
         inline bool isFirstTy(){ return _a_xor_b;};
         inline bool isSecondTy(){ return !_a_xor_b;};

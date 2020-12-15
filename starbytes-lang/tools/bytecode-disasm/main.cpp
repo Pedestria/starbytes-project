@@ -1,6 +1,7 @@
 #include "starbytes/Base/Base.h"
 #include "starbytes/ByteCode/BCDef.h"
 #include <fstream>
+#include <optional>
 
 STARBYTES_STD_NAMESPACE
 
@@ -11,18 +12,22 @@ class BCDisasm {
         std::cout << item << " ";
     };
     void _disam_expr(){
-        int code1;
+        ByteCode::BC code1;
         input.read((char *)&code1,sizeof(code1));
         print_c(code1);
         if(code1 == CRT_STB_STR){
             ByteCode::BCId id;
             input.read((char*)&id,sizeof(id));
-            print_c(id);
+            std::string str;
+            ByteCode::bcid_to_cpp_str(id,str);
+            print_c(str);
         }
         else if(code1 == CRT_STB_NUM){
             ByteCode::BCId id;
             input.read((char *)&id,sizeof(id));
-            print_c(id);
+            std::string str;
+            ByteCode::bcid_to_cpp_str(id,str);
+            print_c(str);
         };
     };
     public:
@@ -31,7 +36,7 @@ class BCDisasm {
         if(input.is_open()) {
             unsigned idx = 0;
             while(idx < 2) {
-                int code0;
+                ByteCode::BC code0;
                 input.read((char *)&code0,sizeof(code0));
                 print_c(code0);
                 if(code0 == PROG_END){
@@ -40,12 +45,16 @@ class BCDisasm {
                 else if(code0 == CRTVR){
                     ByteCode::BCId id;
                     input.read((char *)&id,sizeof(id));
-                    print_c(id);
+                    std::string str;
+                    ByteCode::bcid_to_cpp_str(id,str);
+                    print_c(str);
                 }
                 else if(code0 == STVR){
                     ByteCode::BCId id;
                     input.read((char *)&id,sizeof(id));
-                    print_c(id);
+                    std::string str;
+                    ByteCode::bcid_to_cpp_str(id,str);
+                    print_c(str);
                     _disam_expr();
                 };
                 ++idx;

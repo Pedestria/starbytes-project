@@ -1,0 +1,10 @@
+add_starbytes_lib(
+	LIB_NAME
+	"starbytesBytecode"
+	SOURCE_FILES 
+	"BCDef.cpp"
+	HEADER_FILES 
+	"BCDef.h"
+	LIBS_TO_LINK 
+	"starbytesBase"
+)

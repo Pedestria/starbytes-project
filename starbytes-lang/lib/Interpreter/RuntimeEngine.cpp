@@ -726,7 +726,7 @@ using namespace ByteCode;
 
 inline void buildArgList(std::vector<StarbytesObject **> & args_listm,std::ifstream & input,Scope * current_scope){
   while(true){
-    int code_n;
+    BC code_n;
     input.read((char *)&code_n,sizeof(code_n));
     if(code_n == LST_END){
       break;
@@ -734,7 +734,9 @@ inline void buildArgList(std::vector<StarbytesObject **> & args_listm,std::ifstr
     else if(code_n == RFVR_A){
       BCId val;
       input.read((char *)&val,sizeof(val));
-      args_listm.push_back(refer_variable_a(val,current_scope));
+        std::string str;
+        bcid_to_cpp_str(val,str);
+      args_listm.push_back(refer_variable_a(str,current_scope));
     }
     // else if(code_n == RFVR_D){
     //   BCId val;
@@ -747,7 +749,7 @@ inline void buildArgList(std::vector<StarbytesObject **> & args_listm,std::ifstr
 void BCEngine::readProgram(std::ifstream &input){
   if(input.is_open()){
     while(true) { 
-      int code;
+      BC code;
       input.read((char *)&code,sizeof(code));
       if(code == PROG_END){
         break;
@@ -755,22 +757,28 @@ void BCEngine::readProgram(std::ifstream &input){
       else if(code == CRTVR){
         BCId val;
         input.read((char *)&val,sizeof(val));
-        create_variable(val,get_scope_ref(current_scope));
+          std::string str;
+          bcid_to_cpp_str(val,str);
+        create_variable(str,get_scope_ref(current_scope));
       }
       else if(code == STVR){
         BCId var_to_set;
         input.read((char *)&var_to_set,sizeof(var_to_set));
-        int code_two;
+          std::string var_to_set_str;
+          bcid_to_cpp_str(var_to_set,var_to_set_str);
+        BC code_two;
         input.read((char *)&code_two,sizeof(code_two));
         if(code_two == CRT_STB_STR){
           BCId val;
           input.read((char *)&val,sizeof(val));
-          set_variable(var_to_set,create_starbytes_string(val),get_scope_ref(current_scope));
+            std::string str;
+            bcid_to_cpp_str(val,str);
+          set_variable(var_to_set_str,create_starbytes_string(str),get_scope_ref(current_scope));
         }
         else if(code_two == CRT_STB_BOOL){
           bool val;
           input.read((char *)&val,sizeof(val));
-          set_variable(var_to_set,create_starbytes_boolean(val),get_scope_ref(current_scope));
+          set_variable(var_to_set_str,create_starbytes_boolean(val),get_scope_ref(current_scope));
         }
         else if(code_two == CRT_STB_NUM){
           
@@ -779,12 +787,14 @@ void BCEngine::readProgram(std::ifstream &input){
       else if(code == CLFNC){
         BCId func_name;
         input.read((char *)&func_name,sizeof(func_name));
-        int code_two;
+          std::string str;
+          bcid_to_cpp_str(func_name,str);
+        BC code_two;
         input.read((char *)&code_two,sizeof(code_two));
         if(code_two == LST_BEG){
           std::vector<StarbytesObject **> args;
           buildArgList(args,input,get_scope_ref(current_scope));
-          invoke_function(func_name,args,get_scope_ref(current_scope));
+          invoke_function(str,args,get_scope_ref(current_scope));
         }
       }
     }
