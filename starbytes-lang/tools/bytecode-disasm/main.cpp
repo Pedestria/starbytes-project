@@ -1,6 +1,7 @@
 #include "starbytes/Base/Base.h"
 #include "starbytes/ByteCode/BCDef.h"
 #include <fstream>
+#include <optional>
 
 STARBYTES_STD_NAMESPACE
 
@@ -70,8 +71,9 @@ int main(int argc,char * argv[]){
         std::cout << "Bytecode Disassembler" << std::endl;
     });
     if(file.has_value()){
-        std::ifstream in(file.value(),std::ios::in);
-        BCDisasm disasm(in);
+        std::cout << "File To Open:" << file.value();
+        std::ifstream In(file.value(),std::ios::in);
+        BCDisasm disasm(In);
         disasm.disassemble();
     }
     else

@@ -460,13 +460,16 @@ template <class _ParentTy> void ASTTraveler<_ParentTy>::visitStatement() {
 template <class _ParentTy>
 void ASTTraveler<_ParentTy>::travel(AbstractSyntaxTree *__tree) {
   tree = __tree;
-  size_t ast_top_level_len = tree->nodes.size();
+  unsigned ast_top_level_len = tree->nodes.size();
   unsigned idx = 0;
   while (ast_top_level_len != idx) {
     if (idx == 0) {
       ASTStatement *&node = tree->nodes[idx];
       setCurrentNode(ASSERT_AST_NODE(node, ASTNode));
-      setNextNode(ASSERT_AST_NODE(tree->nodes[idx + 1], ASTNode));
+      if(ast_top_level_len != 1)
+        setNextNode(ASSERT_AST_NODE(tree->nodes[idx + 1], ASTNode));
+      else
+        setNextNode(nullptr);
     } 
     else if (ast_top_level_len == (idx + 1)) {
         nextNodeAndSetAheadNode();
