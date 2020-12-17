@@ -68,11 +68,28 @@ void execute_child_process(std::string name,std::string & args,bool inPlace,char
 
   #endif
 };
+using namespace CommandLine;
 
-void parseCmdArgs(int &arg_count, char **&argv,
+void formatHelp(std::initializer_list<CommandOption *> & opts_ref,std::initializer_list<CommandInput *> & inputs_ref,std::string & sum_ref){
+  std::cout << sum_ref << "\n" << "\x1b[2mFlags:\x1b[0m\n\n--help, -h\tDisplay help info.\n";
+  if(opts_ref.size() > 0) {
+    std::cout << "Options:\n";
+    for(auto & opt : opts_ref){
+      std::cout << "--" << opt->first_flag_match << ", -" << opt->second_flag_match << "\t" << opt->desc.val << "\n";
+    };
+  }
+  if(inputs_ref.size() > 0){
+    std::cout << "Inputs:\n";
+    for(auto & ipt : inputs_ref){
+      std::cout << "--" << ipt->first_flag_match << ", -" << ipt->second_flag_match << "\t" << ipt->desc.val << "\n";
+    };
+  };
+};
+
+void CommandLine::parseCmdArgs(int &arg_count, char **&argv,
                   std::initializer_list<CommandOption *> options,
                   std::initializer_list<CommandInput *> inputs,
-                  void (*help_opt_callback)()) {
+                  std::string summary) {
   std::vector<std::string> flags;
   for (int i = 1; i < arg_count; ++i) {
     flags.push_back(argv[i]);
@@ -84,7 +101,8 @@ void parseCmdArgs(int &arg_count, char **&argv,
     is_flag = false;
     if (flags[i] == "--help" || flags[i] == "-h") {
       is_flag = true;
-      help_opt_callback();
+      formatHelp(options,inputs,summary);
+      exit(1);
     }
 
     for (auto &in : inputs) {
@@ -106,7 +124,7 @@ void parseCmdArgs(int &arg_count, char **&argv,
 
     if (!is_flag) {
       std::cerr
-          << "\x1b[31m\x1b[2mCommand Line Parse Error:\x1b[0m \n Unknown flag: "
+          << "\x1b[31m\x1b[2mCommand Line Parse Error:\x1b[0m\nUnknown flag: "
           << flags[i] << "\n";
     }
   }

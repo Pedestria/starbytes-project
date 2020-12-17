@@ -1,6 +1,7 @@
 #include "Macros.h"
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 
 #ifndef BASE_XOR_H
 #define BASE_XOR_H

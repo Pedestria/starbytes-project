@@ -6,8 +6,8 @@ using namespace AST;
 
 class SemanticA;
 
-ASTVisitorResponse atVarSpec(ASTTravelContext & context,SemanticA * sem);
-ASTVisitorResponse atConstSpec(ASTTravelContext & context,SemanticA * sem);
+ASTVisitorResponse atVarDecl(ASTTravelContext & context,SemanticA * sem);
+ASTVisitorResponse atConstDecl(ASTTravelContext & context,SemanticA * sem);
 ASTVisitorResponse atFuncDecl(ASTTravelContext & context,SemanticA * sem);
 // ASTVisitorResponse atClassDecl(ASTTravelContext & context,SemanticA * sem);
 

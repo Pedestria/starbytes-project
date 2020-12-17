@@ -7,10 +7,9 @@
 
 STARBYTES_FOUNDATION_NAMESPACE
 
-class Error {
+struct Error {
     std::string message;
-    public:
-    Error(std::string _message):message(_message){};
+    Error(std::string && _message):message(_message){};
 };
 
 

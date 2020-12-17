@@ -11,10 +11,6 @@ WINDOWS_CONSOLE_INIT
 using namespace LSP;
 
 
-std::string help(){
- return "\n \u001b[35m\u001b[4m The Starbytes LSP Implementation!\u001b[0m \n \n \u001b[4mFlags:\u001b[0m \n \n --help = Display help info. \n";
-}
-
 LSPServerSettings settings;
 
 int main(int argc, char* argv[]) {
@@ -22,10 +18,7 @@ int main(int argc, char* argv[]) {
     setupConsole();
     #endif
 
-    Foundation::parseCmdArgs(argc,argv,{},{},[]{
-        std::cout << help();
-        exit(0);
-    });
+    Foundation::CommandLine::parseCmdArgs(argc,argv,{},{},"The Starbytes LSP Implementation!");
     // StarbytesLSPServer server;
     // server.init(argc,argv);
     //Change

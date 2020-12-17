@@ -15,7 +15,9 @@ struct Input {
     Foundation::Optional<std::string> file;
 } input;
 
-Foundation::CommandInput test_file {"file","f",[](std::string & _input){
+using namespace Foundation;
+
+CommandLine::CommandInput test_file {"file","f",CommandLine::FlagDescription("A file to test!"),[](std::string & _input){
     input.file = _input;
 }};
 
@@ -24,9 +26,7 @@ int main(int argc,char *argv[]){
     #ifdef _WIN32
         setupConsole(); 
     #endif
-    Foundation::parseCmdArgs(argc,argv,{},{&test_file},[](){
-        std::cout << "Runtime Test!" << std::endl;
-    });
+    CommandLine::parseCmdArgs(argc,argv,{},{&test_file},"Full Compile Test!");
     if(input.file.hasVal()) {
         std::string * fileBuf = Foundation::readFile(input.file.value());
         AbstractSyntaxTree * tree = parseCode(*fileBuf);

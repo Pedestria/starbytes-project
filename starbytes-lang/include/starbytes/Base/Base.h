@@ -10,6 +10,7 @@
 #include "Xor.h"
 #include "Unsafe.h"
 #include "WorkerPool.h"
+#include "Logging.h"
 
 #ifndef BASE_BASE_H
 #define BASE_BASE_H

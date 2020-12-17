@@ -13,6 +13,7 @@
 #endif
 
 using namespace Starbytes;
+using namespace Starbytes::Foundation;
 struct StarbytesBuildSettings {
     std::vector<std::string> modules_to_link;
     Foundation::Optional<std::string> module_name;
@@ -22,7 +23,7 @@ struct StarbytesBuildSettings {
     bool exec_mode;
 } settings;
 
-Foundation::CommandOption library_mode {"Lib","L",[](){
+CommandLine::CommandOption library_mode {"Lib","L",CommandLine::FlagDescription("Sets `starbytes-b` to library mode."),[](){
     if(!settings.exec_mode)
         settings.library_mode = true;
     else {
@@ -31,7 +32,7 @@ Foundation::CommandOption library_mode {"Lib","L",[](){
     }
 }};
 
-Foundation::CommandOption exec_mode {"Exec","E",[](){
+CommandLine::CommandOption exec_mode {"Exec","E",CommandLine::FlagDescription("Sets `starbytes-b` to executable mode."),[](){
     if(!settings.library_mode)
         settings.exec_mode = true;
     else {
@@ -40,22 +41,22 @@ Foundation::CommandOption exec_mode {"Exec","E",[](){
     }
 }};
 
-Foundation::CommandInput module_name {"module-name","n",[](std::string & input){
+CommandLine::CommandInput module_name {"module-name","n",CommandLine::FlagDescription("Provides a name for the module to be compiled from the given the sources."),[](std::string & input){
     if(settings.module_name.hasVal())
         settings.module_name = input;
 }};
 
-Foundation::CommandInput src_dir {"src-dir","s",[](std::string & input){
+CommandLine::CommandInput src_dir {"src-dir","s",CommandLine::FlagDescription("Provides a source directory"),[](std::string & input){
     if(!input.empty())
         settings.source_dir = input;
 }};
 
-Foundation::CommandInput out_dir {"out-dir","d",[](std::string & input){
+CommandLine::CommandInput out_dir {"out-dir","d",CommandLine::FlagDescription("Provides an output directory. (Where to output the compiled module to.)"),[](std::string & input){
     if(!settings.out_dir.empty())
         settings.out_dir = input;
 }};
 
-Foundation::CommandInput link_module {"link-module","l",[](std::string & input){
+CommandLine::CommandInput link_module {"link-module","l",CommandLine::FlagDescription("A compiled module to link to new module."),[](std::string & input){
     settings.modules_to_link.push_back(input);
 }};
 
@@ -65,10 +66,7 @@ int main(int argc,char * argv[]){
     #ifdef _WIN32
         setupConsole();
     #endif
-    Foundation::parseCmdArgs(argc,argv,{&exec_mode,&library_mode},{&link_module,&module_name},[]{
-        std::cout << "\x1b[34mStarbytes Build\x1b[0m" << std::endl;
-        exit(1);
-    });
+    CommandLine::parseCmdArgs(argc,argv,{&exec_mode,&library_mode},{&link_module,&module_name,&src_dir},"Starbytes Build");
 
     if(!settings.module_name.hasVal()){
         std::cerr << ERROR_ANSI_ESC << "No Module Name Provided!" << ANSI_ESC_RESET << std::endl;
@@ -79,37 +77,6 @@ int main(int argc,char * argv[]){
         std::cerr << ERROR_ANSI_ESC << "No Module Source Directory Provided!\nExiting..." << ANSI_ESC_RESET << std::endl;
         exit(1);
     };
-    
-    std::vector<AST::AbstractSyntaxTree *> module_asts;
-
-    #ifdef HAS_FILESYSTEM_H
-
-    using FSEntry = std::filesystem::directory_entry;
-
-    Foundation::foreachInDirectory(settings.source_dir.value(),[&module_asts](FSEntry entry){
-        if(entry.is_regular_file()){
-            std::string file_path = entry.path().generic_string();
-            std::string * file_buf = Foundation::readFile(file_path);
-            AST::AbstractSyntaxTree * tree = parseCode(*file_buf);
-            module_asts.push_back(tree);
-        }
-    });
-
-    #endif
-
-    Semantics::SemanticASettings sett;
-
-    Semantics::SemanticA sem(sett);
-    sem.initialize();
-    for(auto & ast : module_asts){
-        sem.analyzeFileForModule(ast);
-    }
-    sem.finish();
-    
-    std::string out = settings.out_dir+"/"+settings.module_name.value()+".stbxm";
-    std::ofstream module_stream (out,std::ios::out);
-    CodeGen::generateToBCProgram(module_asts,module_stream);
-    module_stream.close();
 
     return 0;
 };

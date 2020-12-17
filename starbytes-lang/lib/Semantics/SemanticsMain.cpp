@@ -8,8 +8,32 @@ STARBYTES_SEMANTICS_NAMESPACE
 
     using namespace AST;
 
+    SemanticADiagnostic && makeSemanticADiagnostic(DiagnosticTy type,std::string message,std::string file_n,SrcLocation loc){
+        SemanticADiagnostic diag;
+        diag.type = type;
+        diag.file = file_n;
+        diag.message = message;
+        diag.pos = loc;
+        return std::move(diag);
+    };
+
+    void DiagnosticLogger::removeDiagonisticAtIndex(unsigned idx){
+        std::deque<SemanticADiagnostic>::const_iterator it = data_buf().cbegin();
+        unsigned i = 0;
+        while(it != data_buf().cend()){
+            if(i == idx)
+                break;
+            ++it;
+            ++idx;
+        };
+        if(it != data_buf().cend()){
+            data_buf().erase(it);
+        };
+    };
+
+
     ASTTravelerCallbackList<SemanticA> cb_list = {
-                Foundation::dict_vec_entry(ASTType::VariableSpecifier,&atVarSpec),
+                Foundation::dict_vec_entry(ASTType::VariableDeclaration,&atVarDecl),
                 Foundation::dict_vec_entry(ASTType::FunctionDeclaration,&atFuncDecl)
             };
 

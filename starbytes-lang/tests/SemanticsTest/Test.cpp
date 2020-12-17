@@ -13,7 +13,9 @@ WINDOWS_CONSOLE_INIT
 
 std::string file_;
 
-Foundation::CommandInput file_input {"test-file","f",[](std::string & file){
+using namespace Foundation;
+
+CommandLine::CommandInput file_input {"test-file","f",CommandLine::FlagDescription("A file to test!"),[](std::string & file){
     file_ = file;
 }};
 
@@ -22,10 +24,7 @@ int main (int argc,char * argv[]){
     setupConsole();
     #endif
 
-    Foundation::parseCmdArgs(argc,argv,{},{&file_input},[]{
-        std::cout << "HELP! TEST!" << std::endl;
-        exit(1);
-    });
+    CommandLine::parseCmdArgs(argc,argv,{},{&file_input},"Semantics Test!");
 
     if(file_.empty()){
         std::cout << ERROR_ANSI_ESC  <<"No test file provided!\nExiting..." << ANSI_ESC_RESET << std::endl;

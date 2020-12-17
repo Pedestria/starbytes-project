@@ -20,7 +20,7 @@ void CodeGenR::_generateAST(AST::AbstractSyntaxTree *& src){
 
 void generateToBCProgram(std::vector<AST::AbstractSyntaxTree *> &module_sources,std::ofstream & out){
     CodeGenR gen(out);
-    int code = PROG_END;
+    ByteCode::BC code = PROG_END;
     if(out.is_open()) {
         for(auto & src : module_sources){
             gen._generateAST(src);

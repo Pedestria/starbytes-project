@@ -9,28 +9,35 @@ STARBYTES_SEMANTICS_NAMESPACE
 using namespace AST;
 
 //TODO: Implement!
-ASTVisitorResponse atVarSpec(ASTTravelContext & context,SemanticA *sem){
-    ASTVariableSpecifier *current = ASSERT_AST_NODE(context.current,ASTVariableSpecifier);
+ASTVisitorResponse atVarDecl(ASTTravelContext & context,SemanticA *sem){
+    ASTVariableDeclaration *current = ASSERT_AST_NODE(context.current,ASTVariableDeclaration);
+    // std::string baby;
+    // sem->err_stream << makeSemanticADiagnostic(DiagnosticTy::Advice,"Test","TestFile",makeSrcLoc(baby,current->BeginFold));
+    // // for(auto & spec : current->specifiers){
+
+    // // };
     ASTVisitorResponse reply;
     reply.action = nullptr;
     reply.success = true;
-    return reply;
+    VISITOR_END
 };
 //TODO: Implement!
-ASTVisitorResponse atConstSpec(ASTTravelContext & context,SemanticA *sem){
-    ASTConstantSpecifier *current = ASSERT_AST_NODE(context.current,ASTConstantSpecifier);
+ASTVisitorResponse atConstDecl(ASTTravelContext & context,SemanticA *sem){
+    ASTConstantDeclaration *current = ASSERT_AST_NODE(context.current,ASTConstantDeclaration);
+
     ASTVisitorResponse reply;
     reply.action = nullptr;
     reply.success = true;
-    return reply;
+    VISITOR_END
 };
 //TODO: Implement!
 ASTVisitorResponse atFuncDecl(ASTTravelContext & context,SemanticA *sem){
     ASTFunctionDeclaration *current = ASSERT_AST_NODE(context.current,ASTFunctionDeclaration);
+
     ASTVisitorResponse reply;
     reply.action = nullptr;
     reply.success = true;
-    return reply;
+    VISITOR_END
 };
 
 NAMESPACE_END

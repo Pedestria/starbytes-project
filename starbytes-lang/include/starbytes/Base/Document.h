@@ -20,7 +20,7 @@ STARBYTES_STD_NAMESPACE
         DocumentPosition pos;
     };
 
-    #define MAKE_SRC_LOCATION(id,pos) SrcLocation src_loc; loc.id = id; loc.pos = pos;
+    SrcLocation && makeSrcLoc(SrcDocumentID & id,DocumentPosition & pos);
 
     std::string document_position_to_str(DocumentPosition & pos);
 

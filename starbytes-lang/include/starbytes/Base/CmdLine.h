@@ -15,29 +15,38 @@ STARBYTES_FOUNDATION_NAMESPACE
 void execute_child_process(std::string name, std::string &args, bool inPlace,
                            char *const *argv_unix = nullptr);
 
+namespace CommandLine {
+struct FlagDescription {
+  std::string val;
+  FlagDescription(std::string _val):val(_val){};
+};
 struct CommandInput {
   std::string first_flag_match;
   std::string second_flag_match;
+  FlagDescription desc;
   void (*func_ptr)(std::string &);
-  CommandInput(std::string first, std::string second,
+  CommandInput(std::string first, std::string second,FlagDescription _desc,
                void (*func)(std::string &))
-      : first_flag_match(first), second_flag_match(second), func_ptr(func){};
+      : first_flag_match(first), second_flag_match(second),desc(_desc),func_ptr(func){};
   ~CommandInput(){};
 };
 
 struct CommandOption {
   std::string first_flag_match;
   std::string second_flag_match;
+  FlagDescription desc;
   void (*func_ptr)();
-  CommandOption(std::string first, std::string second, void (*func)())
-      : func_ptr(func), first_flag_match(first), second_flag_match(second){};
+  CommandOption(std::string first, std::string second,FlagDescription _desc, void (*func)())
+      : func_ptr(func), first_flag_match(first), second_flag_match(second),desc(_desc){};
   ~CommandOption(){};
 };
 
 void parseCmdArgs(int &arg_count, char **&argv,
                   std::initializer_list<CommandOption *> options,
                   std::initializer_list<CommandInput *> inputs,
-                  void (*help_opt_callback)());
+                  std::string summary);
+
+};
 
 #ifdef _WIN32
 #define WINDOWS_CONSOLE_INIT                                                   \

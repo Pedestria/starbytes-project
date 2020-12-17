@@ -41,8 +41,8 @@ STARBYTES_BYTECODE_NAMESPACE
 #define LST_BEG 0x12
 /// List End
 #define LST_END 0x13
-// ByteCode (32 Bit Integer)
-using BC = unsigned int;
+// ByteCode (8 Bit Integer)
+using BC = unsigned char;
 /// Bytecode Identifier!
 using BCId = std::string;
 

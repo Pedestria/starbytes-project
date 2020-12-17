@@ -27,6 +27,8 @@ struct StarbytesCoreSettings {
 	Foundation::Optional<std::string> executable_input;
 } settings;
 
+using namespace Foundation;
+
 // Foundation::CommandOption interpret_only {"no-project","N",[]{
 // 	if(settings.hasProjectFile){
 // 		cerr << "\x1b[31mSyntaxError:\n" << "Command Line Args Parse Error:\n\nProject file will be dropped!" << "\x1b[0m";
@@ -35,7 +37,7 @@ struct StarbytesCoreSettings {
 // }};
 
 
-Foundation::CommandInput executable_input {"execute","e",[](std::string & _file){
+CommandLine::CommandInput executable_input {"execute","e",CommandLine::FlagDescription("The executable module to execute!"),[](std::string & _file){
 	if(!settings.executable_input.hasVal())
 		settings.executable_input = _file;
 }};
@@ -46,10 +48,7 @@ int main(int argc,char *argv[]){
 		setupConsole();
 	#endif
 
-	Foundation::parseCmdArgs(argc,argv,{},{&executable_input},[]{
-		cout << help();
-		exit(0);
-	});
+	CommandLine::parseCmdArgs(argc,argv,{},{&executable_input},"Runs starbytes bytecode!");
 	if(settings.executable_input.hasVal()) {
 		std::ifstream INPUT (settings.executable_input.value());
 	}

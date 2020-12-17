@@ -8,7 +8,7 @@ STARBYTES_STD_NAMESPACE
 
 namespace AST {
 
-TYPED_ENUM CntxtActionTy : int{Error, Diagnostic, Hover, Completion};
+TYPED_ENUM CntxtActionTy : int{Diagnostic, Hover, Completion};
 
 struct ContextualAction {
   CntxtActionTy type;
@@ -183,6 +183,7 @@ template <class _ParentTy> class ASTTraveler {
       std::cout << "Invoking Callback" << std::endl;
       Foundation::Unsafe<ASTFuncCallback<_ParentTy>> cb_res = ast_lookup.find(t);
       if(cb_res.hasError()){
+        return true;
         //TODO: Skip! No Error To Return Other than "Callback Not FOund!"
       }
       else {

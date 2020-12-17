@@ -14,6 +14,7 @@ add_starbytes_lib(
 	Unsafe.h
     Graph.h
     WorkerPool.h
+    Logging.h
     SOURCE_FILES
     ADT.cpp
     CmdLine.cpp

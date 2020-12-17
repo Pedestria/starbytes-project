@@ -9,7 +9,9 @@ using namespace Starbytes;
 
 Foundation::Optional<std::string> file_path;
 
-Foundation::CommandInput file ("file","f",[](std::string & s){
+using namespace Foundation;
+
+CommandLine::CommandInput file ("file","f",CommandLine::FlagDescription("A file to test!"),[](std::string & s){
     file_path = s;
 });
 
@@ -19,9 +21,7 @@ int main(int argc,char * argv[]){
     setupConsole();
     #endif
 
-    Foundation::parseCmdArgs(argc,argv,{},{&file},[](){
-        std::cout << "Token Test!\n\nInput a file to test via flag -> -f or --file" << std::endl;
-    });
+    CommandLine::parseCmdArgs(argc,argv,{},{&file},"Token Test!\n\nInput a file to test via flag -> -f or --file");
 
     if(!file_path.hasVal()) {
         std::cerr << ERROR_ANSI_ESC << "Error: No input file!\nExiting!  " << ANSI_ESC_RESET << std::endl;
