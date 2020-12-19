@@ -144,6 +144,36 @@ STARBYTES_FOUNDATION_NAMESPACE
     };
 
     template<class _Ty>
+    class ArrayR {
+        _Ty * __data;
+    public:
+        using size_ty = unsigned;
+    private:
+        size_ty len;
+    public:
+        using iterator = _Ty *;
+        using reference = _Ty &;
+        iterator begin(){
+            return iterator(__data);
+        };
+        iterator end(){
+            return iterator(__data) + len * sizeof(_Ty);
+        };
+        const size_ty & size(){
+            return len;
+        };
+        reference firstEl(){
+            return begin()[0];
+        };
+        reference lastEl(){
+            return end()[-1];
+        };
+        reference operator[](size_ty idx){
+            return begin()[idx];
+        };
+    };
+
+    template<class _Ty>
     class TinyQueue {
         _Ty * __data;
     public:
@@ -331,8 +361,8 @@ STARBYTES_FOUNDATION_NAMESPACE
         DictionaryVec<_Key,_Val>() = default;
         
     };
-    //Tiny string reference class!
-    class RString {
+    /// String reference class!
+    class StringR{
         private:
             char * __data;
             unsigned len;
@@ -353,7 +383,7 @@ STARBYTES_FOUNDATION_NAMESPACE
         void copyToBuffer(std::string & s){
             std::copy(this->begin(),this->end(),s.begin());
         };
-        void copyToBuffer(RString & r_s){
+        void copyToBuffer(StringR & r_s){
             std::copy(this->begin(),this->end(),r_s.begin());
         };
         size_type & size(){
@@ -362,11 +392,11 @@ STARBYTES_FOUNDATION_NAMESPACE
         char *& data(){
             return __data;
         };
-        RString() = delete;
-        RString(char *& r_str):__data(r_str),len(strlen(r_str)){
+        StringR() = delete;
+        StringR(char *& r_str):__data(r_str),len(strlen(r_str)){
           
         };
-        RString(std::string & str):__data(str.data()),len(str.size()){
+        StringR(std::string & str):__data(str.data()),len(str.size()){
 
         };
     };
