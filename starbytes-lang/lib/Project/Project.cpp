@@ -486,8 +486,8 @@ STARBYTES_STD_NAMESPACE
 
         Foundation::foreachInDirectory(tg.source_dir,[&source_trees](DIRENT dirent_ref){
             if(dirent_ref.is_regular_file()){
-                std::string file = dirent_ref.path().generic_string();
-                std::string *code_ptr = Foundation::readFile(file);
+                std::string file = dirent_ref.path().string();
+                std::unique_ptr<std::string> code_ptr = Foundation::readFile(file);
                 std::vector<Token> tokens;
                 Lexer(*code_ptr,tokens).tokenize();
                 std::vector<AbstractSyntaxTree *> module_sources;

@@ -73,7 +73,8 @@ using namespace AST;
             void freeSymbolStores();
             void initialize();
             void analyzeFileForModule(Tree *& tree_ptr);
-            void finish();
+            //Has SemanticA finished with NO errors!
+            bool finish();
             ScopeStore finishAndDumpStore();
             SemanticA() = delete;
             SemanticA(const SemanticA &) = delete;

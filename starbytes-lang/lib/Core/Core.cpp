@@ -3,6 +3,7 @@
 #include "starbytes/Parser/Lexer.h"
 #include "starbytes/Parser/Parser.h"
 #include "starbytes/Semantics/Main.h"
+#include "starbytes/Gen/Gen.h"
 
 STARBYTES_STD_NAMESPACE
 
@@ -58,17 +59,59 @@ void logError(std::string message,std::string code, std::vector<Token> &tokens){
 	std::cerr << message << "\n\n" << result << "\n";
 }
 
-AbstractSyntaxTree * parseCode(std::string & code){
-	std::vector<Token> tok_stream;
-	Lexer(code,tok_stream).tokenize();
-	AbstractSyntaxTree *_ast = new AbstractSyntaxTree();
-	try {
-		Parser(tok_stream,_ast).convertToAST();
+void Driver::evalDirEntry(const std::filesystem::directory_entry & entry){
+	if(entry.is_directory()){
+		std::filesystem::directory_iterator it(entry);
+		for(const auto & e : it){
+			evalDirEntry(e);
+		};
 	}
-	catch (std::string error) {
-		std::cerr << error << std::endl;
+	else if(entry.is_regular_file()){
+		srcs.push_back(entry.path().string());
 	};
-	return _ast;
+};
+
+void Driver::doWork(){
+	//Get all srcs!
+	std::filesystem::directory_iterator it(opts.directory);
+	for(const auto & e : it){
+		evalDirEntry(e);
+	};
+	if(!srcs.empty()){
+		std::vector<AbstractSyntaxTree *> trees;
+		auto begin_it = srcs.begin();
+		auto & first_src = *begin_it;
+		std::vector<Token> tok_stream;
+		AbstractSyntaxTree *tree;
+		Lexer lex(first_src,tok_stream);
+		Parser p(tok_stream,tree);
+		Semantics::SemanticASettings settings;
+		Semantics::SemanticA sem(settings);
+		sem.initialize();
+		sem.analyzeFileForModule(tree);
+		trees.push_back(tree);
+		++begin_it;
+		while(begin_it != srcs.end()){
+			tok_stream.clear();
+			lex.resetWithNewCode(*begin_it,tok_stream);
+			lex.tokenize();
+			AbstractSyntaxTree *new_tree;
+			p.clearAndResetWithNewTokens(tok_stream,new_tree);
+			p.convertToAST();
+			sem.analyzeFileForModule(new_tree);
+			trees.push_back(new_tree);
+			++begin_it;
+		};
+
+		if(!sem.finish()){
+			exit(1);
+		};
+		std::ofstream out (opts.out);
+		std::vector<std::string> str_vec;
+		CodeGen::CodeGenROpts opts (str_vec,str_vec);
+		CodeGen::generateToBCProgram(trees,out,opts);
+
+	};
 };
 
 NAMESPACE_END

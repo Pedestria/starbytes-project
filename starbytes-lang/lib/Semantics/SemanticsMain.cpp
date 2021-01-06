@@ -77,14 +77,20 @@ STARBYTES_SEMANTICS_NAMESPACE
         tree = tree_ptr;
         travel(tree);
     };
-
-    void SemanticA::finish(){
-
+    //Has SemanticA finished with NO errors!
+    bool SemanticA::finish(){
+        bool success = err_stream.data_buf().empty();
+        err_stream.clearBufAndLogAll();
+        return success;
     };
 
     ScopeStore SemanticA::finishAndDumpStore(){
-        finish();
-        return store;
+        if(finish()){;
+            return store;
+        }
+        else {
+            exit(1);
+        }
     };
 
 NAMESPACE_END

@@ -71,17 +71,17 @@ void execute_child_process(std::string name,std::string & args,bool inPlace,char
 using namespace CommandLine;
 
 void formatHelp(std::initializer_list<CommandOption *> & opts_ref,std::initializer_list<CommandInput *> & inputs_ref,std::string & sum_ref){
-  std::cout << sum_ref << "\n" << "\x1b[2mFlags:\x1b[0m\n\n--help, -h\tDisplay help info.\n";
+  std::cout << sum_ref << "\n" << "\x1b[1mFlags:\x1b[0m\n\n--help, -h\t\tDisplay help info.\n";
   if(opts_ref.size() > 0) {
     std::cout << "Options:\n";
     for(auto & opt : opts_ref){
-      std::cout << "--" << opt->first_flag_match << ", -" << opt->second_flag_match << "\t" << opt->desc.val << "\n";
+      std::cout << " --" << opt->first_flag_match << ", -" << opt->second_flag_match << "\t\t" << opt->desc.val << "\n";
     };
   }
   if(inputs_ref.size() > 0){
     std::cout << "Inputs:\n";
     for(auto & ipt : inputs_ref){
-      std::cout << "--" << ipt->first_flag_match << ", -" << ipt->second_flag_match << "\t" << ipt->desc.val << "\n";
+      std::cout << " --" << ipt->first_flag_match << ", -" << ipt->second_flag_match << "\t" << ipt->desc.val << "\n";
     };
   };
 };

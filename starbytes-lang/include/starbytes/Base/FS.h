@@ -20,7 +20,7 @@ STARBYTES_FOUNDATION_NAMESPACE
 
 
 
-std::string * readFile(std::string & file);
+std::unique_ptr<std::string> readFile(std::string & file);
 
 #ifdef HAS_FILESYSTEM_H
 

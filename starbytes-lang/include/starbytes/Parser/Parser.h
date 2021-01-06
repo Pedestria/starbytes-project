@@ -103,6 +103,7 @@ STARBYTES_STD_NAMESPACE
         public:
             Parser(std::vector<Token> & _tokens,AbstractSyntaxTree * tree) : tokens(_tokens), currentIndex(0), Treeptr(tree) {};
             void convertToAST();
+            void clearAndResetWithNewTokens(std::vector<Token> & _new_toks,AbstractSyntaxTree * new_tree);
 
     };
 NAMESPACE_END

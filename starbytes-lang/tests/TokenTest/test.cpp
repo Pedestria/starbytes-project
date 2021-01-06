@@ -28,7 +28,7 @@ int main(int argc,char * argv[]){
         exit(1);
     }
     else {
-        std::string * file_buf = Foundation::readFile(file_path.value());
+        std::unique_ptr<std::string> file_buf = Foundation::readFile(file_path.value());
         std::vector<Token> toks;
         Lexer(*file_buf,toks).tokenize();
         std::cout << "Token Count: " << toks.size() << std::endl << "Lexer Result:" << std::endl;

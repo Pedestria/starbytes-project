@@ -31,9 +31,9 @@ int main (int argc,char * argv[]){
         exit(1);
     }
 
-    std::string * testcode = Foundation::readFile(file_);
+    // std::string * testcode = Foundation::readFile(file_);
     std::vector<Token> toks;
-    Lexer(*testcode,toks).tokenize();
+    // Lexer(*testcode,toks).tokenize();
     try {
         AbstractSyntaxTree * tree = new AbstractSyntaxTree();
         Parser(toks,tree).convertToAST();

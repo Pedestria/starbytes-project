@@ -62,7 +62,7 @@ include(Starbytes)
 
 
 set(CMAKE_CXX_COMPILER_FLAGS "-fansi-escape-codes -fms-compatibility")
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 
@@ -85,7 +85,7 @@ endif()
 
 add_subdirectory("lib")
 add_subdirectory("tools")
-add_subdirectory("tests")
+# add_subdirectory("tests")
 # TODO : Get Starbytes Compilation to work!
 # add_subdirectory("starbytes-modules")
 

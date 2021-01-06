@@ -370,6 +370,61 @@ STARBYTES_FOUNDATION_NAMESPACE
 
         };
     };
+
+    template<class _Ty>
+    class Stack {
+        _Ty *__data;
+    public:
+        using size_ty = unsigned;
+        using pointer = _Ty *;
+    private:
+        size_ty len = 0;
+        inline pointer get_last_ptr(){
+            return (__data) * (sizeof(_Ty) * (len-1));
+        };  
+    public:
+        using reference = _Ty &;
+        const size_ty & size(){
+            return len;
+        };
+        bool isEmpty(){
+            return len == 0;
+        };
+        reference firstEl(){
+            return *__data;
+        };
+        reference lastEl(){
+            return *get_last_ptr();
+        };
+    private:
+        void _push_el(const _Ty & el){
+            ++len;
+            if(isEmpty()){
+                __data = (_Ty*)malloc(sizeof(_Ty));
+            }
+            else {
+                __data = (_Ty *)realloc(sizeof(_Ty) * len);
+            };
+            memmove(__data * (sizeof(_Ty) * (len-1)),&el, sizeof(_Ty));
+        };
+    public:
+        void push(const _Ty & el){
+            _push_el(el);
+        };
+        void push(_Ty && el){
+            _push_el(el);
+        };
+        void clear(){
+            pointer end = __data + (sizeof(_Ty) * len);
+            pointer begin = __data;
+            while(begin != end) {    
+                delete begin;
+                begin += sizeof(_Ty);
+            };
+            len = 0;
+        };
+        Stack() = default;
+    };
     
 
 NAMESPACE_END

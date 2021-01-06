@@ -160,11 +160,11 @@ class STBFormatter {
 };
 
 void format_source_file(std::string & file_to_format){
-    std::string * src_code = Foundation::readFile(file_to_format);
-    AST::AbstractSyntaxTree * src_ast = parseCode(*src_code);
-    std::ofstream out;
-    out.open(file_to_format);
-    STBFormatter(out,src_ast).format();
+    // std::unique_ptr<std::string> src_code = Foundation::readFile(file_to_format);
+    // // AST::AbstractSyntaxTree * src_ast = parseCode(*src_code);
+    // std::ofstream out;
+    // out.open(file_to_format);
+    // STBFormatter(out,src_ast).format();
 };
 
 NAMESPACE_END

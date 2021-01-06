@@ -29,7 +29,7 @@ int main(int argc,char *argv[]){
     CommandLine::parseCmdArgs(argc,argv,{},{&test_file},"Full Compile Test!");
     if(input.file.hasVal()) {
         std::string * fileBuf = Foundation::readFile(input.file.value());
-        AbstractSyntaxTree * tree = parseCode(*fileBuf);
+        
          TreePrinter().print(tree);
        std::ofstream out("./test.stbxm");
        std::vector<AbstractSyntaxTree *> srcs;

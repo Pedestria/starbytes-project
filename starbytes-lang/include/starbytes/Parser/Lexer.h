@@ -11,7 +11,15 @@
 STARBYTES_STD_NAMESPACE
 	class Lexer {
 	public:
-		Lexer(std::string & _code,std::vector<Token> & tok_stream_ref) : code(_code),currentIndex(0),TokenBuffer(),line(1), bufptr(), start(),column(0),raw_index(0),tree(tok_stream_ref) {}
+		Lexer(std::string & _code,std::vector<Token> & tok_stream_ref) : code(_code),currentIndex(0),TokenBuffer(),line(1), bufptr(), start(),column(0),raw_index(0),tree(tok_stream_ref) {};
+		void resetWithNewCode(std::string & _code,std::vector<Token> & tok_stream_ref){
+			currentIndex = 0;
+			line = 1;
+			column = 0;
+			raw_index = 0;
+			code = _code;
+			tree = tok_stream_ref;
+		};
 		/*Move to next char in code*/
 		char & nextChar() {
 			++column;

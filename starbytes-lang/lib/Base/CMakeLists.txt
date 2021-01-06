@@ -15,9 +15,11 @@ add_starbytes_lib(
     Graph.h
     WorkerPool.h
     Logging.h
+    Module.h
     SOURCE_FILES
     ADT.cpp
     CmdLine.cpp
     FS.cpp
     Document.cpp
+    Module.cpp
     )
