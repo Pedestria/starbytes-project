@@ -92,7 +92,8 @@ public:
 using ASTContextualActionCallback = void (*)(ContextualAction *action);
 template<class _ParentTy>
 using ASTTravelerCallbackList = std::initializer_list<Foundation::DictionaryEntry<ASTType,ASTFuncCallback<_ParentTy>>>;
-template <class _ParentTy> class ASTTraveler {
+template <class _ParentTy> 
+class ASTTraveler {
   Foundation::ImutDictionary<ASTType, ASTFuncCallback<_ParentTy>, 2> ast_lookup;
   ASTTravelSettings options;
   ASTTravelContext cntxt;

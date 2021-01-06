@@ -18,7 +18,7 @@ STARBYTES_SEMANTICS_NAMESPACE
     };
 
     void DiagnosticLogger::removeDiagonisticAtIndex(unsigned idx){
-        std::deque<SemanticADiagnostic>::const_iterator it = data_buf().cbegin();
+        auto it = data_buf().cbegin();
         unsigned i = 0;
         while(it != data_buf().cend()){
             if(i == idx)

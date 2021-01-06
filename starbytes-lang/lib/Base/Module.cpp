@@ -13,13 +13,13 @@ Foundation::Unsafe<ModuleSearchResult> ModuleSearch::search(std::string & module
             std::filesystem::directory_entry entry = *it;
             if(entry.is_regular_file()){
                 auto p = entry.path();
-                if(p.has_filename() && p.filename().string() == module && p.has_extension() && (p.extension() == "stbxm" || p.extension() == "smscst")){
+                if(p.has_filename() && p.filename().string() == module && p.has_extension() && (p.extension() == ".stbxm" || p.extension() == ".smscst")){
                     std::string ext;
-                    if(p.extension() == "stbxm"){
-                        ext = "smscst";
+                    if(p.extension() == ".stbxm"){
+                        ext = ".smscst";
                     }
-                    else if(p.extension() == "smscst"){
-                        ext = "stbxm";
+                    else if(p.extension() == ".smscst"){
+                        ext = ".stbxm";
                     };
                     p.replace_extension(ext);
                     std::filesystem::directory_entry next_entry(p);
