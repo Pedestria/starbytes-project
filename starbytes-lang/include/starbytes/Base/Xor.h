@@ -27,16 +27,16 @@ class XOR {
         template<class C_Ty>
         C_Ty & getValue();
         // Template Specialization
-        template<>
-        A_Ty & getValue<A_Ty>(){
+        template<A_Ty>
+        A_Ty & getValue(){
             A_Ty * ptr;
             if(isFirstTy())
                 ptr = a;
             return *ptr;
         };
         // Template Specialization
-        template<>
-        B_Ty & getValue<B_Ty>(){
+        template<B_Ty>
+        B_Ty & getValue(){
             B_Ty * ptr;
             if(isSecondTy())
                 ptr = b;
