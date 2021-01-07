@@ -1,6 +1,7 @@
 #include "starbytes/Base/Base.h"
 #include "starbytes/AST/AST.h"
 #include "starbytes/AST/ASTTraveler.h"
+#include "starbytes/Base/Module.h"
 #include <fstream>
 
 #ifndef GEN_GEN_H
@@ -11,9 +12,8 @@ STARBYTES_GEN_NAMESPACE
 using namespace AST;
 
 struct CodeGenROpts {
-    std::vector<std::string> link_modules;
-    std::vector<std::string> module_dirs;
-    CodeGenROpts(std::vector<std::string> & _l_mds,std::vector<std::string> & _m_dirs):link_modules(_l_mds),module_dirs(_m_dirs){};
+    const ModuleSearch & m_search;
+    CodeGenROpts(const ModuleSearch & _m_search):m_search(_m_search){};
 };
 class CodeGenR : public ASTTraveler<CodeGenR> {
     public:

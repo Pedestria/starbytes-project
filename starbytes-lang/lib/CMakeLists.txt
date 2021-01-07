@@ -5,7 +5,7 @@ add_subdirectory("Semantics")
 add_subdirectory("ByteCode")
 add_subdirectory("Interpreter")
 add_subdirectory("Gen")
-add_subdirectory("Project")
+# add_subdirectory("Project")
 add_subdirectory("Core")
 
 # Extra libs

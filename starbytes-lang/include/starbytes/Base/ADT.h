@@ -144,7 +144,7 @@ STARBYTES_FOUNDATION_NAMESPACE
     };
 
     template<class _Ty>
-    class ArrayR {
+    class ArrRef {
         _Ty * __data;
     public:
         using size_ty = unsigned;
@@ -362,7 +362,7 @@ STARBYTES_FOUNDATION_NAMESPACE
         
     };
     /// String reference class!
-    class StringR{
+    class StrRef{
         private:
             char * __data;
             unsigned len;
@@ -383,7 +383,7 @@ STARBYTES_FOUNDATION_NAMESPACE
         void copyToBuffer(std::string & s){
             std::copy(this->begin(),this->end(),s.begin());
         };
-        void copyToBuffer(StringR & r_s){
+        void copyToBuffer(StrRef & r_s){
             std::copy(this->begin(),this->end(),r_s.begin());
         };
         size_type & size(){
@@ -392,11 +392,11 @@ STARBYTES_FOUNDATION_NAMESPACE
         char *& data(){
             return __data;
         };
-        StringR() = delete;
-        StringR(char *& r_str):__data(r_str),len(strlen(r_str)){
+        StrRef() = delete;
+        StrRef(char *& r_str):__data(r_str),len(strlen(r_str)){
           
         };
-        StringR(std::string & str):__data(str.data()),len(str.size()){
+        StrRef(std::string & str):__data(str.data()),len(str.size()){
 
         };
     };

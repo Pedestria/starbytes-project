@@ -8,7 +8,6 @@ STARBYTES_STD_NAMESPACE
 Foundation::Unsafe<ModuleSearchResult> ModuleSearch::search(std::string & module){
     for(const auto & dir : opts.modules_dirs){
         std::filesystem::directory_iterator it(dir);
-    
         while(!it._At_end()){
             std::filesystem::directory_entry entry = *it;
             if(entry.is_regular_file()){
@@ -34,9 +33,9 @@ Foundation::Unsafe<ModuleSearchResult> ModuleSearch::search(std::string & module
             };
             ++it;
         };
-
-        return Foundation::Error("Could not find module: " + module);
     };
+
+    return Foundation::Error("Could not find module: " + module);
 };
 
 NAMESPACE_END

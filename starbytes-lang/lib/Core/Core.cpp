@@ -7,16 +7,14 @@
 
 STARBYTES_STD_NAMESPACE
 
-using namespace std;
-
 using namespace Starbytes;
 
-string highlightCode(std::string & code,std::vector<Token> & tokens){
+std::string highlightCode(std::string & code,std::vector<Token> & tokens){
 	int index = 0;
 	size_t s = sizeof("\x1b[30m");
-	for(auto tok : tokens){
+	for(auto & tok : tokens){
 		DocumentPosition & pos = tok.getPosition();
-		string color_code;
+		std::string color_code;
 		if(tok.getType() == Starbytes::TokenType::Keyword){
 			color_code = PURPLE;
 		} else if(tok.getType() == Starbytes::TokenType::Identifier){
@@ -28,14 +26,14 @@ string highlightCode(std::string & code,std::vector<Token> & tokens){
 		}
 		
 		if(pos.raw_index == 0){
-			cout << "StrLength:" << code.length();
+			std::cout << "StrLength:" << code.length();
 			code = "\x1b["+color_code + code;
-			cout << "start:" << pos.raw_index << " end:" << pos.raw_index+tok.getTokenSize()+(3*index)+3 << " ";
+			std::cout << "start:" << pos.raw_index << " end:" << pos.raw_index+tok.getTokenSize()+(3*index)+3 << " ";
 			++index;
 			code.insert(pos.raw_index+tok.getTokenSize()+(3*index)+3,"\x1b[0m");
 		}
 		else if(tok.getType() != Starbytes::TokenType::EndOfFile){
-			cout << "start:" << pos.raw_index+(3 * index)+3 << " end:" << pos.raw_index+tok.getTokenSize()+(3*index)+3 << " ";
+			std::cout << "start:" << pos.raw_index+(3 * index)+3 << " end:" << pos.raw_index+tok.getTokenSize()+(3*index)+3 << " ";
 			code.insert(pos.raw_index+(3* index)+3,"\x1b["+color_code);
 			++index;
 			if(pos.raw_index == code.size()-1){
@@ -50,12 +48,12 @@ string highlightCode(std::string & code,std::vector<Token> & tokens){
 		}
 		++index;
 	}
-	cout << "New Size:" << code.size();
+	std::cout << "New Size:" << code.size();
 	return code;
 }
 
 void logError(std::string message,std::string code, std::vector<Token> &tokens){
-	string result = highlightCode(code,tokens);
+	std::string result = highlightCode(code,tokens);
 	std::cerr << message << "\n\n" << result << "\n";
 }
 
@@ -85,7 +83,7 @@ void Driver::doWork(){
 		AbstractSyntaxTree *tree;
 		Lexer lex(first_src,tok_stream);
 		Parser p(tok_stream,tree);
-		Semantics::SemanticASettings settings;
+		Semantics::SemanticASettings settings (false,opts.module_search);
 		Semantics::SemanticA sem(settings);
 		sem.initialize();
 		sem.analyzeFileForModule(tree);
@@ -107,9 +105,8 @@ void Driver::doWork(){
 			exit(1);
 		};
 		std::ofstream out (opts.out);
-		std::vector<std::string> str_vec;
-		CodeGen::CodeGenROpts opts (str_vec,str_vec);
-		CodeGen::generateToBCProgram(trees,out,opts);
+		CodeGen::CodeGenROpts cg_opts (opts.module_search);
+		CodeGen::generateToBCProgram(trees,out,cg_opts);
 
 	};
 };

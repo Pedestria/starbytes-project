@@ -16,6 +16,7 @@ using namespace Starbytes;
 using namespace Starbytes::Foundation;
 struct StarbytesBuildSettings {
     std::vector<std::string> modules_to_link;
+    std::vector<std::string> module_dirs;
     Foundation::Optional<std::string> module_name;
     Foundation::Optional<std::string> source_dir;
     std::string out_dir;
@@ -77,6 +78,14 @@ int main(int argc,char * argv[]){
         std::cerr << ERROR_ANSI_ESC << "No Module Source Directory Provided!\nExiting..." << ANSI_ESC_RESET << std::endl;
         exit(1);
     };
+    ModuleSearchOpts m_search_opts;
+
+    std::move(settings.module_dirs.begin(),settings.module_dirs.end(),m_search_opts.modules_dirs.begin());
+
+    const ModuleSearch m_search (m_search_opts);
+    const DriverOpts opts (settings.source_dir.value(),settings.out_dir,m_search,settings.modules_to_link,settings.library_mode);
+    Driver driver (opts);
+    driver.doWork();
 
     return 0;
 };

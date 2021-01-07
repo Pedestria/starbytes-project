@@ -16,7 +16,9 @@ using namespace AST;
 #define VISITOR_END return reply;
 
     struct SemanticASettings {
-        bool isLDK = false;
+        bool isLDK;
+        const ModuleSearch & m_search;
+        SemanticASettings(bool _isLDK,const ModuleSearch & _m_search):isLDK(_isLDK),m_search(_m_search){};
     };
 
     TYPED_ENUM DiagnosticTy {
