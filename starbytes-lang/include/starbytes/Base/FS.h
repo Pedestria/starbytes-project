@@ -1,9 +1,9 @@
 #include "Macros.h"
 #include <string>
+#include <memory>
 
-#ifdef HAS_FILESYSTEM_H
 #include <filesystem>
-#endif
+
 
 
 #ifndef BASE_FS_H
@@ -22,8 +22,6 @@ STARBYTES_FOUNDATION_NAMESPACE
 
 std::unique_ptr<std::string> readFile(std::string & file);
 
-#ifdef HAS_FILESYSTEM_H
-
 namespace FS = std::filesystem;
 
 template<typename Lambda>
@@ -34,7 +32,6 @@ void foreachInDirectory(std::string directory,Lambda callback){
     }
 };
 
-#endif
 
 
 NAMESPACE_END
