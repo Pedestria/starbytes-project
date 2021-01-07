@@ -59,9 +59,8 @@ STARBYTES_FOUNDATION_NAMESPACE
         private:
         T * __data;
         unsigned current_len = 0;
-        template<class _Cont>
-        inline void _alloc_objs(_Cont & container){
-            typename _Cont::iterator it = container.begin();
+        void _alloc_objs(std::initializer_list<T> & container){
+             auto it = container.begin();
             __data = malloc(sizeof(T) * container.size());
             int index = 0;
             while(it != container.end()){
@@ -135,10 +134,8 @@ STARBYTES_FOUNDATION_NAMESPACE
             return begin()[n];
         };
 
-        TinyVector() = default;
-
-        template<class Ty>
-        TinyVector<Ty> (std::initializer_list<Ty> ilist){
+        TinyVector(){};
+        TinyVector (std::initializer_list<T> ilist){
             _alloc_objs(ilist);
         };
     };
