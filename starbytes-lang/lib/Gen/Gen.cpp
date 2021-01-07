@@ -18,7 +18,7 @@ void CodeGenR::_generateAST(AST::AbstractSyntaxTree *& src){
    travel(src);
 };
 
-void generateToBCProgram(std::vector<AST::AbstractSyntaxTree *> &module_sources,std::ofstream & out,CodeGenROpts & opts){
+void generateToBCProgram(Foundation::ArrRef<AbstractSyntaxTree *> module_sources,std::ofstream & out,CodeGenROpts & opts){
     CodeGenR gen(out);
     ByteCode::BC code = PROG_END;
     if(out.is_open()) {

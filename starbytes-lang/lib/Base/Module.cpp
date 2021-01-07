@@ -5,14 +5,14 @@
 
 STARBYTES_STD_NAMESPACE
 
-Foundation::Unsafe<ModuleSearchResult> ModuleSearch::search(std::string & module){
+Foundation::Unsafe<ModuleSearchResult> ModuleSearch::search(Foundation::StrRef module){
     for(const auto & dir : opts.modules_dirs){
         std::filesystem::directory_iterator it(dir);
-        while(!it._At_end()){
-            std::filesystem::directory_entry entry = *it;
+        
+        for(auto entry : it)
             if(entry.is_regular_file()){
                 auto p = entry.path();
-                if(p.has_filename() && p.filename().string() == module && p.has_extension() && (p.extension() == ".stbxm" || p.extension() == ".smscst")){
+                if(p.has_filename() && module == p.filename().string() && p.has_extension() && (p.extension() == ".stbxm" || p.extension() == ".smscst")){
                     std::string ext;
                     if(p.extension() == ".stbxm"){
                         ext = ".smscst";
@@ -27,15 +27,13 @@ Foundation::Unsafe<ModuleSearchResult> ModuleSearch::search(std::string & module
                         return ModuleSearchResult(p.string());
                     }
                     else {
-                       return Foundation::Error("Cannot complete resolution of module: " + module);
+                       return Foundation::Error("Cannot complete resolution of module: " + std::string(module.data()));
                     }
                 }
             };
-            ++it;
-        };
     };
 
-    return Foundation::Error("Could not find module: " + module);
+    return Foundation::Error("Could not find module: " + module.toStr());
 };
 
 NAMESPACE_END

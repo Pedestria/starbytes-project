@@ -21,7 +21,7 @@ STARBYTES_STD_NAMESPACE
             /*Pointer to AST*/
             AbstractSyntaxTree *Treeptr;
             unsigned currentIndex;
-            std::vector<Token> & tokens;
+            Foundation::ArrRef<Token> tokens;
             Token * currentToken(){
                 return &tokens[currentIndex];
             }
@@ -101,9 +101,9 @@ STARBYTES_STD_NAMESPACE
             void parseNumericLiteral(ASTNumericLiteral *&ptr);
             void parseStringLiteral(ASTStringLiteral *&ptr);
         public:
-            Parser(std::vector<Token> & _tokens,AbstractSyntaxTree * tree) : tokens(_tokens), currentIndex(0), Treeptr(tree) {};
+            Parser(Foundation::ArrRef<Token> _tokens,AbstractSyntaxTree * tree) : tokens(_tokens), currentIndex(0), Treeptr(tree) {};
             void convertToAST();
-            void clearAndResetWithNewTokens(std::vector<Token> & _new_toks,AbstractSyntaxTree * new_tree);
+            void clearAndResetWithNewTokens(Foundation::ArrRef<Token> _new_toks,AbstractSyntaxTree * new_tree);
 
     };
 NAMESPACE_END

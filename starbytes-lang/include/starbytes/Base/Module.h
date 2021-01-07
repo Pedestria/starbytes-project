@@ -2,13 +2,15 @@
 #include <vector>
 #include <string>
 #include "Unsafe.h"
+#include "ADT.h"
 
 #ifndef BASE_MODULE_H
 #define BASE_MODULE_H
 STARBYTES_STD_NAMESPACE
 
 struct ModuleSearchOpts {
-    std::vector<std::string> modules_dirs;
+    Foundation::ArrRef<std::string> modules_dirs;
+    ModuleSearchOpts(Foundation::ArrRef<std::string> _m_dirs):modules_dirs(_m_dirs){};
 };
 
 class ModuleSearchResult {
@@ -29,7 +31,7 @@ class ModuleSearch {
     // using search_result = ModuleSearchResult;
     ModuleSearch() = delete;
     ModuleSearch(ModuleSearchOpts & _opts):opts(_opts){};
-    Foundation::Unsafe<ModuleSearchResult> search(std::string & module);
+    Foundation::Unsafe<ModuleSearchResult> search(Foundation::StrRef str);
 };
 
 NAMESPACE_END

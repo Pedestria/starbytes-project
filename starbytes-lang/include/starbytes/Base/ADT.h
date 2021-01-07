@@ -171,6 +171,16 @@ STARBYTES_FOUNDATION_NAMESPACE
         reference operator[](size_ty idx){
             return begin()[idx];
         };
+        ArrRef() = delete;
+        ArrRef(std::vector<_Ty> &vec):__data(vec.data()),len(vec.size()){};
+        template<size_t _len>
+        ArrRef(std::array<_Ty,_len> &arr):__data(arr.data()),len(_len){};
+        std::vector<_Ty> toVec(){
+            std::vector<_Ty> vec;
+            vec.reserve(len);
+            std::copy(begin(),end(),vec.begin());
+            return std::move(vec);
+        };
     };
 
     template<class _Ty>
@@ -380,6 +390,30 @@ STARBYTES_FOUNDATION_NAMESPACE
         char & operator[](unsigned idx){
             return *(begin() + (idx * sizeof(char)));
         };
+        bool isSame(char * _o_data) {
+            if(size() != strlen(_o_data))
+                return false;
+            bool res = true;
+            auto c = begin();
+            while(c != end()){
+                if(*c != *_o_data){
+                    res = false;
+                    break;
+                };
+                ++c;
+                ++_o_data;
+            };
+            return res;
+        };
+        bool operator==(const char *ptr){
+            return isSame(const_cast<char *>(ptr));
+        };
+        bool operator==(const std::string str){
+            return isSame(const_cast<char *>(str.data()));
+        };
+        bool operator==(std::string & str){
+            return isSame(const_cast<char *>(str.data()));
+        };
         void copyToBuffer(std::string & s){
             std::copy(this->begin(),this->end(),s.begin());
         };
@@ -398,6 +432,12 @@ STARBYTES_FOUNDATION_NAMESPACE
         };
         StrRef(std::string & str):__data(str.data()),len(str.size()){
 
+        };
+        std::string toStr(){
+            std::string str;
+            str.reserve(len);
+            copyToBuffer(str);
+            return std::move(str);
         };
     };
 

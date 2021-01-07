@@ -25,7 +25,7 @@ class CodeGenR : public ASTTraveler<CodeGenR> {
         _program_out & out;
 };
 
-void generateToBCProgram(std::vector<AST::AbstractSyntaxTree *> &module_sources,std::ofstream & out,CodeGenROpts & opts);
+void generateToBCProgram(Foundation::ArrRef<AST::AbstractSyntaxTree *> module_sources,std::ofstream & out,CodeGenROpts & opts);
 
 #define VISITOR_RETURN ASTVisitorResponse response;response.success = true;return response;
 

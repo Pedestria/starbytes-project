@@ -66,7 +66,7 @@ KeywordType matchKeyword(std::string & subject) {
     return returncode;
 }
 
-void Parser::clearAndResetWithNewTokens(std::vector<Token> &_new_toks, AbstractSyntaxTree *new_tree){
+void Parser::clearAndResetWithNewTokens(Foundation::ArrRef<Token> _new_toks, AbstractSyntaxTree *new_tree){
     currentIndex = 0;
     tokens = _new_toks;
     Treeptr = new_tree;

@@ -69,6 +69,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 project ("Starbytes" CXX C)
 
+if(XCODE)
+    set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+endif()
+
 include(CheckIncludeFile)
 check_include_file(unistd.h UNISTD_H_FOUND)
 check_include_file(filesystem FILESYSTEM_H_FOUND)

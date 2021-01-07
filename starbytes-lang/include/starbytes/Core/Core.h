@@ -1,6 +1,7 @@
 #include "starbytes/Parser/Parser.h"
 #include "starbytes/Base/Document.h"
 #include "starbytes/Base/Module.h"
+#include <filesystem>
 
 
 #ifndef CORE_CORE_H

@@ -9,7 +9,7 @@ STARBYTES_STD_NAMESPACE
 
 using namespace Starbytes;
 
-std::string highlightCode(std::string & code,std::vector<Token> & tokens){
+std::string highlightCode(std::string code,Foundation::ArrRef<Token> tokens){
 	int index = 0;
 	size_t s = sizeof("\x1b[30m");
 	for(auto & tok : tokens){
@@ -52,8 +52,8 @@ std::string highlightCode(std::string & code,std::vector<Token> & tokens){
 	return code;
 }
 
-void logError(std::string message,std::string code, std::vector<Token> &tokens){
-	std::string result = highlightCode(code,tokens);
+void logError(std::string message,Foundation::StrRef code,Foundation::ArrRef<Token> toks){
+    std::string result = highlightCode(code.data(),toks);
 	std::cerr << message << "\n\n" << result << "\n";
 }
 
@@ -78,7 +78,7 @@ void Driver::doWork(){
 	if(!srcs.empty()){
 		std::vector<AbstractSyntaxTree *> trees;
 		auto begin_it = srcs.begin();
-		auto & first_src = *begin_it;
+		auto first_src = *begin_it;
 		std::vector<Token> tok_stream;
 		AbstractSyntaxTree *tree;
 		Lexer lex(first_src,tok_stream);
