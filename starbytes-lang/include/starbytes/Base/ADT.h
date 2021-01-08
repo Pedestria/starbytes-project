@@ -139,7 +139,7 @@ STARBYTES_FOUNDATION_NAMESPACE
             _alloc_objs(ilist);
         };
     };
-
+    /// Array reference class!
     template<class _Ty>
     class ArrRef {
         _Ty * __data;
@@ -279,7 +279,7 @@ STARBYTES_FOUNDATION_NAMESPACE
     inline DictionaryEntry<_Key,_Val> dict_vec_entry(_Key k,_Val v){
         return DictionaryEntry<_Key,_Val>(k,v);
     };
-      
+    /// Immutable Dictionary!
     template<class _Key,class _Val,unsigned len = 0>
     class ImutDictionary {
         using _Entry =  DictionaryEntry<_Key,_Val>;
@@ -311,7 +311,7 @@ STARBYTES_FOUNDATION_NAMESPACE
             return *ptr;
         };
     };
-
+    /// Dictionary Vector!
     template<class _Key,class _Val>
     class DictionaryVec {
         using _Entry =  DictionaryEntry<_Key,_Val>;

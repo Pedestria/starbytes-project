@@ -13,7 +13,8 @@ using namespace AST;
 
 struct CodeGenROpts {
     const ModuleSearch & m_search;
-    CodeGenROpts(const ModuleSearch & _m_search):m_search(_m_search){};
+    Foundation::ArrRef<std::string> modules_to_link;
+    CodeGenROpts(const ModuleSearch & _m_search,Foundation::ArrRef<std::string> & m_link):m_search(_m_search),modules_to_link(m_link){};
 };
 class CodeGenR : public ASTTraveler<CodeGenR> {
     public:

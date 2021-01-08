@@ -71,7 +71,7 @@ void Driver::evalDirEntry(const std::filesystem::directory_entry & entry){
 
 void Driver::doWork(){
 	//Get all srcs!
-	std::filesystem::directory_iterator it(opts.directory);
+	std::filesystem::directory_iterator it(opts.directory.data());
 	for(const auto & e : it){
 		evalDirEntry(e);
 	};
@@ -83,7 +83,7 @@ void Driver::doWork(){
 		AbstractSyntaxTree *tree;
 		Lexer lex(first_src,tok_stream);
 		Parser p(tok_stream,tree);
-		Semantics::SemanticASettings settings (false,opts.module_search);
+		Semantics::SemanticASettings settings (false,opts.module_search,opts.modules_to_link);
 		Semantics::SemanticA sem(settings);
 		sem.initialize();
 		sem.analyzeFileForModule(tree);
@@ -104,8 +104,8 @@ void Driver::doWork(){
 		if(!sem.finish()){
 			exit(1);
 		};
-		std::ofstream out (opts.out);
-		CodeGen::CodeGenROpts cg_opts (opts.module_search);
+		std::ofstream out (opts.out.data());
+		CodeGen::CodeGenROpts cg_opts (opts.module_search,opts.modules_to_link);
 		CodeGen::generateToBCProgram(trees,out,cg_opts);
 
 	};

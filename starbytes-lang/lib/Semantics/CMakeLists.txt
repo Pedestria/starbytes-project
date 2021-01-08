@@ -9,11 +9,13 @@ add_starbytes_lib(
     StarbytesExp.cpp
     TypeCheck.h
     TypeCheck.cpp
+    ScopeStoreIO.cpp
     HEADER_FILES 
     SemanticsMain.h 
     Scope.h
     Symbols.h 
     Main.h
+    ScopeStoreIO.h
     LIB_NAME 
     "starbytesSemanticsEngine" 
     LIBS_TO_LINK 

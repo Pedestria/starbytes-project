@@ -82,7 +82,7 @@ int main(int argc,char * argv[]){
     ModuleSearchOpts m_search_opts(settings.module_dirs);
 
     const ModuleSearch m_search (m_search_opts);
-    const DriverOpts opts (settings.source_dir.value(),settings.out_dir,m_search,settings.modules_to_link,settings.library_mode);
+    DriverOpts opts (settings.source_dir.value(),settings.out_dir,m_search,settings.modules_to_link,settings.library_mode);
     Driver driver (opts);
     driver.doWork();
 

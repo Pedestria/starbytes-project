@@ -67,9 +67,6 @@ class SemanticA;
             std::vector<std::string> current_scopes;
             std::string exact_current_scope;
             friend class SemanticA;
-            FRIEND_AST_EVALUATOR(ASTCallExpression);
-            FRIEND_AST_EVALUATOR(ASTNumericLiteral);
-            FRIEND_AST_EVALUATOR(ASTBooleanLiteral);
         public:
             std::vector<Scope *> scopes;
         template<typename Lambda>

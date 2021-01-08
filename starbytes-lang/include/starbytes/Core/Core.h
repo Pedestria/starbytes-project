@@ -1,6 +1,7 @@
 #include "starbytes/Parser/Parser.h"
 #include "starbytes/Base/Document.h"
 #include "starbytes/Base/Module.h"
+#include "starbytes/Base/ADT.h"
 #include <filesystem>
 
 
@@ -10,20 +11,20 @@
 STARBYTES_STD_NAMESPACE
 
 struct DriverOpts {
-    std::vector<std::string> & modules_to_link;
+    Foundation::ArrRef<std::string> modules_to_link;
     const ModuleSearch & module_search;
-    std::string & directory;
-    std::string & out;
+    Foundation::StrRef directory;
+    Foundation::StrRef out;
     bool dumpScopeStore;
     DriverOpts(std::string & dir,std::string &_out,const ModuleSearch & m_search,std::vector<std::string> & mods,bool _output_scope_store):modules_to_link(mods),module_search(m_search),directory(dir),out(_out),dumpScopeStore(_output_scope_store){};
 };
 class Driver {
-    const DriverOpts & opts;
+    DriverOpts & opts;
     void evalDirEntry(const std::filesystem::directory_entry & entry);
     std::vector<std::string> srcs;
     public:
     Driver() = delete;
-    Driver(const DriverOpts &_opts):opts(_opts){};
+    Driver(DriverOpts &_opts):opts(_opts){};
     void doWork();
 };
 
