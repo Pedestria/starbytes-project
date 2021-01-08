@@ -21,5 +21,6 @@ add_starbytes_lib(
     CmdLine.cpp
     FS.cpp
     Document.cpp
+    Logging.cpp
     Module.cpp
     )

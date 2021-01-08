@@ -1,9 +1,10 @@
 #include "Macros.h"
 #include <iostream>
 #include <deque>
+#include <cstdarg>
 
-#ifndef BASE_ERROR_H
-#define BASE_ERROR_H
+#ifndef BASE_LOGGING_H
+#define BASE_LOGGING_H
 
 STARBYTES_FOUNDATION_NAMESPACE
 
@@ -48,6 +49,8 @@ public:
     };
     
 };
+
+std::string fstring(const char *format,...);
 
 NAMESPACE_END
 
