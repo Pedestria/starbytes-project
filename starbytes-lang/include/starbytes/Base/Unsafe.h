@@ -31,10 +31,10 @@ public:
         return data.isSecondTy();
     };
     _Ty & getResult(){
-        return data.template getValue<_Ty>();
+        return data.getValueA();
     };
     Error & getError(){
-        return data.template getValue<Error>();
+        return data.getValueB();
     };
 };
 

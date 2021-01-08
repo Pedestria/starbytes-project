@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <cassert>
 
 #ifndef BASE_XOR_H
 #define BASE_XOR_H
@@ -24,20 +25,18 @@ class XOR {
         };
         inline bool isFirstTy(){ return _a_xor_b;};
         inline bool isSecondTy(){ return !_a_xor_b;};
-        template<class C_Ty>
-        C_Ty & getValue();
         // Template Specialization
-        template<>
-        A_Ty & getValue(){
+        A_Ty & getValueA(){
             A_Ty * ptr;
+            assert(isFirstTy());
             if(isFirstTy())
                 ptr = a;
             return *ptr;
         };
         // Template Specialization
-        template<>
-        B_Ty & getValue(){
+        B_Ty & getValueB(){
             B_Ty * ptr;
+            assert(isSecondTy());
             if(isSecondTy())
                 ptr = b;
             return *ptr;
