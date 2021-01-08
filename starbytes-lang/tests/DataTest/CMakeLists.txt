@@ -1,0 +1,9 @@
+add_starbytes_test(
+    NAME 
+    "data-test"
+    INCLUDE_LIB 
+    FILES
+    "main.cpp"
+    DEPENDENCIES 
+    "starbytesBase"
+)

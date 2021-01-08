@@ -1,5 +1,6 @@
 #include "starbytes/Base/Logging.h"
 #include "starbytes/Base/ADT.h"
+#include <cstring>
 
 STARBYTES_FOUNDATION_NAMESPACE
 /// Format a string and return a cpp string!
@@ -10,7 +11,7 @@ std::string fstring(const char *format,...){
     char * bufptr = buffer;
     va_list args;
     va_start(args,format);
-    char c;
+    char c = *format;
     while(c != '\0'){
         c = *format;
         if(c == '@'){
@@ -18,16 +19,18 @@ std::string fstring(const char *format,...){
             c = *format;
             if(c == 'r'){
                 Foundation::StrRef str = va_arg(args,Foundation::StrRef);
-                std::copy(str.begin(),str.end(),bufptr);
+                std::cout << str.size() << std::endl;
+                memcpy(bufptr,str.begin(),str.size());
             }
             else if(c == 's'){
                 char *str = va_arg(args,char *);
-                std::copy(str,str + strlen(str),bufptr);
+                memcpy(bufptr,str,strlen(str));
             }
             else if(c == 'i'){
                 int i = va_arg(args,int);
                 std::string res = std::to_string(i);
-                std::copy(res.begin(),res.end(),bufptr);
+                
+//                memcpy(bufptr,res.begin(),res.size());
             };
         }
         else {
