@@ -2,22 +2,15 @@ add_starbytes_lib(
     LIB_NAME 
     "starbytesBase"
     HEADER_FILES
-    ADT.h
     Document.h
     ANSIColors.h
     Base.h
     Macros.h
     CmdLine.h
     FS.h
-    Optional.h 
-    Xor.h 
-	Unsafe.h
-    Graph.h
-    WorkerPool.h
     Logging.h
     Module.h
     SOURCE_FILES
-    ADT.cpp
     CmdLine.cpp
     FS.cpp
     Document.cpp

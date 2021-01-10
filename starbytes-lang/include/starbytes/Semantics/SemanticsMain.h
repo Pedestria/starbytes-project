@@ -5,6 +5,9 @@
 #include "starbytes/Semantics/StarbytesDecl.h"
 #include "starbytes/Base/Logging.h"
 
+#include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/ArrayRef.h>
+
 #ifndef SEMANTICS_SEMANTICS_MAIN_H
 #define SEMANTICS_SEMANTICS_MAIN_H
 
@@ -18,8 +21,8 @@ using namespace AST;
     struct SemanticASettings {
         bool isLDK;
         const ModuleSearch & m_search;
-        Foundation::ArrRef<std::string> modules_to_link;
-        SemanticASettings(bool _isLDK,const ModuleSearch & _m_search,Foundation::ArrRef<std::string> & vector_ref):isLDK(_isLDK),m_search(_m_search),modules_to_link(vector_ref){};
+        ArrayRef<std::string> modules_to_link;
+        SemanticASettings(bool _isLDK,const ModuleSearch & _m_search,ArrayRef<std::string> & vector_ref):isLDK(_isLDK),m_search(_m_search),modules_to_link(vector_ref){};
     };
 
     TYPED_ENUM DiagnosticTy {

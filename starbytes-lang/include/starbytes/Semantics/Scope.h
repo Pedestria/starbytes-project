@@ -3,11 +3,16 @@
 #include "Symbols.h"
 #include "starbytes/Base/Base.h"
 
+#include <llvm/Support/ErrorOr.h>
+#include <llvm/Support/Error.h>
+
 
 #ifndef SEMANTICS_SCOPE_H
 #define SEMANTICS_SCOPE_H
 
 STARBYTES_SEMANTICS_NAMESPACE
+
+using namespace llvm;
 
 class SemanticA;
 
@@ -78,9 +83,9 @@ class SemanticA;
         template<typename _SymbolTy,typename _PtrNodeTest>
         bool symbolExistsInCurrentScopes(std::string & symbol_name);
         template<typename SymTy>
-        Foundation::Unsafe<SymTy *> getSymbolRefFromCurrentScopes(std::string & name);
+        ErrorOr<SymTy *> getSymbolRefFromCurrentScopes(std::string & name);
         template<typename SymTy>
-        Foundation::Unsafe<SymTy *> getSymbolRefFromExactCurrentScope(std::string & name);
+        ErrorOr<SymTy *> getSymbolRefFromExactCurrentScope(std::string & name);
         ScopeStore(){};
         ~ScopeStore(){};
     };
@@ -106,7 +111,7 @@ class SemanticA;
     } 
 
     template<typename SymTy>
-    Foundation::Unsafe<SymTy *> ScopeStore::getSymbolRefFromCurrentScopes(std::string & name){
+    ErrorOr<SymTy *> ScopeStore::getSymbolRefFromCurrentScopes(std::string & name){
         for(auto & _c_scope : current_scopes){
             Scope * scope_ref = getScopeRef(_c_scope);
             for(auto _sym : scope_ref->getIterator()){
@@ -118,11 +123,10 @@ class SemanticA;
                 }
             }
         }
-        return Foundation::Error("Cannot Find Symbol!");
     };
 
     template<typename SymTy>
-    Foundation::Unsafe<SymTy *> ScopeStore::getSymbolRefFromExactCurrentScope(std::string &name){
+    ErrorOr<SymTy *> ScopeStore::getSymbolRefFromExactCurrentScope(std::string &name){
         Scope * scope_ref = getScopeRef(exact_current_scope);
         for(auto & _sym : scope_ref->getIterator()){
             if(SEMANTIC_SYMBOL_IS(_sym,SymTy)){

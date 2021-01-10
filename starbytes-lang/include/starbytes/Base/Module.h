@@ -1,16 +1,24 @@
 #include "Macros.h"
 #include <vector>
 #include <string>
-#include "Unsafe.h"
-#include "ADT.h"
+
+#ifdef _WIN32
+#undef min
+#undef max
+#endif
+
+#include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/Support/ErrorOr.h>
 
 #ifndef BASE_MODULE_H
 #define BASE_MODULE_H
 STARBYTES_STD_NAMESPACE
+using namespace llvm;
 
 struct ModuleSearchOpts {
-    Foundation::ArrRef<std::string> modules_dirs;
-    ModuleSearchOpts(Foundation::ArrRef<std::string> _m_dirs):modules_dirs(_m_dirs){};
+    ArrayRef<std::string> modules_dirs;
+    ModuleSearchOpts(ArrayRef<std::string> _m_dirs):modules_dirs(_m_dirs){};
 };
 
 class ModuleSearchResult {
@@ -31,7 +39,7 @@ class ModuleSearch {
     // using search_result = ModuleSearchResult;
     ModuleSearch() = delete;
     ModuleSearch(ModuleSearchOpts & _opts):opts(_opts){};
-    Foundation::Unsafe<ModuleSearchResult> search(Foundation::StrRef str);
+    ErrorOr<ModuleSearchResult> search(StringRef str);
 };
 
 NAMESPACE_END

@@ -6,6 +6,8 @@
 #include "starbytes/Base/Base.h"
 #include <iostream>
 
+#include <llvm/ADT/ArrayRef.h>
+
 #ifndef PARSER_PARSER_H
 #define PARSER_PARSER_H
 
@@ -21,9 +23,9 @@ STARBYTES_STD_NAMESPACE
             /*Pointer to AST*/
             AbstractSyntaxTree *Treeptr;
             unsigned currentIndex;
-            Foundation::ArrRef<Token> tokens;
+            llvm::ArrayRef<Token> tokens;
             Token * currentToken(){
-                return &tokens[currentIndex];
+                return const_cast<Token *>(&tokens[currentIndex]);
             }
             /*Move to next Token but does NOT return Token*/
             void incrementToNextToken() {
@@ -31,19 +33,19 @@ STARBYTES_STD_NAMESPACE
             }
             /*Move to next Token. Returns Token*/
             Token* nextToken() {
-                return &tokens[++currentIndex];
+                return const_cast<Token *>(&tokens[++currentIndex]);
             };
             /*Get ahead token (Does not affect currentindex.)*/
             Token* aheadToken() {
-                return &tokens[currentIndex + 1];
+                return const_cast<Token *>(&tokens[currentIndex + 1]);
             };
             /*Get token n times ahead of current token (Does not affect currentindex.)*/
             Token * aheadNToken(int n){
-                return &tokens[currentIndex+n];
+                return const_cast<Token *>(&tokens[currentIndex+n]);
             }
             /*Get behind token (Does not affect currentindex.)*/
             Token* behindToken() {
-                return &tokens[currentIndex - 1];
+                return const_cast<Token *>(&tokens[currentIndex - 1]);
             }
             void parseComment(ASTObject *& ptr);
             void parseLineComment(ASTLineComment *&ptr);
@@ -101,9 +103,9 @@ STARBYTES_STD_NAMESPACE
             void parseNumericLiteral(ASTNumericLiteral *&ptr);
             void parseStringLiteral(ASTStringLiteral *&ptr);
         public:
-            Parser(Foundation::ArrRef<Token> _tokens,AbstractSyntaxTree * tree) : tokens(_tokens), currentIndex(0), Treeptr(tree) {};
+            Parser(llvm::ArrayRef<Token> _tokens,AbstractSyntaxTree * tree) : tokens(_tokens), currentIndex(0), Treeptr(tree) {};
             void convertToAST();
-            void clearAndResetWithNewTokens(Foundation::ArrRef<Token> _new_toks,AbstractSyntaxTree * new_tree);
+            void clearAndResetWithNewTokens(llvm::ArrayRef<Token> _new_toks,AbstractSyntaxTree * new_tree);
 
     };
 NAMESPACE_END

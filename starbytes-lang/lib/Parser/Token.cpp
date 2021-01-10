@@ -2,7 +2,7 @@
 
 STARBYTES_STD_NAMESPACE
 
-std::string & Token::getContent(){
+ llvm::StringRef Token::getContent(){
 	return content;
 }
 Starbytes::TokenType & Token::getType() {

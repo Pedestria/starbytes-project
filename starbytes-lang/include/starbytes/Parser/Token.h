@@ -21,10 +21,10 @@ STARBYTES_STD_NAMESPACE
 		public:
 			Token(TokenType type, std::string & content, DocumentPosition &position,size_t & size) : type(type), content(content),pos(position),size(size) {};
 			~Token(){};
-			std::string & getContent();
+			llvm::StringRef getContent();
 			TokenType & getType();
 			DocumentPosition & getPosition();
-			unsigned int & getTokenSize(){
+			const unsigned int & getTokenSize(){
 				return size;
 			};
 	};

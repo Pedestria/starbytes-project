@@ -4,6 +4,8 @@
 #include "starbytes/Base/Base.h"
 #include "Token.h"
 
+#include <llvm/ADT/StringRef.h>
+
 #ifndef PARSER_LEXER_H
 #define PARSER_LEXER_H
 
@@ -11,8 +13,8 @@
 STARBYTES_STD_NAMESPACE
 	class Lexer {
 	public:
-		Lexer(Foundation::StrRef _code,std::vector<Token> & tok_stream_ref) : code(_code),currentIndex(0),TokenBuffer(),line(1), bufptr(), start(),column(0),raw_index(0),tree(tok_stream_ref) {};
-        void resetWithNewCode(Foundation::StrRef _code,std::vector<Token> & tok_stream_ref){
+		Lexer(llvm::StringRef _code,std::vector<Token> & tok_stream_ref) : code(_code),currentIndex(0),TokenBuffer(),line(1), bufptr(), start(),column(0),raw_index(0),tree(tok_stream_ref) {};
+        void resetWithNewCode(llvm::StringRef _code,std::vector<Token> & tok_stream_ref){
 			currentIndex = 0;
 			line = 1;
 			column = 0;
@@ -21,13 +23,13 @@ STARBYTES_STD_NAMESPACE
 			tree = tok_stream_ref;
 		};
 		/*Move to next char in code*/
-		char & nextChar() {
+		char nextChar() {
 			++column;
 			++raw_index;
 			return code[++currentIndex];
 		};
 		/*Gets next char without mutating currentindex*/
-		char & lookAhead() {
+		char lookAhead() {
 			return code[currentIndex + 1];
 		};
 		void resolveTokenAndClearCache(TokenType tokT = TokenType::Identifier);
@@ -41,7 +43,7 @@ STARBYTES_STD_NAMESPACE
 		int line;
 		int column;
 		char* start;
-		Foundation::StrRef code;
+		llvm::StringRef code;
 		std::vector<Token> & tree;
 	};
 NAMESPACE_END

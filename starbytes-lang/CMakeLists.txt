@@ -58,8 +58,6 @@ list(APPEND CMAKE_MODULE_PATH ${STARBYTES_MODULE_PATH})
 
 
 
-include(Starbytes)
-
 
 set(CMAKE_CXX_COMPILER_FLAGS "-fansi-escape-codes -fms-compatibility")
 set(CMAKE_CXX_STANDARD 17)
@@ -68,6 +66,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 
 project ("Starbytes" CXX C)
+
+find_package(LLVM REQUIRED CONFIG)
+
+include_directories(${LLVM_INCLUDE_DIRS})
+add_definitions(${LLVM_DEFINITIONS})
+
+message("Found LLVM: ${LLVM_PACKAGE_VERSION}")
+
+llvm_map_components_to_libnames(llvm_libs support core)
+
+
+include(Starbytes)
 
 if(XCODE)
     set_property(GLOBAL PROPERTY USE_FOLDERS ON)

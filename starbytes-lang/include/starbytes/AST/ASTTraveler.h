@@ -1,10 +1,15 @@
 #include "AST.h"
-#include "starbytes/Base/ADT.h"
+
+#include <llvm/ADT/MapVector.h>
+#include <llvm/ADT/ImmutableMap.h>
+#include <llvm/Support/ErrorOr.h>
 
 #ifndef AST_ASTRAVELER_H
 #define AST_ASTRAVELER_H
 
 STARBYTES_STD_NAMESPACE
+
+using namespace llvm;
 
 namespace AST {
 
@@ -31,7 +36,7 @@ struct ASTTravelSettings {};
 
 #define AST_TRAVEL_FUNC(name) void visit##name()
 
-using ASTContextualMemoryBank = Foundation::DictionaryVec<unsigned, ASTNode *>;
+using ASTContextualMemoryBank = MapVector<unsigned, ASTNode *>;
 
 class ASTContextualMemory {
 private:
@@ -39,21 +44,25 @@ private:
   ASTContextualMemoryBank next_node_heirarchy_mem;
   ASTContextualMemoryBank previous_node_heirarchy_mem;
   bool mem_bank_has_ent(ASTContextualMemoryBank &mem_bank_ref, unsigned &key) {
-    return mem_bank_ref.hasEntry(key);
+    return mem_bank_ref.find(key) != mem_bank_ref.end();
   };
   void push_ent_to_vec(ASTContextualMemoryBank &mem_bank_ref,
-                       Foundation::DictionaryEntry<unsigned, ASTNode *> &ent) {
+                       std::pair<unsigned, ASTNode *> &ent) {
     if (mem_bank_has_ent(mem_bank_ref, ent.first)) {
-      mem_bank_ref.replace(ent.first, ent.second);
+      auto found = mem_bank_ref.find(ent.first);
+      if(found != mem_bank_ref.end()){
+        auto & res = *found;
+        res.second = ent.second;
+      };
     } else {
-      mem_bank_ref.pushEntry(ent);
+      mem_bank_ref.insert(ent);
     }
   };
 
 public:
   TYPED_ENUM MemType : int{Parent, NextNode, PreviousNode};
   void set_node(unsigned &level, MemType type, ASTNode *&node_ptr) {
-    Foundation::DictionaryEntry<unsigned, ASTNode *> ENT(level, node_ptr);
+    std::pair<unsigned, ASTNode *> ENT(level, node_ptr);
     if (type == MemType::Parent) {
       push_ent_to_vec(parent_heirarchy_mem, ENT);
     } else if (type == MemType::NextNode) {
@@ -62,39 +71,41 @@ public:
       push_ent_to_vec(previous_node_heirarchy_mem, ENT);
     }
   };
-  Foundation::Unsafe<ASTNode *> get_node(unsigned &level, MemType type) {
+  ASTNode * get_node(unsigned &level, MemType type) {
     ASTNode *possibleResult;
     if (type == MemType::Parent) {
-      Foundation::Unsafe<ASTNode *> node = parent_heirarchy_mem.find(level);
-      if(node.hasError()){
-        return node.getError();
+      auto node = parent_heirarchy_mem.find(level);
+      if(node != parent_heirarchy_mem.end()){
+        possibleResult = node->second;
       }
-      else 
-       possibleResult = node.getResult();
+      else {
+        possibleResult = nullptr;
+      }
+      
     } else if (type == MemType::NextNode) {
-      Foundation::Unsafe<ASTNode *> node = next_node_heirarchy_mem.find(level);
-      if(node.hasError()){
-        return node.getError();
+      auto node = next_node_heirarchy_mem.find(level);
+      if(node != next_node_heirarchy_mem.end()){
+        possibleResult = node->second;
       }
       else 
-       possibleResult = node.getResult();
+       possibleResult = nullptr;
     } else if (type == MemType::PreviousNode) {
-      Foundation::Unsafe<ASTNode *> node = previous_node_heirarchy_mem.find(level);
-      if(node.hasError()){
-        return node.getError();
+      auto node = previous_node_heirarchy_mem.find(level);
+      if(node != previous_node_heirarchy_mem.end()){
+        possibleResult = node->second;
       }
       else 
-       possibleResult = node.getResult();
+       possibleResult = nullptr;
     }
     return possibleResult;
   };
 };
 using ASTContextualActionCallback = void (*)(ContextualAction *action);
 template<class _ParentTy>
-using ASTTravelerCallbackList = std::initializer_list<Foundation::DictionaryEntry<ASTType,ASTFuncCallback<_ParentTy>>>;
+using ASTTravelerCallbackList = std::initializer_list<std::pair<ASTType,ASTFuncCallback<_ParentTy>>>;
 template <class _ParentTy> 
 class ASTTraveler {
-  Foundation::ImutDictionary<ASTType, ASTFuncCallback<_ParentTy>, 2> ast_lookup;
+  ImmutableMap<ASTType, ASTFuncCallback<_ParentTy>> ast_lookup;
   ASTTravelSettings options;
   ASTTravelContext cntxt;
   ASTContextualMemory cntxtl_memory;
@@ -121,13 +132,13 @@ class ASTTraveler {
     cntxt.parent = node_ptr;
   };
   void recoverPriorParentNode() {
-    Foundation::Unsafe<ASTNode *> res = cntxtl_memory.get_node(current_level,
+    auto res = cntxtl_memory.get_node(current_level,
                                           ASTContextualMemory::MemType::Parent);
-    if(res.hasError()){
+    if(res == nullptr){
       //TODO: Log Error!
     }
     else {
-      cntxt.parent = res.getResult();
+      cntxt.parent = res;
     };
   };
   void setPreviousNode(ASTNode *node_ptr, bool store_in_mem = false) {
@@ -139,13 +150,13 @@ class ASTTraveler {
     cntxt.previous = node_ptr;
   };
   void recoverPriorPreviousNode() {
-    Foundation::Unsafe<ASTNode *> res = cntxtl_memory.get_node(
+    auto res = cntxtl_memory.get_node(
         current_level, ASTContextualMemory::MemType::PreviousNode);
-    if(res.hasError()){
+    if(res == nullptr){
       //TODO: Log Error!
     }
     else {
-      cntxt.previous = res.getResult();
+      cntxt.previous = res;
     }
   };
   void setCurrentNode(ASTNode *node_ptr) { cntxt.current = node_ptr; };
@@ -158,13 +169,13 @@ class ASTTraveler {
     cntxt.next = node_ptr;
   };
   void recoverPriorNextNode() {
-    Foundation::Unsafe<ASTNode *> res = cntxtl_memory.get_node(current_level,
+    auto res = cntxtl_memory.get_node(current_level,
                                         ASTContextualMemory::MemType::NextNode);
-    if(res.hasError()){
+    if(res == nullptr){
       //TODO: Log Error!
     }
     else {
-      cntxt.next = res.getResult();
+      cntxt.next = res;
     };
   };
   void nextNodeAndSetAheadNode(ASTNode *node_ptr = nullptr,
@@ -180,9 +191,9 @@ class ASTTraveler {
   };
   bool invokeCallback(ASTType &t) {
     //If callback entry for ASTType `t` has not been put in, then skip!
-    if(ast_lookup.hasEntry(t)){
+    if(ast_lookup.contains(t)){
       std::cout << "Invoking Callback" << std::endl;
-      Foundation::Unsafe<ASTFuncCallback<_ParentTy>> cb_res = ast_lookup.find(t);
+      auto cb_res = ast_lookup.lookup(t);
       if(cb_res.hasError()){
         return true;
         //TODO: Skip! No Error To Return Other than "Callback Not FOund!"

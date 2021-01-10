@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include <llvm/ADT/ArrayRef.h>
+
 using namespace Starbytes;
 using namespace AST;
 
@@ -18,7 +20,7 @@ inline std::string StarbytesParseError(std::string message,DocumentPosition & po
     return message.append(" \n Error Occured at Position:{\nLine:"+std::to_string(position.line)+"\n Start Column:"+std::to_string(position.start)+"\n End Column:"+std::to_string(position.end)+"\n}");
 }
 
-KeywordType matchKeyword(std::string & subject) {
+KeywordType matchKeyword(llvm::StringRef subject) {
     KeywordType returncode;
     if(subject == "import"){
         returncode = KeywordType::Import;
@@ -66,7 +68,7 @@ KeywordType matchKeyword(std::string & subject) {
     return returncode;
 }
 
-void Parser::clearAndResetWithNewTokens(Foundation::ArrRef<Token> _new_toks, AbstractSyntaxTree *new_tree){
+void Parser::clearAndResetWithNewTokens(llvm::ArrayRef<Token> _new_toks, AbstractSyntaxTree *new_tree){
     currentIndex = 0;
     tokens = _new_toks;
     Treeptr = new_tree;
@@ -225,7 +227,7 @@ void Parser::parseNumericLiteral(ASTNumericLiteral *&ptr){
             //SKIPPED TWO TOKENS!
             if(tok2->getType() == TokenType::Numeric){
                 std::string numvalue;
-                numvalue = tok->getContent().append(tok1->getContent()+tok2->getContent());
+                numvalue = tok->getContent().str().append(tok1->getContent().str()+tok2->getContent().str());
                 ptr->value = numvalue;
 
             }
@@ -1844,7 +1846,7 @@ void Parser::parseBlockComment(ASTBlockComment *&ptr){
         }
         else if(tok->getType() == TokenType::Comment){
             ptr->line_num += 1;
-            ptr->lines.push_back(tok->getContent());
+            ptr->lines.push_back(tok->getContent().str());
         }
         tok = nextToken();
     }

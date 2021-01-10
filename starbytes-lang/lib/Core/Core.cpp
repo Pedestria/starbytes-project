@@ -9,11 +9,11 @@ STARBYTES_STD_NAMESPACE
 
 using namespace Starbytes;
 
-std::string highlightCode(std::string code,Foundation::ArrRef<Token> tokens){
+std::string highlightCode(std::string code,std::vector<Token> tokens){
 	int index = 0;
 	size_t s = sizeof("\x1b[30m");
 	for(auto & tok : tokens){
-		DocumentPosition & pos = tok.getPosition();
+		const DocumentPosition & pos = tok.getPosition();
 		std::string color_code;
 		if(tok.getType() == Starbytes::TokenType::Keyword){
 			color_code = PURPLE;
@@ -26,7 +26,7 @@ std::string highlightCode(std::string code,Foundation::ArrRef<Token> tokens){
 		}
 		
 		if(pos.raw_index == 0){
-			std::cout << "StrLength:" << code.length();
+			std::cout << "StrLength:" << code.size();
 			code = "\x1b["+color_code + code;
 			std::cout << "start:" << pos.raw_index << " end:" << pos.raw_index+tok.getTokenSize()+(3*index)+3 << " ";
 			++index;
@@ -52,8 +52,8 @@ std::string highlightCode(std::string code,Foundation::ArrRef<Token> tokens){
 	return code;
 }
 
-void logError(std::string message,Foundation::StrRef code,Foundation::ArrRef<Token> toks){
-    std::string result = highlightCode(code.data(),toks);
+void logError(std::string message,llvm::StringRef code,ArrayRef<Token> toks){
+    std::string result = highlightCode(code.str(),toks.vec());
 	std::cerr << message << "\n\n" << result << "\n";
 }
 
@@ -104,7 +104,7 @@ void Driver::doWork(){
 		if(!sem.finish()){
 			exit(1);
 		};
-		std::ofstream out (opts.out.data());
+		std::ofstream out (opts.out.str());
 		CodeGen::CodeGenROpts cg_opts (opts.module_search,opts.modules_to_link);
 		CodeGen::generateToBCProgram(trees,out,cg_opts);
 

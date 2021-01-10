@@ -38,6 +38,7 @@
 - starbytes-vscode - The VSCode extension for Starbytes Language. (Provides Grammar ONLY. Executable `starbytes-lsp` must be externally provided!)
 
 ### Dev/Build Instructions (With CMake)
+> Before reading this, make sure you have LLVM (libs/headers/etc) 10 or greater installed.
 - ### To Setup:
 Run
 ```shell
