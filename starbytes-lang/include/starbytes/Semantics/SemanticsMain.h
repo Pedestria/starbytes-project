@@ -21,8 +21,8 @@ using namespace AST;
     struct SemanticASettings {
         bool isLDK;
         const ModuleSearch & m_search;
-        ArrayRef<std::string> modules_to_link;
-        SemanticASettings(bool _isLDK,const ModuleSearch & _m_search,ArrayRef<std::string> & vector_ref):isLDK(_isLDK),m_search(_m_search),modules_to_link(vector_ref){};
+        ArrayRef<StringRef> modules_to_link;
+        SemanticASettings(bool _isLDK,const ModuleSearch & _m_search,ArrayRef<StringRef> & vector_ref):isLDK(_isLDK),m_search(_m_search),modules_to_link(vector_ref){};
     };
 
     TYPED_ENUM DiagnosticTy {

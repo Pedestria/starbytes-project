@@ -16,8 +16,8 @@ using namespace AST;
 
 struct CodeGenROpts {
     const ModuleSearch & m_search;
-    llvm::ArrayRef<std::string> modules_to_link;
-    CodeGenROpts(const ModuleSearch & _m_search,llvm::ArrayRef<std::string> & m_link):m_search(_m_search),modules_to_link(m_link){};
+    llvm::ArrayRef<llvm::StringRef> modules_to_link;
+    CodeGenROpts(const ModuleSearch & _m_search,llvm::ArrayRef<llvm::StringRef> & m_link):m_search(_m_search),modules_to_link(m_link){};
 };
 class CodeGenR : public ASTTraveler<CodeGenR> {
     public:

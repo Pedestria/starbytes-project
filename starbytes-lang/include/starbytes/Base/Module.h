@@ -17,14 +17,14 @@ STARBYTES_STD_NAMESPACE
 using namespace llvm;
 
 struct ModuleSearchOpts {
-    ArrayRef<std::string> modules_dirs;
-    ModuleSearchOpts(ArrayRef<std::string> _m_dirs):modules_dirs(_m_dirs){};
+    ArrayRef<StringRef> modules_dirs;
+    ModuleSearchOpts(ArrayRef<StringRef> _m_dirs):modules_dirs(_m_dirs){};
 };
 
 class ModuleSearchResult {
     std::string name;
     public:
-    ModuleSearchResult(std::string n):name(std::move(n)){};
+    ModuleSearchResult(llvm::StringRef n):name(n.str()){};
     std::string getSemScopeStoreForMod(){
         return name + ".smscst";
     };

@@ -2,7 +2,10 @@
 #include <string>
 #include <memory>
 
-#include <filesystem>
+#ifdef _WIN32
+#undef max 
+#undef min
+#endif
 
 
 
@@ -21,16 +24,6 @@ STARBYTES_FOUNDATION_NAMESPACE
 
 
 std::unique_ptr<std::string> readFile(std::string & file);
-
-namespace FS = std::filesystem;
-
-template<typename Lambda>
-void foreachInDirectory(std::string directory,Lambda callback){
-    const FS::path path_to_it {directory};
-    for(auto & entry : FS::directory_iterator(path_to_it)){
-        callback(entry);
-    }
-};
 
 
 
