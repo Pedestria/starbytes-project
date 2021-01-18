@@ -30,11 +30,11 @@ std::string highlightCode(std::string code,std::vector<Token> tokens){
 		const DocumentPosition & pos = tok.getPosition();
 		std::string color_code;
 		if(tok.getType() == Starbytes::TokenType::Keyword){
-			color_code = PURPLE;
+			color_code = ANSI_PURPLE;
 		} else if(tok.getType() == Starbytes::TokenType::Identifier){
-			color_code = YELLOW;
+			color_code = ANSI_YELLOW;
 		} else if(tok.getType() == Starbytes::TokenType::Operator){
-			color_code = PURPLE;
+			color_code = ANSI_PURPLE;
 		} else {
 			color_code = "0m";
 		}
