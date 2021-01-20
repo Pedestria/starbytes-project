@@ -28,7 +28,7 @@ using namespace AST;
     TYPED_ENUM DiagnosticTy {
         Error,Warning,Advice
     };
-    struct SemanticADiagnostic {
+    struct SemanticADiagnostic : Foundation::ObjectMessage {
         DiagnosticTy type;
         std::string message;
         std::string file;

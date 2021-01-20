@@ -6,6 +6,8 @@
 #include <vector>
 #include <cassert>
 
+#include <llvm/Support/Casting.h>
+
 
 #ifndef AST_AST_H
 #define AST_AST_H
@@ -400,25 +402,27 @@ public:
   // AbstractSyntaxTree(std::string & str_ref):filename(str_ref){};
 };
 
-template <class _NodeTy, class PtrTy> inline bool astnode_is(PtrTy *node) {
-  if (node->type == _NodeTy::static_type) {
-    return true;
-  } else {
-    return false;
-  }
-}
-
 // template<class _NodeTy,class PtrT> inline _NodeTy * astnode_assert(PtrT *node){
 //   assert((node->type == _NodeTy::static_type) && "ASTNode cannot be downcasted!");
 //   return (_NodeTy *)node;
 // };
 
-#define AST_NODE_CAST(ptr) ((ASTNode *)ptr)
-#define AST_NODE_IS(ptr, type) (astnode_is<type>(ptr))
+// #define AST_NODE_CAST(ptr) ((ASTNode *)ptr)
 #define ASSERT_AST_NODE(ptr, type) ((type *)ptr)
-}
-;
 
+NAMESPACE_END 
 NAMESPACE_END
+
+namespace llvm {
+
+/// isa<T>(AST Nodes)
+template <typename To>
+struct isa_impl<To,Starbytes::AST::ASTNode *> {
+  static bool doit(const Starbytes::AST::ASTNode *& node) {
+    return node->type == To::static_type;
+  }
+};
+
+};
 
 #endif
