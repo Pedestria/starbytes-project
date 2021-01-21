@@ -3,6 +3,7 @@
 #include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/ImmutableMap.h>
 #include <llvm/Support/ErrorOr.h>
+#include <llvm/Support/Casting.h>
 
 #ifndef AST_ASTRAVELER_H
 #define AST_ASTRAVELER_H
@@ -105,7 +106,8 @@ template<class _ParentTy>
 using ASTTravelerCallbackList = std::initializer_list<std::pair<ASTType,ASTFuncCallback<_ParentTy>>>;
 template <class _ParentTy> 
 class ASTTraveler {
-  ImmutableMap<ASTType, ASTFuncCallback<_ParentTy>> ast_lookup;
+  using ASTLookup = ImmutableMap<ASTType, ASTFuncCallback<_ParentTy>>;
+  ASTLookup ast_lookup;
   ASTTravelSettings options;
   ASTTravelContext cntxt;
   ASTContextualMemory cntxtl_memory;
@@ -243,7 +245,17 @@ public:
   ASTTraveler(_ParentTy *ptr_to_parent,
               ASTTravelerCallbackList<_ParentTy>
                    & list)
-      : parent_ptr(ptr_to_parent), ast_lookup(list){};
+      : parent_ptr(ptr_to_parent){
+        typename ASTLookup::Factory factory;
+
+        auto it = list.begin();
+        ast_lookup = factory.getEmptyMap();
+        while(it != list.end()){
+          factory.add(ast_lookup,*(it).first,*(it).second);
+          ++it;
+        }
+        
+      };
   void travel(AbstractSyntaxTree *__tree);
 };
 
@@ -453,11 +465,11 @@ template <class _ParentTy> void ASTTraveler<_ParentTy>::visitExprStmt() {
 template <class _ParentTy> void ASTTraveler<_ParentTy>::visitStatement() {
   ASTNode *&_current = cntxt.current;
   // bool retr_code = false;
-  if (AST_NODE_IS(_current, ASTFunctionDeclaration)) {
+  if (llvm::isa<ASTFunctionDeclaration>(_current)) {
     visitFunctionDecl();
-  } else if (AST_NODE_IS(_current, ASTVariableDeclaration)) {
+  } else if (llvm::isa<ASTVariableDeclaration>(_current)) {
     visitVariableDecl();
-  } else if (AST_NODE_IS(_current, ASTConstantDeclaration)) {
+  } else if (llvm::isa<ASTConstantDeclaration>(_current)) {
     visitConstantDecl();
   } else if (AST_NODE_IS(_current, ASTClassDeclaration)) {
     visitClassDecl();

@@ -16,10 +16,13 @@ STARBYTES_SEMANTICS_NAMESPACE
 using namespace llvm;
 
 class SemanticA;
+class ScopeStore;
 
 #define FRIEND_AST_EVALUATOR(type) friend SemanticSymbol * evaluate##type(type * node_ty,SemanticA *& sem)
     class Scope {
         private:
+            friend void dumpScopeStore(llvm::StringRef file,ScopeStore & store_ref,llvm::StringRef lib_name);
+            friend void getScopeStore(llvm::StringRef file,ScopeStore & store_ref);
             std::vector<SemanticSymbol *> symbols; 
         public:
             std::string & name;

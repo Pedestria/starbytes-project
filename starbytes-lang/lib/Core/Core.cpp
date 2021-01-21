@@ -123,41 +123,38 @@ void Driver::doWork(){
 	file_sizes.clear();
 
 
-	llvm::ThreadPool t_pool (llvm::hardware_concurrency());
 
-	// if(!srcs.empty()){
-	// 	std::vector<AbstractSyntaxTree *> trees;
-	// 	auto begin_it = srcs.begin();
-	// 	auto first_src = *begin_it;
-	// 	std::vector<Token> tok_stream;
-	// 	AbstractSyntaxTree *tree;
-	// 	Lexer lex(first_src,tok_stream);
-	// 	Parser p(tok_stream,tree);
-	// 	Semantics::SemanticASettings settings (false,opts.module_search,opts.modules_to_link);
-	// 	Semantics::SemanticA sem(settings);
-	// 	sem.initialize();
-	// 	sem.analyzeFileForModule(tree);
-	// 	trees.push_back(tree);
-	// 	++begin_it;
-	// 	while(begin_it != srcs.end()){
-	// 		tok_stream.clear();
-	// 		lex.resetWithNewCode(*begin_it,tok_stream);
-	// 		lex.tokenize();
-	// 		AbstractSyntaxTree *new_tree;
-	// 		p.clearAndResetWithNewTokens(tok_stream,new_tree);
-	// 		p.convertToAST();
-	// 		sem.analyzeFileForModule(new_tree);
-	// 		trees.push_back(new_tree);
-	// 		++begin_it;
-	// 	};
+	llvm::ThreadPool t_pool (llvm::hardware_concurrency(2));
 
-	// 	if(!sem.finish()){
-	// 		exit(1);
-	// 	};
-	// 	std::ofstream out (opts.out.str());
-	// 	CodeGen::CodeGenROpts cg_opts (opts.module_search,opts.modules_to_link);
-	// 	CodeGen::generateToBCProgram(trees,out,cg_opts);
-	//};
+	std::vector<AbstractSyntaxTree *> trees;
+	Semantics::SemanticASettings settings (false,opts.module_search,opts.modules_to_link);
+	Semantics::SemanticA sem (settings);
+	sem.initialize();
+
+	t_pool.async([&](unsigned file_take_count){
+		std::queue<std::string> files_;
+		unsigned idx = 0;
+		while(idx != file_take_count){
+			files_.push(srcs.back());
+			srcs.pop_back();
+			++idx;
+		};
+		auto first = files_.front();
+		files_.pop();
+		std::vector<Token> tok_stream;
+		Lexer lex(first,tok_stream);
+		AbstractSyntaxTree *tree_res;
+		Parser parser(tok_stream,tree_res);
+		sem.analyzeFileForModule(tree_res);
+		trees.push_back(tree_res);
+	},3);
+
+	if(srcs.empty()){
+		t_pool.wait();
+		if(sem.finish()){
+			sem.freeSymbolStores();
+		}
+	};
 
 };
 

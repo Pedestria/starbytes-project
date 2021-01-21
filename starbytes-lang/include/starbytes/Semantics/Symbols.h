@@ -13,7 +13,7 @@ using namespace AST;
     class STBClassType;
     class STBInterfaceType;
 
-    enum class SymbolType:int {
+    TYPED_ENUM SymbolType:int {
         Variable,Class,Function,ConstVariable
     }; 
     struct SemanticSymbol {

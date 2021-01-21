@@ -8,11 +8,15 @@
 
 STARBYTES_FOUNDATION_NAMESPACE
 
+struct ObjectMessage {
+    virtual std::string get();
+};
+
 template<class _Obj_Ty>
 class Buffered_Logger {
     std::deque<_Obj_Ty> _buf;
     bool buffered;
-    void log(_Obj_Ty & err_ref){
+    void log(ObjectMessage & err_ref){
         std::cout << std::move(err_ref).get() << std::endl;
     };
     void write(_Obj_Ty & err_ref){
@@ -23,6 +27,8 @@ class Buffered_Logger {
     };
     using self = Buffered_Logger<_Obj_Ty>;
 public:
+
+    template<std::enable_if_t<std::is_base_of_v<ObjectMessage,_Obj_Ty>,bool> = 0>
     Buffered_Logger(bool isBuffered = true):buffered(isBuffered){};
     ~Buffered_Logger(){
         if(buffered)

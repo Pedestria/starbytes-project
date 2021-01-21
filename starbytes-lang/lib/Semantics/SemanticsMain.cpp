@@ -33,8 +33,8 @@ STARBYTES_SEMANTICS_NAMESPACE
 
 
     ASTTravelerCallbackList<SemanticA> cb_list = {
-                Foundation::dict_vec_entry(ASTType::VariableDeclaration,&atVarDecl),
-                Foundation::dict_vec_entry(ASTType::FunctionDeclaration,&atFuncDecl)
+                std::pair(ASTType::VariableDeclaration,&atVarDecl),
+                std::pair(ASTType::FunctionDeclaration,&atFuncDecl)
             };
 
     SemanticA::SemanticA(SemanticASettings & _settings):ASTTraveler<SemanticA>(this,cb_list),settings(_settings){};

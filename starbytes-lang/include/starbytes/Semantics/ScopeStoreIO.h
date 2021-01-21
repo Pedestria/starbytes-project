@@ -5,8 +5,8 @@
 
 STARBYTES_SEMANTICS_NAMESPACE
 
-void getScopeStore(Foundation::StrRef file,ScopeStore & store_ref);
-void dumpScopeStore(Foundation::StrRef file,ScopeStore & store_ref);
+void getScopeStore(llvm::StringRef file,ScopeStore & store_ref);
+void dumpScopeStore(llvm::StringRef file,ScopeStore & store_ref);
 
 NAMESPACE_END
 
