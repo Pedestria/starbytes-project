@@ -40,7 +40,7 @@ llvm::ErrorOr<ModuleSearchResult> ModuleSearch::search(llvm::StringRef module){
         
     };
 
-    // return Foundation::Error("Could not find module: " + module.toStr());
+    return std::errc::not_a_directory;
 };
 
 NAMESPACE_END
