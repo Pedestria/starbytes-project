@@ -25,6 +25,7 @@ struct ASTVisitorResponse {
 };
 
 struct ASTTravelContext {
+    std::string filename;
   std::optional<ASTNode *> previous;
   ASTNode *current;
   std::optional<ASTNode *> parent;
@@ -440,17 +441,17 @@ template <class _ParentTy> void ASTTraveler<_ParentTy>::visitAwaitExpr(){
 template <class _ParentTy> void ASTTraveler<_ParentTy>::visitExpr() {
   ASTNode *&_current = cntxt.current;
   // bool retr_code = false;
-  if (AST_NODE_IS(_current, ASTCallExpression)) {
+  if (llvm::isa<ASTCallExpression>(_current)) {
     visitCallExpr();
-  } else if (AST_NODE_IS(_current, ASTIdentifier)) {
+  } else if (llvm::isa<ASTIdentifier>(_current)) {
     visitId();
-  } else if (AST_NODE_IS(_current, ASTMemberExpression)) {
+  } else if (llvm::isa<ASTMemberExpression>(_current)) {
     visitMemberExpr();
-  } else if (AST_NODE_IS(_current, ASTArrayExpression)) {
+  } else if (llvm::isa<ASTArrayExpression>(_current)) {
     visitArrayExpr();
-  } else if (AST_NODE_IS(_current, ASTNewExpression)) {
+  } else if (llvm::isa<ASTNewExpression>(_current)) {
     visitNewExpr();
-  } else if (AST_NODE_IS(_current, ASTAwaitExpression)) {
+  } else if (llvm::isa<ASTAwaitExpression>(_current)) {
     visitAwaitExpr();
   }
 
@@ -471,13 +472,13 @@ template <class _ParentTy> void ASTTraveler<_ParentTy>::visitStatement() {
     visitVariableDecl();
   } else if (llvm::isa<ASTConstantDeclaration>(_current)) {
     visitConstantDecl();
-  } else if (AST_NODE_IS(_current, ASTClassDeclaration)) {
+  } else if (llvm::isa<ASTClassDeclaration>(_current)) {
     visitClassDecl();
-  } else if (AST_NODE_IS(_current, ASTScopeDeclaration)) {
+  } else if (llvm::isa<ASTScopeDeclaration>(_current)) {
     visitScopeDecl();
-  } else if (AST_NODE_IS(_current, ASTImportDeclaration)) {
+  } else if (llvm::isa<ASTImportDeclaration>(_current)) {
     visitImportDecl();
-  } else if (AST_NODE_IS(_current, ASTExpressionStatement)) {
+  } else if (llvm::isa<ASTExpressionStatement>(_current)) {
     visitExprStmt();
   }
   // return retr_code;
@@ -485,6 +486,7 @@ template <class _ParentTy> void ASTTraveler<_ParentTy>::visitStatement() {
 template <class _ParentTy>
 void ASTTraveler<_ParentTy>::travel(AbstractSyntaxTree *__tree) {
   tree = __tree;
+    cntxt.filename = tree->filename;
   unsigned ast_top_level_len = tree->nodes.size();
   unsigned idx = 0;
   while (ast_top_level_len != idx) {

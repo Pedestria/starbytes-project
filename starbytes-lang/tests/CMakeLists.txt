@@ -1,7 +1,0 @@
-# add_subdirectory("TokenTest")
-# add_subdirectory("PFParse")
-# add_subdirectory("RuntimeTest")
-# add_subdirectory("SemanticsTest")
-# add_subdirectory("FileOutTest")
-# add_subdirectory("Files")
-add_subdirectory("DataTest")

@@ -15,7 +15,8 @@
 ##### Travis CI (macOS X):
 ![](https://travis-ci.com/Pedestria/starbytes-project.svg?token=5K8gmsoNtkbUcnKi4R5v&branch=master)
 
-### Main Directory Contents (`starbytes-lang` Directory):
+### NOTE: The starbytes repo is being redone... Come back later..
+<!-- ### Main Directory Contents (`starbytes-lang` Directory):
 - #### Libraries:
 - `AST` - The AST Library
 - `Base` - Provides macros and standard functions used throughout the toolchain.
@@ -35,7 +36,7 @@
 ### Extra (`starbytes-extra` Directory)
 - #### VSCode
 - starbytes-grammar - The Textmate Syntax Grammar for Starbytes.
-- starbytes-vscode - The VSCode extension for Starbytes Language. (Provides Grammar ONLY. Executable `starbytes-lsp` must be externally provided!)
+- starbytes-vscode - The VSCode extension for Starbytes Language. (Provides Grammar ONLY. Executable `starbytes-lsp` must be externally provided!) -->
 
 ### Dev/Build Instructions (With CMake)
 > Before reading this, make sure you have LLVM (libs/headers/etc) 10 or greater installed.

@@ -48,8 +48,8 @@ endif()
 
 
 
-# set(STARBYTES_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules)
-# list(APPEND CMAKE_MODULE_PATH ${STARBYTES_MODULE_PATH})
+set(STARBYTES_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules)
+list(APPEND CMAKE_MODULE_PATH ${STARBYTES_MODULE_PATH})
 
 
 # if(UNIX)
@@ -77,7 +77,7 @@ message("Found LLVM: ${LLVM_PACKAGE_VERSION}")
 llvm_map_components_to_libnames(llvm_libs support core)
 
 
-include("./Starbytes.cmake")
+include(Starbytes)
 
 if(XCODE)
     set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -103,9 +103,9 @@ add_subdirectory("tests")
 # TODO : Get Starbytes Compilation to work!
 # add_subdirectory("starbytes-modules")
 
-# if(ENABLE_STARBYTES_LSP)
-# 	add_subdirectory(../starbytes-lsp "lsp")
-# endif()
+if(ENABLE_STARBYTES_LSP)
+	add_subdirectory(../starbytes-lsp "lsp")
+endif()
 
 #target_link_libraries(CPlusPlus PRIVATE nlohmann_json nlohmann_json::nlohmann_json)
 # TODO: Add tests and install targets if needed.
