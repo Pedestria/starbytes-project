@@ -1,0 +1,8 @@
+
+
+#ifndef STARBYTES_AST_ASTDECL_H
+#define STARBYTES_AST_ASTDECL_H
+
+
+
+#endif

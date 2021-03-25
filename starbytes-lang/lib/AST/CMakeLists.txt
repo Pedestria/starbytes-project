@@ -1,0 +1,9 @@
+add_starbytes_lib(
+    LIB_NAME
+    "starbytesAST"
+    SOURCE_FILES 
+    "ASTDecl.cpp"
+    HEADER_FILES 
+    "ASTDecl.h"
+    "AST.h"
+)

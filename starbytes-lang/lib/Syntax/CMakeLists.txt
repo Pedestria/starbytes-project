@@ -5,4 +5,6 @@ add_starbytes_lib(
     "Lexer.cpp"
     HEADER_FILES
     "Lexer.h" 
+    LIBS_TO_LINK
+    "starbytesBase"
 )
