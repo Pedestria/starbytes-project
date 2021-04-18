@@ -3,8 +3,10 @@ add_starbytes_lib(
     "starbytesSyntax"
     SOURCE_FILES 
     "Lexer.cpp"
+    "SyntaxA.cpp"
     HEADER_FILES
     "Lexer.h" 
+    "SyntaxA.h"
     LIBS_TO_LINK
     "starbytesBase"
 )

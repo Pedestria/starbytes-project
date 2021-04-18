@@ -24,7 +24,7 @@ Lexer::Lexer(DiagnosticBufferedLogger & errStream):errStream(errStream){
     
 };
 
-void Lexer::tokenizeFromIStream(std::istream & in, llvm::MutableArrayRef<Tok> tokStreamRef){
+void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamRef){
     auto getChar = [&](){
         return in.get();
     };
@@ -36,8 +36,7 @@ void Lexer::tokenizeFromIStream(std::istream & in, llvm::MutableArrayRef<Tok> to
     SourcePos pos;
     pos.line = 1;
     pos.endCol = 0;
-    
-    auto toks = tokStreamRef.vec();
+
     
     char *bufferStart = buffer;
     char *bufferEnd = bufferStart;
@@ -57,7 +56,7 @@ void Lexer::tokenizeFromIStream(std::istream & in, llvm::MutableArrayRef<Tok> to
         else
             tok.type = type;
         tok.srcPos = pos;
-        toks.push_back(tok);
+        tokStreamRef.push_back(tok);
         bufferEnd = bufferStart;
     };
     

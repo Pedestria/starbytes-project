@@ -45,6 +45,10 @@ struct Tok {
         PlusEqual,
         MinusEqual,
         Dot,
+        LineCommentBegin,
+        LineCommentEnd,
+        BlockCommentBegin,
+        BlockCommentEnd,
         EndOfFile
     } TokType;
     TokType type;
@@ -57,7 +61,7 @@ class Lexer {
     DiagnosticBufferedLogger & errStream;
 public:
     Lexer(DiagnosticBufferedLogger & errStream);
-    void tokenizeFromIStream(std::istream & in,llvm::MutableArrayRef<Tok> tokStreamRef);
+    void tokenizeFromIStream(std::istream & in,std::vector<Tok> & tokStreamRef);
 };
 
 };

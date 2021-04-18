@@ -5,6 +5,7 @@ namespace starbytes {
 
 DiagnosticBufferedLogger & DiagnosticBufferedLogger::operator<<(Diagnostic *diagnostic){
     buffer.push_back(diagnostic);
+    return *this;
 };
 
 void DiagnosticBufferedLogger::logAll(){

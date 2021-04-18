@@ -1,11 +1,14 @@
 #include "starbytes/AST/ASTDecl.h"
 
-namespace Starbytes {
+namespace starbytes {
 
-namespace AST {
-
-
-
+bool ASTDecl::classof(ASTStmt *stmt){
+    if(stmt->type | DECL){
+        return true;
+    }
+    else {
+        return false;
+    };
 };
 
 };
