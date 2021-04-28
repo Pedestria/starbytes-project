@@ -6,25 +6,28 @@
 #define STARBYTES_PARSER_SEMANTICA_H
 
 namespace starbytes {
+
+    struct ASTScope;
     namespace Semantics  {
-        struct SymbolScope {
-            std::string id;
-            std::vector<SymbolScope *> childScopes;
-        };
+
 
         struct SymbolTable {
             struct Entry {
+                ASTStmt *node;
                 std::string name;
                 typedef enum : int {
                     Var,
                     Class,
                     Interface,
                     Scope,
+                    Function
                 } Ty;
                 Ty type;
             };
         private:
-            llvm::DenseMap<Entry *,SymbolScope *> body;
+            llvm::DenseMap<Entry *,ASTScope *> body;
+        public:
+            void addSymbolInScope(Entry *entry,ASTScope * scope);
         };
 
         struct STableContext {
@@ -41,6 +44,8 @@ namespace starbytes {
         Syntax::SyntaxA & syntaxARef;
         DiagnosticBufferedLogger & errStream;
     public:
+        void start();
+        void finish();
         void addSTableEntryForDecl(ASTDecl *decl,Semantics::SymbolTable *tablePtr);
         void checkSymbolsForStmt(ASTStmt *stmt,Semantics::STableContext & symbolTableContext);
         SemanticA(Syntax::SyntaxA & syntaxARef,DiagnosticBufferedLogger & errStream);

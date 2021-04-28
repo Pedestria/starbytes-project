@@ -1,9 +1,11 @@
 #include "starbytes/Syntax/Lexer.h"
+#include <llvm/Support/raw_ostream.h>
+#include <iostream>
 
 namespace starbytes::Syntax {
 
 bool isKeyword(llvm::StringRef str){
-    return (str == "decl") || (str == "immutable");
+    return (str == "decl") || (str == "immutable") || (str == "import");
 };
 
 bool isNumber(llvm::StringRef str){
@@ -26,11 +28,16 @@ Lexer::Lexer(DiagnosticBufferedLogger & errStream):errStream(errStream){
 
 void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamRef){
     auto getChar = [&](){
-        return in.get();
+        char rc = in.get();
+        // std::cout << "getChar:" << rc << std::endl;
+        return rc;
     };
     
     auto aheadChar = [&](){
-        return in.peek();
+        char rc = in.get();
+        in.seekg(-1,std::ios::cur);
+        // std::cout << "peekChar:" << rc << std::endl;
+        return rc;
     };
     
     SourcePos pos;
@@ -61,8 +68,9 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
     };
     
     
-    char c = getChar();
-    while(!in.eof()){
+    char c;
+    bool finish = false;
+    while((c = getChar()) != -1){
         switch (c) {
             case '\n': {
                 ++pos.line;
@@ -112,6 +120,11 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 pushToken(Tok::CloseBrace);
                 break;
             }
+            case ':': {
+                PUSH_CHAR(c);
+                pushToken(Tok::Colon);
+                break;
+            }
             case '=' : {
                 PUSH_CHAR(c);
                 c = aheadChar();
@@ -155,11 +168,14 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                     if(!isalnum(c)){
                         pushToken(Tok::Identifier);
                     }
+                   
+                }
+                else if(isspace(c)){
+                    
                 };
-                break;
             }
         }
-        c = getChar();
+        
     };
         
 };

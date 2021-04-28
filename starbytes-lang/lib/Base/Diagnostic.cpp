@@ -8,6 +8,10 @@ DiagnosticBufferedLogger & DiagnosticBufferedLogger::operator<<(Diagnostic *diag
     return *this;
 };
 
+bool DiagnosticBufferedLogger::empty(){
+    return buffer.empty();
+};
+
 void DiagnosticBufferedLogger::logAll(){
     while(!buffer.empty()){
         auto d = buffer.front();

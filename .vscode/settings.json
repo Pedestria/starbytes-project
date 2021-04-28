@@ -1,5 +1,7 @@
 {
     "cmake.configureOnOpen": false,
     "cmake.sourceDirectory": "${workspaceFolder}/starbytes-lang",
-    "todo-tree.tree.showBadges": true
+    "todo-tree.tree.showBadges": true,
+    "python.pythonPath": "C:\\Users\\alex\\AppData\\Local\\Programs\\Python\\Python39\\python.exe",
+    "git.ignoreLimitWarning": true
 }

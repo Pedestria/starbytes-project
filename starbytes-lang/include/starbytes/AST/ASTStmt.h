@@ -23,13 +23,19 @@ namespace starbytes {
         CommentTy type;
     };
 
+    struct ASTScope {
+        ASTScope *parentScope;
+        std::vector<ASTScope *> childScopes;
+    };
+
     class ASTStmt {
     public:
+        ASTScope * scope;
         std::vector<Comment *> beforeComments;
         std::vector<Comment *> afterComments;
         ASTNodeType type;
         SrcLoc loc;
-        virtual ~ASTStmt();
+        // virtual ~ASTStmt();
     };
 };
 

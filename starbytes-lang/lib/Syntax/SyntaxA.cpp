@@ -85,6 +85,8 @@ namespace starbytes::Syntax {
                 if(!(module_name.dataPtr = buildIdentifier(nextTok(),false))){
                     /// BAIL!!!
                 };
+                node->declProps.push_back(module_name);
+                ++privTokIndex;
             }
             // else if(first_token.content == "scope"){
                 
@@ -98,9 +100,56 @@ namespace starbytes::Syntax {
                     else; 
                         /// Throw Error;
                 }
-                TokRef tok1 = tok0.type == Tok::Keyword? nextTok() : tok0;
-                if(tok0.type == Tok::Identifier){
+                Tok & tok1 = const_cast<Tok &>(tok0.type == Tok::Keyword? nextTok() : tok0);
+                if(tok1.type == Tok::Identifier){
+                    ASTIdentifier * id = buildIdentifier(tok1,false);
+                    if(!id){
+                     /// Throw Error;   
+                    };
+                    /// Var Declarator!!
+                    ASTDecl *varDeclarator = new ASTDecl();
+                    
+                    ASTDecl::Property prop,id_prop;
+                    prop.type = ASTDecl::Property::Decl;
+                    /// Attach Identifier to Declarator
+                    id_prop.type = ASTDecl::Property::Identifier;
+                    id_prop.dataPtr = id;
+                    varDeclarator->declProps.push_back(id_prop);
+                    
 
+                    tok1 = nextTok();
+                    if(tok1.type == Tok::Colon){
+                        ASTIdentifier *type_id = buildIdentifier(tok1,true);
+                        if(!type_id){
+                        /// Throw Error;   
+                        };
+                        ASTDecl::Property _prop;
+                        prop.type = ASTDecl::Property::Identifier;
+                        prop.dataPtr = type_id;
+                        varDeclarator->typeProps.push_back(_prop);
+
+                        tok1 = nextTok();
+                    }
+
+                    prop.dataPtr = varDeclarator;
+
+                    node->declProps.push_back(prop);
+
+                    if(tok1.type != Tok::Equal){
+                        return node;
+                    };
+
+                    tok1 = nextTok();
+                    ASTExpr * val = evalExpr(tok1);
+                    if(!val){
+                       // Throw Error 
+                    };
+                    /// Var Initializer
+
+                    ASTDecl::Property prop2;
+                    prop.type = ASTDecl::Property::Expr;
+                    prop.dataPtr = val;
+                    varDeclarator->declProps.push_back(prop2);
                 }
                 else {
                     /// Throw Error.

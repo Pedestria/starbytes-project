@@ -3,6 +3,8 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
 #include "starbytes/Base/Diagnostic.h"
+#include <llvm/Support/FormatVariadic.h>
+#include <llvm/Support/Compiler.h>
 
 #ifndef STARBYTES_SYNTAX_LEXER_H
 #define STARBYTES_SYNTAX_LEXER_H
@@ -66,5 +68,55 @@ public:
 
 };
 }
+
+namespace llvm {
+    template<>
+    struct format_provider<starbytes::Syntax::Tok> {
+        static void format(const starbytes::Syntax::Tok &V,raw_ostream &Stream, StringRef Style){
+            std::string tokTypeName;
+            using starbytes::Syntax::Tok;
+            switch (V.type) {
+                case Tok::Keyword : {
+                    tokTypeName = "Keyword";
+                    break;
+                }
+                case Tok::Identifier: {
+                    tokTypeName = "Identifier";
+                    break;
+                }
+                case Tok::OpenBrace : {
+                    tokTypeName = "OpenBrace";
+                    break;
+                }
+                case Tok::CloseBrace : {
+                    tokTypeName = "CloseBrace";
+                    break;
+                }
+                case Tok::Asterisk : {
+                    tokTypeName = "Asterisk";
+                    break;
+                }
+                case Tok::Colon : {
+                    tokTypeName = "Colon";
+                    break;
+                }
+                case Tok::Comma : {
+                    tokTypeName = "Comma";
+                }
+                default: {
+                    tokTypeName = "N/A";
+                    break;
+                }
+            }
+
+            Stream << formatv(
+                "Syntax::Tok : {\n" 
+                "   type: {0}\n"
+                "   content:{1}\n"
+                "}"
+            ,tokTypeName,V.content);
+        };
+    };
+};
 
 #endif

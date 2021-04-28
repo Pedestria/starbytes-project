@@ -3,6 +3,7 @@ add_starbytes_lib(
     "starbytesAST"
     SOURCE_FILES 
     "ASTDecl.cpp"
+    "ASTDumper.cpp"
     HEADER_FILES 
     "ASTStmt.h"
     "ASTDecl.h"

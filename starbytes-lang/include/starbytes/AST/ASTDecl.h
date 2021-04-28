@@ -18,7 +18,8 @@ namespace starbytes {
             Ty type;
             ASTStmt *dataPtr;
         };
-        std::vector<Property> props;
+        std::vector<Property> typeProps;
+        std::vector<Property> declProps;
         static bool classof(ASTStmt *stmt);
     };
 
