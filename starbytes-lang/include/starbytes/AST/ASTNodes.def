@@ -22,6 +22,7 @@ typedef int ASTNodeType;
 #define IF_ELSE_DECL (0x00B000 | DECL)
 #define ELSE_DECL (0x00C000 | DECL)
 #define IMPORT_DECL (0x00D000 | DECL)
+#define SCOPE_DECL (0x00E000 | DECL)
 
 #define EXPR 0x0F0000
 #define INDEX_EXPR (0x100000 | EXPR)

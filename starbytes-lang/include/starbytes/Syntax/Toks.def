@@ -1,0 +1,43 @@
+
+
+#define TOK(content) content
+/// Operator
+#define OP(op) TOK(op)
+/// Logic Operator
+#define LGOP(op) TOK(op)
+/// Bitwise Operator
+#define BWOP(op) TOK(op)
+/// Keyword
+#define KW(name) TOK(name)
+
+#define TOK_ID(name) TOK(name)
+
+#define TOK_COLON TOK(":")
+#define TOK_QUESTION TOK("?")
+#define TOK_EXCL TOK("!")
+
+#define OP_LCARROT OP(">")
+#define OP_RCARROT OP("<")
+
+/// Reserved Operators/Scope Specific Operators
+#define OP_FUNC_RETURNS OP(">>")
+
+#define OP_ASSIGN OP("=")
+#define OP_EQUAL OP("==")
+#define OP_PLUS OP("+")
+#define OP_PLUSEQUAL OP("+=")
+#define OP_MINUS OP("-")
+#define OP_MINUSEQUAL OP("-=")
+#define OP_MUL OP("*")
+#define OP_MULEQUAL OP("*=")
+#define OP_DIV OP("/")
+#define OP_DIVEQUAL OP("/=")
+
+#define TOK_OP_MAX_LENGTH 2
+
+#define KW_CLASS KW("class")
+#define KW_DECL KW("decl")
+#define KW_FUNC KW("func")
+#define KW_RETURN KW("return")
+#define KW_IMUT KW("immutable")
+#define KW_DEFTYPE KW("deftype")

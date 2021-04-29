@@ -65,7 +65,53 @@ namespace starbytes::Syntax {
 
 
     ASTExpr *SyntaxA::evalExpr(TokRef first_token){
+        Tok & tokRef = const_cast<Tok &>(first_token);
+        ASTExpr *expr = nullptr;
+        /// Paren Unwrapping
+        if(tokRef.type == Tok::OpenParen){
+            tokRef = nextTok();
+            expr = evalExpr(tokRef);
+            tokRef = nextTok();
+            if(tokRef.type != Tok::CloseParen){
+                /// ERROR.
+            };
+        }
+        else {
+            ASTExpr *node = new ASTExpr();
+            if(tokRef.type == Tok::OpenBracket){
+                tokRef = nextTok();
+                auto firstExpr = evalExpr(nextTok());
+                if(!firstExpr){
+                    /// ERROR
+                };
 
+                node->arrayExpr.push_back(firstExpr);
+                /// Last Tok from recent ast expr evaluation.
+                while(tokRef.type == Tok::Comma){
+                    tokRef = nextTok();
+                    auto expr = evalExpr(tokRef);
+                    if(!expr){
+                        /// ERROR
+                    };
+                    node->arrayExpr.push_back(expr);
+                };
+
+                if(tokRef.type != Tok::CloseBracket){
+                    /// ERROR
+                };
+                tokRef = nextTok();
+            }
+            else if(tokRef.type == Tok::Identifier){
+                ASTIdentifier *id;
+                if(!(id = buildIdentifier(tokRef,false))){
+                    /// ERROR
+                };
+                node->id = id;
+                tokRef = nextTok();
+            }
+        };
+
+        return expr;
     };
 
     ASTDecl *SyntaxA::evalDecl(TokRef first_token){
@@ -83,14 +129,21 @@ namespace starbytes::Syntax {
                 ASTDecl::Property module_name;
                 module_name.type = ASTDecl::Property::Identifier;
                 if(!(module_name.dataPtr = buildIdentifier(nextTok(),false))){
-                    /// BAIL!!!
+                    /// RETURN !
                 };
                 node->declProps.push_back(module_name);
                 ++privTokIndex;
             }
-            // else if(first_token.content == "scope"){
-                
-            // }
+            else if(first_token.content == "scope"){
+                node->type = SCOPE_DECL;
+                ASTDecl::Property name;
+                name.type = ASTDecl::Property::Identifier;
+                if(!(name.dataPtr = buildIdentifier(nextTok(),false))){
+                    /// RETURN!
+                };
+                node->declProps.push_back(name);
+            }
+            /// Var Decl Parse
             else if(first_token.content == "decl"){
                 node->type = VAR_DECL;
                 TokRef tok0 = nextTok();
@@ -155,6 +208,10 @@ namespace starbytes::Syntax {
                     /// Throw Error.
                 };
             }
+            else if(first_token.content == "func"){
+                node->type = FUNC_DECL;
+                
+            }
             else if(first_token.content == "class"){
                 node->type = CLS_DECL;
                 TokRef tok0 = nextTok();
@@ -181,8 +238,13 @@ namespace starbytes::Syntax {
     ASTStmt * SyntaxA::nextStatement(){
         TokRef t = token_stream[privTokIndex];
         ASTStmt *stm = evalDecl(t);
-        if(!stm)
-            return evalExpr(t);
+        if(!stm) {
+            auto expr = evalExpr(t);
+            if(!expr)
+                return stm;
+            else 
+                return expr;
+        }
         else  
             return stm;
     };

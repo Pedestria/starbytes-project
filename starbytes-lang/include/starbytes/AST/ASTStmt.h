@@ -1,4 +1,4 @@
-#include "ASTNodes.inc"
+#include "ASTNodes.def"
 #include <string>
 #include <vector>
 

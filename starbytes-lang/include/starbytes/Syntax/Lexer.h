@@ -5,6 +5,7 @@
 #include "starbytes/Base/Diagnostic.h"
 #include <llvm/Support/FormatVariadic.h>
 #include <llvm/Support/Compiler.h>
+#include "Toks.def"
 
 #ifndef STARBYTES_SYNTAX_LEXER_H
 #define STARBYTES_SYNTAX_LEXER_H
