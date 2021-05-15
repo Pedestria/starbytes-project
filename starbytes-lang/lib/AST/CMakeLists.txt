@@ -8,6 +8,6 @@ add_starbytes_lib(
     "ASTStmt.h"
     "ASTDecl.h"
     "ASTExpr.h"
-    "ASTNodes.inc"
+    "ASTNodes.def"
     "AST.h"
 )

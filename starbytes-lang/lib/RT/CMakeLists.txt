@@ -1,0 +1,14 @@
+add_starbytes_lib(
+    LIB_NAME 
+    "starbytesRT"
+    SOURCE_FILES
+    "RTCode.cpp"
+    "RTEngine.cpp" 
+    "RTInternalObjectImpl.cpp"
+    "RTInternalObjectImpl.h"
+    HEADER_FILES
+    "RTCode.h"
+    "RTEngine.h"
+    LIBS_TO_LINK
+    "starbytesBase"
+)

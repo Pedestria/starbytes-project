@@ -16,4 +16,13 @@ add_starbytes_test(
     DEPENDENCIES 
     ${STARBYTES_ALL_LIBS})
 
+add_starbytes_test(
+    NAME 
+    "compile-test"
+    INCLUDE_LIB 
+    FILES 
+    "compileTest.cpp"
+    DEPENDENCIES 
+    ${STARBYTES_ALL_LIBS})
+
 configure_file("test.stb" "${CMAKE_CURRENT_BINARY_DIR}/test.stb" COPYONLY)

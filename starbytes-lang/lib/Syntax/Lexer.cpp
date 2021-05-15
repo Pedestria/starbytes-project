@@ -22,6 +22,8 @@ struct LexicalError : public Diagnostic {
     void format(llvm::raw_ostream &os);
 };
 
+
+
 Lexer::Lexer(DiagnosticBufferedLogger & errStream):errStream(errStream){
     
 };
@@ -175,9 +177,10 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 };
             }
         }
-        
     };
-        
+    
+    PUSH_CHAR('\0');
+    pushToken(Tok::EndOfFile);
 };
 
 }

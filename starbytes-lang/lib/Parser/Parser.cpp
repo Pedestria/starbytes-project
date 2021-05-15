@@ -3,6 +3,11 @@
 #include "starbytes/AST/ASTDumper.h"
 
 namespace starbytes {
+
+    ModuleParseContext ModuleParseContext::Create(std::string name){
+        return {name,std::make_unique<Semantics::SymbolTable>()};
+    };
+
     Parser::Parser():
     diagnosticsEngine(std::make_unique<DiagnosticBufferedLogger>()),
     lexer(std::make_unique<Syntax::Lexer>(*diagnosticsEngine)),

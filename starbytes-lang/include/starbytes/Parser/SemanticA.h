@@ -31,7 +31,8 @@ namespace starbytes {
         };
 
         struct STableContext {
-            std::vector<SymbolTable *> tables;
+            std::unique_ptr<SymbolTable> main;
+            std::vector<SymbolTable *> otherTables;
             bool hasTable(SymbolTable *ptr);
         };
     };

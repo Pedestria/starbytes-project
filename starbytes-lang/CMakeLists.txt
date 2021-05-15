@@ -98,7 +98,7 @@ if(SYS_WAIT_H_FOUND)
 endif()
 
 add_subdirectory("lib")
-add_subdirectory("tools")
+# add_subdirectory("tools")
 add_subdirectory("tests")
 # TODO : Get Starbytes Compilation to work!
 # add_subdirectory("starbytes-modules")

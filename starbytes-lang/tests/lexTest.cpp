@@ -1,16 +1,19 @@
 #include "starbytes/Parser/Parser.h"
+#include "starbytes/Syntax/Lexer.h"
 #include <fstream>
 #include <iostream>
 #include <llvm/Support/InitLLVM.h>
+#include <llvm/Support/FormatVariadic.h>
 
-using namespace starbytes;
+//using namespace starbytes;
 
 int main(int argc,char * argv[]){
+    
     llvm::InitLLVM init(argc,argv);
 
-    DiagnosticBufferedLogger errStream;
-    Syntax::Lexer lex(errStream);
-    std::vector<Syntax::Tok> tokenStream;
+    starbytes::DiagnosticBufferedLogger errStream;
+    starbytes::Syntax::Lexer lex(errStream);
+    std::vector<starbytes::Syntax::Tok> tokenStream;
     std::ifstream in("./build/tests/test.stb");
     if(in.is_open()){
         lex.tokenizeFromIStream(in,tokenStream);
@@ -20,13 +23,10 @@ int main(int argc,char * argv[]){
         return 1;
     }
     in.close();
-    // if(!errStream.empty()) {
-    //     errStream.logAll();
-    //     return 1;
-    // }
-    // else {
         for(auto & t : tokenStream){
-            std::cout << llvm::formatv("{0}",t).str() << std::endl;
+            std::cout << t.content << std::endl;
+//            std::cout << llvm::formatv("{0}",t).str() << std::endl;
+//
         };
     // }
 

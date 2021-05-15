@@ -1,0 +1,10 @@
+add_starbytes_lib(
+    LIB_NAME 
+    "starbytesGen"
+    SOURCE_FILES 
+    "Gen.cpp"
+    HEADER_FILES
+    "Gen.h"
+    LIBS_TO_LINK
+    "starbytesAST" 
+)

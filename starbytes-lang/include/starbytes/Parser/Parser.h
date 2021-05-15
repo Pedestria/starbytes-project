@@ -7,8 +7,9 @@
 #define STARBYTES_PARSER_PARSER_H
 namespace starbytes {
     struct ModuleParseContext {
-        std::unique_ptr<Semantics::SymbolTable> table;
+        std::string name;
         Semantics::STableContext sTableContext;
+        static ModuleParseContext Create(std::string name);
     };
 
     class Parser {

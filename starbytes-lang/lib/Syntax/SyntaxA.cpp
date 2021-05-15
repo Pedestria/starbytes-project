@@ -1,5 +1,6 @@
 #include "starbytes/Syntax/SyntaxA.h"
 #include "starbytes/AST/AST.h"
+#include <iostream>
 
 namespace starbytes::Syntax {
 

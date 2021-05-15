@@ -4,6 +4,7 @@
 #include <llvm/ADT/StringRef.h>
 #include "starbytes/Base/Diagnostic.h"
 #include <llvm/Support/FormatVariadic.h>
+#include <llvm/Support/FormatVariadicDetails.h>
 #include <llvm/Support/Compiler.h>
 #include "Toks.def"
 
@@ -24,6 +25,8 @@ struct Tok {
     typedef enum : int {
         Identifier,
         Number,
+        BooleanLiteral,
+        StringLiteral,
         Keyword,
         TemplateBegin,
         OpenParen,
@@ -68,7 +71,8 @@ public:
 };
 
 };
-}
+};
+
 
 namespace llvm {
     template<>
