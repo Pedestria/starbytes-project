@@ -6,12 +6,15 @@
 #define STARBYTES_AST_ASTDUMPER_H
 
 namespace starbytes {
-    class ASTDumper {
+    class ASTDumper : public ASTStreamConsumer {
         std::ostream & os;
         ASTDumper(std::ostream & os);
     public:
         static std::unique_ptr<ASTDumper> CreateStdoutASTDumper();
         static std::unique_ptr<ASTDumper> CreateOfstreamASTDumper(std::ofstream & out);
+        bool acceptsSymbolTableContext();
+        void consumeDecl(ASTDecl *stmt);
+        void consumeStmt(ASTStmt *stmt);
         void printStmt(ASTStmt *stmt,unsigned level);
         void printDecl(ASTDecl *decl,unsigned level);
     };

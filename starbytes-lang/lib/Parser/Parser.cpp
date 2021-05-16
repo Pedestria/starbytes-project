@@ -8,7 +8,8 @@ namespace starbytes {
         return {name,std::make_unique<Semantics::SymbolTable>()};
     };
 
-    Parser::Parser():
+    Parser::Parser(ASTStreamConsumer & astConsumer):
+    astConsumer(astConsumer),
     diagnosticsEngine(std::make_unique<DiagnosticBufferedLogger>()),
     lexer(std::make_unique<Syntax::Lexer>(*diagnosticsEngine)),
     syntaxA(std::make_unique<Syntax::SyntaxA>()),
@@ -20,15 +21,17 @@ namespace starbytes {
     void Parser::parseFromStream(std::istream &in,ModuleParseContext &moduleParseContext){
         lexer->tokenizeFromIStream(in,tokenStream);
         syntaxA->setTokenStream(tokenStream);
+        if(astConsumer.acceptsSymbolTableContext()){
+            astConsumer.consumeSTableContext(&moduleParseContext.sTableContext);
+        };
         ASTStmt *stmt;
-        auto consumer = ASTDumper::CreateStdoutASTDumper();
         while((stmt = syntaxA->nextStatement()) != nullptr){
             if(stmt->type & DECL){
-                consumer->printDecl((ASTDecl *)stmt,0);
+                astConsumer.consumeDecl((ASTDecl *)stmt);
                 // semanticA->addSTableEntryForDecl((ASTDecl *)stmt,moduleParseContext.table.get());
             }
             else {
-                consumer->printStmt(stmt,0);
+                astConsumer.consumeStmt(stmt);
             };
             // semanticA->checkSymbolsForStmt(stmt,moduleParseContext.sTableContext);
         };

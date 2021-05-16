@@ -11,16 +11,19 @@ namespace starbytes {
     struct ModuleGenContext {
         std::string name;
         std::ostream & out;
-        Semantics::STableContext & sTableContext;
-        static ModuleGenContext Create(llvm::StringRef strRef,std::ostream & out,Semantics::STableContext & tableContext);
-        ModuleGenContext(llvm::StringRef strRef,std::ostream & out,Semantics::STableContext & tableContext);
+        Semantics::STableContext * tableContext;
+        static ModuleGenContext Create(llvm::StringRef strRef,std::ostream & out);
+        ModuleGenContext(llvm::StringRef strRef,std::ostream & out);
     };
 
     class Gen : public ASTStreamConsumer {
         ModuleGenContext *genContext;
-        DiagnosticBufferedLogger & errStream;
+        DiagnosticBufferedLogger * errStream;
+        friend class Parser;
     public:
-        Gen(DiagnosticBufferedLogger & errStream);
+        void finish();
+        void consumeSTableContext(Semantics::STableContext *table);
+        bool acceptsSymbolTableContext();
         void setContext(ModuleGenContext *context);
         void consumeDecl(ASTDecl *stmt);
         void consumeStmt(ASTStmt *stmt);

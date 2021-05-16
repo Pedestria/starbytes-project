@@ -1,6 +1,8 @@
 #include <string>
 #include <cstdint>
 #include <vector>
+#include <llvm/ADT/SmallString.h>
+#include <llvm/ADT/StringMap.h>
 
 #ifndef STARBYTES_RTCODE_H
 #define STARBYTES_RTCODE_H
@@ -18,6 +20,8 @@ typedef unsigned char RTCode;
 #define CODE_RTINTOBJCREATE 0x05
 #define CODE_RTIVKFUNC 0x06
 #define CODE_RTIVKOBJFUNC 0x07
+#define CODE_RTBLOCK_BEGIN 0x08
+#define CODE_RTBLOCK_END 0x09
 
 
 #define RTCODE_STREAM_OBJECT(object) \
@@ -69,12 +73,25 @@ struct RTInternalObject {
         String,
         Boolean
     } Type;
+
+    struct IntegerParams {
+        int value;
+    };
+    struct StringParams {
+        const char *data;
+        unsigned length;
+    };
+
     Type type;
     void *data;
 };
 
 
 struct RTObject {
+    bool isInternal;
+
+    llvm::StringMap<RTObject *> props;
+
     RTClassTemplate *classOf;
 };
 

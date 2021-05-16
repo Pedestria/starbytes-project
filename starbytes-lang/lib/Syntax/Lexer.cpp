@@ -5,7 +5,7 @@
 namespace starbytes::Syntax {
 
 bool isKeyword(llvm::StringRef str){
-    return (str == "decl") || (str == "immutable") || (str == "import");
+    return (str == KW_DECL) || (str == KW_IMUT) || (str == KW_IMPORT);
 };
 
 bool isNumber(llvm::StringRef str){

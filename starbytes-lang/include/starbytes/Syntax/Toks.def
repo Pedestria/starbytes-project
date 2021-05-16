@@ -35,6 +35,7 @@
 
 #define TOK_OP_MAX_LENGTH 2
 
+#define KW_IMPORT KW("import")
 #define KW_CLASS KW("class")
 #define KW_DECL KW("decl")
 #define KW_FUNC KW("func")

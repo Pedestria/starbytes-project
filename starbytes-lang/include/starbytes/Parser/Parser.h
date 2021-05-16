@@ -2,6 +2,7 @@
 #include "starbytes/Syntax/Lexer.h"
 #include "starbytes/Syntax/SyntaxA.h"
 #include "SemanticA.h"
+#include "starbytes/AST/AST.h"
 
 #ifndef STARBYTES_PARSER_PARSER_H
 #define STARBYTES_PARSER_PARSER_H
@@ -18,9 +19,10 @@ namespace starbytes {
         std::unique_ptr<Syntax::SyntaxA> syntaxA;
         std::vector<Syntax::Tok> tokenStream;
         std::unique_ptr<SemanticA> semanticA;
+        ASTStreamConsumer & astConsumer;
     public:
         void parseFromStream(std::istream & in,ModuleParseContext &moduleParseContext);
-        Parser();
+        Parser(ASTStreamConsumer & astConsumer);
     };
 };
 

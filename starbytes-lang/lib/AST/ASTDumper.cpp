@@ -24,6 +24,10 @@ namespace starbytes {
     ASTDumper::ASTDumper(std::ostream & os):os(os){
 
     };
+    
+    bool ASTDumper::acceptsSymbolTableContext(){
+        return false;
+    };
 
     std::unique_ptr<ASTDumper> ASTDumper::CreateStdoutASTDumper(){
         return std::unique_ptr<ASTDumper>(new ASTDumper(std::cout));
@@ -61,5 +65,13 @@ namespace starbytes {
 
     void ASTDumper::printStmt(ASTStmt *stmt,unsigned level){
 
+    };
+
+    void ASTDumper::consumeDecl(ASTDecl *stmt){
+        printDecl(stmt, 0);
+    };
+
+    void ASTDumper::consumeStmt(ASTStmt *stmt){
+        printStmt(stmt,0);
     };
 }
