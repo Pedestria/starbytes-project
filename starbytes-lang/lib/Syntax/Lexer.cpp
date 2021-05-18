@@ -4,6 +4,10 @@
 
 namespace starbytes::Syntax {
 
+bool isBooleanLiteral(llvm::StringRef str){
+    return (str == TOK_TRUE) || (str == TOK_FALSE);
+};
+
 bool isKeyword(llvm::StringRef str){
     return (str == KW_DECL) || (str == KW_IMUT) || (str == KW_IMPORT);
 };
@@ -62,6 +66,8 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
             tok.type = Tok::Keyword;
         else if(isNumber(tok.content))
             tok.type = Tok::Number;
+        else if(isBooleanLiteral(tok.content))
+            tok.type = Tok::BooleanLiteral;
         else
             tok.type = type;
         tok.srcPos = pos;
@@ -77,6 +83,15 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
             case '\n': {
                 ++pos.line;
                 pos.endCol = 0;
+                break;
+            }
+            case '"': {
+                PUSH_CHAR(c);
+                while((c = getChar()) != '"'){
+                    PUSH_CHAR(c);
+                };
+                PUSH_CHAR(c);
+                pushToken(Tok::StringLiteral);
                 break;
             }
             case '@' : {

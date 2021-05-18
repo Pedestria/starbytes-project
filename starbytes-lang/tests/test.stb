@@ -1,5 +1,7 @@
 
-decl myvar:String
+decl myvar = "Hello World"
+
+print(myvar)
 
 
 

@@ -8,7 +8,12 @@ namespace Runtime::stdlib {
 
 
 void print(RTObject *object);
-void print(RTInternalObject *object);
+
+/// Array Object
+
+void array_push(RTInternalObject::ArrayParams &array,RTObject *any);
+RTObject *array_index(RTInternalObject::ArrayParams &array,unsigned idx);
+unsigned array_length(RTInternalObject::ArrayParams &array);
 
 
 /// Integer Object
@@ -19,11 +24,11 @@ int int_sub(RTInternalObject::IntegerParams & lhs,RTInternalObject::IntegerParam
     
 /// String Object
 
-const char *string_concat();
+void string_concat(RTInternalObject::StringParams & in1,RTInternalObject::StringParams & in2,std::string & out);
 
-const char *string_concat();
+void string_substring(RTInternalObject::StringParams & in,unsigned idx,unsigned len,std::string & out);
 
-
+unsigned string_length(RTInternalObject::StringParams & in);
 
 };
 };

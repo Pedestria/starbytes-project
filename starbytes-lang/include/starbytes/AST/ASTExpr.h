@@ -32,11 +32,14 @@ namespace starbytes {
         ASTExpr * rightExpr = nullptr;
         /// @}
 
-        /// ArrayExpr
-        std::vector<ASTExpr *> arrayExpr;
+        /// ArrayExpr and InvokeExpr Props
+        std::vector<ASTExpr *> exprArrayData;
 
         /// DictExpr Props
         llvm::DenseMap<ASTExpr *,ASTExpr *> dictExpr;
+        
+        /// Literal Props
+        std::string literalValue;
         static bool classof(ASTStmt *stmt);
     };
 

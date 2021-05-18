@@ -57,6 +57,14 @@ namespace starbytes {
                 auto & id = varSpec->declProps[0];
                 // std::cout << "VarSpec ID Access Available" << std::endl;
                 formatIdentifier(os,(ASTIdentifier *)id.dataPtr,n_level + 1);
+                
+                if(varSpec->declProps.size() > 1){
+                    os << _pad << "   initialVal:" << std::flush;
+                    auto expr = varSpec->declProps[1].dataPtr;
+                    
+                    printStmt(expr,n_level + 1);
+                }
+                
                 os << _pad << "}" << std::endl;
             };
             os << pad << "  ]\n" << pad << "}" << std::endl;
@@ -64,7 +72,34 @@ namespace starbytes {
     };
 
     void ASTDumper::printStmt(ASTStmt *stmt,unsigned level){
-
+        ASTExpr *expr = (ASTExpr *)stmt;
+        auto pad = padString(level);
+        if (expr->type == ID_EXPR){
+            os << "IdentifierExpr: {\n" << pad <<
+                  "   id:" << std::flush;
+            formatIdentifier(os,expr->id,level + 1);
+            os << pad << "}" << std::endl;
+        }
+        else if(expr->type == IVKE_EXPR){
+            os << "InvokeExpr: {\n" << pad <<
+                  "   id:" << std::flush;
+            formatIdentifier(os,expr->id,level + 1);
+            os << pad << "   args:[\n" << std::flush;
+            auto n_level = level + 1;
+            auto _pad = padString(n_level);
+            for(auto arg : expr->exprArrayData){
+                os << _pad << std::flush;
+                printStmt(arg,n_level);
+            };
+            os << pad << "   ]\n" << pad << "}" << std::endl;
+        }/// Literals
+        else if(expr->type == STR_LITERAL){
+            os << "StrLiteral: {\n" << pad <<
+                  "   value:" << expr->literalValue << "\n" << pad <<
+                  "}\n" << std::endl;
+            
+        };
+        
     };
 
     void ASTDumper::consumeDecl(ASTDecl *stmt){

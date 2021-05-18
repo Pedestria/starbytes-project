@@ -42,3 +42,6 @@
 #define KW_RETURN KW("return")
 #define KW_IMUT KW("immutable")
 #define KW_DEFTYPE KW("deftype")
+
+#define TOK_TRUE TOK("true")
+#define TOK_FALSE TOK("false")

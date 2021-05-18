@@ -79,14 +79,16 @@ namespace starbytes::Syntax {
         }
         else {
             ASTExpr *node = new ASTExpr();
+            expr = node;
             if(tokRef.type == Tok::OpenBracket){
+                node->type = ARRAY_EXPR;
                 tokRef = nextTok();
                 auto firstExpr = evalExpr(nextTok());
                 if(!firstExpr){
                     /// ERROR
                 };
 
-                node->arrayExpr.push_back(firstExpr);
+                node->exprArrayData.push_back(firstExpr);
                 /// Last Tok from recent ast expr evaluation.
                 while(tokRef.type == Tok::Comma){
                     tokRef = nextTok();
@@ -94,7 +96,7 @@ namespace starbytes::Syntax {
                     if(!expr){
                         /// ERROR
                     };
-                    node->arrayExpr.push_back(expr);
+                    node->exprArrayData.push_back(expr);
                 };
 
                 if(tokRef.type != Tok::CloseBracket){
@@ -109,7 +111,29 @@ namespace starbytes::Syntax {
                 };
                 node->id = id;
                 tokRef = nextTok();
+                
+                if(tokRef.type != Tok::OpenParen){
+                    node->type = ID_EXPR;
+                    return expr;
+                };
+                
+                node->type = IVKE_EXPR;
+                
+                tokRef = nextTok();
+                
+                while(tokRef.type != Tok::CloseParen){
+                    ASTExpr *expr = evalExpr(tokRef);
+                    node->exprArrayData.push_back(expr);
+                };
+                
+                tokRef = nextTok();
             }
+            else if(tokRef.type == Tok::StringLiteral){
+                node->type = STR_LITERAL;
+                
+                node->literalValue = tokRef.content.substr(1,tokRef.content.size()-2);
+                tokRef = nextTok();
+            };
         };
 
         return expr;
@@ -201,8 +225,8 @@ namespace starbytes::Syntax {
                     /// Var Initializer
 
                     ASTDecl::Property prop2;
-                    prop.type = ASTDecl::Property::Expr;
-                    prop.dataPtr = val;
+                    prop2.type = ASTDecl::Property::Expr;
+                    prop2.dataPtr = val;
                     varDeclarator->declProps.push_back(prop2);
                 }
                 else {
@@ -238,11 +262,14 @@ namespace starbytes::Syntax {
 
     ASTStmt * SyntaxA::nextStatement(){
         TokRef t = token_stream[privTokIndex];
+        if(t.type == Tok::EndOfFile){
+            return nullptr;
+        };
         ASTStmt *stm = evalDecl(t);
         if(!stm) {
             auto expr = evalExpr(t);
             if(!expr)
-                return stm;
+                return nullptr;
             else 
                 return expr;
         }

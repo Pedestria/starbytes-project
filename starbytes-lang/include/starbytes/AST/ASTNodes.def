@@ -30,5 +30,6 @@ typedef int ASTNodeType;
 #define ARRAY_EXPR (0x300000 | EXPR)
 #define DICT_EXPR (0x400000 | EXPR)
 #define IVKE_EXPR (0x500000 | EXPR)
+#define ID_EXPR (0x600000 | EXPR)
 
 #endif

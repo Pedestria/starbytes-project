@@ -18,15 +18,21 @@ typedef unsigned char RTCode;
 #define CODE_RTCLASS 0x03
 #define CODE_RTOBJCREATE 0x04
 #define CODE_RTINTOBJCREATE 0x05
+#define CODE_RTEXPR 0x06
 #define CODE_RTIVKFUNC 0x06
 #define CODE_RTIVKOBJFUNC 0x07
 #define CODE_RTBLOCK_BEGIN 0x08
 #define CODE_RTBLOCK_END 0x09
+#define CODE_RTVAR_REF 0x0A
+
+#define RTINTOBJ_STR 0x1
+#define RTINTOBJ_ARRAY 0x2
+#define RTINITOBJ_DICTIONARY 0x3
 
 
 #define RTCODE_STREAM_OBJECT(object) \
-std::ostream & operator <<(std::ostream & os,object & obj); \
-std::istream & operator >>(std::istream & is,object & obj);
+std::ostream & operator <<(std::ostream & os,object * obj); \
+std::istream & operator >>(std::istream & is,object * obj);
 
 struct RTCodeContext {
     
@@ -66,34 +72,34 @@ struct RTClassTemplate {
 
 RTCODE_STREAM_OBJECT(RTClassTemplate)
 
-struct RTInternalObject {
-    typedef enum : int {
-        Integer,
-        Float,
-        String,
-        Boolean
-    } Type;
+struct RTObject {
+    bool isInternal = false;
 
+    llvm::StringMap<RTObject *> props = {};
+
+    RTClassTemplate *classOf = nullptr;
+};
+
+RTCODE_STREAM_OBJECT(RTObject);
+
+struct RTInternalObject : public RTObject {
     struct IntegerParams {
         int value;
     };
     struct StringParams {
-        const char *data;
-        unsigned length;
+        std::string str;
     };
-
-    Type type;
-    void *data;
+    struct ArrayParams {
+        std::vector<RTObject *> data;
+    };
+public:
+    unsigned type = 0;
+    void *data = nullptr;
+    
 };
 
+RTCODE_STREAM_OBJECT(RTInternalObject);
 
-struct RTObject {
-    bool isInternal;
-
-    llvm::StringMap<RTObject *> props;
-
-    RTClassTemplate *classOf;
-};
 
 
 

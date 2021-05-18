@@ -30,7 +30,7 @@ namespace starbytes {
                 astConsumer.consumeDecl((ASTDecl *)stmt);
                 // semanticA->addSTableEntryForDecl((ASTDecl *)stmt,moduleParseContext.table.get());
             }
-            else {
+            else if(stmt->type & EXPR) {
                 astConsumer.consumeStmt(stmt);
             };
             // semanticA->checkSymbolsForStmt(stmt,moduleParseContext.sTableContext);
