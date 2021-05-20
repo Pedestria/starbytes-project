@@ -1,7 +1,19 @@
 
+
 decl myvar = "Hello World"
 
-print(myvar)
+func myFunc (param:String){
+
+print(param)
+
+}
+
+myFunc(myvar)
+
+
+
+
+
 
 
 

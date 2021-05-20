@@ -4,8 +4,8 @@
 #include "starbytes/Parser/SemanticA.h"
 #include "starbytes/AST/AST.h"
 
-#ifndef STARBYTES_GEN_H
-#define STARBYTES_GEN_H
+#ifndef STARBYTES_GEN_GEN_H
+#define STARBYTES_GEN_GEN_H
 
 namespace starbytes {
     struct ModuleGenContext {

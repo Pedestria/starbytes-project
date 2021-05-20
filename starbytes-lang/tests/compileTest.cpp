@@ -21,10 +21,15 @@ int main(int argc,char *argv[]){
     std::ifstream in("./build/tests/test.stb");
     auto parseContext = starbytes::ModuleParseContext::Create(module_name);
     parser.parseFromStream(in,parseContext);
-
-
-    gen.finish();
-    out.close();
-
-    return 0;
+    if(!parser.finish()){
+        out.close();
+        llvm::sys::fs::remove("./test.stbxm");
+        return 1;
+    }
+    else {
+        gen.finish();
+        out.close();
+        return 0;
+    };
+  
 };

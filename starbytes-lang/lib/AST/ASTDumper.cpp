@@ -58,6 +58,12 @@ namespace starbytes {
                 // std::cout << "VarSpec ID Access Available" << std::endl;
                 formatIdentifier(os,(ASTIdentifier *)id.dataPtr,n_level + 1);
                 
+                if(varSpec->declType){
+                    os << _pad << "   type:" << std::flush;
+                    auto type_id = varSpec->declType;
+                    std::cout << llvm::formatv("\"{0}\"",*type_id).str() << std::endl;
+                }
+                
                 if(varSpec->declProps.size() > 1){
                     os << _pad << "   initialVal:" << std::flush;
                     auto expr = varSpec->declProps[1].dataPtr;
@@ -95,7 +101,7 @@ namespace starbytes {
         }/// Literals
         else if(expr->type == STR_LITERAL){
             os << "StrLiteral: {\n" << pad <<
-                  "   value:" << expr->literalValue << "\n" << pad <<
+                  "   value:\"" << expr->literalValue << "\"\n" << pad <<
                   "}\n" << std::endl;
             
         };

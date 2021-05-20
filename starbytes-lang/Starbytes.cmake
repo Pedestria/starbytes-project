@@ -18,7 +18,7 @@ macro(add_header_macro HEADER FOUND)
 endmacro()
 
 function(add_starbytes_lib)
-    set(OPTIONS STATIC)
+    set(OPTIONS STATIC SHARED)
     set(oneValue LIB_NAME)
     set(MULTI SOURCE_FILES HEADER_FILES LIBS_TO_LINK)
     include(CMakeParseArguments)
@@ -49,6 +49,7 @@ function(add_starbytes_lib)
         target_link_libraries(${STARBYTES_LIB_LIB_NAME} PRIVATE ${STARBYTES_LIB_LIBS_TO_LINK} ${llvm_libs})
     endif()
 
+    install(TARGETS ${STARBYTES_LIB_LIB_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}/lib")
 
 endfunction()
 
@@ -103,6 +104,7 @@ function(add_starbytes_tool)
     message(${STARBYTES_TOOL_NAME} "Dependencies - " ${STARBYTES_TOOL_DEPENDENCIES})
     target_link_libraries(${STARBYTES_TOOL_NAME} PRIVATE ${STARBYTES_TOOL_DEPENDENCIES} ${llvm_libs})
 
+    install(TARGETS ${STARBYTES_TOOL_NAME}  RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
 endfunction()
 
 function(add_starbytes_test)

@@ -23,14 +23,23 @@ int main(int argc,char *argv[]){
     auto parseContext = starbytes::ModuleParseContext::Create(module_name);
     parser.parseFromStream(in,parseContext);
 
-    gen.finish();
-    out.close();
-    
-    std::ifstream module_in("./test.stbxm",std::ios::in | std::ios::binary);
-    auto interp = starbytes::Runtime::Interp::Create();
-    if(module_in.is_open()){
-        interp->exec(module_in);
+    if(!parser.finish()){
+        out.close();
+        llvm::sys::fs::remove("./test.stbxm");
+        return 1;
     }
+    else {
+        gen.finish();
+        out.close();
+        
+        std::ifstream module_in("./test.stbxm",std::ios::in | std::ios::binary);
+        auto interp = starbytes::Runtime::Interp::Create();
+        if(module_in.is_open()){
+            interp->exec(module_in);
+        }
+        
+        return 0;
+    };
     
-    return 0;
+    
 };

@@ -22,6 +22,7 @@ namespace starbytes {
         ASTStreamConsumer & astConsumer;
     public:
         void parseFromStream(std::istream & in,ModuleParseContext &moduleParseContext);
+        bool finish();
         Parser(ASTStreamConsumer & astConsumer);
     };
 };

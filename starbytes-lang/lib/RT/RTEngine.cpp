@@ -5,6 +5,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringMap.h>
 #include <iostream>
+#include <iomanip>
 
 namespace starbytes::Runtime {
 
@@ -22,7 +23,7 @@ public:
         if(found == all_var_objects.end()){
             llvm::StringMap<RTObject *> vars;
             vars.insert(std::make_pair(name,obj));
-            all_var_objects.insert(std::make_pair(currentScope,vars));
+            all_var_objects.insert(std::make_pair(currentScope,std::move(vars)));
         }
         else {
             auto & var_map = found->second;
@@ -44,19 +45,19 @@ public:
     RTObject *referenceVariable(llvm::StringRef scope,llvm::StringRef name){
         auto found = all_var_objects.find(scope);
         if(found == all_var_objects.end()){
-            // std::cout << "Var NOT Found AND Scope NOT Found:" << name.data() << std::endl;
+//             std::cout << "Var NOT Found AND Scope NOT Found:" << name.data() << std::endl;
             return nullptr;
         }
         else {
             auto & var_map = found->getValue();
             for(auto & var : var_map){
                 if(var.getKey() == name){
-                    // std::cout << "Found Var:" << name.data() << std::endl;
+//                     std::cout << "Found Var:" << name.data() << std::endl;
                     return var.getValue();
                     break;
                 };
             };
-            // std::cout << "Var NOT FOUND:" << name.data() << std::endl;
+//             std::cout << "Var NOT FOUND:" << name.data() << std::endl;
             return nullptr;
         }
     };
@@ -127,14 +128,11 @@ void InterpImpl::exec(std::istream & in){
             RTVar var;
             in >> &var;
             llvm::StringRef var_name (var.id.value,var.id.len);
+//            std::cout << std::boolalpha << var.hasInitValue << std::endl;
+//            std::cout << var_name.data() << std::endl;
             if(var.hasInitValue){
                 auto val = evalExpr(in);
-                if(val->isInternal){
-                    allocator->allocVariable(var_name,val);
-                }
-                else {
-                    allocator->allocVariable(var_name,val);
-                }
+                allocator->allocVariable(var_name,val);
             }
         }
         else if(code == CODE_RTIVKFUNC){

@@ -7,6 +7,7 @@ add_starbytes_lib(
     HEADER_FILES
     "Lexer.h" 
     "SyntaxA.h"
+    "Toks.def"
     LIBS_TO_LINK
     "starbytesBase"
 )

@@ -14,5 +14,8 @@ int main(int argc,char * argv[]){
     std::ifstream in("./build/tests/test.stb");
     auto parseContext = starbytes::ModuleParseContext::Create("Test");
     parser.parseFromStream(in,parseContext);
+    if(!parser.finish()){
+        return 1;
+    };
     return 0;
 };

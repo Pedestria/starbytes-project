@@ -10,6 +10,9 @@ namespace starbytes {
     class ASTDecl;
     class ASTExpr;
     class ASTIdentifier;
+    class ASTType;
+    struct ASTBlockStmt;
+    struct ASTScope;
 
     struct Comment;
 
@@ -23,8 +26,10 @@ namespace starbytes {
             std::vector<Comment *> commentBuffer;
             Comment * evalComment(const Tok & first_token); 
             ASTIdentifier *buildIdentifier(const Tok & first_token,bool typeScope);
-            ASTExpr * evalExpr(const Tok & first_token);
-            ASTDecl * evalDecl(const Tok & first_token);
+            ASTType * buildTypeFromTokenStream(const Tok & first_token,ASTStmt *parentStmt);
+            ASTBlockStmt *evalBlockStmt(const Tok &first_token,ASTScope *parentScope);
+            ASTExpr * evalExpr(const Tok & first_token,ASTScope *parentScope);
+            ASTDecl * evalDecl(const Tok & first_token,ASTScope *parentScope);
             ASTStmt * previousNode = nullptr;
         public:
             void setTokenStream(llvm::ArrayRef<Tok> toks);

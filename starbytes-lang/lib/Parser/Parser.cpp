@@ -26,16 +26,31 @@ namespace starbytes {
         };
         ASTStmt *stmt;
         while((stmt = syntaxA->nextStatement()) != nullptr){
-            if(stmt->type & DECL){
-                astConsumer.consumeDecl((ASTDecl *)stmt);
-                // semanticA->addSTableEntryForDecl((ASTDecl *)stmt,moduleParseContext.table.get());
+            auto check  = semanticA->checkSymbolsForStmt(stmt,moduleParseContext.sTableContext);
+            if(check){
+                if(stmt->type & DECL){
+                    semanticA->addSTableEntryForDecl((ASTDecl *)stmt,moduleParseContext.sTableContext.main.get());
+                    astConsumer.consumeDecl((ASTDecl *)stmt);
+                     
+                }
+                else if(stmt->type & EXPR) {
+                    astConsumer.consumeStmt(stmt);
+                };
             }
-            else if(stmt->type & EXPR) {
-                astConsumer.consumeStmt(stmt);
-            };
-            // semanticA->checkSymbolsForStmt(stmt,moduleParseContext.sTableContext);
+            else {
+//                break;
+            }
+        
         };
         tokenStream.clear();
        
+    };
+
+    bool Parser::finish(){
+        auto rc = !diagnosticsEngine->hasErrored();
+        if(!diagnosticsEngine->empty()){
+            diagnosticsEngine->logAll();
+        };
+        return rc;
     };
 };

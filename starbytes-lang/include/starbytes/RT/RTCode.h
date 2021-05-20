@@ -4,8 +4,8 @@
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringMap.h>
 
-#ifndef STARBYTES_RTCODE_H
-#define STARBYTES_RTCODE_H
+#ifndef STARBYTES_RT_RTCODE_H
+#define STARBYTES_RT_RTCODE_H
 namespace starbytes {
 namespace Runtime {
 

@@ -4,6 +4,8 @@ add_starbytes_lib(
     SOURCE_FILES 
     "ASTDecl.cpp"
     "ASTDumper.cpp"
+    "ASTStmt.cpp"
+    "Type.cpp"
     HEADER_FILES 
     "ASTStmt.h"
     "ASTDecl.h"
@@ -11,4 +13,5 @@ add_starbytes_lib(
     "ASTDumper.h"
     "ASTNodes.def"
     "AST.h"
+    "Type.h"
 )

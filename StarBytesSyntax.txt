@@ -5,7 +5,7 @@
 import lib
 //Function Declaration
 [Usable]
-func hello (hello:String) >> String {
+func hello (hello:String) String {
 	//Return Declaration
 	return "Greetings!"
 }
@@ -24,11 +24,11 @@ class MyClass <T> extends SuperClass utilizes SomeInterface {
 	new(loose hello:string,otherString:String)
 	//ConstantFieldDeclaration
 	immutable otherField = 5;
-	lazy otherMethod() >> String{
+	lazy otherMethod() -> String{
 
 	}
 	//Method Declaration (Pretty Much same as Function Declaration)
-	myMethod(myNum:Int)>>Boolean{
+	myMethod(myNum:Int) -> Boolean {
 		release otherField;
 		//If Declaration
 		if(1 > 3) {
@@ -65,7 +65,7 @@ struct SomeStruct {
 //Variable Declaration
 decl hello:String = "Hello"
 //Constant Declaration
-decl immutable myConst = 4
+decl imut myConst = 4
 //Template Declaration
 template Usable {
 
@@ -108,14 +108,14 @@ lazy func method(){
 
 }
 
-//Error Throwing Function!
+//Error Throwing Function
 
-func someFunc () >! String {
+func someFunc (){
 
 }
 
-//Optional Return Function!
-func otherFunc () >? String {
+//Optional Return Function
+func otherFunc () String? {
 
 }
 

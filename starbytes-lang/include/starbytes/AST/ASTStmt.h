@@ -24,9 +24,17 @@ namespace starbytes {
     };
 
     struct ASTScope {
-        ASTScope *parentScope;
-        std::vector<ASTScope *> childScopes;
+        std::string name;
+        typedef enum : int {
+            Neutral,
+            Namespace,
+            Function,
+        } ScopeType;
+        ScopeType type;
+        ASTScope *parentScope = nullptr;
     };
+
+    extern ASTScope * ASTScopeGlobal;
 
     class ASTStmt {
     public:

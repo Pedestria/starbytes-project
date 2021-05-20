@@ -11,11 +11,18 @@ namespace starbytes {
 //            std::cout << "[" << std::asctime(gmtime(&t)) << "]" << std::flush;
         };
     
+        void _print_rt_internal_obj(RTInternalObject *object);
+    
         void _print_rt_obj(RTObject *object){
-            
+            if(object->isInternal){
+                _print_rt_internal_obj((RTInternalObject *)object);
+            }
+            else {
+                
+            };
         };
     
-        void _print_rt_interal_obj(RTInternalObject *object){
+        void _print_rt_internal_obj(RTInternalObject *object){
             switch (object->type) {
 //                case RTInternalObject::Integer : {
 //                    break;
@@ -32,6 +39,13 @@ namespace starbytes {
                     break;
                 }
                 case RTINTOBJ_ARRAY :{
+                    RTInternalObject::ArrayParams *params = (RTInternalObject::ArrayParams *)object->data;
+                    std::cout << "[" << std::flush;
+                    for(auto & obj : params->data){
+                        _print_rt_obj(obj);
+                        std::cout << "," << std::flush;
+                    };
+                    std::cout << "]" << std::flush;
                     break;
                 }
                 case RTINITOBJ_DICTIONARY: {
@@ -44,12 +58,7 @@ namespace starbytes {
         /// Print Function
         void print(RTObject *object){
 //            _print_timestamp();
-            if(object->isInternal){
-                _print_rt_interal_obj((RTInternalObject *)object);
-            }
-            else {
-                _print_rt_obj(object);
-            };
+            _print_rt_obj(object);
             std::cout << std::endl;
         };
        

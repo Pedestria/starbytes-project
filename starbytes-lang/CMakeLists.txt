@@ -6,7 +6,7 @@ cmake_policy(SET CMP0079 NEW)
 option(USE_VCPKG "Use vcpkg manager!" OFF)
 option(USE_VCPKG_AS_TOOLCHAIN "Use vcpkg cmake toolchain file" OFF)
 set(ENABLE_STARBYTES_LSP TRUE)
-set(STARBYTES_PROJECT_VERSION "v0.0.4")
+set(STARBYTES_PROJECT_VERSION "v0.2")
 message("Starbytes Project Version " ${STARBYTES_PROJECT_VERSION})
 
 macro(find_vcpkg USE_TOOLCHAIN)
@@ -97,10 +97,13 @@ if(SYS_WAIT_H_FOUND)
 	add_header_macro("sys_wait" ${SYS_WAIT_H_FOUND})
 endif()
 
+install(DIRECTORY "include/" DESTINATION "${CMAKE_INSTALL_PREFIX}/include" FILES_MATCHING PATTERN "*.h")
+
 add_subdirectory("lib")
 add_subdirectory("driver")
 add_subdirectory("extra")
 add_subdirectory("tests")
+add_subdirectory("embed")
 # TODO : Get Starbytes Compilation to work!
 # add_subdirectory("starbytes-modules")
 

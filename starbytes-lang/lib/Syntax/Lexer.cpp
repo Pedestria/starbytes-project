@@ -9,7 +9,7 @@ bool isBooleanLiteral(llvm::StringRef str){
 };
 
 bool isKeyword(llvm::StringRef str){
-    return (str == KW_DECL) || (str == KW_IMUT) || (str == KW_IMPORT);
+    return (str == KW_DECL) || (str == KW_IMUT) || (str == KW_IMPORT) || (str == KW_FUNC);
 };
 
 bool isNumber(llvm::StringRef str){
@@ -23,7 +23,19 @@ bool isNumber(llvm::StringRef str){
 };
 
 struct LexicalError : public Diagnostic {
-    void format(llvm::raw_ostream &os);
+    
+    bool isError(){
+        return true;
+    };
+    
+    std::string message;
+    SourcePos pos;
+    void format(llvm::raw_ostream &os){
+        os << llvm::raw_ostream::RED << "LexerError: " << llvm::raw_ostream::RESET << message << "\n";
+    };
+    LexicalError(const llvm::formatv_object_base & formatted_message,SourcePos pos):message(formatted_message.str()),pos(pos){
+        
+    };
 };
 
 

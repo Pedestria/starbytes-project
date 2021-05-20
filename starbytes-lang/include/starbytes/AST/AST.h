@@ -1,9 +1,10 @@
 #include "ASTDecl.h"
 #include "ASTExpr.h"
+#include "Type.h"
 #include <iostream>
 
-#ifndef STARBYTES_AST_H
-#define STARBYTES_AST_H
+#ifndef STARBYTES_AST_AST_H
+#define STARBYTES_AST_AST_H
 
 namespace starbytes {
     // struct ASTStreamDescriptor {

@@ -1,7 +1,7 @@
 #include <fstream>
 
-#ifndef STARBYTES_RTENGINE_H
-#define STARBYTES_RTENGINE_H
+#ifndef STARBYTES_RT_RTENGINE_H
+#define STARBYTES_RT_RTENGINE_H
 
 namespace starbytes {
 namespace Runtime {
