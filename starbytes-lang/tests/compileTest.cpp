@@ -1,13 +1,14 @@
 #include "starbytes/Parser/Parser.h"
 #include "starbytes/Gen/Gen.h"
 #include <llvm/Support/InitLLVM.h>
-#include <llvm/Support/CommandLine.h>
+#include <llvm/Support/FileSystem.h>
+// #include <llvm/Support/CommandLine.h>
 
 int main(int argc,char *argv[]){
     llvm::InitLLVM init(argc,argv);
     
 
-    llvm::cl::ParseCommandLineOptions(argc,argv);
+    // llvm::cl::ParseCommandLineOptions(argc,argv);
 
     std::string module_name = "Test";
 

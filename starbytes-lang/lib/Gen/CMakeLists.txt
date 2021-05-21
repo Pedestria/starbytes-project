@@ -11,4 +11,5 @@ add_starbytes_lib(
     "InterfaceGen.h"
     LIBS_TO_LINK
     "starbytesAST" 
+    "starbytesRT"
 )

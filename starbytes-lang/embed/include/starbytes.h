@@ -26,8 +26,9 @@ class STARBYTES_EMBEDDED_API_EXPORT ByteBuffer {
     Byte *data;
     size_t size;
 public:
-    std::filebuf filebuf();
+    // std::filebuf filebuf();
     Byte *pointer();
+    size_t & length();
 
     void copy(Byte **data_dest,size_t bytes_n);
 

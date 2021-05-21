@@ -1,4 +1,5 @@
 #include <fstream>
+#include <memory>
 
 #ifndef STARBYTES_RT_RTENGINE_H
 #define STARBYTES_RT_RTENGINE_H

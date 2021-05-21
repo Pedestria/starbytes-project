@@ -22,16 +22,20 @@ namespace starbytes {
 
     };
 
+    size_t & ByteBuffer::length(){
+        return size;
+    };
+
     ByteBuffer::ByteBuffer(ByteBuffer & other){
        other.copy(&data,other.size);
        size = other.size;  
     };
 
-    std::filebuf ByteBuffer::filebuf(){
-        std::filebuf buffer;
-        buffer.pubsetbuf((char *)data,size);
-        return buffer;
-    };
+    // std::filebuf ByteBuffer::filebuf(){
+    //     std::filebuf buffer;
+    //     buffer.pubsetbuf((char *)data,size);
+    //     return buffer;
+    // };
 
     ByteBuffer::~ByteBuffer(){
         delete data;
@@ -46,10 +50,9 @@ namespace starbytes {
 
         for(unsigned i = 0;i < params.srcCount;i++){
             auto & src = params.srcs[i];
-            std::filebuf buffer = src.srcCode.filebuf();
+            auto & buffer = src.srcCode;
             std::ifstream in;
-            in.setf(std::ios::in);
-            in.set_rdbuf(&buffer);
+            in.rdbuf()->pubsetbuf((char *)buffer.pointer(),buffer.length());
             parser.parseFromStream(in,ctxt);
         };
 
