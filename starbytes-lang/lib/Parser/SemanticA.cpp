@@ -55,7 +55,7 @@ struct SemanticADiagnostic : public Diagnostic {
         };
         
         if(entryCount > 1){
-            ctxt.errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Multi symbol definitions with same name (`{0}`) in a scope.",symbolName),ctxt.currentStmt);
+            ctxt.errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Multiple symbol defined with the same name (`{0}`) in a scope.",symbolName),ctxt.currentStmt);
             return nullptr;
         }
         else if(entryCount == 0){

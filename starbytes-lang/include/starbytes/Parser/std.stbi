@@ -6,7 +6,7 @@ deftype  __compiler_internal__ Double
 
 
 class String {
-    add(otherString:selftype) >> selftype
-    length() >> Integer 
+    add(otherString:selftype) String
+    length() String
     clear()
 };
