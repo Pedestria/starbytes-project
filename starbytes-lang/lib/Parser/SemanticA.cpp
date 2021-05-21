@@ -73,6 +73,10 @@ struct SemanticADiagnostic : public Diagnostic {
     void SemanticA::start(){
         std::cout << "Starting SemanticA" << std::endl;
     };
+
+    void SemanticA::finish(){
+        
+    };
      /// Only registers new symbols associated with top level decls!
     void SemanticA::addSTableEntryForDecl(ASTDecl *decl,Semantics::SymbolTable *tablePtr){
        
@@ -135,6 +139,16 @@ ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
                     return nullptr;
                 };
                 
+                break;
+            }
+            case ARRAY_EXPR : {
+                /// TODO: Check for specific Array Type
+                type = ARRAY_TYPE;
+                break;
+            }
+                /// Literals
+            case BOOL_LITERAL : {
+                type = BOOL_TYPE;
                 break;
             }
             case STR_LITERAL:

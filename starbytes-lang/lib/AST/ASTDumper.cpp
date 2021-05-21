@@ -4,7 +4,7 @@
 
 namespace starbytes {
 
-    std::string padString(unsigned amount){
+    inline std::string padString(unsigned amount){
         std::string str = "";
         while (amount > 0) {
             str += "    ";
@@ -13,7 +13,7 @@ namespace starbytes {
         return std::move(str);
     };
 
-    void formatIdentifier(std::ostream & os,ASTIdentifier *id,unsigned level){
+    inline void formatIdentifier(std::ostream & os,ASTIdentifier *id,unsigned level){
         auto pad = padString(level);
         os << 
         "Identifier : {\n" <<
@@ -31,6 +31,25 @@ namespace starbytes {
 
     std::unique_ptr<ASTDumper> ASTDumper::CreateStdoutASTDumper(){
         return std::unique_ptr<ASTDumper>(new ASTDumper(std::cout));
+    };
+
+    void ASTDumper::printBlockStmt(ASTBlockStmt *blockStmt,unsigned level){
+        auto pad = padString(level);
+        auto __pad = padString(level + 1);
+        os <<
+        "BlockStmt : {\n" << pad <<
+        "   nodes:[\n" << __pad << std::flush;
+        
+        for(auto & n : blockStmt->body){
+            if(n->type & DECL){
+                printDecl((ASTDecl *)n,level + 1);
+            }
+            else {
+                printStmt(n,level + 1);
+            };
+        };
+        
+        os << pad << "  ]\n" << pad << "}\n";
     };
 
     void ASTDumper::printDecl(ASTDecl *decl,unsigned level){
@@ -61,7 +80,7 @@ namespace starbytes {
                 if(varSpec->declType){
                     os << _pad << "   type:" << std::flush;
                     auto type_id = varSpec->declType;
-                    std::cout << llvm::formatv("\"{0}\"",*type_id).str() << std::endl;
+                    os << llvm::formatv("\"{0}\"",*type_id).str() << std::endl;
                 }
                 
                 if(varSpec->declProps.size() > 1){
@@ -74,6 +93,30 @@ namespace starbytes {
                 os << _pad << "}" << std::endl;
             };
             os << pad << "  ]\n" << pad << "}" << std::endl;
+        }
+        else if(decl->type == FUNC_DECL){
+            os <<
+            "FuncDecl : {\n" << pad <<
+            "   id:" << std::flush;
+            ASTFuncDecl *func_node = (ASTFuncDecl *)decl;
+            auto & id = func_node->declProps[0];
+            formatIdentifier(os,(ASTIdentifier *)id.dataPtr,level + 1);
+            os << pad <<"   params:[\n" << std::flush;
+            auto __level = level + 1;
+            auto _pad = padString(__level);
+            for(auto & param : func_node->params){
+                os << _pad <<
+                "ParamDecl : {\n" << _pad <<
+                "   id:" << std::flush;
+                formatIdentifier(os,param.getFirst(),__level + 1);
+                os << _pad <<
+                "   type:" << llvm::formatv("\"{0}\"",*param.getSecond()).str() << std::endl;
+                os << _pad << "}" << std::endl;
+            };
+            os << pad << "  ]\n";
+            os << pad << "   body:" << std::flush;
+            printBlockStmt(func_node->blockStmt,__level);
+            os << pad << "}" << std::endl;
         };
     };
 
@@ -98,12 +141,32 @@ namespace starbytes {
                 printStmt(arg,n_level);
             };
             os << pad << "   ]\n" << pad << "}" << std::endl;
-        }/// Literals
+        }
+        else if(expr->type == ARRAY_EXPR){
+            os <<
+            "ArrayExpr : {\n" << pad <<
+            "   objects:[\n" << std::flush;
+            auto n_level = level + 1;
+            auto _pad = padString(n_level);
+            for(auto arg : expr->exprArrayData){
+                os << _pad << std::flush;
+                printStmt(arg,n_level);
+            };
+            os << pad << "   ]\n" << pad << "}" << std::endl;
+        }
+        /// Literals
         else if(expr->type == STR_LITERAL){
+            ASTLiteralExpr *literal_expr = (ASTLiteralExpr *)expr;
             os << "StrLiteral: {\n" << pad <<
-                  "   value:\"" << expr->literalValue << "\"\n" << pad <<
+                  "   value:\"" << literal_expr->strValue.getValue() << "\"\n" << pad <<
                   "}\n" << std::endl;
             
+        }
+        else if(expr->type == BOOL_LITERAL){
+            ASTLiteralExpr *bool_expr = (ASTLiteralExpr *)expr;
+            os << "BoolLiteral: {\n" << pad <<
+                  "   value:\"" << std::boolalpha << bool_expr->boolValue.getValue() << std::noboolalpha << "\"\n" << pad <<
+                  "}\n" << std::endl;
         };
         
     };

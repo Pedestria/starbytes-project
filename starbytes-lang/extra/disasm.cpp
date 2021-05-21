@@ -17,7 +17,7 @@ class Disassembler {
     };
     void _disasm_expr(RTCode & code){
         if(code == CODE_RTINTOBJCREATE){
-            out << "CODE_RTINITOBJCREATE " << std::flush;
+            out << "CODE_RTINTOBJCREATE " << std::flush;
             RTCode obj_type;
             in.read((char *)&obj_type,sizeof(RTCode));
             if(obj_type == RTINTOBJ_STR){
@@ -25,6 +25,22 @@ class Disassembler {
                 in >> &strVal;
                 out << "RTINTOBJ_STR " << strVal.len << " ";
                 out.write(strVal.value,sizeof(char) * strVal.len);
+            }
+            else if(obj_type == RTINTOBJ_BOOL){
+                bool val;
+                in.read((char *)&val,sizeof(bool));
+                out << "RTINTOBJ_BOOL " << std::boolalpha << val << std::noboolalpha;
+            }
+            else if(obj_type == RTINTOBJ_ARRAY){
+                unsigned size;
+                in.read((char *)&size,sizeof(size));
+                out << "RTINTOBJ_ARRAY " << size << " ";
+                for(unsigned i = 0;i < size;i++){
+                    RTCode code;
+                    in.read((char *)&code,sizeof(RTCode));
+                    _disasm_expr(code);
+                    out << " ";
+                };
             }
         }
         else if(code == CODE_RTOBJCREATE){
@@ -51,6 +67,7 @@ public:
                 out << "CODE_RTVAR " << var.id.len << " ";
                 out.write(var.id.value,sizeof(char) * var.id.len);
                 in.read((char *)&code,sizeof(RTCode));
+                out << " ";
                 _disasm_expr(code);
             }
             else if(code == CODE_RTIVKFUNC){

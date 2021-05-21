@@ -37,11 +37,15 @@ namespace starbytes {
 
         /// DictExpr Props
         llvm::DenseMap<ASTExpr *,ASTExpr *> dictExpr;
-        
-        /// Literal Props
-        std::string literalValue;
         static bool classof(ASTStmt *stmt);
     };
+
+class ASTLiteralExpr : public ASTExpr {
+public:
+    llvm::Optional<std::string> strValue;
+    
+    llvm::Optional<bool> boolValue;
+};
 
 };
 

@@ -1,3 +1,5 @@
 set(TARGET_NAME "starbytes-${STARBYTES_PROJECT_VERSION}")
 add_library(${TARGET_NAME} SHARED "starbytes.cpp" "include/starbytes.h")
 set_target_properties(${TARGET_NAME} PROPERTIES PREFIX "")
+target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/include")
+target_link_libraries(${TARGET_NAME} PRIVATE ${STARBYTES_ALL_LIBS})

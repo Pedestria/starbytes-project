@@ -27,7 +27,8 @@ typedef unsigned char RTCode;
 
 #define RTINTOBJ_STR 0x1
 #define RTINTOBJ_ARRAY 0x2
-#define RTINITOBJ_DICTIONARY 0x3
+#define RTINTOBJ_DICTIONARY 0x3
+#define RTINTOBJ_BOOL 0x4
 
 
 #define RTCODE_STREAM_OBJECT(object) \
@@ -91,6 +92,9 @@ struct RTInternalObject : public RTObject {
     };
     struct ArrayParams {
         std::vector<RTObject *> data;
+    };
+    struct BoolParams {
+        bool value;
     };
 public:
     unsigned type = 0;

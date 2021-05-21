@@ -119,6 +119,11 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 };
                 break;
             }
+            case ',' : {
+                PUSH_CHAR(c);
+                pushToken(Tok::Comma);
+                break;
+            }
             case '(' : {
                 PUSH_CHAR(c);
                 pushToken(Tok::OpenParen);

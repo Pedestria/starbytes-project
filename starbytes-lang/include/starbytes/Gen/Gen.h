@@ -3,12 +3,15 @@
 #include <llvm/ADT/StringRef.h>
 #include "starbytes/Parser/SemanticA.h"
 #include "starbytes/AST/AST.h"
+#include "starbytes/RT/RTCode.h"
+#include "CodeGen.h"
 
 #ifndef STARBYTES_GEN_GEN_H
 #define STARBYTES_GEN_GEN_H
 
 namespace starbytes {
     struct ModuleGenContext {
+        bool generateInterface = false;
         std::string name;
         std::ostream & out;
         Semantics::STableContext * tableContext;
@@ -20,9 +23,13 @@ namespace starbytes {
         ModuleGenContext *genContext;
         DiagnosticBufferedLogger * errStream;
         friend class Parser;
+        
+        std::unique_ptr<CodeGen> codeGen;
+        
     public:
+        Gen();
         void finish();
-        void consumeSTableContext(Semantics::STableContext *table);
+        void consumeSTableContext(Semantics::STableContext *ctxt);
         bool acceptsSymbolTableContext();
         void setContext(ModuleGenContext *context);
         void consumeDecl(ASTDecl *stmt);

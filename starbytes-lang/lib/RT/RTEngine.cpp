@@ -101,9 +101,9 @@ RTObject *InterpImpl::evalExpr(std::istream & in){
         }
         case CODE_RTINTOBJCREATE :
         {
-            RTInternalObject object;
-            in >> &object;
-            return new RTInternalObject(std::move(object));
+            auto object = new RTInternalObject();
+            in >> object;
+            return object;
             break;
         }
         case CODE_RTVAR_REF : {
@@ -149,6 +149,7 @@ void InterpImpl::exec(std::istream & in){
         
         in.read((char *)&code,sizeof(RTCode));
     };
+    allocator->clearScope();
 };
 
 std::shared_ptr<Interp> Interp::Create(){

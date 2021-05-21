@@ -29,9 +29,9 @@ namespace starbytes {
         /// NOTE: Know the format of your Decls!
         std::vector<Property> declProps;
         
-        llvm::Optional<ASTBlockStmt> blockStmt;
+        ASTBlockStmt * blockStmt = nullptr;
         
-        ASTType *declType;
+        ASTType *declType = nullptr;
         
         static bool classof(ASTStmt *stmt);
     };

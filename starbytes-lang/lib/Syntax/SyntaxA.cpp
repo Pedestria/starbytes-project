@@ -87,12 +87,31 @@ namespace starbytes::Syntax {
             };
         }
         else {
-            ASTExpr *node = new ASTExpr();
-            expr = node;
-            if(tokRef.type == Tok::OpenBracket){
+            ASTLiteralExpr *literal_expr = nullptr;
+            /// Literals
+            if(tokRef.type == Tok::StringLiteral){
+                literal_expr = new ASTLiteralExpr();
+                literal_expr->type = STR_LITERAL;
+                
+                literal_expr->strValue = tokRef.content.substr(1,tokRef.content.size()-2);
+                expr = literal_expr;
+                tokRef = nextTok();
+            }
+            else if(tokRef.type == Tok::BooleanLiteral){
+                literal_expr = new ASTLiteralExpr();
+                
+                literal_expr->type = BOOL_LITERAL;
+                literal_expr->boolValue = (tokRef.content == TOK_TRUE? true : tokRef.content == TOK_FALSE? false : NULL);
+                
+                expr = literal_expr;
+                tokRef = nextTok();
+            }
+            else if(tokRef.type == Tok::OpenBracket){
+                ASTExpr *node = new ASTExpr();
+                expr = node;
                 node->type = ARRAY_EXPR;
                 tokRef = nextTok();
-                auto firstExpr = evalExpr(nextTok(),parentScope);
+                auto firstExpr = evalExpr(tokRef,parentScope);
                 if(!firstExpr){
                     /// ERROR
                 };
@@ -114,6 +133,9 @@ namespace starbytes::Syntax {
                 tokRef = nextTok();
             }
             else if(tokRef.type == Tok::Identifier){
+                ASTExpr *node = new ASTExpr();
+                expr = node;
+                
                 ASTIdentifier *id;
                 if(!(id = buildIdentifier(tokRef,false))){
                     /// ERROR
@@ -137,16 +159,44 @@ namespace starbytes::Syntax {
                 
                 tokRef = nextTok();
             }
-            else if(tokRef.type == Tok::StringLiteral){
-                node->type = STR_LITERAL;
-                
-                node->literalValue = tokRef.content.substr(1,tokRef.content.size()-2);
-                tokRef = nextTok();
-            };
+            
         };
 
         return expr;
     };
+
+ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentScope) {
+    Tok & tok0 = const_cast<Tok &>(first_token);
+    
+    if(tok0.type == Tok::OpenBrace){
+        ASTBlockStmt *block = new ASTBlockStmt();
+        tok0 = nextTok();
+        while(tok0.type != Tok::CloseBrace){
+//            std::cout << "No!!" << std::endl;
+            ASTStmt *fin;
+            ASTStmt *stm = evalDecl(tok0,parentScope);
+            if(!stm) {
+                auto expr = evalExpr(tok0,parentScope);
+                if(!expr)
+                    /// Throw Error
+                    return nullptr;
+                else
+                    fin = expr;
+            }
+            else
+                fin = stm;
+            
+            block->body.push_back(fin);
+            /// Upon Evalation of any node...
+            /// The next token after the final node block becomes the currentToken
+            tok0 = token_stream[privTokIndex];
+        };
+        return block;
+    }
+    else {
+        return nullptr;
+    };
+};
 
     ASTDecl *SyntaxA::evalDecl(TokRef first_token,ASTScope *parentScope){
         if(first_token.type == Tok::Keyword){
@@ -239,14 +289,16 @@ namespace starbytes::Syntax {
                     prop2.type = ASTDecl::Property::Expr;
                     prop2.dataPtr = val;
                     varDeclarator->declProps.push_back(prop2);
+                    
+                   
                 }
                 else {
                     /// Throw Error.
                 };
             }
             else if(first_token.content == KW_FUNC){
-                node = new ASTFuncDecl();
-                ASTFuncDecl *func_node = (ASTFuncDecl *)node;
+                ASTFuncDecl *func_node = new ASTFuncDecl();
+                node = func_node;
                 node->type = FUNC_DECL;
                 Tok & tok0 = const_cast<Tok &>(nextTok());
                 ASTDecl::Property id;
@@ -263,6 +315,8 @@ namespace starbytes::Syntax {
                     tok0 = nextTok();
                     
                     while(tok0.type != Tok::CloseParen){
+//                        std::cout << "No!!" << std::endl;
+//                        std::cout << "no 1" << std::endl;
                         ASTIdentifier *param_id = buildIdentifier(tok0,false);
                         if(!param_id){
                             /// Throw Error.
@@ -271,6 +325,18 @@ namespace starbytes::Syntax {
                         };
                         
                         tok0 = nextTok();
+                        
+//                        std::cout << "no 2" << std::endl;
+                        
+                        if(tok0.type != Tok::Colon){
+                            /// Throw Error.
+                            return nullptr;
+                            break;
+                        };
+                        
+                        tok0 = nextTok();
+                        
+//                        std::cout << "no 3" << std::endl;
                         
                         ASTType *param_type = buildTypeFromTokenStream(tok0,func_node);
                         if(!param_type){
@@ -282,12 +348,25 @@ namespace starbytes::Syntax {
                         
                         tok0 = nextTok();
                         
-                        if(tok0.type != Tok::Comma || tok0.type != Tok::CloseParen){
-                            /// Throw Error.
+//                        std::cout << "no 4" << std::endl;
+//
+//                        std::cout << llvm::formatv("{0}",tok0).str();
+                        
+                        if(tok0.type == Tok::Comma){
+                            tok0 = nextTok();
+                        }
+                        else if(tok0.type == Tok::CloseParen){
+                            break;
+                        }
+                        else {
                             return nullptr;
                             break;
                         };
+//                        std::cout << "no 5" << std::endl;
+                        
                     };
+                    
+//                    std::cout << "Go 1" << std::endl;
                     
                     tok0 = nextTok();
                     
@@ -300,33 +379,23 @@ namespace starbytes::Syntax {
                         func_node->declType = type;
                     };
                     
-                    tok0 = tok0.type == Tok::Identifier? nextTok() : tok0;
+//                    std::cout << "Go 2" << std::endl;
+                    
+                    tok0 = (tok0.type == Tok::Identifier? nextTok() : tok0);
+                    
+//                    std::cout << "Go 3" << std::endl;
                     
                     if(tok0.type == Tok::OpenBrace){
-                        ASTBlockStmt block;
+                       
                         
                         ASTScope *function_scope = new ASTScope({((ASTIdentifier *)func_node->declProps[0].dataPtr)->val,ASTScope::Function,parentScope});
                         
-                        tok0 = aheadTok();
-                        while(tok0.type != Tok::CloseBrace){
-                            ASTStmt *fin;
-                            ASTStmt *stm = evalDecl(tok0,function_scope);
-                            if(!stm) {
-                                auto expr = evalExpr(tok0,function_scope);
-                                if(!expr)
-                                    /// Throw Error
-                                    return nullptr;
-                                else
-                                    fin = expr;
-                            }
-                            else
-                                fin = stm;
-                            
-                            block.body.push_back(fin);
-                            /// Upon Evalation of any node...
-                            /// The next token after the final node scope is becomes the currentToken
-                            tok0 = token_stream[privTokIndex];
+                        auto block = evalBlockStmt(tok0,function_scope);
+                        if(!block){
+                            return nullptr;
                         };
+                        func_node->blockStmt = block;
+                        gotoNextTok();
                     }
                     else {
                         /// Throw Error
@@ -335,10 +404,9 @@ namespace starbytes::Syntax {
                     
                 }
                 else {
+                    return nullptr;
                     /// Throw Error
                 };
-                
-                ASTBlockStmt block;
                 
             }
             else if(first_token.content == KW_CLASS){

@@ -30,9 +30,11 @@ namespace starbytes {
 //                case RTInternalObject::Float : {
 //                    break;
 //                }
-//                case RTInternalObject::Boolean : {
-//                    break;
-//                }
+                case RTINTOBJ_BOOL : {
+                    RTInternalObject::BoolParams *params = (RTInternalObject::BoolParams *)object->data;
+                    std::cout << "\x1b[35m" << std::boolalpha << params->value << std::noboolalpha << "\x1b[0m" << std::flush;
+                    break;
+                }
                 case RTINTOBJ_STR : {
                     RTInternalObject::StringParams *params = (RTInternalObject::StringParams *)object->data;
                     std::cout << "\x1b[32m" << "\"" << params->str << "\"" << "\x1b[0m" << std::flush;
@@ -41,14 +43,21 @@ namespace starbytes {
                 case RTINTOBJ_ARRAY :{
                     RTInternalObject::ArrayParams *params = (RTInternalObject::ArrayParams *)object->data;
                     std::cout << "[" << std::flush;
-                    for(auto & obj : params->data){
+                    auto obj_it = params->data.begin();
+                    while(obj_it != params->data.end()){
+                        
+                        if(obj_it != params->data.begin()){
+                            std::cout << "," << std::flush;
+                        };
+                        
+                        auto &obj = *obj_it;
                         _print_rt_obj(obj);
-                        std::cout << "," << std::flush;
+                        ++obj_it;
                     };
                     std::cout << "]" << std::flush;
                     break;
                 }
-                case RTINITOBJ_DICTIONARY: {
+                case RTINTOBJ_DICTIONARY: {
                     break;
                 }
             }

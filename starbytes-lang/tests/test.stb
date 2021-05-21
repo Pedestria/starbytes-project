@@ -1,14 +1,8 @@
 
 
-decl myvar = "Hello World"
+decl myvar = ["hello","world"]
 
-func myFunc (param:String){
-
-print(param)
-
-}
-
-myFunc(myvar)
+print(myvar)
 
 
 

@@ -9,6 +9,7 @@ namespace starbytes {
     class ASTDumper : public ASTStreamConsumer {
         std::ostream & os;
         ASTDumper(std::ostream & os);
+        void printBlockStmt(ASTBlockStmt *blockStmt,unsigned level);
     public:
         static std::unique_ptr<ASTDumper> CreateStdoutASTDumper();
         static std::unique_ptr<ASTDumper> CreateOfstreamASTDumper(std::ofstream & out);

@@ -3,8 +3,12 @@ add_starbytes_lib(
     "starbytesGen"
     SOURCE_FILES 
     "Gen.cpp"
+    "CodeGen.cpp"
+    "InterfaceGen.cpp"
     HEADER_FILES
     "Gen.h"
+    "CodeGen.h"
+    "InterfaceGen.h"
     LIBS_TO_LINK
     "starbytesAST" 
 )

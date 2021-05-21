@@ -49,11 +49,36 @@ namespace Runtime {
             RTInternalObject::StringParams *params = new RTInternalObject::StringParams();
             params->str = std::string(strVal.value,strVal.len);
             obj->data = params;
-        };
+        }
+        else if(code2 == RTINTOBJ_BOOL){
+            obj->type = RTINTOBJ_BOOL;
+            RTInternalObject::BoolParams *params = new RTInternalObject::BoolParams();
+            is.read((char *)&params->value,sizeof(bool));
+            obj->data = params;
+        }
+        else if(code2 == RTINTOBJ_ARRAY){
+            obj->type = RTINTOBJ_ARRAY;
+            auto *params = new RTInternalObject::ArrayParams();
+            unsigned array_len;
+            is.read((char *)&array_len,sizeof(array_len));
+            for(unsigned i = 0;i < array_len;i++){
+                RTCode code3;
+                is.read((char *)&code3,sizeof(RTCode));
+                if(code3 == CODE_RTINTOBJCREATE){
+                    RTInternalObject *child_object = new RTInternalObject();
+                    is >> child_object;
+                    params->data.push_back(child_object);
+                }
+//                else if(code3 == CODE_RTOBJCREATE){
+//
+//                };
+            };
+            obj->data = params;
+        }
         return is;
     };
 
-    void __output_rt_interal_obj(std::ostream & os,RTInternalObject *obj){
+    void __output_rt_internal_obj(std::ostream & os,RTInternalObject *obj){
         RTCode code2;
         if(obj->type == RTINTOBJ_STR){
             code2 = RTINTOBJ_STR;
@@ -64,6 +89,29 @@ namespace Runtime {
             strVal.value = params->str.data();
             os << &strVal;
         }
+        else if(obj->type == RTINTOBJ_BOOL){
+            code2 = RTINTOBJ_BOOL;
+            os.write((char *)&code2,sizeof(RTCode));
+            RTInternalObject::BoolParams *params = (RTInternalObject::BoolParams *)obj->data;
+            os.write((char *)&params->value,sizeof(bool));
+        }
+        else if(obj->type == RTINTOBJ_ARRAY){
+            code2 = RTINTOBJ_ARRAY;
+            os.write((char *)&code2,sizeof(RTCode));
+            RTInternalObject::ArrayParams *params = (RTInternalObject::ArrayParams *)obj->data;
+            /// Write Num of elements in array as a unsigned int;
+            unsigned array_len = params->data.size();
+            os.write((char *)&array_len,sizeof(array_len));
+            for(auto & obj : params->data){
+                if(obj->isInternal){
+                    RTInternalObject *__obj = (RTInternalObject *)obj;
+                    os << __obj;
+                }
+//                else {
+//                    os << obj;
+//                };
+            };
+        };
     };
 
     RTCODE_STREAM_OBJECT_OUT_IMPL(RTInternalObject) {
@@ -72,7 +120,7 @@ namespace Runtime {
         std::cout << "TYPE:" << obj->type << std::endl;
         
         /// WTF!!
-        __output_rt_interal_obj(os,obj);
+        __output_rt_internal_obj(os,obj);
         return os;
     };
 
