@@ -11,6 +11,7 @@ namespace starbytes {
 
     /// Defines a new scope!!!
     struct ASTBlockStmt {
+        ASTScope *parentScope;
         std::vector<ASTStmt *> body;
     };
 

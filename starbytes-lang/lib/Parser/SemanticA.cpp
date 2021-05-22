@@ -1,6 +1,7 @@
 #include "starbytes/Parser/SemanticA.h"
 #include "starbytes/AST/AST.h"
 #include "starbytes/AST/ASTNodes.def"
+#include <llvm-10/llvm/ADT/DenseMap.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <iostream>
 namespace starbytes {
@@ -198,18 +199,51 @@ ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
                     }
                     /// print() -> Void
                     type = VOID_TYPE;
-                };
-                
-                /// 1. Eval Args.
-                
-                for(auto & arg : expr_to_eval->exprArrayData){
-                    ASTType *_id = evalExprForTypeId(arg,symbolTableContext);
-                    if(!_id){
+
+                    for(auto & arg : expr_to_eval->exprArrayData){
+                        ASTType *_id = evalExprForTypeId(arg,symbolTableContext);
+                        if(!_id){
+                            return nullptr;
+                            break;
+                        };
+                        
+                    };
+                }
+                else {
+                    /// Check to see if function was previously defined.
+                    SemanticsContext ctxt {errStream,expr_to_eval};
+                    auto entry = symbolTableContext.findEntry(func_name,ctxt);
+                    if(!entry){
                         return nullptr;
                         break;
                     };
-                    
+                    /// Check to see if symbol is function.
+                    if(entry->type != Semantics::SymbolTable::Entry::Function){
+                        return nullptr;
+                        break;
+                    };
+
+                    ASTFuncDecl *func_decl = (ASTFuncDecl *)entry->node;
+                    auto param_decls_it = func_decl->params.begin();
+                    for(unsigned i = 0;i < expr_to_eval->exprArrayData.size();i++){
+                        auto expr_arg = expr_to_eval->exprArrayData[i];
+                        ASTType *_id = evalExprForTypeId(expr_arg,symbolTableContext);
+                        if(!_id){
+                            return nullptr;
+                            break;
+                        };
+                        auto & param_decl_pair = *param_decls_it;
+                        if(!param_decls_it->getSecond()->match(_id,[&](const llvm::formatv_object_base & message){
+                            errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("{0}\nContext: Param in invocation of func `{1}`",message,func_id->val),expr_arg);
+                        })){
+                            return nullptr;
+                            break;
+                        };
+                        ++param_decls_it;
+                    };
                 };
+                
+                /// 1. Eval Args.
                 
                 
                 break;
@@ -236,7 +270,7 @@ ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
         });
     };
 
-    bool SemanticA::checkSymbolsForStmt(ASTStmt *stmt,Semantics::STableContext & symbolTableContext){
+    bool SemanticA::checkSymbolsForStmtInScope(ASTStmt *stmt,Semantics::STableContext & symbolTableContext,ASTScope *scope,llvm::Optional<Semantics::SymbolTable> tempSTable){
         if(stmt->type & DECL){
             ASTDecl *decl = (ASTDecl *)stmt;
             switch (decl->type) {
@@ -282,7 +316,29 @@ ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
                         return false;
                     };
 
+                    for(auto & paramPair : funcNode->params){
+                        if(!typeExists(paramPair.getSecond(),symbolTableContext)){
+                            return false;
+                            break;
+                        };
+                    };
 
+
+                    ASTType *return_type_implied;
+                    if((return_type_implied = evalBlockStmtForASTType(funcNode->blockStmt,symbolTableContext,&funcNode->params)) == nullptr){
+                        return false;
+                    };
+                    /// Implied Type and Declared Type Comparison.
+                    if(funcNode->declType){
+                        if(!funcNode->declType->match(return_type_implied,[&](const llvm::formatv_object_base & message){
+                            errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("{0}\nContext: Declared return type of func `{1}` does not match implied return type.",func_id->val),funcNode);
+                        }))
+                            return false;
+                    }
+                    /// Assume return type is implied type.
+                    else {
+                        funcNode->declType = return_type_implied;
+                    };
 
                     break;
                 }
@@ -308,7 +364,8 @@ ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
                         return false;
                     };
                     
-                    if(return_type->nameMatches(VOID_TYPE)){
+                    if(!return_type->nameMatches(VOID_TYPE)){
+                        errStream << new SemanticADiagnostic(SemanticADiagnostic::Warning,llvm::formatv("Func `{0}` returns a value but is not being stored by a variable.",expr->id->val),expr);
                         /// Warn of non void object not being stored after creation from function invocation.
                     };
                     
@@ -319,6 +376,21 @@ ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
             }
         };
         return true;
+    };
+
+    bool SemanticA::checkSymbolsForStmt(ASTStmt *stmt, Semantics::STableContext &symbolTableContext){
+        return checkSymbolsForStmtInScope(stmt,symbolTableContext,ASTScopeGlobal);
+    };
+
+    ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,Semantics::STableContext & symbolTableContext,llvm::DenseMap<ASTIdentifier *,ASTType *> *args,bool inFuncContext){
+        ASTType *returnType = VOID_TYPE;
+
+        #define RETURN if(stmt->parentScope->type == ASTScope::Function)\
+            return returnType;\
+            else\
+            return nullptr;
+        
+
     };
 };
 

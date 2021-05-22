@@ -170,6 +170,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
     
     if(tok0.type == Tok::OpenBrace){
         ASTBlockStmt *block = new ASTBlockStmt();
+        block->parentScope = parentScope;
         tok0 = nextTok();
         while(tok0.type != Tok::CloseBrace){
 //            std::cout << "No!!" << std::endl;

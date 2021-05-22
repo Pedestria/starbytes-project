@@ -3,6 +3,8 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/ADT/Optional.h>
+#include <llvm/ADT/ArrayRef.h>
 
 #ifndef STARBYTES_PARSER_SEMANTICA_H
 #define STARBYTES_PARSER_SEMANTICA_H
@@ -54,6 +56,13 @@ namespace starbytes {
         bool typeExists(ASTType *type,Semantics::STableContext & symbolTableContext);
         ASTType *evalExprForTypeId(ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext);
         bool typeMatches(ASTType *type,ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext);
+        /**
+            @param args Used with BlockStmts embedded in Function Decls.
+        */
+        ASTType * evalBlockStmtForASTType(ASTBlockStmt *block,Semantics::STableContext & symbolTableContext,
+        llvm::DenseMap<ASTIdentifier *,ASTType *> * args = nullptr,bool inFuncContext = false);
+        bool checkSymbolsForStmtInScope(ASTStmt *stmt,Semantics::STableContext & symbolTableContext,
+        ASTScope *scope,llvm::Optional<Semantics::SymbolTable> tempSTable = {});
     public:
         void start();
         void finish();
