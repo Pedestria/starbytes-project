@@ -1,5 +1,6 @@
 #include "starbytes/Parser/SemanticA.h"
 #include "starbytes/AST/AST.h"
+#include "starbytes/AST/ASTNodes.def"
 #include <llvm/Support/FormatVariadic.h>
 #include <iostream>
 namespace starbytes {
@@ -33,6 +34,15 @@ struct SemanticADiagnostic : public Diagnostic {
 
     void Semantics::SymbolTable::addSymbolInScope(Entry *entry, ASTScope *scope){
         body.insert(std::make_pair(entry,scope));
+    };
+
+    bool Semantics::SymbolTable::symbolExists(llvm::StringRef symbolName,ASTScope *scope){
+        for(auto & sym : body){
+            if(sym.getFirst()->name == symbolName && sym.getSecond() == scope){
+                return true;
+            };
+        };
+        return false;
     };
     
     Semantics::SymbolTable::Entry * Semantics::STableContext::findEntry(llvm::StringRef symbolName,SemanticsContext & ctxt,ASTScope *scope){
@@ -91,15 +101,24 @@ struct SemanticADiagnostic : public Diagnostic {
                 tablePtr->addSymbolInScope(e,decl->scope);
                 break;
             }
-            case CLS_DECL : {
-                ASTIdentifier *cls_id = (ASTIdentifier *)decl->declProps[0].dataPtr;
+            case FUNC_DECL : {
+                auto *func_id = (ASTIdentifier *)decl->declProps[0].dataPtr;
                 Semantics::SymbolTable::Entry *e = new Semantics::SymbolTable::Entry();
-                e->name = cls_id->val;
+                e->name = func_id->val;
                 e->node = decl;
-                e->type = Semantics::SymbolTable::Entry::Class;
+                e->type = Semantics::SymbolTable::Entry::Function;
                 tablePtr->addSymbolInScope(e,decl->scope);
                 break;
             }
+            // case CLS_DECL : {
+            //     ASTIdentifier *cls_id = (ASTIdentifier *)decl->declProps[0].dataPtr;
+            //     Semantics::SymbolTable::Entry *e = new Semantics::SymbolTable::Entry();
+            //     e->name = cls_id->val;
+            //     e->node = decl;
+            //     e->type = Semantics::SymbolTable::Entry::Class;
+            //     tablePtr->addSymbolInScope(e,decl->scope);
+            //     break;
+            // }
         default : {
             break;
         }
@@ -115,6 +134,16 @@ ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
 
 #define PRINT_FUNC_ID "print"
 
+    bool SemanticA::typeExists(ASTType *type,Semantics::STableContext &contextTableContxt){
+        /// First check to see if ASTType is one of the built in types
+        if(type == VOID_TYPE || type == STRING_TYPE || type == ARRAY_TYPE || 
+        type == DICTIONARY_TYPE || type == BOOL_TYPE || type == INT_TYPE){
+            return true;
+        }
+        else {
+            return false;
+        }
+    };
 
     ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableContext & symbolTableContext){
         ASTType *type;
@@ -211,10 +240,11 @@ ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
         if(stmt->type & DECL){
             ASTDecl *decl = (ASTDecl *)stmt;
             switch (decl->type) {
+                /// VarDecl
                 case VAR_DECL : {
                     for(auto & spec : decl->declProps){
                         ASTDecl *specDecl = (ASTDecl *)spec.dataPtr;
-                        if(specDecl->declType){
+                        if(specDecl->declType && specDecl->declProps.size() > 1){
                             // Type Decl and Type Implication Comparsion
                             if(!typeMatches(specDecl->declType,(ASTExpr *)specDecl->declProps[1].dataPtr,symbolTableContext))
                             {
@@ -236,6 +266,24 @@ ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
                             specDecl->declType = type;
                         };
                     };
+                    break;
+                }
+                /// FuncDecl
+                case FUNC_DECL : {
+                    auto funcNode = (ASTFuncDecl *)decl;
+                    
+                    SemanticsContext ctxt {errStream,funcNode};
+
+                    ASTIdentifier *func_id = (ASTIdentifier *)funcNode->declProps[0].dataPtr;
+                    
+                    /// Ensure that Function declared is unique within the current scope.
+                    auto symEntry = symbolTableContext.main->symbolExists(func_id->val,ASTScopeGlobal);
+                    if(symEntry){
+                        return false;
+                    };
+
+
+
                     break;
                 }
             }

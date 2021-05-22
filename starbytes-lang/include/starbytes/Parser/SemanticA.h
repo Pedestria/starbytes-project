@@ -37,6 +37,7 @@ namespace starbytes {
             llvm::DenseMap<Entry *,ASTScope *> body;
         public:
             void addSymbolInScope(Entry *entry,ASTScope * scope);
+            bool symbolExists(llvm::StringRef symbolName,ASTScope *scope);
         };
 
         struct STableContext {
@@ -50,6 +51,7 @@ namespace starbytes {
     class SemanticA {
         Syntax::SyntaxA & syntaxARef;
         DiagnosticBufferedLogger & errStream;
+        bool typeExists(ASTType *type,Semantics::STableContext & symbolTableContext);
         ASTType *evalExprForTypeId(ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext);
         bool typeMatches(ASTType *type,ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext);
     public:

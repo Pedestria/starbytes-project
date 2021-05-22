@@ -2,7 +2,11 @@
 
 decl myvar = ["hello","world"]
 
-print(myvar)
+func myFunc(param:String){
+    print(param)
+}
+
+myFunc()
 
 
 
