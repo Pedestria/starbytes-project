@@ -66,7 +66,24 @@ namespace starbytes::Syntax {
 
     ASTType *SyntaxA::buildTypeFromTokenStream(TokRef first_token,ASTStmt *parentStmt){
         if(first_token.type == Tok::Identifier){
-            return ASTType::Create(first_token.content,parentStmt);
+            
+            llvm::StringRef tok_id = first_token.content;
+            if(tok_id == "Void"){
+                return VOID_TYPE;
+            }
+            else if(tok_id == "String"){
+                return STRING_TYPE;
+            }
+            else if(tok_id == "Bool"){
+                return BOOL_TYPE;
+            }
+            else if(tok_id == "Array"){
+                return ARRAY_TYPE;
+            }
+            else {
+                return ASTType::Create(first_token.content,parentStmt);
+            };
+            
         }
         else {
             return nullptr;

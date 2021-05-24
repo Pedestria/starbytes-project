@@ -1,3 +1,4 @@
+#define __RUNTIME__ 1
 #include "starbytes/RT/RTCode.h"
 #include <fstream>
 #include <iostream>
@@ -37,6 +38,40 @@ namespace Runtime {
         os.write((char *)&obj->hasInitValue,sizeof(obj->hasInitValue));
         return os;
     };
+
+    RTCODE_STREAM_OBJECT_IN_IMPL(RTFuncTemplate){
+        is >> &obj->name;
+        unsigned argCount;
+        is.read((char *)&argCount,sizeof(argCount));
+        while(argCount > 0){
+            RTID id;
+            is >> &id;
+            obj->argsTemplate.push_back(std::move(id));
+            --argCount;
+        };
+        RTCode code;
+        is.read((char *)&code,sizeof(RTCode));
+        if(code == CODE_RTBLOCK_BEGIN){
+            obj->block_start_pos = is.tellg() - fpos_t(1);
+            while(code != CODE_RTBLOCK_END)
+                is.read((char *)&code,sizeof(RTCode));
+        };
+        return is;
+    };
+
+    RTCODE_STREAM_OBJECT_OUT_IMPL(RTFuncTemplate){
+        /// Just output basic template..
+        RTCode code = CODE_RTFUNC;
+        os.write((char *)&code,sizeof(RTCode));
+        os << &obj->name;
+        unsigned argCount = obj->argsTemplate.size();
+        os.write((char *)&argCount,sizeof(argCount));
+        for(auto & arg : obj->argsTemplate){
+            os << &arg;
+        };
+        return os;
+    };
+
     RTCODE_STREAM_OBJECT_IN_IMPL(RTInternalObject) {
         RTCode code2;
         obj->isInternal = true;

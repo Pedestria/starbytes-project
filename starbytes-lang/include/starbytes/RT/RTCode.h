@@ -1,6 +1,7 @@
 #include <string>
 #include <cstdint>
 #include <vector>
+#include <istream>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringMap.h>
 
@@ -20,10 +21,11 @@ typedef unsigned char RTCode;
 #define CODE_RTINTOBJCREATE 0x05
 #define CODE_RTEXPR 0x06
 #define CODE_RTIVKFUNC 0x06
-#define CODE_RTIVKOBJFUNC 0x07
 #define CODE_RTBLOCK_BEGIN 0x08
 #define CODE_RTBLOCK_END 0x09
 #define CODE_RTVAR_REF 0x0A
+#define CODE_RTOBJVAR_REF 0x0B
+#define CODE_CONDITIONAL 0x0C
 
 #define RTINTOBJ_STR 0x1
 #define RTINTOBJ_ARRAY 0x2
@@ -55,25 +57,25 @@ RTCODE_STREAM_OBJECT(RTVar)
 
 
 struct RTFuncTemplate {
+    RTID name;
     std::vector<RTID> argsTemplate;
-    
-    
+    /// Position of CODE_RTBLOCK_BEGIN
+    std::istream::pos_type block_start_pos;
 };
 
 RTCODE_STREAM_OBJECT(RTFuncTemplate)
 
 
-
 struct RTClassTemplate {
     RTID name;
-    std::vector<RTFuncTemplate> instMethods;
     
-    std::vector<RTFuncTemplate> classMethods;
+    std::vector<RTID> propsTemplate;
 };
 
 RTCODE_STREAM_OBJECT(RTClassTemplate)
 
 struct RTObject {
+    unsigned refCount = 1;
     bool isInternal = false;
 
     llvm::StringMap<RTObject *> props = {};

@@ -23,6 +23,27 @@ void CodeGen::finish(){
     genContext->out.write((char *)&code,sizeof(RTCode));
 };
 
+inline void write_ASTBlockStmt_to_context(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,CodeGen *astConsumer){
+    RTCode code = CODE_RTBLOCK_BEGIN;
+    ctxt->out.write((char *)&code,sizeof(RTCode));
+    for(auto & stmt : blockStmt->body){
+        if(stmt->type & DECL){
+            astConsumer->consumeDecl((ASTDecl *)stmt);
+        }
+        else {
+            astConsumer->consumeStmt(stmt);
+        };
+    };
+    code = CODE_RTBLOCK_END;
+    ctxt->out.write((char *)&code,sizeof(RTCode));
+};
+
+
+inline void ASTIdentifier_to_RTID(ASTIdentifier *var,RTID &out){
+    llvm::StringRef name = var->val;
+    out.len = name.size();
+    out.value = name.data();
+};
 
 
 void CodeGen::consumeDecl(ASTDecl *stmt){
@@ -31,13 +52,25 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             ASTDecl *var_spec = (ASTDecl *)prop.dataPtr;
             ASTIdentifier *var_id = (ASTIdentifier *)var_spec->declProps[0].dataPtr;
             RTVar code_var;
+            ASTIdentifier_to_RTID(var_id,code_var.id);
             code_var.hasInitValue = var_spec->declProps.size() > 1;
-            code_var.id.value = var_id->val.c_str();
-            code_var.id.len = var_id->val.size();
             genContext->out << &code_var;
             ASTExpr *initialVal = (ASTExpr *)var_spec->declProps[1].dataPtr;
             consumeStmt(initialVal);
         };
+    }
+    else if(stmt->type == FUNC_DECL){
+        ASTFuncDecl *func_node = (ASTFuncDecl *)stmt;
+        RTFuncTemplate funcTemplate;
+        ASTIdentifier *func_id = (ASTIdentifier *)func_node->declProps[0].dataPtr;
+        ASTIdentifier_to_RTID(func_id,funcTemplate.name);
+        for(auto & param_pair : func_node->params){
+            RTID param_id;
+            ASTIdentifier_to_RTID(param_pair.getFirst(),param_id);
+            funcTemplate.argsTemplate.push_back(param_id);
+        };
+        genContext->out << &funcTemplate;
+        write_ASTBlockStmt_to_context(func_node->blockStmt,genContext,this);
     };
 };
 
@@ -89,18 +122,14 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         RTCode code = CODE_RTVAR_REF;
         genContext->out.write((const char *)&code,sizeof(RTCode));
         RTID id;
-        llvm::StringRef func_str = expr->id->val;
-        id.value = func_str.data();
-        id.len = func_str.size();
+        ASTIdentifier_to_RTID(expr->id,id);
         genContext->out << &id;
     }
     else if(stmt->type == IVKE_EXPR){
         RTCode code = CODE_RTIVKFUNC;
         genContext->out.write((const char *)&code,sizeof(RTCode));
         RTID func_id;
-        llvm::StringRef func_str = expr->id->val;
-        func_id.value = func_str.data();
-        func_id.len = func_str.size();
+        ASTIdentifier_to_RTID(expr->id,func_id);
         genContext->out << &func_id;
         unsigned argCount = expr->exprArrayData.size();
         genContext->out.write((const char *)&argCount,sizeof(argCount));

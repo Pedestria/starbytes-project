@@ -40,6 +40,13 @@ namespace starbytes {
         ~ASTType();
     };
 
+extern ASTType * VOID_TYPE;
+extern ASTType * STRING_TYPE;
+extern ASTType * ARRAY_TYPE;
+extern ASTType * DICTIONARY_TYPE;
+extern ASTType * BOOL_TYPE;
+extern ASTType * INT_TYPE;
+
 }
 
 namespace llvm {

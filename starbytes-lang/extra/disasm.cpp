@@ -13,7 +13,39 @@ class Disassembler {
     std::istream & in;
     std::ostream & out;
     void _disasm_decl(RTCode & code){
-        
+        if(code == CODE_RTVAR) {
+            RTVar var;
+            in >> &var;
+            out << "CODE_RTVAR " << var.id.len << " ";
+            out.write(var.id.value,sizeof(char) * var.id.len);
+            in.read((char *)&code,sizeof(RTCode));
+            out << " ";
+            _disasm_expr(code);
+        }
+        else if(code == CODE_RTFUNC){
+            RTFuncTemplate funcTemp;
+            in >> &funcTemp;
+            out << "CODE_RTFUNC " << funcTemp.name.len << " ";
+            out.write(funcTemp.name.value,sizeof(char) * funcTemp.name.len);
+            out << " ";
+            out << funcTemp.argsTemplate.size() << " ";
+            for(auto arg : funcTemp.argsTemplate){
+                llvm::StringRef arg_name (arg.value,arg.len);
+                out << arg_name.data() << " ";
+            };
+            out << std::endl;
+            in.seekg(funcTemp.block_start_pos);
+            RTCode code2;
+            in.read((char *)&code2,sizeof(RTCode));
+            out << "CODE_RTBLOCK_BEGIN" << std::endl;
+            while(code2 != CODE_RTBLOCK_END){
+//                _disasm_decl(code2);
+                _disasm_expr(code2);
+                in.read((char *)&code2,sizeof(RTCode));
+                out << std::endl;
+            };
+            out << "CODE_RTBLOCK_END" << std::endl;
+        }
     };
     void _disasm_expr(RTCode & code){
         if(code == CODE_RTINTOBJCREATE){
@@ -43,6 +75,20 @@ class Disassembler {
                 };
             }
         }
+        else if(code == CODE_RTIVKFUNC){
+            RTID func_id;
+            in >> &func_id;
+            out << "CODE_RTIVKFUNC " << func_id.len << " ";
+            out.write(func_id.value,sizeof(char) * func_id.len);
+            unsigned arg_count;
+            in.read((char *)&arg_count,sizeof(arg_count));
+            out << " " << arg_count << " ";
+            for(unsigned i = 0;i < arg_count;i++){
+                in.read((char *)&code,sizeof(RTCode));
+                _disasm_expr(code);
+                out << " ";
+            };
+        }
         else if(code == CODE_RTOBJCREATE){
             
         }
@@ -61,30 +107,13 @@ public:
         RTCode code;
         in.read((char *)&code,sizeof(RTCode));
         while (code != CODE_MODULE_END) {
-            if(code == CODE_RTVAR) {
-                RTVar var;
-                in >> &var;
-                out << "CODE_RTVAR " << var.id.len << " ";
-                out.write(var.id.value,sizeof(char) * var.id.len);
-                in.read((char *)&code,sizeof(RTCode));
-                out << " ";
+            if(code == CODE_RTIVKFUNC){
                 _disasm_expr(code);
             }
-            else if(code == CODE_RTIVKFUNC){
-                RTID func_id;
-                in >> &func_id;
-                out << "CODE_RTIVKFUNC " << func_id.len << " ";
-                out.write(func_id.value,sizeof(char) * func_id.len);
-                unsigned arg_count;
-                in.read((char *)&arg_count,sizeof(arg_count));
-                out << " " << arg_count << " ";
-                for(unsigned i = 0;i < arg_count;i++){
-                    in.read((char *)&code,sizeof(RTCode));
-                    _disasm_expr(code);
-                    out << " ";
-                };
-            };
-            out << "\n";
+            else {
+                _disasm_decl(code);
+            }
+            out << std::endl;
             in.read((char *)&code,sizeof(RTCode));
         }
         out << "CODE_MODULE_END" << std::endl;

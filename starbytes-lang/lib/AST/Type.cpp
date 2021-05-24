@@ -4,6 +4,13 @@
 
 namespace starbytes {
 
+    ASTType * VOID_TYPE = ASTType::Create("Void",nullptr,false);
+    ASTType * STRING_TYPE = ASTType::Create("String",nullptr,false);
+    ASTType * ARRAY_TYPE = ASTType::Create("Array",nullptr,false);
+    ASTType * DICTIONARY_TYPE = ASTType::Create("Dict",nullptr,false);
+    ASTType * BOOL_TYPE  = ASTType::Create("Bool",nullptr,false);
+    ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
+
     ASTType *ASTType::Create(llvm::StringRef name,ASTStmt *parentNode,bool isPlaceholder,bool isAlias){
         auto obj = new ASTType();
         obj->isAlias = isAlias;
