@@ -48,21 +48,23 @@ inline void ASTIdentifier_to_RTID(ASTIdentifier *var,RTID &out){
 
 void CodeGen::consumeDecl(ASTDecl *stmt){
     if(stmt->type == VAR_DECL){
-        for(auto & prop : stmt->declProps){
-            ASTDecl *var_spec = (ASTDecl *)prop.dataPtr;
-            ASTIdentifier *var_id = (ASTIdentifier *)var_spec->declProps[0].dataPtr;
+        ASTVarDecl *varDecl = (ASTVarDecl *)stmt;
+        for(auto & spec : varDecl->specs){
+            ASTIdentifier *var_id = spec.id;
             RTVar code_var;
             ASTIdentifier_to_RTID(var_id,code_var.id);
-            code_var.hasInitValue = var_spec->declProps.size() > 1;
+            code_var.hasInitValue = (spec.expr != nullptr);
             genContext->out << &code_var;
-            ASTExpr *initialVal = (ASTExpr *)var_spec->declProps[1].dataPtr;
-            consumeStmt(initialVal);
+            if(spec.expr) {
+                ASTExpr *initialVal = spec.expr;
+                consumeStmt(initialVal);
+            }
         };
     }
     else if(stmt->type == FUNC_DECL){
         ASTFuncDecl *func_node = (ASTFuncDecl *)stmt;
         RTFuncTemplate funcTemplate;
-        ASTIdentifier *func_id = (ASTIdentifier *)func_node->declProps[0].dataPtr;
+        ASTIdentifier *func_id = func_node->funcId;
         ASTIdentifier_to_RTID(func_id,funcTemplate.name);
         for(auto & param_pair : func_node->params){
             RTID param_id;

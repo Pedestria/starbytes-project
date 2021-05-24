@@ -10,4 +10,5 @@ add_starbytes_lib(
     "Toks.def"
     LIBS_TO_LINK
     "starbytesBase"
+    "starbytesAST"
 )

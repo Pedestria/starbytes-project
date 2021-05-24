@@ -227,29 +227,30 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
 
             /// Import Decl Parse
             if(first_token.content == KW_IMPORT){
-                node = new ASTDecl();
+                ASTImportDecl *imp_decl = new ASTImportDecl();
+                node = imp_decl;
                 node->type = IMPORT_DECL;
-                ASTDecl::Property module_name;
-                module_name.type = ASTDecl::Property::Identifier;
-                if(!(module_name.dataPtr = buildIdentifier(nextTok(),false))){
+                ASTIdentifier *mod_id;
+                if(!(mod_id = buildIdentifier(nextTok(),false))){
                     /// RETURN !
                 };
-                node->declProps.push_back(module_name);
-                ++privTokIndex;
+                imp_decl->moduleName = mod_id;
+                gotoNextTok();
             }
-            else if(first_token.content == "scope"){
-                node = new ASTDecl();
-                node->type = SCOPE_DECL;
-                ASTDecl::Property name;
-                name.type = ASTDecl::Property::Identifier;
-                if(!(name.dataPtr = buildIdentifier(nextTok(),false))){
-                    /// RETURN!
-                };
-                node->declProps.push_back(name);
-            }
+//            else if(first_token.content == "scope"){
+//                node = new ASTDecl();
+//                node->type = SCOPE_DECL;
+//                ASTDecl::Property name;
+//                name.type = ASTDecl::Property::Identifier;
+//                if(!(name.dataPtr = buildIdentifier(nextTok(),false))){
+//                    /// RETURN!
+//                };
+//                node->declProps.push_back(name);
+//            }
             /// Var Decl Parse
             else if(first_token.content == KW_DECL){
-                node = new ASTDecl();
+                ASTVarDecl *varDecl = new ASTVarDecl();
+                node = varDecl;
                 node->type = VAR_DECL;
                 TokRef tok0 = nextTok();
                 if(tok0.type == Tok::Keyword){
@@ -265,35 +266,28 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                      /// Throw Error;   
                     };
                     /// Var Declarator!!
-                    ASTDecl *varDeclarator = new ASTDecl();
+                    ASTVarDecl::VarSpec spec;
                     
-                    ASTDecl::Property prop,id_prop;
-                    prop.type = ASTDecl::Property::Decl;
-                    /// Attach Identifier to Declarator
-                    id_prop.type = ASTDecl::Property::Identifier;
-                    id_prop.dataPtr = id;
-                    varDeclarator->declProps.push_back(id_prop);
+                    spec.id = id;
                     
 
                     tok1 = nextTok();
                     
                     if(tok1.type == Tok::Colon){
                         tok1 = nextTok();
-                        ASTType *type = buildTypeFromTokenStream(tok1,varDeclarator);
+                        ASTType *type = buildTypeFromTokenStream(tok1,varDecl);
                         if(!type){
                         /// Throw Error;   
                         };
-                        varDeclarator->declType = type;
+                        spec.type = type;
 
                         tok1 = nextTok();
                     }
 
-                    prop.dataPtr = varDeclarator;
-
-                    node->declProps.push_back(prop);
 
                     if(tok1.type != Tok::Equal){
-                        return node;
+                        varDecl->specs.push_back(spec);
+                        return varDecl;
                     };
 
                     tok1 = nextTok();
@@ -303,11 +297,9 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                     };
                     /// Var Initializer
 
-                    ASTDecl::Property prop2;
-                    prop2.type = ASTDecl::Property::Expr;
-                    prop2.dataPtr = val;
-                    varDeclarator->declProps.push_back(prop2);
+                    spec.expr = val;
                     
+                    varDecl->specs.push_back(spec);
                    
                 }
                 else {
@@ -319,13 +311,10 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                 node = func_node;
                 node->type = FUNC_DECL;
                 Tok & tok0 = const_cast<Tok &>(nextTok());
-                ASTDecl::Property id;
-                id.type = ASTDecl::Property::Identifier;
-                if(!(id.dataPtr = buildIdentifier(tok0,false))){
+                
+                if(!(func_node->funcId = buildIdentifier(tok0,false))){
                     /// Throw Error
                 };
-                
-                func_node->declProps.push_back(id);
                 
                 tok0 = nextTok();
                 
@@ -394,7 +383,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                             /// Throw Error.
                             return nullptr;
                         };
-                        func_node->declType = type;
+                        func_node->returnType = type;
                     };
                     
 //                    std::cout << "Go 2" << std::endl;
@@ -406,7 +395,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                     if(tok0.type == Tok::OpenBrace){
                        
                         
-                        ASTScope *function_scope = new ASTScope({((ASTIdentifier *)func_node->declProps[0].dataPtr)->val,ASTScope::Function,parentScope});
+                        ASTScope *function_scope = new ASTScope({func_node->funcId->val,ASTScope::Function,parentScope});
                         
                         auto block = evalBlockStmt(tok0,function_scope);
                         if(!block){
@@ -430,11 +419,11 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
             else if(first_token.content == KW_CLASS){
                 node->type = CLS_DECL;
                 TokRef tok0 = nextTok();
-                ASTDecl::Property id;
-                id.type = ASTDecl::Property::Identifier;
-                if(!(id.dataPtr = buildIdentifier(tok0,true))){
-                    /// Throw Error
-                };
+//                ASTDecl::Property id;
+//                id.type = ASTDecl::Property::Identifier;
+//                if(!(id.dataPtr = buildIdentifier(tok0,true))){
+//                    /// Throw Error
+//                };
                 
             }
             else if(first_token.content == KW_IMUT){

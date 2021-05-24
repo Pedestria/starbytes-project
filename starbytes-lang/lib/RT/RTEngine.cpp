@@ -9,6 +9,14 @@
 
 namespace starbytes::Runtime {
 
+struct RTScope {
+    std::string name;
+    RTScope *parent = nullptr;
+};
+
+RTScope *RTSCOPE_GLOBAL = new RTScope({"__GLOBAL__"});
+
+
 void runtime_object_ref_inc(RTObject *obj){
     ++(obj->refCount);
 };
@@ -16,37 +24,41 @@ void runtime_object_ref_inc(RTObject *obj){
 void runtime_object_ref_dec(RTObject *obj){
     --(obj->refCount);
 };
-/// Garbage Collect
-void runtime_object_gcollect(RTObject *obj){
-    if(obj->refCount == 0){
-        if(obj->isInternal){
-            RTInternalObject *_obj = (RTInternalObject *)obj;
-            switch (_obj->type) {
-                case RTINTOBJ_STR : {
-                    auto params = (RTInternalObject::StringParams *)_obj->data;
-                    delete params;
-                    break;
-                }
-                case RTINTOBJ_BOOL : {
-                    auto params = (RTInternalObject::BoolParams *)_obj->data;
-                    delete params;
-                    break;
-                }
-                case RTINTOBJ_ARRAY : {
-                    auto params = (RTInternalObject::ArrayParams *)_obj->data;
-                    for(auto & obj : params->data){
-                        runtime_object_gcollect(obj);
-                    };
-                    delete params;
-                    break;
-                }
-                default:
-                    break;
+
+inline void runtime_object_delete(RTObject *obj){
+    if(obj->isInternal){
+        RTInternalObject *_obj = (RTInternalObject *)obj;
+        switch (_obj->type) {
+            case RTINTOBJ_STR : {
+                auto params = (RTInternalObject::StringParams *)_obj->data;
+                delete params;
+                break;
             }
+            case RTINTOBJ_BOOL : {
+                auto params = (RTInternalObject::BoolParams *)_obj->data;
+                delete params;
+                break;
+            }
+            case RTINTOBJ_ARRAY : {
+                auto params = (RTInternalObject::ArrayParams *)_obj->data;
+                for(auto & obj : params->data){
+                    runtime_object_delete(obj);
+                };
+                delete params;
+                break;
+            }
+            default:
+                break;
         }
-        else {
-            
-        };
+    }
+    else {
+        
+    };
+};
+/// Garbage Collect
+void runtime_object_collectg(RTObject *obj){
+    if(obj->refCount == 0){
+        runtime_object_delete(obj);
     };
 };
 
@@ -103,6 +115,18 @@ public:
             var_map.insert(std::make_pair(name,obj));
         };
     };
+    void allocVariable(llvm::StringRef name,RTObject * obj,llvm::StringRef scope){
+        auto found = all_var_objects.find(scope);
+        if(found == all_var_objects.end()){
+            llvm::StringMap<RTObject *> vars;
+            vars.insert(std::make_pair(name,obj));
+            all_var_objects.insert(std::make_pair(scope,std::move(vars)));
+        }
+        else {
+            auto & var_map = found->second;
+            var_map.insert(std::make_pair(name,obj));
+        };
+    };
 //    void allocVariable(llvm::StringRef name){
 //        auto found = all_var_objects.find(currentScope);
 //        if(found == all_var_objects.end()){
@@ -138,11 +162,18 @@ public:
         auto found = all_var_objects.find(currentScope);
         auto map = found->second;
         for(auto & ent : map){
-            delete ent.second;
+            runtime_object_delete(ent.second);
         };
         all_var_objects.erase(found);
     };
-    
+    void clearScopeCollectG(){
+        auto found = all_var_objects.find(currentScope);
+        auto map = found->second;
+        for(auto & ent : map){
+            runtime_object_collectg(ent.second);
+        };
+        all_var_objects.erase(found);
+    };
 };
 
 
@@ -154,11 +185,11 @@ class InterpImpl : public Interp {
     
     std::vector<RTFuncTemplate> functions;
     
-    void execNorm(RTCode &code,std::istream &in,llvm::StringMap<RTObject *> *block_args = nullptr);
+    void execNorm(RTCode &code,std::istream &in);
     
     RTObject * invokeFunc(std::istream &in,llvm::StringRef & func_name,unsigned argCount);
     
-    RTObject * evalExpr(std::istream &in,llvm::StringMap<RTObject *> *block_args = nullptr);
+    RTObject * evalExpr(std::istream &in);
     
 public:
     InterpImpl():allocator(std::make_unique<RTAllocator>()){
@@ -170,39 +201,40 @@ public:
 RTObject *InterpImpl::invokeFunc(std::istream & in,llvm::StringRef & func_name,unsigned argCount){
     for(auto & func_temp : functions){
         if(func_name == llvm::StringRef(func_temp.name.value,func_temp.name.len)){
+            llvm::StringRef parentScope = allocator->currentScope;
             
-            llvm::StringMap<RTObject *> args;
+            std::string funcScope = func_name.str() + std::to_string(func_temp.invocations);
             
             auto func_param_it = func_temp.argsTemplate.begin();
             while(argCount > 0){
                 RTObject * obj = evalExpr(in);
-                args.insert(std::make_pair(llvm::StringRef(func_param_it->value,func_param_it->len),obj));
+                allocator->allocVariable(llvm::StringRef(func_param_it->value,func_param_it->len),obj,funcScope);
                 ++func_param_it;
                 --argCount;
             };
+            allocator->setScope(funcScope);
             auto prev_pos = in.tellg();
             /// Invoke
             in.seekg(func_temp.block_start_pos);
             
-            
+            func_temp.invocations += 1;
             
             RTCode code;
             in.read((char *)&code,sizeof(RTCode));
             while(code != CODE_RTBLOCK_END){
-                execNorm(code,in,&args);
+                execNorm(code,in);
                 in.read((char *)&code,sizeof(RTCode));
             };
             
             in.seekg(prev_pos);
             
-            for(auto & arg : args){
-                runtime_object_gcollect(arg.getValue());
-            };
+            allocator->clearScopeCollectG();
+            allocator->setScope(parentScope);
         };
     };
 };
 
-RTObject *InterpImpl::evalExpr(std::istream & in,llvm::StringMap<RTObject *> *block_args){
+RTObject *InterpImpl::evalExpr(std::istream & in){
     RTCode code;
     in.read((char *)&code,sizeof(RTCode));
     switch (code) {
@@ -222,18 +254,7 @@ RTObject *InterpImpl::evalExpr(std::istream & in,llvm::StringMap<RTObject *> *bl
             RTID var_id;
             in >> &var_id;
             llvm::StringRef var_name (var_id.value,var_id.len);
-            if(!block_args){
-                return allocator->referenceVariable(allocator->currentScope,var_name);
-            }
-            else {
-                auto local_var = block_args->find(var_name);
-                if(local_var != block_args->end()){
-                    return local_var->getValue();
-                }
-                else {
-                    return allocator->referenceVariable(allocator->currentScope,var_name);
-                }
-            };
+            return allocator->referenceVariable(allocator->currentScope,var_name);
             
             break;
         }
@@ -242,7 +263,7 @@ RTObject *InterpImpl::evalExpr(std::istream & in,llvm::StringMap<RTObject *> *bl
     }
 };
 
-void InterpImpl::execNorm(RTCode &code,std::istream &in,llvm::StringMap<RTObject *> *block_args){
+void InterpImpl::execNorm(RTCode &code,std::istream &in){
     if(code == CODE_RTVAR){
         RTVar var;
         in >> &var;
@@ -266,7 +287,7 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,llvm::StringMap<RTObject
         unsigned argCount;
         in.read((char *)&argCount,sizeof(argCount));
         if(func_name == "print"){
-            RTObject *object_to_print = evalExpr(in,block_args);
+            RTObject *object_to_print = evalExpr(in);
             stdlib::print(object_to_print);
         }
         else {
@@ -278,7 +299,8 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,llvm::StringMap<RTObject
 void InterpImpl::exec(std::istream & in){
     std::cout << "Interp Starting" << std::endl;
     RTCode code;
-    allocator->setScope("GLOBAL");
+    std::string g = "GLOBAL";
+    allocator->setScope(g);
     in.read((char *)&code,sizeof(RTCode));
     while(code != CODE_MODULE_END){
         execNorm(code,in);

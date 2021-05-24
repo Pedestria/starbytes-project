@@ -9,6 +9,8 @@
 
 namespace starbytes {
 
+    class ASTExpr;
+
     /// Defines a new scope!!!
     struct ASTBlockStmt {
         ASTScope *parentScope;
@@ -16,30 +18,31 @@ namespace starbytes {
     };
 
     class ASTDecl : public ASTStmt {
+        
+    };
+
+    class ASTImportDecl : public ASTDecl {
     public:
-        struct Property {
-            typedef enum : int {
-                Identifier,
-                Decl,
-                Expr,
-                Literal
-            } Ty;
-            Ty type;
-            ASTStmt *dataPtr;
+        ASTIdentifier *moduleName;
+    };
+
+    class ASTVarDecl : public ASTDecl {
+    public:
+        struct VarSpec {
+            ASTIdentifier *id;
+            ASTType *type = nullptr;
+            /// Intializer for Variable;
+            ASTExpr *expr = nullptr;
         };
-        /// NOTE: Know the format of your Decls!
-        std::vector<Property> declProps;
-        
-        ASTBlockStmt * blockStmt = nullptr;
-        
-        ASTType *declType = nullptr;
-        
-        static bool classof(ASTStmt *stmt);
+        llvm::SmallVector<VarSpec,2> specs;
     };
 
     class ASTFuncDecl : public ASTDecl {
     public:
+        ASTIdentifier *funcId;
+        ASTType *returnType;
         llvm::DenseMap<ASTIdentifier *,ASTType *> params;
+        ASTBlockStmt *blockStmt;
     };
 
 }

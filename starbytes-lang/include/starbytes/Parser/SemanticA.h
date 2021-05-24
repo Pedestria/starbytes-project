@@ -5,6 +5,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/ADT/Optional.h>
 #include <llvm/ADT/ArrayRef.h>
+#include "SymTable.h"
 
 #ifndef STARBYTES_PARSER_SEMANTICA_H
 #define STARBYTES_PARSER_SEMANTICA_H
@@ -13,40 +14,29 @@ namespace starbytes {
 
     struct ASTScope;
 
-    struct SemanticsContext {
-        DiagnosticBufferedLogger & errStream;
-        ASTStmt *currentStmt;
-    };
-
-    namespace Semantics  {
-  
-
-        struct SymbolTable {
-            struct Entry {
-                ASTStmt *node;
-                std::string name;
-                typedef enum : int {
-                    Var,
-                    Class,
-                    Interface,
-                    Scope,
-                    Function
-                } Ty;
-                Ty type;
-            };
-        private:
-            friend struct STableContext;
-            llvm::DenseMap<Entry *,ASTScope *> body;
-        public:
-            void addSymbolInScope(Entry *entry,ASTScope * scope);
-            bool symbolExists(llvm::StringRef symbolName,ASTScope *scope);
+    struct SemanticADiagnostic : public Diagnostic {
+        typedef enum : int {
+          Error,
+          Warning,
+          Suggestion
+        } Ty;
+        Ty type;
+        ASTStmt *stmt;
+        std::string message;
+        bool isError(){
+            return type == Error;
         };
-
-        struct STableContext {
-            std::unique_ptr<SymbolTable> main;
-            std::vector<SymbolTable *> otherTables;
-            bool hasTable(SymbolTable *ptr);
-            SymbolTable::Entry * findEntry(llvm::StringRef symbolName,SemanticsContext & ctxt,ASTScope *scope = nullptr);
+        void format(llvm::raw_ostream &os){
+            os << llvm::raw_ostream::RED << "ERROR: " << llvm::raw_ostream::RESET << message << "\n";
+        };
+        SemanticADiagnostic(Ty type,const llvm::formatv_object_base & message,ASTStmt *stmt):type(type),message(message),stmt(stmt){
+            
+        };
+        SemanticADiagnostic(Ty type,ASTStmt *stmt):type(type),stmt(stmt){
+            /// Please Set Message!
+        };
+        ~SemanticADiagnostic(){
+            
         };
     };
 

@@ -4,9 +4,11 @@ add_starbytes_lib(
     SOURCE_FILES 
     "Parser.cpp"
     "SemanticA.cpp"
+    "SymTable.cpp"
     HEADER_FILES 
     "Parser.h"
     "SemanticA.h"
+    "SymTable.h"
     LIBS_TO_LINK 
     "starbytesSyntax"
 )

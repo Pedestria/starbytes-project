@@ -55,10 +55,11 @@ namespace starbytes {
     void ASTDumper::printDecl(ASTDecl *decl,unsigned level){
         auto pad = padString(level);
         if(decl->type == IMPORT_DECL){
+            auto data = (ASTImportDecl *)decl;
             os <<
             "ImportDecl : {\n" << pad <<
             "   module_name:" << std::flush; 
-            formatIdentifier(os,(ASTIdentifier *)decl->declProps[0].dataPtr,level+1);
+            formatIdentifier(os,data->moduleName,level+1);
             os << pad << "}" << std::endl;
         }
         else if(decl->type == VAR_DECL){
@@ -67,25 +68,24 @@ namespace starbytes {
             "   vars: [\n" << std::flush;
             auto n_level = level + 1;
             auto _pad = padString(n_level);
-            for(auto & var : decl->declProps){
+            auto data = (ASTVarDecl *)decl;
+            for(auto & varSpec : data->specs){
                 os << _pad << "VarSpec : {\n" << _pad <<
                 "   identifier:" << std::flush;
-                // std::cout << "VarSpec Access" << std::endl;
-                auto varSpec = (ASTDecl *)var.dataPtr;
                 // std::cout << "VarSpec Access Available" << std::endl;
-                auto & id = varSpec->declProps[0];
+                auto & id = varSpec.id;
                 // std::cout << "VarSpec ID Access Available" << std::endl;
-                formatIdentifier(os,(ASTIdentifier *)id.dataPtr,n_level + 1);
+                formatIdentifier(os,id,n_level + 1);
                 
-                if(varSpec->declType){
+                if(varSpec.type){
                     os << _pad << "   type:" << std::flush;
-                    auto type_id = varSpec->declType;
+                    auto type_id = varSpec.type;
                     os << llvm::formatv("\"{0}\"",*type_id).str() << std::endl;
                 }
                 
-                if(varSpec->declProps.size() > 1){
+                if(varSpec.expr){
                     os << _pad << "   initialVal:" << std::flush;
-                    auto expr = varSpec->declProps[1].dataPtr;
+                    auto expr = varSpec.expr;
                     
                     printStmt(expr,n_level + 1);
                 }
@@ -99,8 +99,8 @@ namespace starbytes {
             "FuncDecl : {\n" << pad <<
             "   id:" << std::flush;
             ASTFuncDecl *func_node = (ASTFuncDecl *)decl;
-            auto & id = func_node->declProps[0];
-            formatIdentifier(os,(ASTIdentifier *)id.dataPtr,level + 1);
+            auto & id = func_node->funcId;
+            formatIdentifier(os,id,level + 1);
             os << pad <<"   params:[\n" << std::flush;
             auto __level = level + 1;
             auto _pad = padString(__level);

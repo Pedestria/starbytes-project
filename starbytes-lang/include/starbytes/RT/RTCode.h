@@ -58,6 +58,7 @@ RTCODE_STREAM_OBJECT(RTVar)
 
 struct RTFuncTemplate {
     RTID name;
+    unsigned invocations = 0;
     std::vector<RTID> argsTemplate;
     /// Position of CODE_RTBLOCK_BEGIN
     std::istream::pos_type block_start_pos;

@@ -1,81 +1,11 @@
 #include "starbytes/Parser/SemanticA.h"
+#include "starbytes/Parser/SymTable.h"
 #include "starbytes/AST/AST.h"
 #include "starbytes/AST/ASTNodes.def"
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <iostream>
 namespace starbytes {
-
-struct SemanticADiagnostic : public Diagnostic {
-    typedef enum : int {
-      Error,
-      Warning,
-      Suggestion
-    } Ty;
-    Ty type;
-    ASTStmt *stmt;
-    std::string message;
-    bool isError(){
-        return type == Error;
-    };
-    void format(llvm::raw_ostream &os){
-        os << llvm::raw_ostream::RED << "ERROR: " << llvm::raw_ostream::RESET << message << "\n";
-    };
-    SemanticADiagnostic(Ty type,const llvm::formatv_object_base & message,ASTStmt *stmt):type(type),message(message),stmt(stmt){
-        
-    };
-    SemanticADiagnostic(Ty type,ASTStmt *stmt):type(type),stmt(stmt){
-        /// Please Set Message!
-    };
-    ~SemanticADiagnostic(){
-        
-    };
-};
-
-
-    void Semantics::SymbolTable::addSymbolInScope(Entry *entry, ASTScope *scope){
-        body.insert(std::make_pair(entry,scope));
-    };
-
-    bool Semantics::SymbolTable::symbolExists(llvm::StringRef symbolName,ASTScope *scope){
-        for(auto & sym : body){
-            if(sym.getFirst()->name == symbolName && sym.getSecond() == scope){
-                return true;
-            };
-        };
-        return false;
-    };
-    
-    Semantics::SymbolTable::Entry * Semantics::STableContext::findEntry(llvm::StringRef symbolName,SemanticsContext & ctxt,ASTScope *scope){
-        unsigned entryCount = 0;
-        Semantics::SymbolTable::Entry *ent = nullptr;
-        for(auto & pair : main->body){
-            if(pair.getFirst()->name == symbolName && pair.getSecond() == scope){
-                ent = pair.getFirst();
-                ++entryCount;
-            };
-        };
-        
-        for(auto & table : otherTables){
-            for(auto & pair : table->body){
-                if(pair.getFirst()->name == symbolName && pair.getSecond() == scope){
-                    ent = pair.getFirst();
-                    ++entryCount;
-                };
-            };
-        };
-        
-        if(entryCount > 1){
-            ctxt.errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Multiple symbol defined with the same name (`{0}`) in a scope.",symbolName),ctxt.currentStmt);
-            return nullptr;
-        }
-        else if(entryCount == 0){
-            ctxt.errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Undefined symbol `{0}`",symbolName),ctxt.currentStmt);
-            return nullptr;
-        };
-        
-        return ent;
-    };
 
     SemanticA::SemanticA(Syntax::SyntaxA & syntaxARef,DiagnosticBufferedLogger & errStream):syntaxARef(syntaxARef),errStream(errStream){
 
@@ -93,20 +23,31 @@ struct SemanticADiagnostic : public Diagnostic {
        
         switch (decl->type) {
             case VAR_DECL : {
-                auto *varDeclarator = (ASTDecl *)decl->declProps[0].dataPtr;
-                Semantics::SymbolTable::Entry *e = new Semantics::SymbolTable::Entry();
-                auto * id = (ASTIdentifier *)varDeclarator->declProps[0].dataPtr;
-                e->name = id->val;
-                e->node = varDeclarator;
-                e->type = Semantics::SymbolTable::Entry::Var;
-                tablePtr->addSymbolInScope(e,decl->scope);
+                ASTVarDecl *varDecl = (ASTVarDecl *)decl;
+                for(auto spec : varDecl->specs) {
+                    Semantics::SymbolTable::Entry *e = new Semantics::SymbolTable::Entry();
+                    auto data = new Semantics::SymbolTable::Var();
+                    data->type = spec.type;
+                    auto * id = spec.id;
+                    e->name = id->val;
+                    e->data = data;
+                    e->type = Semantics::SymbolTable::Entry::Var;
+                    tablePtr->addSymbolInScope(e,decl->scope);
+                }
                 break;
             }
             case FUNC_DECL : {
-                auto *func_id = (ASTIdentifier *)decl->declProps[0].dataPtr;
+                ASTFuncDecl *funcDecl = (ASTFuncDecl *)decl;
                 Semantics::SymbolTable::Entry *e = new Semantics::SymbolTable::Entry();
-                e->name = func_id->val;
-                e->node = decl;
+                auto data = new Semantics::SymbolTable::Function();
+                data->returnType = funcDecl->returnType;
+                
+                for(auto & param_pair : funcDecl->params){
+                    data->paramMap.insert(std::make_pair(param_pair.getFirst()->val,param_pair.getSecond()));
+                };
+                
+                e->name = funcDecl->funcId->val;
+                e->data = data;
                 e->type = Semantics::SymbolTable::Entry::Function;
                 tablePtr->addSymbolInScope(e,decl->scope);
                 break;
@@ -154,9 +95,8 @@ struct SemanticADiagnostic : public Diagnostic {
                 };
                 
                 if(symbol_->type == Semantics::SymbolTable::Entry::Var){
-                    ASTDecl *varSpecDecl = (ASTDecl *)symbol_->node;
-                    ASTType *_type = varSpecDecl->declType;
-                    type = _type;
+                    auto varData = (Semantics::SymbolTable::Var *)symbol_->data;
+                    type = varData->type;
                 }
                 else {
                     errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Identifier in this context cannot identify any other symbol type except another variable."),expr_to_eval);
@@ -213,20 +153,20 @@ struct SemanticADiagnostic : public Diagnostic {
                     };
                     /// Check to see if symbol is function.
                     if(entry->type != Semantics::SymbolTable::Entry::Function){
-                        errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Symbol `{0}` is not defined as a function.",entry->name),entry->node);
+                        errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Identifier `{0}` does not identify a function",entry->name),expr_to_eval);
                         return nullptr;
                         break;
                     };
 
-                    ASTFuncDecl *func_decl = (ASTFuncDecl *)entry->node;
+                    auto funcData = (Semantics::SymbolTable::Function *)entry->data;
                     
-                    if(expr_to_eval->exprArrayData.size() != func_decl->params.size()){
-                        errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Incorrect number of arguments. Expected {0} args, but got {1}\nContext: Invocation of func `{2}`",func_decl->params.size(),expr_to_eval->exprArrayData.size(),func_id->val),expr_to_eval);
+                    if(expr_to_eval->exprArrayData.size() != funcData->paramMap.size()){
+                        errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Incorrect number of arguments. Expected {0} args, but got {1}\nContext: Invocation of func `{2}`",funcData->paramMap.size(),expr_to_eval->exprArrayData.size(),func_id->val),expr_to_eval);
                         return nullptr;
                         break;
                     }
                     
-                    auto param_decls_it = func_decl->params.begin();
+                    auto param_decls_it = funcData->paramMap.begin();
                     for(unsigned i = 0;i < expr_to_eval->exprArrayData.size();i++){
                         auto expr_arg = expr_to_eval->exprArrayData[i];
                         ASTType *_id = evalExprForTypeId(expr_arg,symbolTableContext);
@@ -235,7 +175,7 @@ struct SemanticADiagnostic : public Diagnostic {
                             break;
                         };
                         auto & param_decl_pair = *param_decls_it;
-                        if(!param_decls_it->getSecond()->match(_id,[&](const llvm::formatv_object_base & message){
+                        if(!param_decls_it->getValue()->match(_id,[&](const llvm::formatv_object_base & message){
                             errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("{0}\nContext: Param in invocation of func `{1}`",message,func_id->val),expr_arg);
                         })){
                             return nullptr;
@@ -244,7 +184,7 @@ struct SemanticADiagnostic : public Diagnostic {
                         ++param_decls_it;
                     };
                     /// return return-type
-                    type = func_decl->declType;
+                    type = funcData->returnType;
                 };
                 
                 /// 1. Eval Args.
@@ -280,28 +220,28 @@ struct SemanticADiagnostic : public Diagnostic {
             switch (decl->type) {
                 /// VarDecl
                 case VAR_DECL : {
-                    for(auto & spec : decl->declProps){
-                        ASTDecl *specDecl = (ASTDecl *)spec.dataPtr;
-                        if(specDecl->declType && specDecl->declProps.size() > 1){
+                    auto varDecl = (ASTVarDecl *)decl;
+                    for(auto & spec : varDecl->specs){
+                        if(!(!spec.type) && (!spec.expr)){
                             // Type Decl and Type Implication Comparsion
-                            if(!typeMatches(specDecl->declType,(ASTExpr *)specDecl->declProps[1].dataPtr,symbolTableContext))
+                            if(!typeMatches(spec.type,spec.expr,symbolTableContext))
                             {
                                 return false;
                             }
                         }
-                        else if(specDecl->declProps.size() == 1) {
+                        else if((!spec.type) && (!spec.expr)) {
                             /// No Type Implication nor any type decl
-                            ASTIdentifier *id = (ASTIdentifier *)specDecl->declProps[0].dataPtr;
-                            errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Variable `{0}` has no type assignment nor an initial value thus the variable's type cannot be deduced.",id->val), specDecl);
+                            auto id = spec.id;
+                            errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Variable `{0}` has no type assignment nor an initial value thus the variable's type cannot be deduced.",id->val),varDecl);
                             return false;
                         }
                         else {
                             /// Type Implication Only.
-                            auto type = evalExprForTypeId((ASTExpr *)specDecl->declProps[1].dataPtr,symbolTableContext);
+                            auto type = evalExprForTypeId(spec.expr,symbolTableContext);
                             if(!type){
                                 return false;
                             };
-                            specDecl->declType = type;
+                            spec.type = type;
                         };
                     };
                     break;
@@ -313,7 +253,7 @@ struct SemanticADiagnostic : public Diagnostic {
                     
                     SemanticsContext ctxt {errStream,funcNode};
 
-                    ASTIdentifier *func_id = (ASTIdentifier *)funcNode->declProps[0].dataPtr;
+                    ASTIdentifier *func_id = funcNode->funcId;
                     
                     /// Ensure that Function declared is unique within the current scope.
                     auto symEntry = symbolTableContext.main->symbolExists(func_id->val,ASTScopeGlobal);
@@ -336,15 +276,15 @@ struct SemanticADiagnostic : public Diagnostic {
                         return false;
                     };
                     /// Implied Type and Declared Type Comparison.
-                    if(funcNode->declType){
-                        if(!funcNode->declType->match(return_type_implied,[&](const llvm::formatv_object_base & message){
+                    if(funcNode->returnType != nullptr){
+                        if(!funcNode->returnType->match(return_type_implied,[&](const llvm::formatv_object_base & message){
                             errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("{0}\nContext: Declared return type of func `{1}` does not match implied return type.",func_id->val),funcNode);
                         }))
                             return false;
                     }
                     /// Assume return type is implied type.
                     else {
-                        funcNode->declType = return_type_implied;
+                        funcNode->returnType = return_type_implied;
                     };
 
                     break;

@@ -19,11 +19,12 @@ namespace starbytes {
     };
 
     void Parser::parseFromStream(std::istream &in,ModuleParseContext &moduleParseContext){
-        lexer->tokenizeFromIStream(in,tokenStream);
+        CodeViewSrc codeViewDoc;
+        lexer->tokenizeFromIStream(in,tokenStream,codeViewDoc);
         syntaxA->setTokenStream(tokenStream);
-        if(astConsumer.acceptsSymbolTableContext()){
-            astConsumer.consumeSTableContext(&moduleParseContext.sTableContext);
-        };
+//        if(astConsumer.acceptsSymbolTableContext()){
+//            astConsumer.consumeSTableContext(&moduleParseContext.sTableContext);
+//        };
         ASTStmt *stmt;
         while((stmt = syntaxA->nextStatement()) != nullptr){
             auto check  = semanticA->checkSymbolsForStmt(stmt,moduleParseContext.sTableContext);

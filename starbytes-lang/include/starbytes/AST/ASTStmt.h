@@ -1,4 +1,5 @@
 #include "ASTNodes.def"
+#include "starbytes/Base/CodeView.h"
 #include <string>
 #include <vector>
 
@@ -6,13 +7,6 @@
 #define STARBYTES_AST_ASTSTMT_H
 
 namespace starbytes {
-
-    struct SrcLoc {
-        unsigned startCol;
-        unsigned startLine;
-        unsigned endCol;
-        unsigned endLine;
-    };
 
     struct Comment {
         typedef enum : int {

@@ -2,13 +2,13 @@
 
 namespace starbytes {
 
-bool ASTDecl::classof(ASTStmt *stmt){
-    if(stmt->type | DECL){
-        return true;
-    }
-    else {
-        return false;
-    };
-};
+//bool ASTDecl::classof(ASTStmt *stmt){
+//    if(stmt->type | DECL){
+//        return true;
+//    }
+//    else {
+//        return false;
+//    };
+//};
 
 };

@@ -44,10 +44,12 @@ Lexer::Lexer(DiagnosticBufferedLogger & errStream):errStream(errStream){
     
 };
 
-void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamRef){
+void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamRef,CodeViewSrc &src){
     auto getChar = [&](){
         char rc = in.get();
         // std::cout << "getChar:" << rc << std::endl;
+        if(rc != -1)
+            src.code += rc;
         return rc;
     };
     
@@ -87,6 +89,7 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
         bufferEnd = bufferStart;
     };
     
+    src.code = "";
     
     char c;
     bool finish = false;

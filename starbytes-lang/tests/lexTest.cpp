@@ -15,14 +15,16 @@ int main(int argc,char * argv[]){
     starbytes::Syntax::Lexer lex(errStream);
     std::vector<starbytes::Syntax::Tok> tokenStream;
     std::ifstream in("./build/tests/test.stb");
+    starbytes::CodeViewSrc src;
     if(in.is_open()){
-        lex.tokenizeFromIStream(in,tokenStream);
+        lex.tokenizeFromIStream(in,tokenStream,src);
     }
     else {
         std::cout << "Failed to Read File: ./test.stb" << std::endl;
         return 1;
     }
     in.close();
+    std::cout << "CODE:" << src.code << std::endl;
         for(auto & t : tokenStream){
             std::cout << t.content << std::endl;
 //            std::cout << llvm::formatv("{0}",t).str() << std::endl;

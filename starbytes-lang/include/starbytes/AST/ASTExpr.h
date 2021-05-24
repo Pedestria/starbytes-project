@@ -40,12 +40,12 @@ namespace starbytes {
         static bool classof(ASTStmt *stmt);
     };
 
-class ASTLiteralExpr : public ASTExpr {
-public:
-    llvm::Optional<std::string> strValue;
-    
-    llvm::Optional<bool> boolValue;
-};
+    class ASTLiteralExpr : public ASTExpr {
+    public:
+        llvm::Optional<std::string> strValue;
+        
+        llvm::Optional<bool> boolValue;
+    };
 
 };
 

@@ -7,6 +7,7 @@
 #include <llvm/Support/FormatVariadicDetails.h>
 #include <llvm/Support/Compiler.h>
 #include "Toks.def"
+#include "starbytes/Base/CodeView.h"
 
 #ifndef STARBYTES_SYNTAX_LEXER_H
 #define STARBYTES_SYNTAX_LEXER_H
@@ -52,7 +53,6 @@ struct Tok {
         MinusEqual,
         Dot,
         LineCommentBegin,
-        LineCommentEnd,
         BlockCommentBegin,
         BlockCommentEnd,
         EndOfFile
@@ -67,7 +67,7 @@ class Lexer {
     DiagnosticBufferedLogger & errStream;
 public:
     Lexer(DiagnosticBufferedLogger & errStream);
-    void tokenizeFromIStream(std::istream & in,std::vector<Tok> & tokStreamRef);
+    void tokenizeFromIStream(std::istream & in,std::vector<Tok> & tokStreamRef,CodeViewSrc &src);
 };
 
 };
