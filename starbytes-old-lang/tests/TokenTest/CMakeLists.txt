@@ -1,9 +1,0 @@
-add_starbytes_test(
-    NAME
-    "lex-test"
-    FILES 
-    "test.cpp"
-    INCLUDE_LIB 
-    DEPENDENCIES
-    ${STARBYTES_ALL_LIBS} 
-)

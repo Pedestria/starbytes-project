@@ -1,9 +1,0 @@
-add_starbytes_test(
-    INCLUDE_LIB
-    NAME 
-    "full-compile-test"
-    FILES
-    "Run.cpp"
-    DEPENDENCIES
-    ${STARBYTES_ALL_LIBS}
-)
