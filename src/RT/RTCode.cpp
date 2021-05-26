@@ -1,4 +1,4 @@
-#define __RUNTIME__ 1
+
 #include "starbytes/RT/RTCode.h"
 #include <fstream>
 #include <iostream>

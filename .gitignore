@@ -13,7 +13,6 @@ starbytes-docs
 linux-build
 starbytes-lang/tools/main/Starbytes.cpp
 .DS_STORE
-llvm-project
 .idea
 cmake-build-debug
 cmake-build-release

@@ -214,8 +214,9 @@ RTObject *InterpImpl::invokeFunc(std::istream & in,llvm::StringRef & func_name,u
             };
             allocator->setScope(funcScope);
             auto prev_pos = in.tellg();
+            auto current_pos = func_temp.block_start_pos;
             /// Invoke
-            in.seekg(func_temp.block_start_pos);
+            in.seekg(current_pos);
             
             func_temp.invocations += 1;
             
@@ -225,13 +226,17 @@ RTObject *InterpImpl::invokeFunc(std::istream & in,llvm::StringRef & func_name,u
                 execNorm(code,in);
                 in.read((char *)&code,sizeof(RTCode));
             };
-            
+
+         
             in.seekg(prev_pos);
             
             allocator->clearScopeCollectG();
             allocator->setScope(parentScope);
+
+            return nullptr;
         };
     };
+    return nullptr;
 };
 
 RTObject *InterpImpl::evalExpr(std::istream & in){
@@ -272,6 +277,7 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in){
 //            std::cout << var_name.data() << std::endl;
         if(var.hasInitValue){
             auto val = evalExpr(in);
+            runtime_object_ref_inc(val);
             allocator->allocVariable(var_name,val);
         }
     }

@@ -1,0 +1,26 @@
+
+
+decl myvar = ["hello","world"]
+decl myothervar = "Hello World"
+
+func myFunc(param:String){
+    print(param)
+}
+
+myFunc(myothervar)
+
+print(myvar)
+
+myFunc("Inline Test SUCCESS")
+
+
+
+
+
+
+
+
+
+
+
+

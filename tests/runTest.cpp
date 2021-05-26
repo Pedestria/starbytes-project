@@ -3,6 +3,7 @@
 #include "starbytes/RT/RTEngine.h"
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/FileSystem.h>
 
 int main(int argc,char *argv[]){
     llvm::InitLLVM init(argc,argv);
