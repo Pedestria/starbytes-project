@@ -1,0 +1,10 @@
+
+
+#ifndef STARBYTES_BASE_FILEXT_DEF
+#define STARBYTES_BASE_FILEXT_DEF
+
+#define STARBYTES_SRCFILE_EXT "starb"
+#define STARBYTES_COMPILEDFILE_EXT "starbmod"
+#define STARBYTES_INTERFACEFILE_EXT "starbint"
+
+#endif

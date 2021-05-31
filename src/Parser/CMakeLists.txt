@@ -5,6 +5,8 @@ add_starbytes_lib(
     "Parser.cpp"
     "SemanticA.cpp"
     "SymTable.cpp"
+    "DeclSema.cpp"
+    "ExprSema.cpp"
     HEADER_FILES 
     "Parser.h"
     "SemanticA.h"

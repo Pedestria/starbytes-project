@@ -30,7 +30,7 @@ void string_substring(RTInternalObject::StringParams & in,unsigned idx,unsigned 
 
 unsigned string_length(RTInternalObject::StringParams & in);
 
-};
-};
+}
+}
 
 #endif

@@ -14,7 +14,7 @@ namespace starbytes {
 
     struct ASTScope;
 
-    struct SemanticADiagnostic : public Diagnostic {
+    struct SemanticADiagnostic final : public Diagnostic {
         typedef enum : int {
           Error,
           Warning,
@@ -23,13 +23,13 @@ namespace starbytes {
         Ty type;
         ASTStmt *stmt;
         std::string message;
-        bool isError(){
+        bool isError() override{
             return type == Error;
         };
-        void format(llvm::raw_ostream &os){
+        void format(llvm::raw_ostream &os) override{
             os << llvm::raw_ostream::RED << "ERROR: " << llvm::raw_ostream::RESET << message << "\n";
         };
-        SemanticADiagnostic(Ty type,const llvm::formatv_object_base & message,ASTStmt *stmt):type(type),message(message),stmt(stmt){
+        SemanticADiagnostic(Ty type,const llvm::formatv_object_base & message,ASTStmt *stmt):type(type),stmt(stmt),message(message){
             
         };
         SemanticADiagnostic(Ty type,ASTStmt *stmt):type(type),stmt(stmt){
@@ -43,13 +43,15 @@ namespace starbytes {
     class SemanticA {
         Syntax::SyntaxA & syntaxARef;
         DiagnosticBufferedLogger & errStream;
-        bool typeExists(ASTType *type,Semantics::STableContext & symbolTableContext);
-        ASTType *evalExprForTypeId(ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext);
-        bool typeMatches(ASTType *type,ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext);
+        bool typeExists(ASTType *type,Semantics::STableContext & symbolTableContext,ASTScope *scope);
+        ASTType *evalExprForTypeId(ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext,ASTScope *scope);
+        bool typeMatches(ASTType *type,ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext,ASTScope *scope);
+        
+        ASTType * evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & symbolTableContext,ASTScope *scope,bool * hasErrored,llvm::DenseMap<ASTIdentifier *,ASTType *> *args = nullptr);
         /**
             @param args Used with BlockStmts embedded in Function Decls.
         */
-        ASTType * evalBlockStmtForASTType(ASTBlockStmt *block,Semantics::STableContext & symbolTableContext,
+        ASTType * evalBlockStmtForASTType(ASTBlockStmt *block,Semantics::STableContext & symbolTableContext,bool * hasErrored,
         llvm::DenseMap<ASTIdentifier *,ASTType *> * args = nullptr,bool inFuncContext = false);
         bool checkSymbolsForStmtInScope(ASTStmt *stmt,Semantics::STableContext & symbolTableContext,
         ASTScope *scope,llvm::Optional<Semantics::SymbolTable> tempSTable = {});

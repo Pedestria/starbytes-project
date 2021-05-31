@@ -8,20 +8,20 @@ using namespace Runtime;
 
 bool CodeGen::acceptsSymbolTableContext(){
     return genContext->tableContext != nullptr;
-};
+}
 
 void CodeGen::consumeSTableContext(Semantics::STableContext *table){
     genContext->tableContext = table;
-};
+}
 
 void CodeGen::setContext(ModuleGenContext *context){
     genContext = context;
-};
+}
 
 void CodeGen::finish(){
     RTCode code = CODE_MODULE_END;
     genContext->out.write((char *)&code,sizeof(RTCode));
-};
+}
 
 inline void write_ASTBlockStmt_to_context(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,CodeGen *astConsumer){
     RTCode code = CODE_RTBLOCK_BEGIN;
@@ -36,14 +36,14 @@ inline void write_ASTBlockStmt_to_context(ASTBlockStmt *blockStmt,ModuleGenConte
     };
     code = CODE_RTBLOCK_END;
     ctxt->out.write((char *)&code,sizeof(RTCode));
-};
+}
 
 
 inline void ASTIdentifier_to_RTID(ASTIdentifier *var,RTID &out){
     llvm::StringRef name = var->val;
     out.len = name.size();
     out.value = name.data();
-};
+}
 
 
 void CodeGen::consumeDecl(ASTDecl *stmt){
@@ -74,11 +74,11 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         genContext->out << &funcTemplate;
         write_ASTBlockStmt_to_context(func_node->blockStmt,genContext,this);
     };
-};
+}
 
 bool stmtCanBeConvertedToRTInternalObject(ASTStmt *stmt){
     return (stmt->type == ARRAY_EXPR) || (stmt->type == DICT_EXPR) || (stmt->type & LITERAL);
-};
+}
 
 Runtime::RTInternalObject * CodeGen::exprToRTInternalObject(ASTExpr *expr){
     RTInternalObject *ob = new RTInternalObject();
@@ -109,7 +109,7 @@ Runtime::RTInternalObject * CodeGen::exprToRTInternalObject(ASTExpr *expr){
         ob->data = params;
     }
     return ob;
-};
+}
 
 
 void CodeGen::consumeStmt(ASTStmt *stmt){
@@ -128,6 +128,8 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         genContext->out << &id;
     }
     else if(stmt->type == IVKE_EXPR){
+        /// Invoke Expr
+        std::cout << "Invoke Expr" << std::endl;
         RTCode code = CODE_RTIVKFUNC;
         genContext->out.write((const char *)&code,sizeof(RTCode));
         RTID func_id;
@@ -139,7 +141,7 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
             consumeStmt(arg);
         };
     };
-};
+}
 
 
-};
+}

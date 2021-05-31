@@ -16,16 +16,22 @@ typedef unsigned char RTCode;
 #define CODE_MODULE_END 0x00
 #define CODE_RTVAR 0x01
 #define CODE_RTFUNC 0x02
-#define CODE_RTCLASS 0x03
+#define CODE_RTOBJECT_DEFINE 0x03
 #define CODE_RTOBJCREATE 0x04
 #define CODE_RTINTOBJCREATE 0x05
 #define CODE_RTEXPR 0x06
 #define CODE_RTIVKFUNC 0x06
+#define CODE_RTRETURN 0x07
 #define CODE_RTBLOCK_BEGIN 0x08
 #define CODE_RTBLOCK_END 0x09
 #define CODE_RTVAR_REF 0x0A
 #define CODE_RTOBJVAR_REF 0x0B
 #define CODE_CONDITIONAL 0x0C
+
+#define COND_TYPE_IF 0x0
+#define COND_TYPE_ELSE 0x1
+#define COND_TYPE_LOOPIF 0x2
+
 
 #define RTINTOBJ_STR 0x1
 #define RTINTOBJ_ARRAY 0x2
@@ -84,7 +90,7 @@ struct RTObject {
     RTClassTemplate *classOf = nullptr;
 };
 
-RTCODE_STREAM_OBJECT(RTObject);
+RTCODE_STREAM_OBJECT(RTObject)
 
 struct RTInternalObject : public RTObject {
     struct IntegerParams {
@@ -105,13 +111,13 @@ public:
     
 };
 
-RTCODE_STREAM_OBJECT(RTInternalObject);
+RTCODE_STREAM_OBJECT(RTInternalObject)
 
 
 
 
 
-};
-};
+}
+}
 
 #endif

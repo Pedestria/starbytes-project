@@ -18,7 +18,7 @@ int main(int argc,char * argv[]){
     starbytes::DiagnosticBufferedLogger errStream;
     starbytes::Syntax::Lexer lex(errStream);
     std::vector<starbytes::Syntax::Tok> tokenStream;
-    std::ifstream in("./test.stb");
+    std::ifstream in("./tests/test.stb");
     starbytes::CodeViewSrc src;
     if(in.is_open()){
         lex.tokenizeFromIStream(in,tokenStream,src);

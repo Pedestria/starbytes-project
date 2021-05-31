@@ -5,7 +5,7 @@ namespace starbytes {
 
 void Semantics::SymbolTable::addSymbolInScope(Entry *entry, ASTScope *scope){
     body.insert(std::make_pair(entry,scope));
-};
+}
 
 bool Semantics::SymbolTable::symbolExists(llvm::StringRef symbolName,ASTScope *scope){
     for(auto & sym : body){
@@ -14,12 +14,13 @@ bool Semantics::SymbolTable::symbolExists(llvm::StringRef symbolName,ASTScope *s
         };
     };
     return false;
-};
+}
 
 Semantics::SymbolTable::Entry * Semantics::STableContext::findEntry(llvm::StringRef symbolName,SemanticsContext & ctxt,ASTScope *scope){
     unsigned entryCount = 0;
     Semantics::SymbolTable::Entry *ent = nullptr;
     for(auto & pair : main->body){
+        // std::cout << "SCOPE PTR 1:" << pair.getSecond() << std::endl << "SCOPE PTR 2" << scope << std::endl;
         if(pair.getFirst()->name == symbolName && pair.getSecond() == scope){
             ent = pair.getFirst();
             ++entryCount;
@@ -45,12 +46,13 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntry(llvm::String
     };
     
     return ent;
-};
+}
 
 Semantics::SymbolTable::~SymbolTable(){
     for(auto & e : body){
-        
+        delete e.getFirst();
     };
-};
+    body.clear();
+}
 
-};
+}

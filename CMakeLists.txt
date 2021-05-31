@@ -1,7 +1,7 @@
-﻿#CMakeLists.txt Top Level File (Starbytes Project)
-cmake_minimum_required (VERSION 3.13)
+﻿
+cmake_minimum_required (VERSION 3.18)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
-cmake_policy(SET CMP0079 NEW)
+# cmake_policy(SET CMP0079 NEW)
 
 option(USE_VCPKG "Use vcpkg manager!" OFF)
 option(USE_VCPKG_AS_TOOLCHAIN "Use vcpkg cmake toolchain file" OFF)
@@ -58,27 +58,37 @@ endif()
 
 
 
-set(CMAKE_CXX_COMPILER_FLAGS "-fansi-escape-codes -fms-compatibility")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
+# set(CMAKE_LINK_FLAGS "${CMAKE_LINK_FLAGS} -frtti")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 
 project ("Starbytes" CXX C)
 
-include_directories("llvm-project/llvm/include")
-add_definitions(${LLVM_DEFINITIONS})
-
-message("Found LLVM: ${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}")
 
 
 
-llvm_map_components_to_libnames(llvm_libs support core)
+include_directories(${LLVM_INCLUDE_DIRS})
+separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
+message("DEF: ${LLVM_DEFINITIONS_LIST}")
+add_definitions(${LLVM_DEFINITIONS_LIST})
+
+message("Found LLVM: ${LLVM_PACKAGE_VERSION}")
 
 
-include("./Starbytes.cmake")
+
+llvm_map_components_to_libnames(llvm_libs support)
+
+
+include(./Starbytes.cmake)
 
 if(XCODE)
     set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+endif()
+
+if(APPLE)
+	message("macOS: ${CMAKE_OSX_SYSROOT}")
 endif()
 
 include(CheckIncludeFile)

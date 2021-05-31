@@ -39,6 +39,6 @@ namespace starbytes {
         SrcLoc loc;
         // virtual ~ASTStmt();
     };
-};
+}
 
 #endif

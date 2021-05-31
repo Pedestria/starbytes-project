@@ -39,4 +39,8 @@ void DiagnosticBufferedLogger::logAll(){
     };
 };
 
+void Diagnostic::format(llvm::raw_ostream & os){
+    
+};
+
 };

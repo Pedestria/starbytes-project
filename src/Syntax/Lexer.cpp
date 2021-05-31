@@ -9,7 +9,8 @@ bool isBooleanLiteral(llvm::StringRef str){
 };
 
 bool isKeyword(llvm::StringRef str){
-    return (str == KW_DECL) || (str == KW_IMUT) || (str == KW_IMPORT) || (str == KW_FUNC);
+    return (str == KW_DECL) || (str == KW_IMUT) || (str == KW_IMPORT)
+    || (str == KW_FUNC) || (str == KW_IF) || (str == KW_ELSE);
 };
 
 bool isNumber(llvm::StringRef str){

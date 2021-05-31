@@ -10,20 +10,22 @@ typedef int ASTNodeType;
 
 #define DECL 0x000F00
 
+/// Generic Decls
 #define VAR_DECL (0x001000 | DECL)
 #define COND_DECL (0x002000 | DECL)
-#define CLS_DECL (0x003000 | DECL)
-#define INTFCE_DECL (0x004000 | DECL)
+
+/// Scope Specific Decls
+/// - Global Scope Only -->
+#define CLASS_DECL (0x003000 | DECL)
+#define INTERFACE_DECL (0x004000 | DECL)
 #define FUNC_DECL (0x005000 | DECL)
-#define CLS_INST_FUNC_DECL (0x006000 | DECL)
-#define CLS_INST_PROP_DECL (0x007000 | DECL)
-#define CLS_STIC_FUNC_DECL (0x008000 | DECL)
-#define CLS_STIC_PROP_DECL (0x009000 | DECL)
-#define IF_DECL (0x00A000 | DECL)
-#define IF_ELSE_DECL (0x00B000 | DECL)
-#define ELSE_DECL (0x00C000 | DECL)
-#define IMPORT_DECL (0x00D000 | DECL)
-#define SCOPE_DECL (0x00E000 | DECL)
+#define RETURN_DECL (0x006000 | DECL)
+
+// - Class Scope Only -->
+#define CLASS_FUNC_DECL (0x007000 | DECL)
+#define CLASS_PROP_DECL (0x008000 | DECL)
+#define IMPORT_DECL (0x009000 | DECL)
+// #define SCOPE_DECL (0x00A000 | DECL)
 
 #define EXPR 0x0F0000
 #define INDEX_EXPR (0x100000 | EXPR)
@@ -32,5 +34,8 @@ typedef int ASTNodeType;
 #define DICT_EXPR (0x400000 | EXPR)
 #define IVKE_EXPR (0x500000 | EXPR)
 #define ID_EXPR (0x600000 | EXPR)
+#define ASSIGN_EXPR (0x700000 | EXPR)
+#define UNARY_EXPR (0x800000 | EXPR)
+#define BINARY_EXPR (0x900000 | EXPR)
 
 #endif

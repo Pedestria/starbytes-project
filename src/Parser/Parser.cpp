@@ -5,18 +5,18 @@
 namespace starbytes {
 
     ModuleParseContext ModuleParseContext::Create(std::string name){
-        return {name,std::make_unique<Semantics::SymbolTable>()};
-    };
+        return {name,{std::make_unique<Semantics::SymbolTable>(),{}}};
+    }
 
     Parser::Parser(ASTStreamConsumer & astConsumer):
-    astConsumer(astConsumer),
     diagnosticsEngine(std::make_unique<DiagnosticBufferedLogger>()),
     lexer(std::make_unique<Syntax::Lexer>(*diagnosticsEngine)),
     syntaxA(std::make_unique<Syntax::SyntaxA>()),
-    semanticA(std::make_unique<SemanticA>(*syntaxA,*diagnosticsEngine))
+    semanticA(std::make_unique<SemanticA>(*syntaxA,*diagnosticsEngine)),
+    astConsumer(astConsumer)
     {
         semanticA->start();
-    };
+    }
 
     void Parser::parseFromStream(std::istream &in,ModuleParseContext &moduleParseContext){
         CodeViewSrc codeViewDoc;
@@ -34,7 +34,7 @@ namespace starbytes {
                     astConsumer.consumeDecl((ASTDecl *)stmt);
                      
                 }
-                else if(stmt->type & EXPR) {
+                else {
                     astConsumer.consumeStmt(stmt);
                 };
             }
@@ -45,7 +45,7 @@ namespace starbytes {
         };
         tokenStream.clear();
        
-    };
+    }
 
     bool Parser::finish(){
         auto rc = !diagnosticsEngine->hasErrored();
@@ -53,5 +53,5 @@ namespace starbytes {
             diagnosticsEngine->logAll();
         };
         return rc;
-    };
-};
+    }
+}

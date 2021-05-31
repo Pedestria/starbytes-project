@@ -57,10 +57,10 @@ namespace starbytes {
             std::unique_ptr<SymbolTable> main;
             std::vector<SymbolTable *> otherTables;
             bool hasTable(SymbolTable *ptr);
-            SymbolTable::Entry * findEntry(llvm::StringRef symbolName,SemanticsContext & ctxt,ASTScope *scope = nullptr);
+            SymbolTable::Entry * findEntry(llvm::StringRef symbolName,SemanticsContext & ctxt,ASTScope *scope);
         };
-    };
+    }
 
-};
+}
 
 #endif

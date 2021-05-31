@@ -1,17 +1,13 @@
 
-
 decl myvar = ["hello","world"]
-decl myothervar = "Hello World"
 
-func myFunc(param:String){
-    print(param)
+func helloWorld(){
+    print("mama")
 }
 
-myFunc(myothervar)
-
+helloWorld()
 print(myvar)
 
-myFunc("Inline Test SUCCESS")
 
 
 

@@ -5,6 +5,7 @@
 #define STARBYTES_SYNTAX_SYNTAXA_H
 
 namespace starbytes {
+  
 
     class ASTStmt;
     class ASTDecl;
@@ -17,6 +18,7 @@ namespace starbytes {
     struct Comment;
 
     namespace Syntax {
+        typedef const Tok & TokRef;
         class SyntaxA {
             llvm::ArrayRef<Tok> token_stream;
             unsigned privTokIndex;

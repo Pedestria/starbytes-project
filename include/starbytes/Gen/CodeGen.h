@@ -10,20 +10,21 @@ namespace starbytes {
 
 struct ModuleGenContext;
 
-class CodeGen : public ASTStreamConsumer {
+class CodeGen final : public ASTStreamConsumer {
     ModuleGenContext *genContext;
     DiagnosticBufferedLogger * errStream;
     friend class Parser;
     Runtime::RTInternalObject *exprToRTInternalObject(ASTExpr *expr);
 public:
     void finish();
-    void consumeSTableContext(Semantics::STableContext *table);
-    bool acceptsSymbolTableContext();
+    void consumeSTableContext(Semantics::STableContext *table) override;
+    bool acceptsSymbolTableContext() override;
     void setContext(ModuleGenContext *context);
-    void consumeDecl(ASTDecl *stmt);
-    void consumeStmt(ASTStmt *stmt);
+    void consumeDecl(ASTDecl *stmt) override;
+    void consumeStmt(ASTStmt *stmt) override;
+    ~CodeGen() = default;
 };
 
-};
+}
 
 #endif

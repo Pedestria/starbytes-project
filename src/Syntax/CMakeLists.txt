@@ -4,6 +4,8 @@ add_starbytes_lib(
     SOURCE_FILES 
     "Lexer.cpp"
     "SyntaxA.cpp"
+    "SyntaxADecl.cpp"
+    "SyntaxAExpr.cpp"
     HEADER_FILES
     "Lexer.h" 
     "SyntaxA.h"

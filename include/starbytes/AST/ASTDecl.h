@@ -46,11 +46,17 @@ namespace starbytes {
         ASTBlockStmt *blockStmt;
     };
 
+    class ASTReturnDecl : public ASTDecl {
+    public:
+        ASTExpr *expr;
+    };
+
     class ASTConditionalDecl : public ASTDecl {
     public:
         struct CondDecl {
             ASTExpr *expr;
             ASTBlockStmt *blockStmt;
+            bool isElse();
         };
         llvm::SmallVector<CondDecl,2> specs;
     };

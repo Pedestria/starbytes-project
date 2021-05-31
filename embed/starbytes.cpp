@@ -7,6 +7,9 @@
 #include <starbytes/Gen/Gen.h>
 #include <starbytes/RT/RTEngine.h>
 
+using namespace llvm;
+
+
 namespace starbytes {
 
     Byte * ByteBuffer::pointer(){

@@ -19,13 +19,14 @@ RTScope *RTSCOPE_GLOBAL = new RTScope({"__GLOBAL__"});
 
 void runtime_object_ref_inc(RTObject *obj){
     ++(obj->refCount);
-};
+}
 
 void runtime_object_ref_dec(RTObject *obj){
     --(obj->refCount);
-};
+}
 
 inline void runtime_object_delete(RTObject *obj){
+    std::cout << "OBJ:" << std::hex << size_t(obj) << "DELETE" << std::endl;
     if(obj->isInternal){
         RTInternalObject *_obj = (RTInternalObject *)obj;
         switch (_obj->type) {
@@ -50,17 +51,18 @@ inline void runtime_object_delete(RTObject *obj){
             default:
                 break;
         }
+        delete _obj;
     }
     else {
         
     };
-};
+}
 /// Garbage Collect
 void runtime_object_collectg(RTObject *obj){
     if(obj->refCount == 0){
         runtime_object_delete(obj);
     };
-};
+}
 
 RTObject *clone_runtime_object(RTObject *obj){
     if(obj->isInternal){
@@ -91,7 +93,7 @@ RTObject *clone_runtime_object(RTObject *obj){
     else {
         return nullptr;
     };
-};
+}
 
 
 class RTAllocator {
@@ -160,24 +162,28 @@ public:
     };
     void clearScope(){
         auto found = all_var_objects.find(currentScope);
-        auto map = found->second;
-        for(auto & ent : map){
-            runtime_object_delete(ent.second);
+        if(found != all_var_objects.end()){
+            auto & map = found->second;
+            for(auto & ent : map){
+                runtime_object_delete(ent.second);
+            };
+            all_var_objects.erase(found);
         };
-        all_var_objects.erase(found);
     };
     void clearScopeCollectG(){
         auto found = all_var_objects.find(currentScope);
-        auto map = found->second;
-        for(auto & ent : map){
-            runtime_object_collectg(ent.second);
-        };
-        all_var_objects.erase(found);
+        if(found != all_var_objects.end()){
+            auto & map = found->second;
+            for(auto & ent : map){
+                runtime_object_collectg(ent.second);
+            };
+            all_var_objects.erase(found);
+        }
     };
 };
 
 
-class InterpImpl : public Interp {
+class InterpImpl final : public Interp {
 
     std::unique_ptr<RTAllocator> allocator;
     
@@ -195,7 +201,7 @@ public:
     InterpImpl():allocator(std::make_unique<RTAllocator>()){
         
     };
-    void exec(std::istream &in);
+    void exec(std::istream &in) override;
 };
 
 RTObject *InterpImpl::invokeFunc(std::istream & in,llvm::StringRef & func_name,unsigned argCount){
@@ -237,7 +243,7 @@ RTObject *InterpImpl::invokeFunc(std::istream & in,llvm::StringRef & func_name,u
         };
     };
     return nullptr;
-};
+}
 
 RTObject *InterpImpl::evalExpr(std::istream & in){
     RTCode code;
@@ -266,7 +272,8 @@ RTObject *InterpImpl::evalExpr(std::istream & in){
         default:
             break;
     }
-};
+    return nullptr;
+}
 
 void InterpImpl::execNorm(RTCode &code,std::istream &in){
     if(code == CODE_RTVAR){
@@ -295,12 +302,14 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in){
         if(func_name == "print"){
             RTObject *object_to_print = evalExpr(in);
             stdlib::print(object_to_print);
+            runtime_object_ref_dec(object_to_print);
+            runtime_object_collectg(object_to_print);
         }
         else {
             invokeFunc(in,func_name,argCount);
         };
     }
-};
+}
 
 void InterpImpl::exec(std::istream & in){
     std::cout << "Interp Starting" << std::endl;
@@ -313,10 +322,10 @@ void InterpImpl::exec(std::istream & in){
         in.read((char *)&code,sizeof(RTCode));
     };
     allocator->clearScope();
-};
+}
 
 std::shared_ptr<Interp> Interp::Create(){
     return std::make_shared<InterpImpl>();
-};
+}
 
-};
+}

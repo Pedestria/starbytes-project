@@ -9,7 +9,7 @@ namespace starbytes {
 struct Diagnostic {
     bool resolved = false;
     virtual bool isError() = 0;
-    virtual void format(llvm::raw_ostream & os) = 0;
+    virtual void format(llvm::raw_ostream & os);
     virtual ~Diagnostic() = default;
 };
 

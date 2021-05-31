@@ -41,7 +41,10 @@
 #define KW_FUNC KW("func")
 #define KW_RETURN KW("return")
 #define KW_IMUT KW("imut")
-#define KW_DEFTYPE KW("deftype")
+#define KW_IF KW("if")
+#define KW_ELSE KW("else")
+#define KW_ELIF KW("elif")
+#define KW_FOR KW("for")
 
 #define TOK_TRUE TOK("true")
 #define TOK_FALSE TOK("false")

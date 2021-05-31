@@ -28,7 +28,7 @@ namespace starbytes {
         /// @name Binary Expression Props
         /// @{
         ASTExpr * leftExpr = nullptr;
-
+        /// NOTE: `rightExpr` is also used for AssignExpr
         ASTExpr * rightExpr = nullptr;
         /// @}
 
@@ -47,6 +47,6 @@ namespace starbytes {
         llvm::Optional<bool> boolValue;
     };
 
-};
+}
 
 #endif

@@ -1,7 +1,7 @@
 name: "Starbytes Lang Syntax"
-scopeName: "source.stb" 
+scopeName: "source.starb" 
 uuid: 86e272a9-6421-4db5-a7b8-01d296c9fca5
-fileTypes: ["stb"]
+fileTypes: ["starb"]
 foldingStartMarker: '\{\s*$'
 foldingStopMarker: '^\s*\}'
 

@@ -9,7 +9,7 @@ namespace starbytes {
         inline void _print_timestamp(){
 //            auto t = time(NULL);
 //            std::cout << "[" << std::asctime(gmtime(&t)) << "]" << std::flush;
-        };
+        }
     
         void _print_rt_internal_obj(RTInternalObject *object);
     
@@ -20,7 +20,7 @@ namespace starbytes {
             else {
                 
             };
-        };
+        }
     
         void _print_rt_internal_obj(RTInternalObject *object){
             switch (object->type) {
@@ -62,53 +62,53 @@ namespace starbytes {
                 }
             }
             
-        };
+        }
     
         /// Print Function
         void print(RTObject *object){
 //            _print_timestamp();
             _print_rt_obj(object);
             std::cout << std::endl;
-        };
-       
+        }
+    
     
         /// Array Object
 
         void array_push(RTInternalObject::ArrayParams &array,RTObject *any){
             array.data.push_back(any);
-        };
+        }
         RTObject *array_index(RTInternalObject::ArrayParams &array,unsigned idx){
             assert(idx < array.data.size());
             return array.data[idx];
-        };
+        }
         unsigned array_length(RTInternalObject::ArrayParams &array){
             return array.data.size();
-        };
+        }
 
 
         /// Integer Object
 
         int int_add(RTInternalObject::IntegerParams & lhs,RTInternalObject::IntegerParams & rhs){
             return lhs.value + rhs.value;
-        };
+        }
 
         int int_sub(RTInternalObject::IntegerParams & lhs,RTInternalObject::IntegerParams & rhs){
             return lhs.value - rhs.value;
-        };
+        }
         /// String Object
 
         void string_concat(RTInternalObject::StringParams & in1,RTInternalObject::StringParams & in2,std::string & out){
             out = in1.str + in2.str;
-        };
+        }
 
         void string_substring(RTInternalObject::StringParams & in,unsigned idx,unsigned len,std::string & out){
             out = in.str.substr(idx,len);
-        };
+        }
     
         unsigned string_length(RTInternalObject::StringParams & in){
             return in.str.size();
-        };
+        }
     
     
-    };
-};
+    }
+}
