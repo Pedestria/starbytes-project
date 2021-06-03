@@ -1,12 +1,16 @@
 
 decl myvar = ["hello","world"]
 
+func anotherFunc(param:String){
+    print(param)
+}
+
 func helloWorld(){
     print("mama")
 }
 
 helloWorld()
-print(myvar)
+anotherFunc(myvar)
 
 
 
