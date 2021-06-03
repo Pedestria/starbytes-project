@@ -13,6 +13,7 @@ namespace starbytes {
         std::vector<ASTIdentifier> genericArgs;
         std::string val;
         static bool classof(ASTStmt *stmt);
+        bool match(ASTIdentifier *other);
     };
     class ASTExpr : public ASTStmt {
     public:

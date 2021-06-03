@@ -1,5 +1,6 @@
 
 decl myvar = ["hello","world"]
+decl mvarother = "this bitch!"
 
 func anotherFunc(param:String){
     print(param)
@@ -10,7 +11,7 @@ func helloWorld(){
 }
 
 helloWorld()
-anotherFunc(myvar)
+anotherFunc(mvarother)
 
 
 

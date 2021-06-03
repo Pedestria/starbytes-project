@@ -2,7 +2,7 @@
 
 namespace starbytes {
 
-ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & symbolTableContext,ASTScope * scope,bool * hasErrored,llvm::DenseMap<ASTIdentifier *,ASTType *> *args){
+ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & symbolTableContext,ASTScopeSemanticsContext & scopeContext,bool * hasErrored){
     ASTType *t = nullptr;
     switch (stmt->type) {
         /// VarDecl
@@ -11,7 +11,7 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & sy
             for(auto & spec : varDecl->specs){
                 if(!(!spec.type) && (!spec.expr)){
                     // Type Decl and Type Implication Comparsion
-                    if(!typeMatches(spec.type,spec.expr,symbolTableContext,scope))
+                    if(!typeMatches(spec.type,spec.expr,symbolTableContext,scopeContext))
                     {
                         *hasErrored = true;
                         return nullptr;
@@ -26,7 +26,7 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & sy
                 }
                 else {
                     /// Type Implication Only.
-                    auto type = evalExprForTypeId(spec.expr,symbolTableContext,scope);
+                    auto type = evalExprForTypeId(spec.expr,symbolTableContext,scopeContext);
                     if(!type){
                         *hasErrored = true;
                         return nullptr;
@@ -42,7 +42,7 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & sy
             for(auto & condSpec : condDecl->specs){
                 if(!condSpec.isElse()){
                     ASTExpr *conditionExpr = condSpec.expr;
-                    ASTType *condResType = evalExprForTypeId(conditionExpr,symbolTableContext,scope);
+                    ASTType *condResType = evalExprForTypeId(conditionExpr,symbolTableContext,scopeContext);
                     /// 1. Check if expression evaluation failed.
                     if(!condResType){
                         *hasErrored = true;
@@ -60,13 +60,13 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & sy
                 }
                /// 3. Eval Block
                 bool hasFailed;
-                ASTType *blockReturnType = evalBlockStmtForASTType(condSpec.blockStmt, symbolTableContext,&hasFailed,args,args != nullptr);
+                ASTType *blockReturnType = evalBlockStmtForASTType(condSpec.blockStmt, symbolTableContext,&hasFailed,scopeContext,scopeContext.args != nullptr);
                 if(hasFailed){
                     *hasErrored = hasFailed;
                     return nullptr;
                 };
                 
-                if(scope->type == ASTScope::Function)
+                if(scopeContext.scope->type == ASTScope::Function)
                     t = blockReturnType;
                 
             };
@@ -84,7 +84,7 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & sy
     return t;
 }
 
-ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,Semantics::STableContext & symbolTableContext,bool  * hasErrored,llvm::DenseMap<ASTIdentifier *,ASTType *> *args,bool inFuncContext){
+ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,Semantics::STableContext & symbolTableContext,bool  * hasErrored,ASTScopeSemanticsContext & scopeContext,bool inFuncContext){
         ASTType *returnType = VOID_TYPE;
 
         #define RETURN() if(stmt->parentScope->type == ASTScope::Function)\
@@ -119,7 +119,7 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,Semantics::STable
                             mainReturnType = VOID_TYPE;
                             continue;
                         };
-                        auto rt = evalExprForTypeId(ret->expr,symbolTableContext,stmt->parentScope);
+                        auto rt = evalExprForTypeId(ret->expr,symbolTableContext,scopeContext);
                         if(!rt){
                             *hasErrored = true;
                             return nullptr;
@@ -136,7 +136,7 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,Semantics::STable
                 else {;
                     
                     bool __hasErrored;
-                    auto declReturn = evalGenericDecl((ASTDecl *)node,symbolTableContext,stmt->parentScope,&__hasErrored,args);
+                    auto declReturn = evalGenericDecl((ASTDecl *)node,symbolTableContext,scopeContext,&__hasErrored);
                     if(__hasErrored)
                     {
                         *hasErrored = __hasErrored;
@@ -148,7 +148,7 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,Semantics::STable
                 }
             }
             else{
-                ASTType *t = evalExprForTypeId((ASTExpr *)node,symbolTableContext,stmt->parentScope);
+                ASTType *t = evalExprForTypeId((ASTExpr *)node,symbolTableContext,scopeContext);
                 if(!t){
                     *hasErrored = true;
                     return nullptr;

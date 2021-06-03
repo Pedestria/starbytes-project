@@ -319,6 +319,9 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                 };
                 
             }
+            else {
+                node = nullptr;
+            }
 //             else if(first_token.content == KW_CLASS){
                 
 //                 // node->type = CLASS_DECL;
@@ -341,6 +344,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
             return node;
         }
         else {
+            
             return nullptr;
         };
     }

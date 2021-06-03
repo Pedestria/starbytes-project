@@ -40,19 +40,24 @@ namespace starbytes {
         };
     };
 
+    struct ASTScopeSemanticsContext {
+        ASTScope *scope;
+        llvm::DenseMap<ASTIdentifier *,ASTType *> *args = nullptr;
+    };
+
     class SemanticA {
         Syntax::SyntaxA & syntaxARef;
         DiagnosticBufferedLogger & errStream;
         bool typeExists(ASTType *type,Semantics::STableContext & symbolTableContext,ASTScope *scope);
-        ASTType *evalExprForTypeId(ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext,ASTScope *scope);
-        bool typeMatches(ASTType *type,ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext,ASTScope *scope);
+        ASTType *evalExprForTypeId(ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext,ASTScopeSemanticsContext & scopeContext);
+        bool typeMatches(ASTType *type,ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext,ASTScopeSemanticsContext & scopeContext);
         
-        ASTType * evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & symbolTableContext,ASTScope *scope,bool * hasErrored,llvm::DenseMap<ASTIdentifier *,ASTType *> *args = nullptr);
+        ASTType * evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & symbolTableContext,ASTScopeSemanticsContext & scopeContext,bool * hasErrored);
         /**
             @param args Used with BlockStmts embedded in Function Decls.
         */
         ASTType * evalBlockStmtForASTType(ASTBlockStmt *block,Semantics::STableContext & symbolTableContext,bool * hasErrored,
-        llvm::DenseMap<ASTIdentifier *,ASTType *> * args = nullptr,bool inFuncContext = false);
+        ASTScopeSemanticsContext & scopeContext,bool inFuncContext = false);
         bool checkSymbolsForStmtInScope(ASTStmt *stmt,Semantics::STableContext & symbolTableContext,
         ASTScope *scope,llvm::Optional<Semantics::SymbolTable> tempSTable = {});
     public:

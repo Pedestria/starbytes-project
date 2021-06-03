@@ -82,9 +82,9 @@ namespace starbytes {
 
 
 
-    bool SemanticA::typeMatches(ASTType *type,ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext,ASTScope *scope){
+    bool SemanticA::typeMatches(ASTType *type,ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext,ASTScopeSemanticsContext & scopeContext){
         
-        auto other_type_id = evalExprForTypeId(expr_to_eval,symbolTableContext,scope);
+        auto other_type_id = evalExprForTypeId(expr_to_eval,symbolTableContext,scopeContext);
         if(!other_type_id){
             return false;
         };
@@ -100,10 +100,11 @@ namespace starbytes {
 
 
     bool SemanticA::checkSymbolsForStmtInScope(ASTStmt *stmt,Semantics::STableContext & symbolTableContext,ASTScope *scope,llvm::Optional<Semantics::SymbolTable> tempSTable){
+        ASTScopeSemanticsContext scopeContext {scope};
         if(stmt->type & DECL){
             ASTDecl *decl = (ASTDecl *)stmt;
             bool hasErrored;
-            auto rc = evalGenericDecl(decl,symbolTableContext,scope,&hasErrored);
+            auto rc = evalGenericDecl(decl,symbolTableContext,scopeContext,&hasErrored);
             if(hasErrored && !rc)
                 switch (decl->type) {
                     /// FuncDecl
@@ -130,7 +131,10 @@ namespace starbytes {
                         };
 
                         bool hasFailed;
-                        ASTType *return_type_implied = evalBlockStmtForASTType(funcNode->blockStmt,symbolTableContext,&hasFailed,&funcNode->params);
+
+                        ASTScopeSemanticsContext funcScopeContext {funcNode->blockStmt->parentScope,&funcNode->params};
+
+                        ASTType *return_type_implied = evalBlockStmtForASTType(funcNode->blockStmt,symbolTableContext,&hasFailed,funcScopeContext,true);
                         if(!return_type_implied && hasFailed){
                             return false;
                         };
@@ -165,7 +169,7 @@ namespace starbytes {
                     /// myfunc()
                     ///
                     
-                    ASTType *return_type = evalExprForTypeId(expr,symbolTableContext,scope);
+                    ASTType *return_type = evalExprForTypeId(expr,symbolTableContext,scopeContext);
                     // std::cout << "Log" << return_type << std::endl;
                     if(!return_type){
                         return false;

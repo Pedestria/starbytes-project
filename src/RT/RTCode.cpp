@@ -17,19 +17,19 @@ namespace Runtime {
         obj->value = new char[obj->len];
         is.read((char *)obj->value,obj->len);
         return is;
-    };
+    }
 
     RTCODE_STREAM_OBJECT_OUT_IMPL(RTID){
         os.write((const char *)&obj->len,sizeof(size_t));
         os.write(obj->value,obj->len);
         return os;
-    };
+    }
 
     RTCODE_STREAM_OBJECT_IN_IMPL(RTVar){
         is >> &obj->id;
         is.read((char *)&obj->hasInitValue,sizeof(obj->hasInitValue));
         return is;
-    };
+    }
 
     RTCODE_STREAM_OBJECT_OUT_IMPL(RTVar){
         RTCode code = CODE_RTVAR;
@@ -37,7 +37,7 @@ namespace Runtime {
         os << &obj->id;
         os.write((char *)&obj->hasInitValue,sizeof(obj->hasInitValue));
         return os;
-    };
+    }
 
     RTCODE_STREAM_OBJECT_IN_IMPL(RTFuncTemplate){
         is >> &obj->name;
@@ -52,12 +52,12 @@ namespace Runtime {
         RTCode code;
         is.read((char *)&code,sizeof(RTCode));
         if(code == CODE_RTBLOCK_BEGIN){
-            obj->block_start_pos = is.tellg() - fpos_t(1);
+            obj->block_start_pos = is.tellg();
             while(code != CODE_RTBLOCK_END)
                 is.read((char *)&code,sizeof(RTCode));
         };
         return is;
-    };
+    }
 
     RTCODE_STREAM_OBJECT_OUT_IMPL(RTFuncTemplate){
         /// Just output basic template..
@@ -70,7 +70,7 @@ namespace Runtime {
             os << &arg;
         };
         return os;
-    };
+    }
 
     RTCODE_STREAM_OBJECT_IN_IMPL(RTInternalObject) {
         RTCode code2;
@@ -111,7 +111,7 @@ namespace Runtime {
             obj->data = params;
         }
         return is;
-    };
+    }
 
     void __output_rt_internal_obj(std::ostream & os,RTInternalObject *obj){
         RTCode code2;
@@ -147,7 +147,7 @@ namespace Runtime {
 //                };
             };
         };
-    };
+    }
 
     RTCODE_STREAM_OBJECT_OUT_IMPL(RTInternalObject) {
         RTCode code = CODE_RTINTOBJCREATE;
@@ -157,7 +157,7 @@ namespace Runtime {
         /// WTF!!
         __output_rt_internal_obj(os,obj);
         return os;
-    };
+    }
 
-};
+}
 }

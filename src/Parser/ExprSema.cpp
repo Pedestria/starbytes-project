@@ -4,14 +4,28 @@ namespace starbytes {
 
  #define PRINT_FUNC_ID "print"
 
-ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableContext & symbolTableContext,ASTScope *scope){
+ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableContext & symbolTableContext,ASTScopeSemanticsContext & scopeContext){
         ASTType *type;
         switch (expr_to_eval->type) {
             case ID_EXPR : {
                 ASTIdentifier *id_ = expr_to_eval->id;
                 SemanticsContext ctxt {errStream,expr_to_eval};
-                
-                auto symbol_ = symbolTableContext.findEntry(id_->val,ctxt,scope);
+
+                /// 1. Check if scope context has args.. (In Function Context)
+
+                if(scopeContext.scope->type == ASTScope::Function){
+                    for(auto & __arg : *scopeContext.args){
+                        if(__arg.getFirst()->match(id_)){
+                            return __arg.getSecond();
+                            break;
+                        };
+                    };
+                    
+                };
+
+                /// 2. Else, do normal symbol matching.
+
+                auto symbol_ = symbolTableContext.findEntry(id_->val,ctxt,scopeContext.scope);
                 // std::cout << "SYMBOL_PTR:" << symbol_ << std::endl;
                 if(!symbol_){
                     return nullptr;
@@ -59,7 +73,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableC
                     type = VOID_TYPE;
                  
                     for(auto & arg : expr_to_eval->exprArrayData){
-                        ASTType *_id = evalExprForTypeId(arg,symbolTableContext,scope);
+                        ASTType *_id = evalExprForTypeId(arg,symbolTableContext,scopeContext);
                         if(!_id){
                             return nullptr;
                             break;
@@ -71,7 +85,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableC
                 else {
                     /// Check to see if function was previously defined.
                     SemanticsContext ctxt {errStream,expr_to_eval};
-                    auto entry = symbolTableContext.findEntry(func_name,ctxt,scope);
+                    auto entry = symbolTableContext.findEntry(func_name,ctxt,scopeContext.scope);
                     if(!entry){
                         return nullptr;
                         break;
@@ -94,7 +108,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableC
                     auto param_decls_it = funcData->paramMap.begin();
                     for(unsigned i = 0;i < expr_to_eval->exprArrayData.size();i++){
                         auto expr_arg = expr_to_eval->exprArrayData[i];
-                        ASTType *_id = evalExprForTypeId(expr_arg,symbolTableContext,scope);
+                        ASTType *_id = evalExprForTypeId(expr_arg,symbolTableContext,scopeContext);
                         if(!_id){
                             return nullptr;
                             break;

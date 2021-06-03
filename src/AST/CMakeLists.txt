@@ -5,6 +5,7 @@ add_starbytes_lib(
     "ASTDecl.cpp"
     "ASTDumper.cpp"
     "ASTStmt.cpp"
+    "ASTExpr.cpp"
     "Type.cpp"
     HEADER_FILES 
     "ASTStmt.h"
