@@ -26,7 +26,7 @@ void runtime_object_ref_dec(RTObject *obj){
 }
 
 inline void runtime_object_delete(RTObject *obj){
-    std::cout << "OBJ:" << std::hex << size_t(obj) << "DELETE" << std::endl;
+    // std::cout << "OBJ:" << std::hex << size_t(obj) << "DELETE" << std::endl;
     if(obj->isInternal){
         RTInternalObject *_obj = (RTInternalObject *)obj;
         switch (_obj->type) {
