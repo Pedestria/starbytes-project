@@ -1,3 +1,4 @@
+#include "starbytes/AST/ASTNodes.def"
 #include "starbytes/RT/RTCode.h"
 
 #ifndef STARBYTES_RT_RTSTDLIB_H
@@ -16,11 +17,11 @@ RTObject *array_index(RTInternalObject::ArrayParams &array,unsigned idx);
 unsigned array_length(RTInternalObject::ArrayParams &array);
 
 
-/// Integer Object
+/// Number Object
 
-int int_add(RTInternalObject::IntegerParams & lhs,RTInternalObject::IntegerParams & rhs);
+starbytes_float_t num_add(RTInternalObject::NumberParams & lhs,RTInternalObject::NumberParams & rhs);
 
-int int_sub(RTInternalObject::IntegerParams & lhs,RTInternalObject::IntegerParams & rhs);
+starbytes_float_t num_sub(RTInternalObject::NumberParams & lhs,RTInternalObject::NumberParams & rhs);
     
 /// String Object
 

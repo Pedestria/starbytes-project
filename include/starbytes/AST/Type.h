@@ -46,6 +46,7 @@ extern ASTType * ARRAY_TYPE;
 extern ASTType * DICTIONARY_TYPE;
 extern ASTType * BOOL_TYPE;
 extern ASTType * INT_TYPE;
+extern ASTType * FLOAT_TYPE;
 
 }
 

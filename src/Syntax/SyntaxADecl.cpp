@@ -103,11 +103,13 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                             
                             ASTExpr *boolExpr = evalExpr(tok0,parentScope);
                             if(!boolExpr)
+                                /// Throw Error.
                                 return nullptr;
                             
                             tok0 = token_stream[privTokIndex];
                             if(tok0.type != Tok::CloseParen){
                                 /// Throw Error.
+                                return nullptr;
                             };
                             ASTScope *scopeConditionalIF = new ASTScope({"IF_COND_DECL",ASTScope::Neutral,parentScope});
                             
@@ -115,6 +117,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                             ASTBlockStmt *blockStmt = evalBlockStmt(tok0,scopeConditionalIF);
                             if(!blockStmt)
                             {
+                                 /// Throw Error.
                                 return nullptr;
                             }
                             ASTConditionalDecl::CondDecl cond;

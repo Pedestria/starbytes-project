@@ -1,4 +1,5 @@
 #include "starbytes/AST/ASTDumper.h"
+#include "starbytes/AST/ASTNodes.def"
 #include <iostream>
 #include <sstream>
 
@@ -10,8 +11,8 @@ namespace starbytes {
             str += "    ";
             --amount;
         }
-        return std::move(str);
-    };
+        return str;
+    }
 
     inline void formatIdentifier(std::ostream & os,ASTIdentifier *id,unsigned level){
         auto pad = padString(level);
@@ -19,19 +20,19 @@ namespace starbytes {
         "Identifier : {\n" <<
         pad << "   value:\"" << id->val << "\"\n" <<
         pad << "}" << std::endl;
-    };
+    }
 
     ASTDumper::ASTDumper(std::ostream & os):os(os){
 
-    };
+    }
     
     bool ASTDumper::acceptsSymbolTableContext(){
         return false;
-    };
+    }
 
     std::unique_ptr<ASTDumper> ASTDumper::CreateStdoutASTDumper(){
         return std::unique_ptr<ASTDumper>(new ASTDumper(std::cout));
-    };
+    }
 
     void ASTDumper::printBlockStmt(ASTBlockStmt *blockStmt,unsigned level){
         auto pad = padString(level);
@@ -50,7 +51,7 @@ namespace starbytes {
         };
         
         os << pad << "  ]\n" << pad << "}\n";
-    };
+    }
 
     void ASTDumper::printDecl(ASTDecl *decl,unsigned level){
         auto pad = padString(level);
@@ -117,8 +118,34 @@ namespace starbytes {
             os << pad << "   body:" << std::flush;
             printBlockStmt(func_node->blockStmt,__level);
             os << pad << "}" << std::endl;
+        }
+        else if(decl->type == COND_DECL){
+            ASTConditionalDecl *cond_decl = (ASTConditionalDecl *)decl;
+
+            for(auto cond_it = cond_decl->specs.begin();cond_it < cond_decl->specs.end();cond_it++){
+                auto & cond = *cond_it;
+                auto __level = level + 1;
+                if(cond.isElse()){
+                        os << "ElseDecl : {\n" << pad << 
+                              "   block:" << std::flush;
+                        printBlockStmt(cond.blockStmt,__level); 
+                        os << pad << "}" << std::endl;
+                }
+                else {
+                    if(cond_it == cond_decl->specs.begin())
+                        os << "IfDecl : {\n" << std::flush;
+                    else 
+                        os << "ElifDecl : {\n" << std::flush;
+
+                    os << pad << "   expr:" << std::flush;
+                    printStmt(cond.expr,__level);
+                    os << pad << "   block:" << std::flush;
+                    printBlockStmt(cond.blockStmt,__level); 
+                    os << pad << "}" << std::endl;
+                };
+            };
         };
-    };
+    }
 
     void ASTDumper::printStmt(ASTStmt *stmt,unsigned level){
         ASTExpr *expr = (ASTExpr *)stmt;
@@ -167,15 +194,27 @@ namespace starbytes {
             os << "BoolLiteral: {\n" << pad <<
                   "   value:\"" << std::boolalpha << bool_expr->boolValue.getValue() << std::noboolalpha << "\"\n" << pad <<
                   "}\n" << std::endl;
+        }
+        else if(expr->type == NUM_LITERAL){
+            ASTLiteralExpr *literal_expr = (ASTLiteralExpr *)expr;
+            os << "NumLiteral: {\n" << pad <<
+                  "   value:";
+                  if(literal_expr->intValue.hasValue()){
+                      os << literal_expr->intValue.getValue() << std::endl;
+                  }
+                  else {
+                      os << literal_expr->floatValue.getValue() << std::endl;
+                  };
+                  os << pad << "}\n" << std::endl;
         };
         
-    };
+    }
 
     void ASTDumper::consumeDecl(ASTDecl *stmt){
         printDecl(stmt, 0);
-    };
+    }
 
     void ASTDumper::consumeStmt(ASTStmt *stmt){
         printStmt(stmt,0);
-    };
+    }
 }

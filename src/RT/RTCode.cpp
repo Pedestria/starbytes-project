@@ -1,5 +1,6 @@
 
 #include "starbytes/RT/RTCode.h"
+#include "starbytes/AST/ASTNodes.def"
 #include <fstream>
 #include <iostream>
 
@@ -51,9 +52,9 @@ namespace Runtime {
         };
         RTCode code;
         is.read((char *)&code,sizeof(RTCode));
-        if(code == CODE_RTBLOCK_BEGIN){
+        if(code == CODE_RTFUNCBLOCK_BEGIN){
             obj->block_start_pos = is.tellg();
-            while(code != CODE_RTBLOCK_END)
+            while(code != CODE_RTFUNCBLOCK_END)
                 is.read((char *)&code,sizeof(RTCode));
         };
         return is;
@@ -110,6 +111,12 @@ namespace Runtime {
             };
             obj->data = params;
         }
+        else if(code2 == RTINTOBJ_NUM){
+            obj->type = RTINTOBJ_NUM;
+            auto *params = new RTInternalObject::NumberParams();
+            is.read((char *)&params->value,sizeof(starbytes_float_t));
+            obj->data = params;
+        }
         return is;
     }
 
@@ -146,6 +153,12 @@ namespace Runtime {
 //                    os << obj;
 //                };
             };
+        }
+        else if(obj->type == RTINTOBJ_NUM){
+            code2 = RTINTOBJ_NUM;
+            os.write((char *)&code2,sizeof(RTCode));
+            RTInternalObject::NumberParams *params = (RTInternalObject::NumberParams *)obj->data;
+            os.write((char *)&params->value,sizeof(starbytes_float_t));
         };
     }
 

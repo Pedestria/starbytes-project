@@ -30,6 +30,7 @@ int main(int argc,char * argv[]){
     in.close();
     std::cout << "CODE:" << src.code << std::endl;
         for(auto & t : tokenStream){
+            std::cout << int(t.type) << std::endl;
             std::cout << t.content << std::endl;
 //            std::cout << llvm::formatv("{0}",t).str() << std::endl;
 //

@@ -10,6 +10,7 @@ namespace starbytes {
     ASTType * DICTIONARY_TYPE = ASTType::Create("Dict",nullptr,false);
     ASTType * BOOL_TYPE  = ASTType::Create("Bool",nullptr,false);
     ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
+    ASTType * FLOAT_TYPE = ASTType::Create("Float",nullptr,false);
 
     ASTType *ASTType::Create(llvm::StringRef name,ASTStmt *parentNode,bool isPlaceholder,bool isAlias){
         auto obj = new ASTType();
@@ -18,19 +19,19 @@ namespace starbytes {
         obj->parentNode = parentNode;
         obj->isPlaceholder = isPlaceholder;
         return obj;
-    };
+    }
 
     void ASTType::addTypeParam(ASTType *param){
         typeParams.push_back(param);
-    };
+    }
 
     llvm::StringRef ASTType::getName() const{
         return name;
-    };
+    }
 
     bool ASTType::nameMatches(ASTType *other){
         return name == other->name;
-    };
+    }
 
     bool ASTType::match(ASTType *other,llvm::function_ref<void(const llvm::formatv_object_base &)> log){
         bool first_m = name == other->name;
@@ -50,7 +51,7 @@ namespace starbytes {
         };
         
         return first_m && second_m;
-    };
+    }
 
     ASTType::~ASTType(){
         if(!typeParams.empty()){
@@ -59,5 +60,5 @@ namespace starbytes {
             };
             typeParams.clear();
         };
-    };
-};
+    }
+}

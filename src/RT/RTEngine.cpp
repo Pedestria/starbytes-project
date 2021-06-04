@@ -48,6 +48,11 @@ inline void runtime_object_delete(RTObject *obj){
                 delete params;
                 break;
             }
+            case RTINTOBJ_NUM : {
+                auto params = (RTInternalObject::NumberParams *)_obj->data;
+                delete params;
+                break;
+            }
             default:
                 break;
         }
@@ -191,7 +196,7 @@ class InterpImpl final : public Interp {
     
     std::vector<RTFuncTemplate> functions;
     
-    void execNorm(RTCode &code,std::istream &in);
+    void execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObject **return_val);
     
     RTObject * invokeFunc(std::istream &in,llvm::StringRef & func_name,unsigned argCount);
     
@@ -201,6 +206,7 @@ public:
     InterpImpl():allocator(std::make_unique<RTAllocator>()){
         
     };
+    ~InterpImpl() = default;
     void exec(std::istream &in) override;
 };
 
@@ -228,8 +234,11 @@ RTObject *InterpImpl::invokeFunc(std::istream & in,llvm::StringRef & func_name,u
             
             RTCode code;
             in.read((char *)&code,sizeof(RTCode));
-            while(code != CODE_RTBLOCK_END){
-                execNorm(code,in);
+            bool willReturn = false;
+            RTObject * return_val = nullptr;
+            while(code != CODE_RTFUNCBLOCK_END){
+                if(!willReturn)
+                    execNorm(code,in,&willReturn,&return_val);
                 in.read((char *)&code,sizeof(RTCode));
             };
 
@@ -239,7 +248,7 @@ RTObject *InterpImpl::invokeFunc(std::istream & in,llvm::StringRef & func_name,u
             allocator->clearScopeCollectG();
             allocator->setScope(parentScope);
 
-            return nullptr;
+            return return_val;
         };
     };
     return nullptr;
@@ -275,7 +284,7 @@ RTObject *InterpImpl::evalExpr(std::istream & in){
     return nullptr;
 }
 
-void InterpImpl::execNorm(RTCode &code,std::istream &in){
+void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObject **return_val){
     if(code == CODE_RTVAR){
         RTVar var;
         in >> &var;
@@ -287,6 +296,50 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in){
             runtime_object_ref_inc(val);
             allocator->allocVariable(var_name,val);
         }
+    }
+    else if(code == CODE_CONDITIONAL){
+        unsigned cond_spec_count;
+        in.read((char *)&cond_spec_count,sizeof(cond_spec_count));
+        while(cond_spec_count > 0){
+            RTCode spec_ty;
+            in.read((char *)&spec_ty,sizeof(RTCode));
+            if(spec_ty == COND_TYPE_IF){
+                RTObject *cond = evalExpr(in);
+                /// SemanticA Checks if Cond is a Boolean
+                auto boolVal = (RTInternalObject::BoolParams *)((RTInternalObject *)cond)->data;
+
+                if(boolVal->value){
+                    RTCode code;
+                    in.read((char *)&code,sizeof(RTCode));
+                    while(code != CODE_RTBLOCK_END){
+                        if(!*willReturn)
+                            execNorm(code,in,willReturn,return_val);
+                        in.read((char *)&code,sizeof(RTCode));
+                    };
+                    if(*willReturn){
+                        break;
+                    };
+                    continue;
+                }
+
+            }
+            else if(spec_ty == COND_TYPE_ELSE){
+                RTCode code;
+                in.read((char *)&code,sizeof(RTCode));
+                while(code != CODE_RTBLOCK_END){
+                    if(!*willReturn)
+                        execNorm(code,in,willReturn,return_val);
+                    in.read((char *)&code,sizeof(RTCode));
+                };
+                break;
+            };
+            --cond_spec_count;
+        };
+    }
+    else if(code == CODE_RTRETURN){
+        RTObject *object = evalExpr(in);
+        *willReturn = true;
+        *return_val = object;
     }
     else if(code == CODE_RTFUNC){
         RTFuncTemplate funcTemp;
@@ -317,8 +370,10 @@ void InterpImpl::exec(std::istream & in){
     std::string g = "GLOBAL";
     allocator->setScope(g);
     in.read((char *)&code,sizeof(RTCode));
+    bool temp;
+    RTObject *temp2;
     while(code != CODE_MODULE_END){
-        execNorm(code,in);
+        execNorm(code,in,&temp,&temp2);
         in.read((char *)&code,sizeof(RTCode));
     };
     allocator->clearScope();

@@ -25,9 +25,10 @@ struct SourcePos {
 struct Tok {
     typedef enum : int {
         Identifier,
-        Number,
         BooleanLiteral,
         StringLiteral,
+        NumericLiteral,
+        FloatingNumericLiteral,
         Keyword,
         TemplateBegin,
         OpenParen,
@@ -70,8 +71,8 @@ public:
     void tokenizeFromIStream(std::istream & in,std::vector<Tok> & tokStreamRef,CodeViewSrc &src);
 };
 
-};
-};
+}
+}
 
 
 namespace llvm {
@@ -107,6 +108,7 @@ namespace llvm {
                 }
                 case Tok::Comma : {
                     tokTypeName = "Comma";
+                    break;
                 }
                 default: {
                     tokTypeName = "N/A";
@@ -122,6 +124,6 @@ namespace llvm {
             ,tokTypeName,V.content);
         };
     };
-};
+}
 
 #endif

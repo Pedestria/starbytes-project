@@ -1,4 +1,5 @@
 #include "RTStdlib.h"
+#include "llvm/Support/MathExtras.h"
 
 #include <ctime>
 #include <iomanip>
@@ -24,12 +25,19 @@ namespace starbytes {
     
         void _print_rt_internal_obj(RTInternalObject *object){
             switch (object->type) {
-//                case RTInternalObject::Integer : {
-//                    break;
-//                }
-//                case RTInternalObject::Float : {
-//                    break;
-//                }
+                case RTINTOBJ_NUM : {
+                    auto *params = (RTInternalObject::NumberParams *)object->data;
+                    std::cout << "\x1b[33m" << std::flush;
+                    double int_temp;
+                    if(std::modf(params->value,&int_temp) == 0.f){
+                        std::cout << starbytes_int_t(params->value);
+                    }
+                    else {
+                        std::cout << std::dec << params->value;
+                    };
+                    std::cout << "\x1b[0m" << std::flush;
+                    break;
+                }
                 case RTINTOBJ_BOOL : {
                     auto *params = (RTInternalObject::BoolParams *)object->data;
                     std::cout << "\x1b[35m" << std::boolalpha << params->value << std::noboolalpha << "\x1b[0m" << std::flush;
@@ -86,13 +94,13 @@ namespace starbytes {
         }
 
 
-        /// Integer Object
+        /// Number Object
 
-        int int_add(RTInternalObject::IntegerParams & lhs,RTInternalObject::IntegerParams & rhs){
+        starbytes_float_t num_add(RTInternalObject::NumberParams & lhs,RTInternalObject::NumberParams & rhs){
             return lhs.value + rhs.value;
         }
 
-        int int_sub(RTInternalObject::IntegerParams & lhs,RTInternalObject::IntegerParams & rhs){
+        starbytes_float_t num_sub(RTInternalObject::NumberParams & lhs,RTInternalObject::NumberParams & rhs){
             return lhs.value - rhs.value;
         }
         /// String Object

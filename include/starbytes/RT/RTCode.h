@@ -1,3 +1,4 @@
+#include "starbytes/AST/ASTNodes.def"
 #include <string>
 #include <cstdint>
 #include <vector>
@@ -22,6 +23,8 @@ typedef unsigned char RTCode;
 #define CODE_RTEXPR 0x06
 #define CODE_RTIVKFUNC 0x06
 #define CODE_RTRETURN 0x07
+#define CODE_RTFUNCBLOCK_BEGIN 0x08
+#define CODE_RTFUNCBLOCK_END 0x09
 #define CODE_RTBLOCK_BEGIN 0x08
 #define CODE_RTBLOCK_END 0x09
 #define CODE_RTVAR_REF 0x0A
@@ -37,6 +40,7 @@ typedef unsigned char RTCode;
 #define RTINTOBJ_ARRAY 0x2
 #define RTINTOBJ_DICTIONARY 0x3
 #define RTINTOBJ_BOOL 0x4
+#define RTINTOBJ_NUM 0x5
 
 
 #define RTCODE_STREAM_OBJECT(object) \
@@ -93,8 +97,8 @@ struct RTObject {
 RTCODE_STREAM_OBJECT(RTObject)
 
 struct RTInternalObject : public RTObject {
-    struct IntegerParams {
-        int value;
+    struct NumberParams {
+        starbytes_float_t value;
     };
     struct StringParams {
         std::string str;

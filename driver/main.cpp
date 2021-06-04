@@ -17,7 +17,7 @@ namespace starbytes {
 }
 
 using namespace llvm;
-auto desc = (llvm::Twine("<input script ") + STARBYTES_SRCFILE_EXT + ">").str();
+auto desc = (llvm::Twine("<input script .") + STARBYTES_SRCFILE_EXT + ">").str();
 namespace {
 
 llvm::cl::SubCommand compile("compile","");

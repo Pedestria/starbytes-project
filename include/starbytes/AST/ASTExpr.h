@@ -1,7 +1,9 @@
 #include "ASTStmt.h"
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallString.h>
+#include "starbytes/AST/ASTNodes.def"
 #include "starbytes/Syntax/Toks.def"
+#include "llvm/ADT/APFloat.h"
 
 #ifndef STARBYTES_AST_ASTEXPR_H
 #define STARBYTES_AST_ASTEXPR_H
@@ -46,6 +48,10 @@ namespace starbytes {
         llvm::Optional<std::string> strValue;
         
         llvm::Optional<bool> boolValue;
+
+        llvm::Optional<starbytes_int_t> intValue;
+
+        llvm::Optional<starbytes_float_t> floatValue;
     };
 
 }

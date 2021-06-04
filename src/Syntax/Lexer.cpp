@@ -1,4 +1,5 @@
 #include "starbytes/Syntax/Lexer.h"
+#include "llvm/ADT/StringExtras.h"
 #include <llvm/Support/raw_ostream.h>
 #include <iostream>
 
@@ -6,32 +7,40 @@ namespace starbytes::Syntax {
 
 bool isBooleanLiteral(llvm::StringRef str){
     return (str == TOK_TRUE) || (str == TOK_FALSE);
-};
+}
 
 bool isKeyword(llvm::StringRef str){
     return (str == KW_DECL) || (str == KW_IMUT) || (str == KW_IMPORT)
     || (str == KW_FUNC) || (str == KW_IF) || (str == KW_ELSE);
-};
+}
 
-bool isNumber(llvm::StringRef str){
+bool isNumber(llvm::StringRef str,bool * isFloating){
+    *isFloating = false;
     for(auto & c : str){
-        if(!isdigit(c)){
+
+        if(c == '.'){
+            *isFloating = true;
+            continue;
+        }
+
+        if(!llvm::isDigit(c)){
             return false;
             break;
         };
     };
+    
     return true;
-};
+}
 
 struct LexicalError : public Diagnostic {
     
-    bool isError(){
+    bool isError() override{
         return true;
     };
     
     std::string message;
     SourcePos pos;
-    void format(llvm::raw_ostream &os){
+    void format(llvm::raw_ostream &os) override{
         os << llvm::raw_ostream::RED << "LexerError: " << llvm::raw_ostream::RESET << message << "\n";
     };
     LexicalError(const llvm::formatv_object_base & formatted_message,SourcePos pos):message(formatted_message.str()),pos(pos){
@@ -43,7 +52,7 @@ struct LexicalError : public Diagnostic {
 
 Lexer::Lexer(DiagnosticBufferedLogger & errStream):errStream(errStream){
     
-};
+}
 
 void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamRef,CodeViewSrc &src){
     auto getChar = [&](){
@@ -77,10 +86,16 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
         pos.startCol = pos.endCol - bufferLen;
         Tok tok;
         tok.content = std::string(bufferStart,bufferLen);
+        
+        bool isFloatingN;
         if(isKeyword(tok.content))
             tok.type = Tok::Keyword;
-        else if(isNumber(tok.content))
-            tok.type = Tok::Number;
+        else if(isNumber(tok.content,&isFloatingN)) {
+            if(isFloatingN)
+                tok.type = Tok::FloatingNumericLiteral;
+            else
+                tok.type = Tok::NumericLiteral;
+        }
         else if(isBooleanLiteral(tok.content))
             tok.type = Tok::BooleanLiteral;
         else
@@ -121,6 +136,15 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 else {
                     exit(1);
                 };
+                break;
+            }
+            case '.': {
+                PUSH_CHAR(c);
+                c = aheadChar();
+                if(! (isdigit(c))){
+                    pushToken(Tok::Dot);
+                }
+
                 break;
             }
             case ',' : {
@@ -203,7 +227,7 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 if(isalnum(c)){
                     PUSH_CHAR(c);
                     c = aheadChar();
-                    if(!isalnum(c)){
+                    if(!isalnum(c) && c != '.'){
                         pushToken(Tok::Identifier);
                     }
                    
@@ -211,12 +235,13 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 else if(isspace(c)){
                     
                 };
+                break;
             }
         }
     };
     
     PUSH_CHAR('\0');
     pushToken(Tok::EndOfFile);
-};
+}
 
 }

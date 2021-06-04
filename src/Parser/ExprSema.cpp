@@ -1,3 +1,4 @@
+#include "starbytes/AST/ASTNodes.def"
 #include "starbytes/Parser/SemanticA.h"
 
 namespace starbytes {
@@ -56,6 +57,18 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableC
             case STR_LITERAL:
             {
                 type = STRING_TYPE;
+                break;
+            }
+            case NUM_LITERAL : {
+                ASTLiteralExpr *literal = (ASTLiteralExpr *)expr_to_eval;
+                /// If is Integer
+                if(literal->intValue.hasValue()){
+                    type = INT_TYPE;
+                }
+                /// Else it is a Floating Point
+                else {
+                    type = FLOAT_TYPE;
+                };
                 break;
             }
             case IVKE_EXPR : {

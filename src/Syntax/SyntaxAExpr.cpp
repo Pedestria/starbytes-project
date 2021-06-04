@@ -1,5 +1,7 @@
+#include "starbytes/AST/ASTNodes.def"
 #include "starbytes/Syntax/SyntaxA.h"
 #include "starbytes/AST/AST.h"
+#include <llvm/ADT/StringExtras.h>
 #include <iostream>
 
 namespace starbytes::Syntax {
@@ -33,8 +35,25 @@ namespace starbytes::Syntax {
                 literal_expr = new ASTLiteralExpr();
                 
                 literal_expr->type = BOOL_LITERAL;
-                literal_expr->boolValue = (tokRef.content == TOK_TRUE? true : tokRef.content == TOK_FALSE? false : NULL);
+                literal_expr->boolValue = (tokRef.content == TOK_TRUE? true : tokRef.content == TOK_FALSE? false : false);
                 
+                expr = literal_expr;
+                tokRef = nextTok();
+            }
+            else if(tokRef.type == Tok::NumericLiteral || tokRef.type == Tok::FloatingNumericLiteral){
+                literal_expr = new ASTLiteralExpr();
+
+                literal_expr->type = NUM_LITERAL;
+                if(tokRef.type == Tok::FloatingNumericLiteral){
+                   starbytes_float_t val;
+                   llvm::to_float(tokRef.content,val);  
+                   literal_expr->floatValue = val;
+                }
+                else {
+                    starbytes_int_t val;
+                    llvm::to_integer(tokRef.content,val);
+                    literal_expr->intValue = val;
+                };
                 expr = literal_expr;
                 tokRef = nextTok();
             }

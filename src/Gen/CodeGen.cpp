@@ -1,4 +1,5 @@
 #include "starbytes/Gen/CodeGen.h"
+#include "starbytes/AST/ASTNodes.def"
 #include "starbytes/Gen/Gen.h"
 #include "starbytes/RT/RTCode.h"
 
@@ -106,6 +107,13 @@ Runtime::RTInternalObject * CodeGen::exprToRTInternalObject(ASTExpr *expr){
         ob->type = RTINTOBJ_BOOL;
         RTInternalObject::BoolParams *params = new RTInternalObject::BoolParams();
         params->value = literal_expr->boolValue.getValue();
+        ob->data = params;
+    }
+    else if(expr->type == NUM_LITERAL){
+        ASTLiteralExpr *literal_expr = (ASTLiteralExpr *)expr;
+        ob->type = RTINTOBJ_NUM;
+        RTInternalObject::NumberParams *params = new RTInternalObject::NumberParams();
+        params->value = literal_expr->floatValue.hasValue() ? literal_expr->floatValue.getValue() : starbytes_float_t(literal_expr->intValue.getValue());
         ob->data = params;
     }
     return ob;

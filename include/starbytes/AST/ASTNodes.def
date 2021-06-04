@@ -3,6 +3,9 @@
 
 typedef int ASTNodeType;
 
+typedef double starbytes_float_t;
+typedef long starbytes_int_t;
+
 #define LITERAL 0x00000F
 #define STR_LITERAL (0x000010 | LITERAL)
 #define NUM_LITERAL (0x000020 | LITERAL)
