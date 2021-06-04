@@ -307,7 +307,7 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObje
                 RTObject *cond = evalExpr(in);
                 /// SemanticA Checks if Cond is a Boolean
                 auto boolVal = (RTInternalObject::BoolParams *)((RTInternalObject *)cond)->data;
-
+                // If true, eval Block
                 if(boolVal->value){
                     RTCode code;
                     in.read((char *)&code,sizeof(RTCode));
@@ -316,11 +316,15 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObje
                             execNorm(code,in,willReturn,return_val);
                         in.read((char *)&code,sizeof(RTCode));
                     };
-                    if(*willReturn){
-                        break;
-                    };
-                    continue;
+
+                    while(code != CODE_CONDITIONAL_END)
+                        in.read((char *)&code,sizeof(RTCode));
+                    break;
                 }
+                ///Else Skip to next Conditional
+                else 
+                    while(code != CODE_RTBLOCK_END)
+                        in.read((char *)&code,sizeof(RTCode));
 
             }
             else if(spec_ty == COND_TYPE_ELSE){
@@ -331,6 +335,9 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObje
                         execNorm(code,in,willReturn,return_val);
                     in.read((char *)&code,sizeof(RTCode));
                 };
+
+                while(code != CODE_CONDITIONAL_END)
+                    in.read((char *)&code,sizeof(RTCode));
                 break;
             };
             --cond_spec_count;

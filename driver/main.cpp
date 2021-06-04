@@ -3,6 +3,7 @@
 #include <llvm/Support/Program.h>
 #include <llvm/Support/Path.h>
 #include <llvm/Support/FileSystem.h>
+#include <llvm/ADT/Twine.h>
 #include "starbytes/Base/FileExt.def"
 
 #include "starbytes/Parser/Parser.h"
@@ -17,8 +18,10 @@ namespace starbytes {
 }
 
 using namespace llvm;
-auto desc = (llvm::Twine("<input script .") + STARBYTES_SRCFILE_EXT + ">").str();
+
 namespace {
+
+auto desc = (Twine("<input script .") + STARBYTES_SRCFILE_EXT + ">").str();
 
 llvm::cl::SubCommand compile("compile","");
 

@@ -111,7 +111,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                                 /// Throw Error.
                                 return nullptr;
                             };
-                            ASTScope *scopeConditionalIF = new ASTScope({"IF_COND_DECL",ASTScope::Neutral,parentScope});
+                            ASTScope *scopeConditionalIF = new ASTScope({"ELIF_COND_DECL",ASTScope::Neutral,parentScope});
                             
                             tok0 = nextTok();
                             ASTBlockStmt *blockStmt = evalBlockStmt(tok0,scopeConditionalIF);
@@ -131,10 +131,12 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                                 break;
                             };
                         }
+                        else {
+                            break;
+                        }
                     }
                     if(tok0.content == KW_ELSE){
-                        tok0 = nextTok();
-                        ASTScope *scopeConditionalIF = new ASTScope({"IF_COND_DECL",ASTScope::Neutral,parentScope});
+                        ASTScope *scopeConditionalElse = new ASTScope({"ELSE_COND_DECL",ASTScope::Neutral,parentScope});
                         
                         tok0 = nextTok();
                         ASTBlockStmt *blockStmt = evalBlockStmt(tok0,scopeConditionalIF);
@@ -147,6 +149,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                         cond.expr = nullptr;
                         cond.blockStmt = blockStmt;
                         condDecl->specs.push_back(cond);
+                        gotoNextTok();
                     }
                 };
                 

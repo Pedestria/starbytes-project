@@ -2,8 +2,16 @@
 decl myvar = ["hello","world"]
 decl myvar2 = "this bitch!"
 decl foo = 34.12
+decl bar = false
 
 print(foo)
+
+if(bar){
+    print("YES")
+}
+else {
+    print("NO")
+}
 
 func anotherFunc(param:String){
     print(param)

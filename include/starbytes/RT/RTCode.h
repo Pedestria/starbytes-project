@@ -30,6 +30,7 @@ typedef unsigned char RTCode;
 #define CODE_RTVAR_REF 0x0A
 #define CODE_RTOBJVAR_REF 0x0B
 #define CODE_CONDITIONAL 0x0C
+#define CODE_CONDITIONAL_END 0x0D
 
 #define COND_TYPE_IF 0x0
 #define COND_TYPE_ELSE 0x1

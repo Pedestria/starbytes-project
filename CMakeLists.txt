@@ -46,7 +46,13 @@ if(${USE_VCPKG})
 	endif()
 endif()
 
+if(NOT LLVM_BUILD)
+	set(LLVM_BUILD FALSE)
+endif()
 
+if(NOT ${LLVM_BUILD})
+	find_package(LLVM CONFIG REQUIRED)
+endif()
 
 # set(STARBYTES_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake/modules)
 # list(APPEND CMAKE_MODULE_PATH ${STARBYTES_MODULE_PATH})

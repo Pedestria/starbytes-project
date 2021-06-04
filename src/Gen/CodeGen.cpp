@@ -24,8 +24,12 @@ void CodeGen::finish(){
     genContext->out.write((char *)&code,sizeof(RTCode));
 }
 
-inline void write_ASTBlockStmt_to_context(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,CodeGen *astConsumer){
-    RTCode code = CODE_RTBLOCK_BEGIN;
+inline void write_ASTBlockStmt_to_context(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,CodeGen *astConsumer,bool isFunc = false){
+    RTCode code;
+    if(isFunc)
+        code = CODE_RTFUNCBLOCK_BEGIN;
+    else 
+        code = CODE_RTBLOCK_BEGIN;
     ctxt->out.write((char *)&code,sizeof(RTCode));
     for(auto & stmt : blockStmt->body){
         if(stmt->type & DECL){
@@ -35,7 +39,10 @@ inline void write_ASTBlockStmt_to_context(ASTBlockStmt *blockStmt,ModuleGenConte
             astConsumer->consumeStmt(stmt);
         };
     };
-    code = CODE_RTBLOCK_END;
+    if(isFunc)
+        code = CODE_RTFUNCBLOCK_END;
+    else 
+        code = CODE_RTBLOCK_END;
     ctxt->out.write((char *)&code,sizeof(RTCode));
 }
 
@@ -73,7 +80,23 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             funcTemplate.argsTemplate.push_back(param_id);
         };
         genContext->out << &funcTemplate;
-        write_ASTBlockStmt_to_context(func_node->blockStmt,genContext,this);
+        write_ASTBlockStmt_to_context(func_node->blockStmt,genContext,this,true);
+    }
+    else if(stmt->type == COND_DECL){
+        ASTConditionalDecl *cond_decl = (ASTConditionalDecl *)stmt;
+        RTCode code = CODE_CONDITIONAL;
+        genContext->out.write((char *)&code,sizeof(RTCode));
+        unsigned count = cond_decl->specs.size();
+        genContext->out.write((char *)&count,sizeof(count));
+        for(auto & cond : cond_decl->specs){
+            RTCode spec_ty = cond.isElse()? COND_TYPE_ELSE : COND_TYPE_IF;
+            genContext->out.write((char *)&spec_ty,sizeof(RTCode));
+            if(!cond.isElse())
+                consumeStmt(cond.expr);
+            write_ASTBlockStmt_to_context(cond.blockStmt,genContext,this);
+        };
+        code = CODE_CONDITIONAL_END;
+        genContext->out.write((char *)&code,sizeof(RTCode));
     };
 }
 

@@ -1,6 +1,7 @@
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/CommandLine.h>
 
+#include "starbytes/AST/ASTNodes.def"
 #include "starbytes/RT/RTCode.h"
 #include <iostream>
 #include <fstream>
@@ -37,14 +38,14 @@ class Disassembler {
             in.seekg(funcTemp.block_start_pos);
             RTCode code2;
             in.read((char *)&code2,sizeof(RTCode));
-            out << "CODE_RTBLOCK_BEGIN" << std::endl;
-            while(code2 != CODE_RTBLOCK_END){
+            out << "CODE_RTFUNCBLOCK_BEGIN" << std::endl;
+            while(code2 != CODE_RTFUNCBLOCK_END){
 //                _disasm_decl(code2);
                 _disasm_expr(code2);
                 in.read((char *)&code2,sizeof(RTCode));
                 out << std::endl;
             };
-            out << "CODE_RTBLOCK_END" << std::endl;
+            out << "CODE_RTFUNCBLOCK_END";
         }
     };
     void _disasm_expr(RTCode & code){
@@ -74,6 +75,11 @@ class Disassembler {
                     out << " ";
                 };
             }
+            else if(obj_type == RTINTOBJ_NUM){
+                starbytes_float_t num;
+                in.read((char *)&num,sizeof(num));
+                out << "RTINTOBJ_NUM " << num << " ";
+            }
         }
         else if(code == CODE_RTIVKFUNC){
             RTID func_id;
@@ -98,6 +104,38 @@ class Disassembler {
             out << "CODE_RTVAR_REF " << id.len << " ";
             out.write(id.value,sizeof(char) * id.len);
         }
+        else if(code == CODE_CONDITIONAL){
+            unsigned count;
+            in.read((char *)&count,sizeof(count));
+            out << "CODE_CONDITIONAL " << count << std::endl;
+            while(count > 0) {
+                RTCode code2;
+                in.read((char *)&code2,sizeof(RTCode));
+                if(code2 == COND_TYPE_IF){
+                    out << "COND_TYPE_IF " << std::endl;
+                    in.read((char *)&code2,sizeof(RTCode));
+                    _disasm_expr(code2);
+                    out << " ";
+                }
+                else if(code2 == COND_TYPE_ELSE){
+                    out << "COND_TYPE_ELSE ";
+                };
+
+
+                in.read((char *)&code2,sizeof(RTCode));
+                out << "CODE_RTBLOCK_BEGIN" << std::endl;
+                while(code2 != CODE_RTBLOCK_END){
+    //                _disasm_decl(code2);
+                    _disasm_expr(code2);
+                    in.read((char *)&code2,sizeof(RTCode));
+                    out << std::endl;
+                };
+                out << "CODE_RTBLOCK_END" << std::endl;
+                --count;
+            }
+            in.read((char *)&code,sizeof(RTCode));
+            out << "CODE_CONDITIONAL_END " << std::endl;
+        };
     };
 public:
     Disassembler(std::istream & in,std::ostream &out):in(in),out(out){
@@ -107,7 +145,7 @@ public:
         RTCode code;
         in.read((char *)&code,sizeof(RTCode));
         while (code != CODE_MODULE_END) {
-            if(code == CODE_RTIVKFUNC){
+            if(code == CODE_RTIVKFUNC || code == CODE_CONDITIONAL){
                 _disasm_expr(code);
             }
             else {
