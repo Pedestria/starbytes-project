@@ -278,6 +278,23 @@ RTObject *InterpImpl::evalExpr(std::istream & in){
             
             break;
         }
+        case CODE_RTIVKFUNC : {
+            RTID func_id;
+            in >> &func_id;
+            llvm::StringRef func_name (func_id.value,func_id.len);
+            unsigned argCount;
+            in.read((char *)&argCount,sizeof(argCount));
+            if(func_name == "print"){
+                RTObject *object_to_print = evalExpr(in);
+                stdlib::print(object_to_print);
+                runtime_object_ref_dec(object_to_print);
+                runtime_object_collectg(object_to_print);
+            }
+            else {
+                return invokeFunc(in,func_name,argCount);
+            };
+            break;
+        }
         default:
             break;
     }

@@ -1,8 +1,10 @@
 
-
+func myFunc(){
+    return "this test!"
+}
 
 decl myvar = ["hello","world"]
-decl myvar2 = "this test!"
+decl myvar2 = myFunc()
 decl foo = 34.12
 decl bar = false
 

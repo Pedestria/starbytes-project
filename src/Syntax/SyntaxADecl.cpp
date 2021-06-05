@@ -168,8 +168,8 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                 else {
                     return_decl->expr = val;
                 }
+
                 
-                /// Throw Error.
                 
             }
             /// Var Decl Parse

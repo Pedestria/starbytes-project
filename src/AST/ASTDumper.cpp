@@ -144,6 +144,15 @@ namespace starbytes {
                     os << pad << "}" << std::endl;
                 };
             };
+        }
+        else if(decl->type == RETURN_DECL){
+            ASTReturnDecl *return_decl = (ASTReturnDecl *)decl;
+            os << "ReturnDecl : {\n" << std::flush;
+            if(return_decl->expr != nullptr){
+                os << pad << "   expr:" << std::flush;
+                printStmt(return_decl->expr,level + 1);
+            }
+            os << pad << "}" << std::endl;
         };
     }
 

@@ -164,7 +164,7 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,Semantics::STable
             };
         }
         /// If there is no main return type.
-        if(!returnType){
+        if(!mainReturnType){
             for(auto & retType : returnTypes){
                 if(!retType->nameMatches(VOID_TYPE)){
                     break;
@@ -172,7 +172,7 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,Semantics::STable
             };
         }
         else {
-            
+            returnType = mainReturnType;
         };
         
         
