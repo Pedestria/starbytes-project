@@ -97,6 +97,16 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         };
         code = CODE_CONDITIONAL_END;
         genContext->out.write((char *)&code,sizeof(RTCode));
+    }
+    else if(stmt->type == RETURN_DECL){
+        ASTReturnDecl *return_decl = (ASTReturnDecl *)stmt;
+        RTCode code = CODE_RTRETURN;
+        genContext->out.write((char *)&code,sizeof(RTCode));
+        bool hasValue = return_decl->expr != nullptr;
+        genContext->out.write((char *)&hasValue,sizeof(hasValue));
+        if(hasValue)
+            consumeStmt(return_decl->expr);
+
     };
 }
 

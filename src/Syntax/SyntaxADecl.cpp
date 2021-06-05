@@ -1,3 +1,4 @@
+#include "starbytes/AST/ASTNodes.def"
 #include "starbytes/Syntax/SyntaxA.h"
 #include "starbytes/AST/AST.h"
 
@@ -152,6 +153,23 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                         gotoNextTok();
                     }
                 };
+                
+            }
+            else if(first_token.content == KW_RETURN){
+                ASTReturnDecl *return_decl = new ASTReturnDecl();
+                node = return_decl;
+                node->type = RETURN_DECL;
+                node->scope = parentScope;
+                TokRef tok0 = nextTok();
+                ASTExpr * val = evalExpr(tok0,parentScope);
+                if(!val){
+                    return_decl->expr = nullptr;
+                }
+                else {
+                    return_decl->expr = val;
+                }
+                
+                /// Throw Error.
                 
             }
             /// Var Decl Parse

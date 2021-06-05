@@ -1,8 +1,12 @@
 
+
+
 decl myvar = ["hello","world"]
-decl myvar2 = "this bitch!"
+decl myvar2 = "this test!"
 decl foo = 34.12
 decl bar = false
+
+
 
 print(foo)
 

@@ -152,6 +152,11 @@ namespace starbytes {
 
                         break;
                     }
+                    case RETURN_DECL : {
+                        errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Return can not be declared in a namespace scope"),stmt);
+                        return false;
+                        break;
+                    }
                 }
         }
         else if(stmt->type & EXPR){

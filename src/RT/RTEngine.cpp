@@ -344,9 +344,17 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObje
         };
     }
     else if(code == CODE_RTRETURN){
-        RTObject *object = evalExpr(in);
+        bool hasValue;
+        in.read((char *)&hasValue,sizeof(hasValue));
+        if(hasValue) {
+            RTObject *object = evalExpr(in);
+            *return_val = object;
+        }
+        else {
+            *return_val = nullptr;
+        }
         *willReturn = true;
-        *return_val = object;
+         
     }
     else if(code == CODE_RTFUNC){
         RTFuncTemplate funcTemp;
