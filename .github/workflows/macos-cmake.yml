@@ -30,7 +30,7 @@ jobs:
       # Note the current convention is to use the -S and -B options here to specify source 
       # and build directories, but this is only available with CMake 3.13 and higher.  
       # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
-      run: cmake -S ./llvm-project/llvm -B ./build -G"Ninja" -DLLVM_EXTERNAL_PROJECTS="starbytes" -DLLVM_EXTERNAL_STARBYTES_SOURCE_DIR="." -DLLVM_BUILD_TOOLS=OFF -DLLVM_BUILD_UTILS=OFF
+      run: make -S $GITHUB_WORKSPACE/llvm-project/llvm -DLLVM_BUILD=TRUE -DLLVM_EXTERNAL_PROJECTS="starbytes" -DLLVM_EXTERNAL_STARBYTES_SOURCE_DIR="$GITHUB_WORKSPACE" -DLLVM_BUILD_TOOLS=OFF -DLLVM_BUILD_UTILS=OFF
 
     - name: Test
       working-directory: ${{runner.workspace}}/build
