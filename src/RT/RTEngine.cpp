@@ -7,6 +7,8 @@
 #include <iostream>
 #include <iomanip>
 
+#include "starbytes/interop.h"
+
 namespace starbytes::Runtime {
 
 struct RTScope {
@@ -187,8 +189,13 @@ public:
     };
 };
 
+StarbytesNativeModule * starbytes_native_mod_load(llvm::StringRef path);
+StarbytesFuncCallback starbytes_native_mod_load_function(StarbytesNativeModule * mod,llvm::StringRef name);
+void starbytes_native_mod_close(StarbytesNativeModule * mod);
 
 class InterpImpl final : public Interp {
+
+   void addExtension(llvm::StringRef path);
 
     std::unique_ptr<RTAllocator> allocator;
     
@@ -206,9 +213,10 @@ public:
     InterpImpl():allocator(std::make_unique<RTAllocator>()){
         
     };
-    ~InterpImpl() = default;
+    ~InterpImpl() override = default;
     void exec(std::istream &in) override;
 };
+
 
 RTObject *InterpImpl::invokeFunc(std::istream & in,llvm::StringRef & func_name,unsigned argCount){
     for(auto & func_temp : functions){
@@ -409,6 +417,11 @@ void InterpImpl::exec(std::istream & in){
         in.read((char *)&code,sizeof(RTCode));
     };
     allocator->clearScope();
+}
+
+
+void InterpImpl::addExtension(llvm::StringRef path) {
+
 }
 
 std::shared_ptr<Interp> Interp::Create(){

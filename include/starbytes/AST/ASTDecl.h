@@ -46,6 +46,19 @@ namespace starbytes {
         ASTBlockStmt *blockStmt;
     };
 
+    class ASTClassDecl : public ASTDecl {
+    public:
+
+        ASTIdentifier *id;
+
+        llvm::SmallVector<ASTIdentifier *,2> typeargs;
+        
+        llvm::SmallVector<ASTType *,1> baseClasses;
+
+        llvm::SmallVector<ASTVarDecl *> fields;
+        llvm::SmallVector<ASTFuncDecl *> methods;
+    };
+
     class ASTReturnDecl : public ASTDecl {
     public:
         ASTExpr *expr;
@@ -59,6 +72,17 @@ namespace starbytes {
             bool isElse();
         };
         llvm::SmallVector<CondDecl,2> specs;
+    };
+
+    class ASTForDecl : public ASTDecl {
+    public:
+        
+    };
+
+    class ASTWhileDecl : public ASTDecl {
+    public:
+        ASTExpr *expr;
+        ASTBlockStmt *blockStmt;
     };
 
 }

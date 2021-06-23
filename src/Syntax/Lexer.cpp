@@ -50,7 +50,7 @@ struct LexicalError : public Diagnostic {
 
 
 
-Lexer::Lexer(DiagnosticBufferedLogger & errStream):errStream(errStream){
+Lexer::Lexer(DiagnosticBufferedLogger & errStream):buffer(),errStream(errStream){
     
 }
 
@@ -108,7 +108,7 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
     src.code = "";
     
     char c;
-    bool finish = false;
+    // bool finish = false;
     while((c = getChar()) != -1){
         switch (c) {
             case '\n': {

@@ -30,6 +30,7 @@ namespace starbytes {
             ASTIdentifier *buildIdentifier(const Tok & first_token,bool typeScope);
             ASTType * buildTypeFromTokenStream(const Tok & first_token,ASTStmt *parentStmt);
             ASTBlockStmt *evalBlockStmt(const Tok &first_token,ASTScope *parentScope);
+            ASTExpr * evalSubExpr(const Tok & first_token,ASTScope *parentScope);
             ASTExpr * evalExpr(const Tok & first_token,ASTScope *parentScope);
             ASTDecl * evalDecl(const Tok & first_token,ASTScope *parentScope);
             ASTStmt * previousNode = nullptr;

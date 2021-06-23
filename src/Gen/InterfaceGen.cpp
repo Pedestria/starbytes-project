@@ -2,4 +2,13 @@
 
 namespace starbytes {
 
+void InterfaceGen::consumeDecl(ASTDecl *stmt) {
+
+}
+
+void InterfaceGen::consumeStmt(ASTStmt *stmt) {
+
+}
+
+
 };

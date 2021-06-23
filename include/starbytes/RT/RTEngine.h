@@ -4,8 +4,8 @@
 #ifndef STARBYTES_RT_RTENGINE_H
 #define STARBYTES_RT_RTENGINE_H
 
-namespace starbytes {
-namespace Runtime {
+namespace starbytes::Runtime {
+
 
 
 class Interp {
@@ -15,7 +15,6 @@ public:
     virtual ~Interp() = default;
 };
 
-}
 }
 
 #endif

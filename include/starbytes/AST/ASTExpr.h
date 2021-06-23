@@ -12,7 +12,6 @@ namespace starbytes {
 
     class ASTIdentifier : public ASTStmt  {
     public:
-        std::vector<ASTIdentifier> genericArgs;
         std::string val;
         static bool classof(ASTStmt *stmt);
         bool match(ASTIdentifier *other);
@@ -21,6 +20,9 @@ namespace starbytes {
     public:
         /// Identifier associated with Expr
         ASTIdentifier *id = nullptr;
+
+        ASTExpr *callee;
+
         /// @name  Unary/Binary Expression Props
         /// @{
 
@@ -28,7 +30,7 @@ namespace starbytes {
         llvm::Optional<llvm::SmallString<TOK_OP_MAX_LENGTH>> oprtr_str;
         /// @}
 
-        /// @name Binary Expression Props
+        /// @name Binary Expression / Member Expression Props
         /// @{
         ASTExpr * leftExpr = nullptr;
         /// NOTE: `rightExpr` is also used for AssignExpr

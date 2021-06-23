@@ -140,7 +140,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                         ASTScope *scopeConditionalElse = new ASTScope({"ELSE_COND_DECL",ASTScope::Neutral,parentScope});
                         
                         tok0 = nextTok();
-                        ASTBlockStmt *blockStmt = evalBlockStmt(tok0,scopeConditionalIF);
+                        ASTBlockStmt *blockStmt = evalBlockStmt(tok0,scopeConditionalElse);
                         if(!blockStmt)
                         {
                             return nullptr;
@@ -343,27 +343,24 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                 };
                 
             }
-            else {
-                node = nullptr;
-            }
-//             else if(first_token.content == KW_CLASS){
-                
-//                 // node->type = CLASS_DECL;
-// //                 TokRef tok0 = nextTok();
-// // //                ASTDecl::Property id;
-// // //                id.type = ASTDecl::Property::Identifier;
-// // //                if(!(id.dataPtr = buildIdentifier(tok0,true))){
-// // //                    /// Throw Error
-// // //                };
-                
-//             }
-            // else if(first_token.content == KW_IMUT){
-            //     /// Throw Unknown Error;
-            //     return nullptr;
+            // else {
+            //     node = nullptr;
             // }
-            // else if(first_token.content == KW_ELSE){
-            //     return nullptr;
-            // };
+            else if(first_token.content == KW_CLASS){
+                auto n = new ASTClassDecl();
+                node = n;
+                node->type = CLASS_DECL;
+                TokRef tok0 = nextTok();
+//               
+                
+            }
+            else if(first_token.content == KW_IMUT){
+                /// Throw Unknown Error;
+                return nullptr;
+            }
+            else if(first_token.content == KW_ELSE){
+                return nullptr;
+            };
 
             return node;
         }
