@@ -172,5 +172,9 @@ namespace Runtime {
         return os;
     }
 
+    RTFuncRefObject::RTFuncRefObject(llvm::StringRef name,RTFuncTemplate *temp):name(name),funcTemp(temp){
+        
+    };
+
 }
 }

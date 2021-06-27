@@ -21,6 +21,7 @@ namespace starbytes {
         struct SymbolTable {
             
             struct Function {
+                ASTType *funcType;
                 ASTType *returnType;
                 llvm::StringMap<ASTType *> paramMap;
             };

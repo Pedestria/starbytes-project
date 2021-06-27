@@ -162,20 +162,31 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         delete obj;
     }
     else if(stmt->type == ID_EXPR){
-        RTCode code = CODE_RTVAR_REF;
-        genContext->out.write((const char *)&code,sizeof(RTCode));
-        RTID id;
-        ASTIdentifier_to_RTID(expr->id,id);
-        genContext->out << &id;
+        SemanticsContext ctxt {*errStream,stmt};
+        
+        if(expr->id->type == ASTIdentifier::Var) {
+            RTCode code = CODE_RTVAR_REF;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            RTID id;
+            ASTIdentifier_to_RTID(expr->id,id);
+            genContext->out << &id;
+        }
+        else if(expr->id->type == ASTIdentifier::Function) {
+            RTCode code = CODE_RTFUNC_REF;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            RTID id;
+            ASTIdentifier_to_RTID(expr->id,id);
+            std::cout << "ID Func Len:" << id.len << std::endl;
+            genContext->out << &id;
+        }
     }
     else if(stmt->type == IVKE_EXPR){
         /// Invoke Expr
         std::cout << "Invoke Expr" << std::endl;
         RTCode code = CODE_RTIVKFUNC;
         genContext->out.write((const char *)&code,sizeof(RTCode));
-        RTID func_id;
-        ASTIdentifier_to_RTID(expr->id,func_id);
-        genContext->out << &func_id;
+//        std::cout << "CALLEE TYPE:" << std::hex << expr->callee->type << std::dec << std::endl;
+        consumeStmt(expr->callee);
         unsigned argCount = expr->exprArrayData.size();
         genContext->out.write((const char *)&argCount,sizeof(argCount));
         for(auto arg : expr->exprArrayData){

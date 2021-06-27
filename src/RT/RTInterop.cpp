@@ -4,9 +4,11 @@
 #include <llvm/ADT/StringRef.h>
 #include <new>
 
-#ifdef __ELF__
+#if defined(__ELF__) | defined(__MACH__)
+#define UNIX_DLFCN
 #include <dlfcn.h>
 #endif
+
 
 namespace starbytes::Runtime {
 
@@ -66,9 +68,9 @@ void StarbytesObjectDestroy(StarbytesObject *obj){
 
 struct __StarbytesNativeModule {
     std::vector<StarbytesFuncDesc> desc;
-    #ifdef __ELF__
-        void *dl_handle;
-    #endif
+#if defined(UNIX_DLFCN)
+    void *dl_handle;
+#endif
 };
 
 
@@ -82,14 +84,11 @@ typedef StarbytesNativeModule *(*NativeModuleEntryPoint)();
 
 StarbytesNativeModule * starbytes_native_mod_load(llvm::StringRef path){
     StarbytesNativeModule *m;
-    #ifdef __ELF__
+    #ifdef UNIX_DLFCN
         auto handle = dlopen(path.data(),RTLD_NOW);
         NativeModuleEntryPoint entry = (NativeModuleEntryPoint)dlsym(handle,STR_WRAP(starbytesModuleMain));
         m = entry();
         m->dl_handle = handle;
-    #endif
-
-    #ifdef __MACHO__ 
     #endif
     return m;
 }
@@ -104,7 +103,9 @@ StarbytesFuncCallback starbytes_native_mod_load_function(StarbytesNativeModule *
 }
 
 void starbytes_native_mod_close(StarbytesNativeModule * mod){
+#ifdef UNIX_DLFCN
     dlclose(mod->dl_handle);
+#endif
 }
 
 }

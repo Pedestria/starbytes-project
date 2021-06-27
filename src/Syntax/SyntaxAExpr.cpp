@@ -6,7 +6,15 @@
 
 namespace starbytes::Syntax {
 
-    ASTExpr *SyntaxA::evalSubExpr(TokRef first_token,ASTScope *parentScope){
+
+    /**
+     Its important to note that there are three kinds of AST expression nodes that get evaluated.
+     1. DataExpr - any identifier, or literal that represents data.
+     2. ArgExpr - any invocation, member access, or index of another expr.
+     3. CompoundExpr - an operation on one or more exprs (binary, unary, logical,etc.)
+     */
+
+    ASTExpr *SyntaxA::evalDataExpr(TokRef first_token,ASTScope *parentScope){
         Tok & tokRef = const_cast<Tok &>(first_token);
         ASTExpr *expr = nullptr;
         /// Paren Unwrapping
@@ -83,6 +91,7 @@ namespace starbytes::Syntax {
             }
             else if(tokRef.type == Tok::Identifier){
                 ASTExpr *node = new ASTExpr();
+                node->type = ID_EXPR;
                 expr = node;
                 
                 ASTIdentifier *id;
@@ -97,51 +106,59 @@ namespace starbytes::Syntax {
         };
         return expr;
     }
+    
+    ASTExpr * SyntaxA::evalArgExpr(const Tok & first_token,ASTScope *parentScope){
+        auto expr = evalDataExpr(first_token,parentScope);
+        Tok & tokRef = const_cast<Tok &>(token_stream[privTokIndex]);
+        /// MemberExpr
+        if(tokRef.type == Tok::Dot){
+            ASTExpr *memberExpr = new ASTExpr();
+            memberExpr->leftExpr = expr;
+            tokRef = nextTok();
+            auto other_expr = evalDataExpr(tokRef,parentScope);
+            if(!other_expr)
+                return nullptr;
+            if(other_expr->type == ID_EXPR)
+                memberExpr->rightExpr = other_expr;
+            else;
+                /// Throw Error;
+            expr = memberExpr;
+        }
+        /// InvokeExpr
+        else if(tokRef.type == Tok::OpenParen){
+            auto node = new ASTExpr();
+            node->type = IVKE_EXPR;
+            node->callee = expr;
+            
+            tokRef = nextTok();
+            
+            while(tokRef.type != Tok::CloseParen){
+                ASTExpr *expr = evalExpr(tokRef,parentScope);
+                node->exprArrayData.push_back(expr);
+            };
+            
+            tokRef = nextTok();
+            expr = node;
+        }
+        return expr;
+    };
 
     ASTExpr *SyntaxA::evalExpr(TokRef first_token,ASTScope *parentScope){
         
-        ASTExpr *expr = evalSubExpr(first_token,parentScope);
+        ASTExpr *expr = evalArgExpr(first_token,parentScope);
         Tok & tokRef = const_cast<Tok &>(token_stream[privTokIndex]);
-
+        
+        /// Eval CompoundExpr
 
         while(true){
-            /// MemberExpr
-            if(tokRef.type == Tok::Dot){
-                ASTExpr *memberExpr = new ASTExpr();
-                memberExpr->leftExpr = expr;
-                tokRef = nextTok();
-                auto other_expr = evalSubExpr(tokRef,parentScope);
-                if(!other_expr)
-                    return nullptr;
-                if(other_expr->type == ID_EXPR)
-                    memberExpr->rightExpr = other_expr;
-                else;
-                    /// Throw Error;
-                expr = memberExpr;
-            }
-            /// InvokeExpr
-            else if(tokRef.type == Tok::OpenParen){
-                auto node = new ASTExpr();
-                node->type = IVKE_EXPR;
-                
-                tokRef = nextTok();
-                
-                while(tokRef.type != Tok::CloseParen){
-                    ASTExpr *expr = evalExpr(tokRef,parentScope);
-                    node->exprArrayData.push_back(expr);
-                };
-                
-                tokRef = nextTok();
-                expr = node;
-            }
             /// BinaryExpr
-            else if(tokRef.type == Tok::Plus){
+            if(tokRef.type == Tok::Plus){
                 auto node = new ASTExpr();
                 node->type = BINARY_EXPR;
                 node->leftExpr = expr;
                 tokRef = nextTok();
                 
-                ASTExpr *rexpr = evalSubExpr(tokRef,parentScope);
+                ASTExpr *rexpr = evalArgExpr(tokRef,parentScope);
                 node->rightExpr = rexpr;
                 
                 expr = node;
@@ -152,7 +169,7 @@ namespace starbytes::Syntax {
                 node->leftExpr = expr;
                 tokRef = nextTok();
                 
-                ASTExpr *rexpr = evalSubExpr(tokRef,parentScope);
+                ASTExpr *rexpr = evalArgExpr(tokRef,parentScope);
                 node->rightExpr = rexpr;
               
                  

@@ -201,7 +201,9 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                     
                     if(tok1.type == Tok::Colon){
                         tok1 = nextTok();
-                        ASTType *type = buildTypeFromTokenStream(tok1,varDecl);
+                        ASTTypeContext type_ctxt;
+                        type_ctxt.isPlaceholder = true;
+                        ASTType *type = buildTypeFromTokenStream(tok1,varDecl,type_ctxt);
                         if(!type){
                         /// Throw Error;   
                         };
@@ -242,6 +244,9 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                 if(!(func_node->funcId = buildIdentifier(tok0,false))){
                     /// Throw Error
                 };
+                ASTTypeContext type_ctxt;
+                type_ctxt.isPlaceholder = false;
+                func_node->funcType = buildTypeFromTokenStream(tok0,func_node,type_ctxt);
                 
                 tok0 = nextTok();
                 
@@ -272,7 +277,10 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                         
 //                        std::cout << "no 3" << std::endl;
                         
-                        ASTType *param_type = buildTypeFromTokenStream(tok0,func_node);
+                        ASTTypeContext type_ctxt;
+                        type_ctxt.isPlaceholder = true;
+                        
+                        ASTType *param_type = buildTypeFromTokenStream(tok0,func_node,type_ctxt);
                         if(!param_type){
                             /// Throw Error.
                             return nullptr;
@@ -306,7 +314,9 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                     
                     if(tok0.type == Tok::Identifier){
                         ASTType *type;
-                        if(!(type = buildTypeFromTokenStream(tok0,func_node))){
+                        ASTTypeContext type_ctxt;
+                        type_ctxt.isPlaceholder = true;
+                        if(!(type = buildTypeFromTokenStream(tok0,func_node,type_ctxt))){
                             /// Throw Error.
                             return nullptr;
                         };

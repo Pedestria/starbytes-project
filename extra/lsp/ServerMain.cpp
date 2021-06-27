@@ -3,7 +3,7 @@
 #include <llvm/Support/Regex.h>
 
 #include "ServerMain.h"
-#include "lsp/LSPProtocol.h"
+#include "LSPProtocol.h"
 
 namespace starbytes::lsp {
 

@@ -77,7 +77,7 @@ size_t SyntaxA::getTokenStreamWidth(){
         };
     }
 
-    ASTType *SyntaxA::buildTypeFromTokenStream(TokRef first_token,ASTStmt *parentStmt){
+    ASTType *SyntaxA::buildTypeFromTokenStream(TokRef first_token,ASTStmt *parentStmt,ASTTypeContext & ctxt){
         if(first_token.type == Tok::Identifier){
             
             llvm::StringRef tok_id = first_token.content;
@@ -94,7 +94,7 @@ size_t SyntaxA::getTokenStreamWidth(){
                 return ARRAY_TYPE;
             }
             else {
-                return ASTType::Create(first_token.content,parentStmt);
+                return ASTType::Create(first_token.content,parentStmt,ctxt.isPlaceholder,ctxt.isAlias);
             };
             
         }

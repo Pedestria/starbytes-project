@@ -41,6 +41,7 @@ namespace starbytes {
     class ASTFuncDecl : public ASTDecl {
     public:
         ASTIdentifier *funcId;
+        ASTType *funcType;
         ASTType *returnType;
         llvm::DenseMap<ASTIdentifier *,ASTType *> params;
         ASTBlockStmt *blockStmt;
