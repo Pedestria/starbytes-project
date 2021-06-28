@@ -4,6 +4,7 @@
 namespace starbytes {
 
  #define PRINT_FUNC_ID "print"
+auto print_func_type = ASTType::Create(PRINT_FUNC_ID,nullptr);
 
 ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableContext & symbolTableContext,ASTScopeSemanticsContext & scopeContext){
         ASTType *type;
@@ -11,6 +12,12 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableC
             case ID_EXPR : {
                 ASTIdentifier *id_ = expr_to_eval->id;
                 SemanticsContext ctxt {errStream,expr_to_eval};
+                
+                /// 1. Check and see if id is a builtin func.
+                if(id_->val == PRINT_FUNC_ID){
+                    id_->type = ASTIdentifier::Function;
+                    return print_func_type;
+                };
 
                 /// 1. Check if scope context has args.. (In Function Context)
 
@@ -35,7 +42,13 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableC
                 
                 if(symbol_->type == Semantics::SymbolTable::Entry::Var){
                     auto varData = (Semantics::SymbolTable::Var *)symbol_->data;
+                    id_->type = ASTIdentifier::Var;
                     type = varData->type;
+                }
+                else if(symbol_->type == Semantics::SymbolTable::Entry::Function){
+                    auto funcData = (Semantics::SymbolTable::Function *)symbol_->data;
+                    id_->type = ASTIdentifier::Function;
+                    type = funcData->funcType;
                 }
                 else {
                     errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Identifier in this context cannot identify any other symbol type except another variable."),expr_to_eval);
@@ -72,12 +85,15 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableC
                 break;
             }
             case IVKE_EXPR : {
-               
+//                std::cout << expr_to_eval->callee->type << std::endl;
                 
                 /// 2. Check return type.
-                ASTIdentifier *func_id = expr_to_eval->id;
+                ASTType *funcType = evalExprForTypeId(expr_to_eval->callee, symbolTableContext,scopeContext);
+                if(!funcType){
+                    return nullptr;
+                };
                 /// a. Check internal function return types.
-                llvm::StringRef func_name = func_id->val;
+                llvm::StringRef func_name = funcType->getName();
                 if(func_name == PRINT_FUNC_ID){
                     if(expr_to_eval->exprArrayData.size() > 1){
                         errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Incorrect number of arguments"),expr_to_eval);
@@ -113,7 +129,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableC
                     auto funcData = (Semantics::SymbolTable::Function *)entry->data;
                     
                     if(expr_to_eval->exprArrayData.size() != funcData->paramMap.size()){
-                        errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Incorrect number of arguments. Expected {0} args, but got {1}\nContext: Invocation of func `{2}`",funcData->paramMap.size(),expr_to_eval->exprArrayData.size(),func_id->val),expr_to_eval);
+                        errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Incorrect number of arguments. Expected {0} args, but got {1}\nContext: Invocation of func `{2}`",funcData->paramMap.size(),expr_to_eval->exprArrayData.size(),funcType->getName()),expr_to_eval);
                         return nullptr;
                         break;
                     }
@@ -128,7 +144,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableC
                         };
                         auto & param_decl_pair = *param_decls_it;
                         if(!param_decls_it->getValue()->match(_id,[&](const llvm::formatv_object_base & message){
-                            errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("{0}\nContext: Param in invocation of func `{1}`",message,func_id->val),expr_arg);
+                            errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("{0}\nContext: Param in invocation of func `{1}`",message,funcType->getName()),expr_arg);
                         })){
                             return nullptr;
                             break;

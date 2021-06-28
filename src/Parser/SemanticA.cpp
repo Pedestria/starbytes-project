@@ -42,6 +42,7 @@ namespace starbytes {
                 Semantics::SymbolTable::Entry *e = new Semantics::SymbolTable::Entry();
                 auto data = new Semantics::SymbolTable::Function();
                 data->returnType = funcDecl->returnType;
+                data->funcType = funcDecl->funcType;
                 
                 for(auto & param_pair : funcDecl->params){
                     data->paramMap.insert(std::make_pair(param_pair.getFirst()->val,param_pair.getSecond()));

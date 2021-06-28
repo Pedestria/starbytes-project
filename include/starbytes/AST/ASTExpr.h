@@ -3,7 +3,6 @@
 #include <llvm/ADT/SmallString.h>
 #include "starbytes/AST/ASTNodes.def"
 #include "starbytes/Syntax/Toks.def"
-#include "llvm/ADT/APFloat.h"
 
 #ifndef STARBYTES_AST_ASTEXPR_H
 #define STARBYTES_AST_ASTEXPR_H
@@ -12,8 +11,14 @@ namespace starbytes {
 
     class ASTIdentifier : public ASTStmt  {
     public:
-        std::vector<ASTIdentifier> genericArgs;
         std::string val;
+        /// NOTE: Gets set by SemanticA
+        typedef enum : int {
+            Class,
+            Function,
+            Var
+        } SymbolType;
+        SymbolType type;
         static bool classof(ASTStmt *stmt);
         bool match(ASTIdentifier *other);
     };
@@ -21,6 +26,9 @@ namespace starbytes {
     public:
         /// Identifier associated with Expr
         ASTIdentifier *id = nullptr;
+
+        ASTExpr *callee;
+
         /// @name  Unary/Binary Expression Props
         /// @{
 
@@ -28,7 +36,7 @@ namespace starbytes {
         llvm::Optional<llvm::SmallString<TOK_OP_MAX_LENGTH>> oprtr_str;
         /// @}
 
-        /// @name Binary Expression Props
+        /// @name Binary Expression / Member Expression Props
         /// @{
         ASTExpr * leftExpr = nullptr;
         /// NOTE: `rightExpr` is also used for AssignExpr

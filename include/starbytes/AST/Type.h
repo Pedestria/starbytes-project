@@ -37,6 +37,8 @@ namespace starbytes {
         
         llvm::StringRef getName() const;
         
+        ASTStmt *getParentNode() const;
+        
         ~ASTType();
     };
 

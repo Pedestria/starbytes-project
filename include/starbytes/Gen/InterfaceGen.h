@@ -7,7 +7,7 @@
 
 namespace starbytes {
 
-    class InterfaceGen : public ASTStreamConsumer {
+    class InterfaceGen final : public ASTStreamConsumer {
     public:
         void consumeDecl(ASTDecl *stmt);
         void consumeStmt(ASTStmt *stmt);

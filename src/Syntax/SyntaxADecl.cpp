@@ -140,7 +140,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                         ASTScope *scopeConditionalElse = new ASTScope({"ELSE_COND_DECL",ASTScope::Neutral,parentScope});
                         
                         tok0 = nextTok();
-                        ASTBlockStmt *blockStmt = evalBlockStmt(tok0,scopeConditionalIF);
+                        ASTBlockStmt *blockStmt = evalBlockStmt(tok0,scopeConditionalElse);
                         if(!blockStmt)
                         {
                             return nullptr;
@@ -201,7 +201,9 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                     
                     if(tok1.type == Tok::Colon){
                         tok1 = nextTok();
-                        ASTType *type = buildTypeFromTokenStream(tok1,varDecl);
+                        ASTTypeContext type_ctxt;
+                        type_ctxt.isPlaceholder = true;
+                        ASTType *type = buildTypeFromTokenStream(tok1,varDecl,type_ctxt);
                         if(!type){
                         /// Throw Error;   
                         };
@@ -242,6 +244,9 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                 if(!(func_node->funcId = buildIdentifier(tok0,false))){
                     /// Throw Error
                 };
+                ASTTypeContext type_ctxt;
+                type_ctxt.isPlaceholder = false;
+                func_node->funcType = buildTypeFromTokenStream(tok0,func_node,type_ctxt);
                 
                 tok0 = nextTok();
                 
@@ -272,7 +277,10 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                         
 //                        std::cout << "no 3" << std::endl;
                         
-                        ASTType *param_type = buildTypeFromTokenStream(tok0,func_node);
+                        ASTTypeContext type_ctxt;
+                        type_ctxt.isPlaceholder = true;
+                        
+                        ASTType *param_type = buildTypeFromTokenStream(tok0,func_node,type_ctxt);
                         if(!param_type){
                             /// Throw Error.
                             return nullptr;
@@ -306,7 +314,9 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                     
                     if(tok0.type == Tok::Identifier){
                         ASTType *type;
-                        if(!(type = buildTypeFromTokenStream(tok0,func_node))){
+                        ASTTypeContext type_ctxt;
+                        type_ctxt.isPlaceholder = true;
+                        if(!(type = buildTypeFromTokenStream(tok0,func_node,type_ctxt))){
                             /// Throw Error.
                             return nullptr;
                         };
@@ -343,27 +353,24 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                 };
                 
             }
-            else {
-                node = nullptr;
-            }
-//             else if(first_token.content == KW_CLASS){
-                
-//                 // node->type = CLASS_DECL;
-// //                 TokRef tok0 = nextTok();
-// // //                ASTDecl::Property id;
-// // //                id.type = ASTDecl::Property::Identifier;
-// // //                if(!(id.dataPtr = buildIdentifier(tok0,true))){
-// // //                    /// Throw Error
-// // //                };
-                
-//             }
-            // else if(first_token.content == KW_IMUT){
-            //     /// Throw Unknown Error;
-            //     return nullptr;
+            // else {
+            //     node = nullptr;
             // }
-            // else if(first_token.content == KW_ELSE){
-            //     return nullptr;
-            // };
+            else if(first_token.content == KW_CLASS){
+                auto n = new ASTClassDecl();
+                node = n;
+                node->type = CLASS_DECL;
+                TokRef tok0 = nextTok();
+//               
+                
+            }
+            else if(first_token.content == KW_IMUT){
+                /// Throw Unknown Error;
+                return nullptr;
+            }
+            else if(first_token.content == KW_ELSE){
+                return nullptr;
+            };
 
             return node;
         }

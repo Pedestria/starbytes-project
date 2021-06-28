@@ -6,6 +6,9 @@
 #include <llvm/ADT/StringMap.h>
 #include <iostream>
 #include <iomanip>
+#include <cstring>
+
+#include "starbytes/interop.h"
 
 namespace starbytes::Runtime {
 
@@ -187,8 +190,13 @@ public:
     };
 };
 
+StarbytesNativeModule * starbytes_native_mod_load(llvm::StringRef path);
+StarbytesFuncCallback starbytes_native_mod_load_function(StarbytesNativeModule * mod,llvm::StringRef name);
+void starbytes_native_mod_close(StarbytesNativeModule * mod);
 
 class InterpImpl final : public Interp {
+
+   void addExtension(llvm::StringRef path);
 
     std::unique_ptr<RTAllocator> allocator;
     
@@ -198,60 +206,72 @@ class InterpImpl final : public Interp {
     
     void execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObject **return_val);
     
-    RTObject * invokeFunc(std::istream &in,llvm::StringRef & func_name,unsigned argCount);
+    RTObject * invokeFunc(std::istream &in,RTFuncTemplate *func_temp,unsigned argCount);
     
     RTObject * evalExpr(std::istream &in);
     
 public:
     InterpImpl():allocator(std::make_unique<RTAllocator>()){
+#define STARBYTES_BUILTIN_ARG(name) {strlen(name),name}
+#define STARBYTES_BUILTIN(name,args) functions.push_back({{strlen(name),name},0,args,NULL})
+        STARBYTES_BUILTIN("print",{STARBYTES_BUILTIN_ARG("object")});
         
     };
-    ~InterpImpl() = default;
+    ~InterpImpl() override = default;
     void exec(std::istream &in) override;
 };
 
-RTObject *InterpImpl::invokeFunc(std::istream & in,llvm::StringRef & func_name,unsigned argCount){
-    for(auto & func_temp : functions){
-        if(func_name == llvm::StringRef(func_temp.name.value,func_temp.name.len)){
-            llvm::StringRef parentScope = allocator->currentScope;
-            
-            std::string funcScope = func_name.str() + std::to_string(func_temp.invocations);
-            
-            auto func_param_it = func_temp.argsTemplate.begin();
-            while(argCount > 0){
-                RTObject * obj = evalExpr(in);
-                allocator->allocVariable(llvm::StringRef(func_param_it->value,func_param_it->len),obj,funcScope);
-                ++func_param_it;
-                --argCount;
-            };
-            allocator->setScope(funcScope);
-            auto prev_pos = in.tellg();
-            auto current_pos = func_temp.block_start_pos;
-            /// Invoke
-            in.seekg(current_pos);
-            
-            func_temp.invocations += 1;
-            
-            RTCode code;
-            in.read((char *)&code,sizeof(RTCode));
-            bool willReturn = false;
-            RTObject * return_val = nullptr;
-            while(code != CODE_RTFUNCBLOCK_END){
-                if(!willReturn)
-                    execNorm(code,in,&willReturn,&return_val);
-                in.read((char *)&code,sizeof(RTCode));
-            };
 
-         
-            in.seekg(prev_pos);
-            
-            allocator->clearScopeCollectG();
-            allocator->setScope(parentScope);
-
-            return return_val;
+RTObject *InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_temp,unsigned argCount){
+    llvm::StringRef parentScope = allocator->currentScope;
+    llvm::StringRef func_name = {func_temp->name.value,func_temp->name.len};
+    
+    if(func_name == "print"){
+        RTObject *object_to_print = evalExpr(in);
+        stdlib::print(object_to_print);
+        runtime_object_ref_dec(object_to_print);
+        runtime_object_collectg(object_to_print);
+        return nullptr;
+    }
+    else {
+    
+        std::string funcScope = func_name.str() + std::to_string(func_temp->invocations);
+                
+        auto func_param_it = func_temp->argsTemplate.begin();
+        while(argCount > 0){
+            RTObject * obj = evalExpr(in);
+            allocator->allocVariable(llvm::StringRef(func_param_it->value,func_param_it->len),obj,funcScope);
+            ++func_param_it;
+            --argCount;
         };
-    };
-    return nullptr;
+        allocator->setScope(funcScope);
+        auto prev_pos = in.tellg();
+        auto current_pos = func_temp->block_start_pos;
+        /// Invoke
+        in.seekg(current_pos);
+        
+        func_temp->invocations += 1;
+                
+        RTCode code;
+        in.read((char *)&code,sizeof(RTCode));
+        bool willReturn = false;
+        RTObject * return_val = nullptr;
+        while(code != CODE_RTFUNCBLOCK_END){
+            if(!willReturn)
+                execNorm(code,in,&willReturn,&return_val);
+            in.read((char *)&code,sizeof(RTCode));
+        };
+
+     
+        in.seekg(prev_pos);
+        
+        allocator->clearScopeCollectG();
+        allocator->setScope(parentScope);
+        
+        return return_val;
+        
+    }
+    
 }
 
 RTObject *InterpImpl::evalExpr(std::istream & in){
@@ -278,21 +298,24 @@ RTObject *InterpImpl::evalExpr(std::istream & in){
             
             break;
         }
+        case CODE_RTFUNC_REF : {
+            RTID var_id;
+            in >> &var_id;
+            llvm::StringRef func_name (var_id.value,var_id.len);
+            for(auto & funcTemp : functions){
+                if(func_name == llvm::StringRef(funcTemp.name.value,funcTemp.name.len)){
+                    return new RTFuncRefObject(func_name,&funcTemp);
+                };
+            };
+            
+            break;
+        }
         case CODE_RTIVKFUNC : {
-            RTID func_id;
-            in >> &func_id;
-            llvm::StringRef func_name (func_id.value,func_id.len);
+            RTFuncRefObject *funcRefObject = (RTFuncRefObject *)evalExpr(in);
             unsigned argCount;
             in.read((char *)&argCount,sizeof(argCount));
-            if(func_name == "print"){
-                RTObject *object_to_print = evalExpr(in);
-                stdlib::print(object_to_print);
-                runtime_object_ref_dec(object_to_print);
-                runtime_object_collectg(object_to_print);
-            }
-            else {
-                return invokeFunc(in,func_name,argCount);
-            };
+            return invokeFunc(in,funcRefObject->funcTemp,argCount);
+            
             break;
         }
         default:
@@ -379,20 +402,10 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObje
         functions.push_back(funcTemp);
     }
     else if(code == CODE_RTIVKFUNC){
-        RTID func_id;
-        in >> &func_id;
-        llvm::StringRef func_name (func_id.value,func_id.len);
+        RTFuncRefObject *funcTempRef = (RTFuncRefObject *)evalExpr(in);
         unsigned argCount;
         in.read((char *)&argCount,sizeof(argCount));
-        if(func_name == "print"){
-            RTObject *object_to_print = evalExpr(in);
-            stdlib::print(object_to_print);
-            runtime_object_ref_dec(object_to_print);
-            runtime_object_collectg(object_to_print);
-        }
-        else {
-            invokeFunc(in,func_name,argCount);
-        };
+        invokeFunc(in,funcTempRef->funcTemp,argCount);
     }
 }
 
@@ -409,6 +422,11 @@ void InterpImpl::exec(std::istream & in){
         in.read((char *)&code,sizeof(RTCode));
     };
     allocator->clearScope();
+}
+
+
+void InterpImpl::addExtension(llvm::StringRef path) {
+
 }
 
 std::shared_ptr<Interp> Interp::Create(){

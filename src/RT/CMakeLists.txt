@@ -4,6 +4,7 @@ add_starbytes_lib(
     SOURCE_FILES
     "RTCode.cpp"
     "RTEngine.cpp" 
+    "RTInterop.cpp"
     "RTStdlib.cpp"
     "RTStdlib.h"
     HEADER_FILES

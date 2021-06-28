@@ -6,10 +6,10 @@ func myFunc(){
 decl myvar = ["hello","world"]
 decl myvar2 = myFunc()
 decl foo = 34.12
-decl bar = false
+decl bar = true
 
-
-
+print(bar)
+print(myvar2)
 print(foo)
 
 if(bar){
@@ -18,17 +18,6 @@ if(bar){
 else {
     print("NO")
 }
-
-func anotherFunc(param:String){
-    print(param)
-}
-
-func helloWorld(){
-    print("mama")
-}
-
-helloWorld()
-anotherFunc(myvar2)
 
 
 

@@ -29,6 +29,10 @@ namespace starbytes {
         return name;
     }
 
+    ASTStmt *ASTType::getParentNode() const{
+        return parentNode;
+    };
+
     bool ASTType::nameMatches(ASTType *other){
         return name == other->name;
     }

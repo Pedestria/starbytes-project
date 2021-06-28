@@ -31,6 +31,7 @@ typedef unsigned char RTCode;
 #define CODE_RTOBJVAR_REF 0x0B
 #define CODE_CONDITIONAL 0x0C
 #define CODE_CONDITIONAL_END 0x0D
+#define CODE_RTFUNC_REF 0x0E
 
 #define COND_TYPE_IF 0x0
 #define COND_TYPE_ELSE 0x1
@@ -89,6 +90,7 @@ RTCODE_STREAM_OBJECT(RTClassTemplate)
 struct RTObject {
     unsigned refCount = 1;
     bool isInternal = false;
+    bool isFuncRef = false;
 
     llvm::StringMap<RTObject *> props = {};
 
@@ -118,6 +120,11 @@ public:
 
 RTCODE_STREAM_OBJECT(RTInternalObject)
 
+struct RTFuncRefObject : public RTObject {
+    llvm::StringRef name;
+    RTFuncTemplate *funcTemp;
+    RTFuncRefObject(llvm::StringRef name,RTFuncTemplate *temp);
+};
 
 
 

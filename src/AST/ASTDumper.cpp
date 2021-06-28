@@ -167,8 +167,8 @@ namespace starbytes {
         }
         else if(expr->type == IVKE_EXPR){
             os << "InvokeExpr: {\n" << pad <<
-                  "   id:" << std::flush;
-            formatIdentifier(os,expr->id,level + 1);
+                  "   callee:" << std::flush;
+            printStmt(expr->callee,level + 1);
             os << pad << "   args:[\n" << std::flush;
             auto n_level = level + 1;
             auto _pad = padString(n_level);

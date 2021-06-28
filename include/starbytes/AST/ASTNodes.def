@@ -16,6 +16,7 @@ typedef long starbytes_int_t;
 /// Generic Decls
 #define VAR_DECL (0x001000 | DECL)
 #define COND_DECL (0x002000 | DECL)
+#define FOR_DECL (0x00B000 | DECL)
 
 /// Scope Specific Decls
 /// - Global Scope Only -->
@@ -40,5 +41,6 @@ typedef long starbytes_int_t;
 #define ASSIGN_EXPR (0x700000 | EXPR)
 #define UNARY_EXPR (0x800000 | EXPR)
 #define BINARY_EXPR (0x900000 | EXPR)
+#define LOGIC_EXPR (0xA00000 | EXPR)
 
 #endif
