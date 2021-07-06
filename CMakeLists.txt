@@ -119,6 +119,7 @@ add_subdirectory("driver")
 add_subdirectory("extra")
 add_subdirectory("tests")
 add_subdirectory("embed")
+add_subdirectory("ide")
 # TODO : Get Starbytes Compilation to work!
 # add_subdirectory("starbytes-modules")
 
