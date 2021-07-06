@@ -24,9 +24,9 @@ namespace starbytes {
        
         switch (decl->type) {
             case VAR_DECL : {
-                ASTVarDecl *varDecl = (ASTVarDecl *)decl;
+                auto *varDecl = (ASTVarDecl *)decl;
                 for(auto & spec : varDecl->specs) {
-                    Semantics::SymbolTable::Entry *e = new Semantics::SymbolTable::Entry();
+                    auto *e = new Semantics::SymbolTable::Entry();
                     auto data = new Semantics::SymbolTable::Var();
                     data->type = spec.type;
                     auto id = spec.id;
@@ -38,8 +38,8 @@ namespace starbytes {
                 break;
             }
             case FUNC_DECL : {
-                ASTFuncDecl *funcDecl = (ASTFuncDecl *)decl;
-                Semantics::SymbolTable::Entry *e = new Semantics::SymbolTable::Entry();
+                auto *funcDecl = (ASTFuncDecl *)decl;
+                auto *e = new Semantics::SymbolTable::Entry();
                 auto data = new Semantics::SymbolTable::Function();
                 data->returnType = funcDecl->returnType;
                 data->funcType = funcDecl->funcType;
@@ -70,7 +70,7 @@ namespace starbytes {
     }
 
 
-    bool SemanticA::typeExists(ASTType *type,Semantics::STableContext &contextTableContxt,ASTScope *scope){
+    bool SemanticA::typeExists(ASTType *type,Semantics::STableContext &contextTableContext,ASTScope *scope){
         /// First check to see if ASTType is one of the built in types
         if(type == VOID_TYPE || type == STRING_TYPE || type == ARRAY_TYPE || 
         type == DICTIONARY_TYPE || type == BOOL_TYPE || type == INT_TYPE){
@@ -103,7 +103,7 @@ namespace starbytes {
     bool SemanticA::checkSymbolsForStmtInScope(ASTStmt *stmt,Semantics::STableContext & symbolTableContext,ASTScope *scope,llvm::Optional<Semantics::SymbolTable> tempSTable){
         ASTScopeSemanticsContext scopeContext {scope};
         if(stmt->type & DECL){
-            ASTDecl *decl = (ASTDecl *)stmt;
+            auto *decl = (ASTDecl *)stmt;
             bool hasErrored;
             auto rc = evalGenericDecl(decl,symbolTableContext,scopeContext,&hasErrored);
             if(hasErrored && !rc)

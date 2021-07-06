@@ -1,11 +1,13 @@
 #include "starbytes/Parser/Parser.h"
+
+#include <utility>
 #include "starbytes/AST/AST.h"
 #include "starbytes/AST/ASTDumper.h"
 
 namespace starbytes {
 
     ModuleParseContext ModuleParseContext::Create(std::string name){
-        return {name,{std::make_unique<Semantics::SymbolTable>(),{}}};
+        return {std::move(name),{std::make_unique<Semantics::SymbolTable>(),{}}};
     }
 
     Parser::Parser(ASTStreamConsumer & astConsumer):

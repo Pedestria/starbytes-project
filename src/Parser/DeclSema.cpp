@@ -2,14 +2,17 @@
 
 namespace starbytes {
 
-ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & symbolTableContext,ASTScopeSemanticsContext & scopeContext,bool * hasErrored){
+ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
+                                     Semantics::STableContext & symbolTableContext,
+                                     ASTScopeSemanticsContext & scopeContext,
+                                     bool * hasErrored){
     ASTType *t = nullptr;
     switch (stmt->type) {
         /// VarDecl
         case VAR_DECL : {
             auto varDecl = (ASTVarDecl *)stmt;
             for(auto & spec : varDecl->specs){
-                if(!(!spec.type) && (!spec.expr)){
+                if(spec.type != nullptr && (!spec.expr)){
                     // Type Decl and Type Implication Comparsion
                     if(!typeMatches(spec.type,spec.expr,symbolTableContext,scopeContext))
                     {
@@ -38,7 +41,7 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & sy
         }
         case COND_DECL:
         {
-            ASTConditionalDecl *condDecl = (ASTConditionalDecl *)stmt;
+            auto *condDecl = (ASTConditionalDecl *)stmt;
             for(auto & condSpec : condDecl->specs){
                 if(!condSpec.isElse()){
                     ASTExpr *conditionExpr = condSpec.expr;
@@ -84,7 +87,11 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,Semantics::STableContext & sy
     return t;
 }
 
-ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,Semantics::STableContext & symbolTableContext,bool  * hasErrored,ASTScopeSemanticsContext & scopeContext,bool inFuncContext){
+ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
+                                            Semantics::STableContext & symbolTableContext,
+                                            bool  * hasErrored,
+                                            ASTScopeSemanticsContext & scopeContext,
+                                            bool inFuncContext){
         ASTType *returnType = VOID_TYPE;
 
         #define RETURN() if(stmt->parentScope->type == ASTScope::Function)\
@@ -105,7 +112,7 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,Semantics::STable
             if(node->type & DECL){
                 if(node->type == RETURN_DECL){
                     if(inFuncContext){
-                        ASTReturnDecl *ret = (ASTReturnDecl *)node;
+                        auto *ret = (ASTReturnDecl *)node;
                         /// If ReturnDecl has no value return..
                         /// Like this -->
                         ///
@@ -135,11 +142,11 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,Semantics::STable
                 }
                 else {;
                     
-                    bool __hasErrored;
-                    auto declReturn = evalGenericDecl((ASTDecl *)node,symbolTableContext,scopeContext,&__hasErrored);
-                    if(__hasErrored)
+                    bool _hasErrored;
+                    auto declReturn = evalGenericDecl((ASTDecl *)node,symbolTableContext,scopeContext,&_hasErrored);
+                    if(_hasErrored)
                     {
-                        *hasErrored = __hasErrored;
+                        *hasErrored = _hasErrored;
                         return nullptr;
                     }
                     if(inFuncContext){
@@ -156,7 +163,7 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,Semantics::STable
                 
                 if(node->type == IVKE_EXPR){
                     if(t != VOID_TYPE){
-                        ASTFuncDecl *funcNode = (ASTFuncDecl *)node;
+                        auto *funcNode = (ASTFuncDecl *)node;
                         errStream << new SemanticADiagnostic(SemanticADiagnostic::Warning,llvm::formatv("Func `{0}` returns a value but is not being stored by a variable.",funcNode->funcId->val),node);
                         /// Warn of non void object not being stored after creation from function invocation.
                     };

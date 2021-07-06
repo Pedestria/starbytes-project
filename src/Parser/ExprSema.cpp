@@ -6,7 +6,9 @@ namespace starbytes {
  #define PRINT_FUNC_ID "print"
 auto print_func_type = ASTType::Create(PRINT_FUNC_ID,nullptr);
 
-ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableContext & symbolTableContext,ASTScopeSemanticsContext & scopeContext){
+ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
+                                       Semantics::STableContext & symbolTableContext,
+                                       ASTScopeSemanticsContext & scopeContext){
         ASTType *type;
         switch (expr_to_eval->type) {
             case ID_EXPR : {
@@ -51,7 +53,9 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableC
                     type = funcData->funcType;
                 }
                 else {
-                    errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Identifier in this context cannot identify any other symbol type except another variable."),expr_to_eval);
+                    errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,
+                                                         llvm::formatv("Identifier in this context cannot identify any other symbol type except another variable."),
+                                                         expr_to_eval);
                     return nullptr;
                 };
                 
@@ -73,7 +77,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval, Semantics::STableC
                 break;
             }
             case NUM_LITERAL : {
-                ASTLiteralExpr *literal = (ASTLiteralExpr *)expr_to_eval;
+                auto *literal = (ASTLiteralExpr *)expr_to_eval;
                 /// If is Integer
                 if(literal->intValue.hasValue()){
                     type = INT_TYPE;

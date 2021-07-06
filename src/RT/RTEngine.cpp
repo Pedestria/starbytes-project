@@ -31,7 +31,7 @@ void runtime_object_ref_dec(RTObject *obj){
 inline void runtime_object_delete(RTObject *obj){
     // std::cout << "OBJ:" << std::hex << size_t(obj) << "DELETE" << std::endl;
     if(obj->isInternal){
-        RTInternalObject *_obj = (RTInternalObject *)obj;
+        auto *_obj = (RTInternalObject *)obj;
         switch (_obj->type) {
             case RTINTOBJ_STR : {
                 auto params = (RTInternalObject::StringParams *)_obj->data;
@@ -45,8 +45,8 @@ inline void runtime_object_delete(RTObject *obj){
             }
             case RTINTOBJ_ARRAY : {
                 auto params = (RTInternalObject::ArrayParams *)_obj->data;
-                for(auto & obj : params->data){
-                    runtime_object_delete(obj);
+                for(auto & _obj_ : params->data){
+                    runtime_object_delete(_obj_);
                 };
                 delete params;
                 break;
@@ -311,7 +311,7 @@ RTObject *InterpImpl::evalExpr(std::istream & in){
             break;
         }
         case CODE_RTIVKFUNC : {
-            RTFuncRefObject *funcRefObject = (RTFuncRefObject *)evalExpr(in);
+            auto *funcRefObject = (RTFuncRefObject *)evalExpr(in);
             unsigned argCount;
             in.read((char *)&argCount,sizeof(argCount));
             return invokeFunc(in,funcRefObject->funcTemp,argCount);
@@ -402,7 +402,7 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObje
         functions.push_back(funcTemp);
     }
     else if(code == CODE_RTIVKFUNC){
-        RTFuncRefObject *funcTempRef = (RTFuncRefObject *)evalExpr(in);
+        auto *funcTempRef = (RTFuncRefObject *)evalExpr(in);
         unsigned argCount;
         in.read((char *)&argCount,sizeof(argCount));
         invokeFunc(in,funcTempRef->funcTemp,argCount);

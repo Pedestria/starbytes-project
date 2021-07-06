@@ -7,6 +7,8 @@
 #if defined(__ELF__) | defined(__MACH__)
 #define UNIX_DLFCN
 #include <dlfcn.h>
+#else
+#include <windows.h>
 #endif
 
 
@@ -32,7 +34,7 @@ struct __StarbytesObject {
 
 StarbytesStr * StarbytesStrCreate(){
     auto data = new __StarbytesObject;
-    RTInternalObject *obj = new RTInternalObject();
+    auto *obj = new RTInternalObject();
     obj->type = RTINTOBJ_STR;
     auto params = new RTInternalObject::StringParams();
     obj->data = params;
@@ -42,7 +44,7 @@ StarbytesStr * StarbytesStrCreate(){
 
 void StarbytesStrDestroy(StarbytesStr *str){
     assert(str->object->isInternal);
-    RTInternalObject *obj = (RTInternalObject *)str->object;
+    auto *obj = (RTInternalObject *)str->object;
     assert(obj->type == RTINTOBJ_STR);
     runtime_object_delete(obj);
 }
@@ -70,6 +72,8 @@ struct __StarbytesNativeModule {
     std::vector<StarbytesFuncDesc> desc;
 #if defined(UNIX_DLFCN)
     void *dl_handle;
+#else
+    HMODULE mod;
 #endif
 };
 
@@ -89,6 +93,11 @@ StarbytesNativeModule * starbytes_native_mod_load(llvm::StringRef path){
         NativeModuleEntryPoint entry = (NativeModuleEntryPoint)dlsym(handle,STR_WRAP(starbytesModuleMain));
         m = entry();
         m->dl_handle = handle;
+    #else
+        auto handle = LoadLibraryA(path.data());
+        auto entry = (NativeModuleEntryPoint) GetProcAddress(handle,STR_WRAP(starbytesModuleMain));
+        m = entry();
+        m->mod = handle;
     #endif
     return m;
 }
@@ -105,6 +114,8 @@ StarbytesFuncCallback starbytes_native_mod_load_function(StarbytesNativeModule *
 void starbytes_native_mod_close(StarbytesNativeModule * mod){
 #ifdef UNIX_DLFCN
     dlclose(mod->dl_handle);
+#else
+    FreeLibrary(mod->mod);
 #endif
 }
 
