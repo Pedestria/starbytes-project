@@ -42,6 +42,18 @@ StarbytesStr * StarbytesStrCreate(){
     return data;
 }
 
+const char *StarbytesStrGetBuffer(StarbytesStr *str){
+    auto object = (RTInternalObject *)str->object;
+    auto stringParams = (RTInternalObject::StringParams *)object->data;
+    return stringParams->str.c_str();
+};
+
+unsigned StarbytesStrLength(StarbytesStr *str){
+    auto object = (RTInternalObject *)str->object;
+    auto stringParams = (RTInternalObject::StringParams *)object->data;
+    return stringParams->str.size();
+};
+
 void StarbytesStrDestroy(StarbytesStr *str){
     assert(str->object->isInternal);
     auto *obj = (RTInternalObject *)str->object;
@@ -64,6 +76,15 @@ StarbytesObject * StarbytesFuncArgsGetArg(StarbytesFuncArgs *args){
     return obj;
 }
 
+StarbytesObject *StarbytesObjectCreateFromDesc(StarbytesObjectDesc *desc){
+    auto data = new __StarbytesObject;
+    auto obj = new RTObject;
+    obj->customData = desc->customData;
+    obj->customDataSize = desc->customDataSize;
+    data->object = obj;
+    return data;
+};
+
 void StarbytesObjectDestroy(StarbytesObject *obj){
     runtime_object_delete(obj->object);
 }
@@ -75,6 +96,14 @@ struct __StarbytesNativeModule {
 #else
     HMODULE mod;
 #endif
+};
+
+StarbytesNativeModule *StarbytesNativeModuleCreate(){
+    return new __StarbytesNativeModule;
+};
+
+void StarbytesNativeModuleAddDesc(StarbytesNativeModule *module,StarbytesFuncDesc *desc){
+    module->desc.push_back(*desc);
 };
 
 

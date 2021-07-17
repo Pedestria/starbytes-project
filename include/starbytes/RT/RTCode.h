@@ -92,6 +92,9 @@ struct RTObject {
     bool isInternal = false;
     bool isFuncRef = false;
 
+    void *customData = nullptr;
+    size_t customDataSize = 0;
+
     llvm::StringMap<RTObject *> props = {};
 
     RTClassTemplate *classOf = nullptr;

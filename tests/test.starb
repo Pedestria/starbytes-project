@@ -6,7 +6,7 @@ func myFunc(){
 decl myvar = ["hello","world"]
 decl myvar2 = myFunc()
 decl foo = 34.12
-decl bar = true
+decl bar = false
 
 print(bar)
 print(myvar2)

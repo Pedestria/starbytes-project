@@ -16,8 +16,6 @@ typedef const char * CString;
 typedef struct __StarbytesObject StarbytesObject;
 
 
-typedef struct __StarbytesNativeModule StarbytesNativeModule;
-
 typedef StarbytesObject StarbytesStr;
 typedef StarbytesObject StarbytesArray;
 typedef StarbytesObject StarbytesDict;
@@ -31,6 +29,8 @@ void StarbytesObjectDestroy(StarbytesObject *obj);
 /// Creates a String and Returns it
 StarbytesStr *StarbytesStrCreate();
 bool StarbytesStrCompare(StarbytesStr *lhs,StarbytesStr *rhs);
+const char *StarbytesStrGetBuffer(StarbytesStr *);
+unsigned StarbytesStrLength(StarbytesStr *);
 void StarbytesStrDestroy(StarbytesStr *);
 /// @}
 
@@ -55,11 +55,19 @@ struct StarbytesFuncDesc {
   unsigned argCount;
 };
 
+typedef struct __StarbytesNativeModule StarbytesNativeModule;
+
+StarbytesNativeModule *StarbytesNativeModuleCreate();
+void StarbytesNativeModuleAddDesc(StarbytesNativeModule *module,StarbytesFuncDesc *desc);
+
 
 struct StarbytesObjectDesc {
   CString name;
-  unsigned propertyCount;
+  void *customData;
+  size_t customDataSize;
 };
+
+StarbytesObject *StarbytesObjectCreateFromDesc(StarbytesObjectDesc *desc);
 
 #define STARBYTES_FUNC(name) StarbytesObject * name(StarbytesFuncArgs *args)
 
@@ -71,7 +79,6 @@ func##_desc.argCount = arg_n;
 
 #define STARBYTES_INSTANCE_FUNC_DESC(class_name,func,arg_n) STARBYTES_FUNC(##class_name##_##func ,arg_n)
 
-STARBYTES_FUNC(myFunction);
 
 #define __STARBYTES_NATIVE_MODULE_MAIN_FUNC starbytesModuleMain
 #define STR_WRAP(n) #n

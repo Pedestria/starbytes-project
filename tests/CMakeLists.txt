@@ -34,4 +34,4 @@ add_starbytes_test(
     DEPENDENCIES 
     ${STARBYTES_ALL_LIBS})
 
-configure_file("test.stb" "${CMAKE_CURRENT_BINARY_DIR}/test.stb" COPYONLY)
+configure_file("test.starb" "${CMAKE_CURRENT_BINARY_DIR}/test.starb" COPYONLY)

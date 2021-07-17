@@ -25,7 +25,7 @@ jobs:
       # We'll use this as our working directory for all subsequent commands
       run: cmake -E make_directory ${{runner.workspace}}/build
 
-    - name: Build LLVM and Starbytes
+    - name: Configure LLVM and Starbytes
       # Use a bash shell so we can use the same syntax for environment variable
       # access regardless of the host operating system
       shell: bash
@@ -34,7 +34,11 @@ jobs:
       # and build directories, but this is only available with CMake 3.13 and higher.  
       # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
       run: cmake -S $GITHUB_WORKSPACE/llvm-project/llvm -DLLVM_BUILD=TRUE -DLLVM_EXTERNAL_PROJECTS="starbytes" -DLLVM_EXTERNAL_STARBYTES_SOURCE_DIR="$GITHUB_WORKSPACE" -DLLVM_BUILD_TOOLS=OFF -DLLVM_BUILD_UTILS=OFF
-
+    - name: Build
+      working-directory: ${{runner.workspace}}/build
+      shell: bash
+      # Execute the build.  You can specify a specific target with "--target <NAME>"
+      run: cmake --build . --config $BUILD_TYPE
     - name: Test
       working-directory: ${{runner.workspace}}/build
       shell: bash
