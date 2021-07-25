@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>name</key>
+        <string>Starbytes</string>
+        <key>description</key>
+        <string>A strongly typed interpreted language</string>
+        <key>uuid</key>
+        <string>86e272a9-6421-4db5-a7b8-01d296c9fca5</string>
+    </dict>
+</plist>

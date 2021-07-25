@@ -19,7 +19,8 @@
     "main": "./dist/index.js",
     "scripts": {
         "grammar": "node ./dist/grammar.js",
-        "types": "tsc -p ./tsconfig.json"
+        "types": "tsc -p ./tsconfig.json",
+        "tmbundle":"node ./dist/tmbundle.js"
     },
     "contributes": {
         "configuration": {
@@ -48,35 +49,21 @@
             {
                 "id": "starbytes",
                 "aliases": [
-                    "Starbytes Lang",
-                    "Starbytes"
+                    "Starbytes",
+                    "Starbytes Lang"
                 ],
                 "extensions": [
-                    ".stb"
+                    ".stb",
+                    ".starb"
                 ],
                 "configuration": "./language-configuration.json"
-            },
-            {
-                "id": "starbytes-project",
-                "aliases": [
-                    "Starbytes Project File"
-                ],
-                "extensions": [
-                    ".stbproject"
-                ],
-                "configuration": "./language-configuration-stbproject.json"
             }
         ],
         "grammars": [
             {
                 "language": "starbytes",
-                "scopeName": "source.stb",
+                "scopeName": "source.starb",
                 "path": "./syntaxes/starbytes.tmLanguage.json"
-            },
-            {
-                "language": "starbytes-project",
-                "scopeName": "source.stbproject",
-                "path": "./syntaxes/starbytes-project.tmLanguage.json"
             }
         ]
     },

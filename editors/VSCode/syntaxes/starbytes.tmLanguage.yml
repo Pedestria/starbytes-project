@@ -1,14 +1,14 @@
-name: "Starbytes Lang Syntax"
+name: "Starbytes Syntax"
 scopeName: "source.starb" 
 uuid: 86e272a9-6421-4db5-a7b8-01d296c9fca5
-fileTypes: ["starb"]
+fileTypes: ["starb","stb"]
 foldingStartMarker: '\{\s*$'
 foldingStopMarker: '^\s*\}'
 
 variables:
   identifier: '\w+'
   typeID: '{{identifier}}'
-  declKeywords: (?:decl|class|func|scope|import|if|else|switch|case|loose|immutable|alias|deftype|return|secure|throw)
+  declKeywords: (?:decl|class|func|scope|import|if|elif|else|imut|return)
   number: '[0-9]+(?:\.[0-9]+)?'
   boolean: '(?:true|false)'
 
@@ -57,7 +57,7 @@ repository:
       '1':
         name: "entity.name.function"
     patterns:
-      - include: "#identifier"
+      - include: "#expressions"
   literals:
     patterns:
       - include: "#string-literal"

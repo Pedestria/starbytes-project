@@ -1,8 +1,8 @@
 {
-  "name": "Starbytes Lang Syntax",
+  "name": "Starbytes Syntax",
   "uuid": "86e272a9-6421-4db5-a7b8-01d296c9fca5",
-  "scopeName": "source.stb",
-  "fileTypes": ["stb"],
+  "scopeName": "source.starb",
+  "fileTypes": ["starb", "stb"],
   "foldingStartMarker": "\\{\\s*$",
   "foldingStopMarker": "^\\s*\\}",
   "patterns": [{ "include": "#statements" }],
@@ -49,7 +49,7 @@
       "begin": "(\\w+)\\s*\\(",
       "end": "\\s*\\)",
       "beginCaptures": { "1": { "name": "entity.name.function" } },
-      "patterns": [{ "include": "#identifier" }]
+      "patterns": [{ "include": "#expressions" }]
     },
     "literals": { "patterns": [{ "include": "#string-literal" }] },
     "string-literal": {
@@ -144,14 +144,14 @@
     "return-declaration": {
       "name": "strbyts.func.body.return-decl",
       "begin": "\\b(return)\\b +",
-      "end": "(?<=\\})|(?=(?:decl|class|func|scope|import|if|else|switch|case|loose|immutable|alias|deftype|return|secure|throw))",
+      "end": "(?<=\\})|(?=(?:decl|class|func|scope|import|if|elif|else|imut|return))",
       "beginCaptures": { "1": { "name": "keyword.control.strbyts.return" } },
       "patterns": [{ "include": "#expressions" }]
     },
     "throw-declaration": {
       "name": "strbyts.func.body.throw-decl",
       "begin": "\\b(throw)\\b +",
-      "end": "(?<=\\})|(?=(?:decl|class|func|scope|import|if|else|switch|case|loose|immutable|alias|deftype|return|secure|throw))",
+      "end": "(?<=\\})|(?=(?:decl|class|func|scope|import|if|elif|else|imut|return))",
       "beginCaptures": { "1": { "name": "keyword.control.strbyts.throw" } },
       "patterns": [{ "include": "#expressions" }]
     },

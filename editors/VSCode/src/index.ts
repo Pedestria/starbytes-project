@@ -3,31 +3,8 @@ import {LanguageClient, ServerOptions, TransportKind, LanguageClientOptions,crea
 import * as path from 'path'
 let langClient:LanguageClient
 
-let legend = new SemanticTokensLegend([],[]);
 
 
-class STBSemanticTokenTranslator implements SemanticTokensBuilder {
-    push(line: number, char: number, length: number, tokenType: number, tokenModifiers?: number): void;
-    push(range: Range, tokenType: string, tokenModifiers?: string[]): void;
-    push(line: any, char: any, length?: any, tokenType?: any, tokenModifiers?: any) {
-        throw new Error('Method not implemented.');
-    }
-    build(resultId?: string): SemanticTokens {
-        throw new Error('Method not implemented.');
-    }
-
-};
-
-class STBSemanticTokenProvider implements DocumentSemanticTokensProvider {
-    onDidChangeSemanticTokens?: Event<void>;
-    provideDocumentSemanticTokens(document: TextDocument, token: CancellationToken): ProviderResult<SemanticTokens> {
-        throw new Error('Method not implemented.');
-    }
-    provideDocumentSemanticTokensEdits?(document: TextDocument, previousResultId: string, token: CancellationToken): ProviderResult<SemanticTokens | SemanticTokensEdits> {
-        throw new Error('Method not implemented.');
-    }
-    
-};
 
 export function activate(context:ExtensionContext){
     console.log("Yipee");

@@ -4,25 +4,6 @@ exports.deactivate = exports.activate = void 0;
 const vscode_1 = require("vscode");
 const vscode_languageclient_1 = require("vscode-languageclient");
 let langClient;
-let legend = new vscode_1.SemanticTokensLegend([], []);
-class STBSemanticTokenTranslator {
-    push(line, char, length, tokenType, tokenModifiers) {
-        throw new Error('Method not implemented.');
-    }
-    build(resultId) {
-        throw new Error('Method not implemented.');
-    }
-}
-;
-class STBSemanticTokenProvider {
-    provideDocumentSemanticTokens(document, token) {
-        throw new Error('Method not implemented.');
-    }
-    provideDocumentSemanticTokensEdits(document, previousResultId, token) {
-        throw new Error('Method not implemented.');
-    }
-}
-;
 function activate(context) {
     console.log("Yipee");
     console.log(context.asAbsolutePath("../../build/bin/starbytes-lsp"));
