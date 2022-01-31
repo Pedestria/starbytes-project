@@ -6,8 +6,11 @@
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringMap.h>
 
+#include <starbytes/interop.h>
+
 #ifndef STARBYTES_RT_RTCODE_H
 #define STARBYTES_RT_RTCODE_H
+
 namespace starbytes {
 namespace Runtime {
 
@@ -17,7 +20,7 @@ typedef unsigned char RTCode;
 #define CODE_MODULE_END 0x00
 #define CODE_RTVAR 0x01
 #define CODE_RTFUNC 0x02
-#define CODE_RTOBJECT_DEFINE 0x03
+#define CODE_RTCLASS_DEF 0x03
 #define CODE_RTOBJCREATE 0x04
 #define CODE_RTINTOBJCREATE 0x05
 #define CODE_RTEXPR 0x06
@@ -79,55 +82,15 @@ struct RTFuncTemplate {
 RTCODE_STREAM_OBJECT(RTFuncTemplate)
 
 
-struct RTClassTemplate {
+struct RTClass {
     RTID name;
-    
-    std::vector<RTID> propsTemplate;
+    StarbytesClassType module_id;
 };
 
-RTCODE_STREAM_OBJECT(RTClassTemplate)
+RTCODE_STREAM_OBJECT(RTClass)
 
-struct RTObject {
-    unsigned refCount = 1;
-    bool isInternal = false;
-    bool isFuncRef = false;
-
-    void *customData = nullptr;
-    size_t customDataSize = 0;
-
-    llvm::StringMap<RTObject *> props = {};
-
-    RTClassTemplate *classOf = nullptr;
-};
-
-RTCODE_STREAM_OBJECT(RTObject)
-
-struct RTInternalObject : public RTObject {
-    struct NumberParams {
-        starbytes_float_t value;
-    };
-    struct StringParams {
-        std::string str;
-    };
-    struct ArrayParams {
-        std::vector<RTObject *> data;
-    };
-    struct BoolParams {
-        bool value;
-    };
-public:
-    unsigned type = 0;
-    void *data = nullptr;
-    
-};
-
-RTCODE_STREAM_OBJECT(RTInternalObject)
-
-struct RTFuncRefObject : public RTObject {
-    llvm::StringRef name;
-    RTFuncTemplate *funcTemp;
-    RTFuncRefObject(llvm::StringRef name,RTFuncTemplate *temp);
-};
+/// Use C Object in RTObject.c
+RTCODE_STREAM_OBJECT(StarbytesObject);
 
 
 

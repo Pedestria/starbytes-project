@@ -51,10 +51,8 @@ namespace starbytes {
     public:
 
         ASTIdentifier *id;
-
-//        llvm::SmallVector<ASTIdentifier *,2> typeargs;
         
-//        llvm::SmallVector<ASTType *,1> baseClasses;
+        ASTType * classType;
 
         llvm::SmallVector<ASTVarDecl *> fields;
         llvm::SmallVector<ASTFuncDecl *> methods;

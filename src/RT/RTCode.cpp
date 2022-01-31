@@ -73,108 +73,125 @@ namespace Runtime {
         return os;
     }
 
-    RTCODE_STREAM_OBJECT_IN_IMPL(RTInternalObject) {
+    RTCODE_STREAM_OBJECT_IN_IMPL(RTClass){
+        is >> &obj->name;
+        is.read((char *)&obj->module_id,sizeof(size_t));
+        return is;
+    }
+
+    RTCODE_STREAM_OBJECT_OUT_IMPL(RTClass){
+        RTCode code = CODE_RTCLASS_DEF;
+        os.write((char *)&code,sizeof(RTCode));
+        os << &obj->name;
+        os.write((char *)&obj->module_id,sizeof(size_t));
+        return os;
+    }
+
+    RTCODE_STREAM_OBJECT_IN_IMPL(StarbytesObject) {
         RTCode code2;
-        obj->isInternal = true;
+        
         is.read((char *)&code2,sizeof(RTCode));
         if(code2 == RTINTOBJ_STR){
-            obj->type = RTINTOBJ_STR;
+            
             
             RTID strVal;
             is >> &strVal;
-            RTInternalObject::StringParams *params = new RTInternalObject::StringParams();
-            params->str = std::string(strVal.value,strVal.len);
-            obj->data = params;
+            *obj = StarbytesStrNewWithData(strVal.value);
         }
         else if(code2 == RTINTOBJ_BOOL){
-            obj->type = RTINTOBJ_BOOL;
-            RTInternalObject::BoolParams *params = new RTInternalObject::BoolParams();
-            is.read((char *)&params->value,sizeof(bool));
-            obj->data = params;
+            bool val;
+            
+            is.read((char *)&val,sizeof(bool));
+            *obj = StarbytesBoolNew((StarbytesBoolVal)val);
         }
         else if(code2 == RTINTOBJ_ARRAY){
-            obj->type = RTINTOBJ_ARRAY;
-            auto *params = new RTInternalObject::ArrayParams();
+            
             unsigned array_len;
             is.read((char *)&array_len,sizeof(array_len));
+            *obj = StarbytesArrayCreate();
             for(unsigned i = 0;i < array_len;i++){
                 RTCode code3;
                 is.read((char *)&code3,sizeof(RTCode));
-                if(code3 == CODE_RTINTOBJCREATE){
-                    RTInternalObject *child_object = new RTInternalObject();
-                    is >> child_object;
-                    params->data.push_back(child_object);
+                if(code3 == CODE_RTINTOBJCREATE || code3 == CODE_RTOBJCREATE){
+                    StarbytesObject _obj;
+                    is >> &_obj;
+                    StarbytesArrayPush(*obj,_obj);
                 }
-//                else if(code3 == CODE_RTOBJCREATE){
-//
-//                };
             };
-            obj->data = params;
         }
         else if(code2 == RTINTOBJ_NUM){
-            obj->type = RTINTOBJ_NUM;
-            auto *params = new RTInternalObject::NumberParams();
-            is.read((char *)&params->value,sizeof(starbytes_float_t));
-            obj->data = params;
+            starbytes_float_t val;
+            is.read((char *)&val,sizeof(starbytes_float_t));
+            *obj = StarbytesNumNew(NumTypeInt,(int)val);
+        }
+        else if(code2 == RTINTOBJ_DICTIONARY){
+            
+        }
+        else {
+            /// Special Process for importing custom class objects.
+            StarbytesClassType id;
+            is.read((char *)&id,sizeof(id));
         }
         return is;
     }
 
-    void __output_rt_internal_obj(std::ostream & os,RTInternalObject *obj){
+    void __output_rt_internal_obj(std::ostream & os,StarbytesObject * obj){
         RTCode code2;
-        if(obj->type == RTINTOBJ_STR){
+        
+        if(StarbytesObjectTypecheck(*obj,StarbytesStrType())){
             code2 = RTINTOBJ_STR;
             os.write((char *)&code2,sizeof(RTCode));
-            RTInternalObject::StringParams *params = (RTInternalObject::StringParams *)obj->data;
+            
             RTID strVal;
-            strVal.len = params->str.size();
-            strVal.value = params->str.data();
+            strVal.len = StarbytesStrLength(*obj);
+            strVal.value = StarbytesStrGetBuffer(*obj);
             os << &strVal;
         }
-        else if(obj->type == RTINTOBJ_BOOL){
+        else if(StarbytesObjectTypecheck(*obj,StarbytesBoolType())){
             code2 = RTINTOBJ_BOOL;
             os.write((char *)&code2,sizeof(RTCode));
-            RTInternalObject::BoolParams *params = (RTInternalObject::BoolParams *)obj->data;
-            os.write((char *)&params->value,sizeof(bool));
+            StarbytesBoolVal val = StarbytesBoolValue(*obj);
+            os.write((char *)&val,sizeof(bool));
         }
-        else if(obj->type == RTINTOBJ_ARRAY){
+        else if(StarbytesObjectTypecheck(*obj,StarbytesArrayType())){
             code2 = RTINTOBJ_ARRAY;
             os.write((char *)&code2,sizeof(RTCode));
-            RTInternalObject::ArrayParams *params = (RTInternalObject::ArrayParams *)obj->data;
+            
             /// Write Num of elements in array as a unsigned int;
-            unsigned array_len = params->data.size();
+            unsigned array_len = StarbytesArrayGetLength(*obj);
             os.write((char *)&array_len,sizeof(array_len));
-            for(auto & obj : params->data){
-                if(obj->isInternal){
-                    RTInternalObject *__obj = (RTInternalObject *)obj;
-                    os << __obj;
-                }
-//                else {
-//                    os << obj;
-//                };
+            for(unsigned idx = 0;idx < array_len;idx++){
+                auto _obj = StarbytesArrayIndex(*obj,idx);
+                os << &_obj;
             };
         }
-        else if(obj->type == RTINTOBJ_NUM){
+        else if(StarbytesObjectTypecheck(*obj,StarbytesNumType())){
             code2 = RTINTOBJ_NUM;
             os.write((char *)&code2,sizeof(RTCode));
-            RTInternalObject::NumberParams *params = (RTInternalObject::NumberParams *)obj->data;
-            os.write((char *)&params->value,sizeof(starbytes_float_t));
-        };
+            starbytes_float_t f;
+            f = StarbytesNumGetFloatValue(*obj);
+            os.write((char *)&f,sizeof(starbytes_float_t));
+        }
+        else {
+        /// Special Process for exporting custom class objects.
+            StarbytesClassType id = StarbytesClassObjectGetClass(*obj);
+            os.write((char *)&id,sizeof(id));
+        }
     }
 
-    RTCODE_STREAM_OBJECT_OUT_IMPL(RTInternalObject) {
+    RTCODE_STREAM_OBJECT_OUT_IMPL(StarbytesObject) {
         RTCode code = CODE_RTINTOBJCREATE;
         os.write((char *)&code,sizeof(RTCode));
-        std::cout << "TYPE:" << obj->type << std::endl;
+//        std::cout << "TYPE:" << std::endl;
         
         /// WTF!!
         __output_rt_internal_obj(os,obj);
         return os;
     }
 
-    RTFuncRefObject::RTFuncRefObject(llvm::StringRef name,RTFuncTemplate *temp):name(name),funcTemp(temp){
-        
-    };
+//    RTFuncRefObject::RTFuncRefObject(llvm::StringRef name,RTFuncTemplate *temp):name(name),funcTemp(temp){
+//
+//    };
 
 }
 }

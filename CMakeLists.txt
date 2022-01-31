@@ -1,4 +1,4 @@
-﻿
+
 cmake_minimum_required (VERSION 3.18)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 # cmake_policy(SET CMP0079 NEW)
@@ -56,14 +56,15 @@ endif()
 # endif()
 
 
-
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED YES)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
 # set(CMAKE_LINK_FLAGS "${CMAKE_LINK_FLAGS} -frtti")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 
-project ("Starbytes" CXX C)
+project ("Starbytes" C CXX)
 
 if(NOT LLVM_BUILD)
 	set(LLVM_BUILD FALSE)

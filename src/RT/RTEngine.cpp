@@ -20,103 +20,20 @@ struct RTScope {
 RTScope *RTSCOPE_GLOBAL = new RTScope({"__GLOBAL__"});
 
 
-void runtime_object_ref_inc(RTObject *obj){
-    ++(obj->refCount);
-}
-
-void runtime_object_ref_dec(RTObject *obj){
-    --(obj->refCount);
-}
-
-inline void runtime_object_delete(RTObject *obj){
-    // std::cout << "OBJ:" << std::hex << size_t(obj) << "DELETE" << std::endl;
-    if(obj->isInternal){
-        auto *_obj = (RTInternalObject *)obj;
-        switch (_obj->type) {
-            case RTINTOBJ_STR : {
-                auto params = (RTInternalObject::StringParams *)_obj->data;
-                delete params;
-                break;
-            }
-            case RTINTOBJ_BOOL : {
-                auto params = (RTInternalObject::BoolParams *)_obj->data;
-                delete params;
-                break;
-            }
-            case RTINTOBJ_ARRAY : {
-                auto params = (RTInternalObject::ArrayParams *)_obj->data;
-                for(auto & _obj_ : params->data){
-                    runtime_object_delete(_obj_);
-                };
-                delete params;
-                break;
-            }
-            case RTINTOBJ_NUM : {
-                auto params = (RTInternalObject::NumberParams *)_obj->data;
-                delete params;
-                break;
-            }
-            default:
-                break;
-        }
-        delete _obj;
-    }
-    else {
-        
-    };
-}
-/// Garbage Collect
-void runtime_object_collectg(RTObject *obj){
-    if(obj->refCount == 0){
-        runtime_object_delete(obj);
-    };
-}
-
-RTObject *clone_runtime_object(RTObject *obj){
-    if(obj->isInternal){
-        RTInternalObject *internal_object = new RTInternalObject(),*_obj = (RTInternalObject *)obj;
-        internal_object->type = _obj->type;
-        if(_obj->type == RTINTOBJ_STR){
-            auto *params = new RTInternalObject::StringParams();
-            auto _params = (RTInternalObject::StringParams *)_obj->data;
-            params->str = _params->str;
-            internal_object->data = params;
-        }
-        else if(_obj->type == RTINTOBJ_BOOL){
-            auto *params = new RTInternalObject::BoolParams();
-            auto _params = (RTInternalObject::BoolParams *)_obj->data;
-            params->value = _params->value;
-            internal_object->data = params;
-        }
-        else if(_obj->type == RTINTOBJ_ARRAY){
-            auto *params = new RTInternalObject::ArrayParams();
-            auto _params = (RTInternalObject::ArrayParams *)_obj->data;
-            for(auto & array_obj : params->data){
-                _params->data.push_back(clone_runtime_object(array_obj));
-            };
-            internal_object->data = params;
-        };
-        return internal_object;
-    }
-    else {
-        return nullptr;
-    };
-}
-
 
 class RTAllocator {
     
-    llvm::StringMap<llvm::StringMap<RTObject *>> all_var_objects;
+    llvm::StringMap<llvm::StringMap<StarbytesObject>> all_var_objects;
     
 public:
     llvm::StringRef currentScope;
     void setScope(llvm::StringRef scope_name){
         currentScope = scope_name;
     };
-    void allocVariable(llvm::StringRef name,RTObject * obj){
+    void allocVariable(llvm::StringRef name,StarbytesObject obj){
         auto found = all_var_objects.find(currentScope);
         if(found == all_var_objects.end()){
-            llvm::StringMap<RTObject *> vars;
+            llvm::StringMap<StarbytesObject> vars;
             vars.insert(std::make_pair(name,obj));
             all_var_objects.insert(std::make_pair(currentScope,std::move(vars)));
         }
@@ -125,10 +42,10 @@ public:
             var_map.insert(std::make_pair(name,obj));
         };
     };
-    void allocVariable(llvm::StringRef name,RTObject * obj,llvm::StringRef scope){
+    void allocVariable(llvm::StringRef name,StarbytesObject obj,llvm::StringRef scope){
         auto found = all_var_objects.find(scope);
         if(found == all_var_objects.end()){
-            llvm::StringMap<RTObject *> vars;
+            llvm::StringMap<StarbytesObject> vars;
             vars.insert(std::make_pair(name,obj));
             all_var_objects.insert(std::make_pair(scope,std::move(vars)));
         }
@@ -137,19 +54,8 @@ public:
             var_map.insert(std::make_pair(name,obj));
         };
     };
-//    void allocVariable(llvm::StringRef name){
-//        auto found = all_var_objects.find(currentScope);
-//        if(found == all_var_objects.end()){
-//            llvm::StringMap<RTObject *> vars;
-//            vars.insert(std::make_pair(name,nullptr));
-//        }
-//        else {
-//            auto & var_map = found->second;
-//            var_map.insert(std::make_pair(name,nullptr));
-//        };
-//    };
 
-    RTObject *referenceVariable(llvm::StringRef scope,llvm::StringRef name){
+    StarbytesObject referenceVariable(llvm::StringRef scope,llvm::StringRef name){
         auto found = all_var_objects.find(scope);
         if(found == all_var_objects.end()){
 //             std::cout << "Var NOT Found AND Scope NOT Found:" << name.data() << std::endl;
@@ -159,6 +65,8 @@ public:
             auto & var_map = found->getValue();
             for(auto & var : var_map){
                 if(var.getKey() == name){
+                    /// Increase Reference count upon variable reference.
+                    StarbytesObjectReference(var.getValue());
 //                     std::cout << "Found Var:" << name.data() << std::endl;
                     return var.getValue();
                     break;
@@ -173,20 +81,10 @@ public:
         if(found != all_var_objects.end()){
             auto & map = found->second;
             for(auto & ent : map){
-                runtime_object_delete(ent.second);
+                StarbytesObjectRelease(ent.second);
             };
             all_var_objects.erase(found);
         };
-    };
-    void clearScopeCollectG(){
-        auto found = all_var_objects.find(currentScope);
-        if(found != all_var_objects.end()){
-            auto & map = found->second;
-            for(auto & ent : map){
-                runtime_object_collectg(ent.second);
-            };
-            all_var_objects.erase(found);
-        }
     };
 };
 
@@ -200,15 +98,15 @@ class InterpImpl final : public Interp {
 
     std::unique_ptr<RTAllocator> allocator;
     
-    std::vector<RTClassTemplate> classes;
+    std::vector<RTClass> classes;
     
     std::vector<RTFuncTemplate> functions;
     
-    void execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObject **return_val);
+    void execNorm(RTCode &code,std::istream &in,bool * willReturn,StarbytesObject *return_val);
     
-    RTObject * invokeFunc(std::istream &in,RTFuncTemplate *func_temp,unsigned argCount);
+    StarbytesObject invokeFunc(std::istream &in,RTFuncTemplate *func_temp,unsigned argCount);
     
-    RTObject * evalExpr(std::istream &in);
+    StarbytesObject evalExpr(std::istream &in);
     
 public:
     InterpImpl():allocator(std::make_unique<RTAllocator>()){
@@ -222,15 +120,14 @@ public:
 };
 
 
-RTObject *InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_temp,unsigned argCount){
+StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_temp,unsigned argCount){
     llvm::StringRef parentScope = allocator->currentScope;
     llvm::StringRef func_name = {func_temp->name.value,func_temp->name.len};
     
     if(func_name == "print"){
-        RTObject *object_to_print = evalExpr(in);
+        auto object_to_print = evalExpr(in);
         stdlib::print(object_to_print);
-        runtime_object_ref_dec(object_to_print);
-        runtime_object_collectg(object_to_print);
+        StarbytesObjectRelease(object_to_print);
         return nullptr;
     }
     else {
@@ -239,7 +136,7 @@ RTObject *InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_temp,uns
                 
         auto func_param_it = func_temp->argsTemplate.begin();
         while(argCount > 0){
-            RTObject * obj = evalExpr(in);
+            StarbytesObject obj = evalExpr(in);
             allocator->allocVariable(llvm::StringRef(func_param_it->value,func_param_it->len),obj,funcScope);
             ++func_param_it;
             --argCount;
@@ -255,7 +152,7 @@ RTObject *InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_temp,uns
         RTCode code;
         in.read((char *)&code,sizeof(RTCode));
         bool willReturn = false;
-        RTObject * return_val = nullptr;
+        StarbytesObject return_val = nullptr;
         while(code != CODE_RTFUNCBLOCK_END){
             if(!willReturn)
                 execNorm(code,in,&willReturn,&return_val);
@@ -265,7 +162,7 @@ RTObject *InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_temp,uns
      
         in.seekg(prev_pos);
         
-        allocator->clearScopeCollectG();
+        allocator->clearScope();
         allocator->setScope(parentScope);
         
         return return_val;
@@ -274,7 +171,7 @@ RTObject *InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_temp,uns
     
 }
 
-RTObject *InterpImpl::evalExpr(std::istream & in){
+StarbytesObject InterpImpl::evalExpr(std::istream & in){
     RTCode code;
     in.read((char *)&code,sizeof(RTCode));
     switch (code) {
@@ -285,8 +182,8 @@ RTObject *InterpImpl::evalExpr(std::istream & in){
         }
         case CODE_RTINTOBJCREATE :
         {
-            auto object = new RTInternalObject();
-            in >> object;
+            StarbytesObject object;
+            in >> &object;
             return object;
             break;
         }
@@ -304,17 +201,17 @@ RTObject *InterpImpl::evalExpr(std::istream & in){
             llvm::StringRef func_name (var_id.value,var_id.len);
             for(auto & funcTemp : functions){
                 if(func_name == llvm::StringRef(funcTemp.name.value,funcTemp.name.len)){
-                    return new RTFuncRefObject(func_name,&funcTemp);
+                    return StarbytesFuncRefNew(&funcTemp);
                 };
             };
             
             break;
         }
         case CODE_RTIVKFUNC : {
-            auto *funcRefObject = (RTFuncRefObject *)evalExpr(in);
+            auto funcRefObject = (StarbytesFuncRef)evalExpr(in);
             unsigned argCount;
             in.read((char *)&argCount,sizeof(argCount));
-            return invokeFunc(in,funcRefObject->funcTemp,argCount);
+            return invokeFunc(in,StarbytesFuncRefGetPtr(funcRefObject),argCount);
             
             break;
         }
@@ -324,7 +221,7 @@ RTObject *InterpImpl::evalExpr(std::istream & in){
     return nullptr;
 }
 
-void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObject **return_val){
+void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,StarbytesObject *return_val){
     if(code == CODE_RTVAR){
         RTVar var;
         in >> &var;
@@ -333,7 +230,6 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObje
 //            std::cout << var_name.data() << std::endl;
         if(var.hasInitValue){
             auto val = evalExpr(in);
-            runtime_object_ref_inc(val);
             allocator->allocVariable(var_name,val);
         }
     }
@@ -344,11 +240,12 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObje
             RTCode spec_ty;
             in.read((char *)&spec_ty,sizeof(RTCode));
             if(spec_ty == COND_TYPE_IF){
-                RTObject *cond = evalExpr(in);
+                auto cond = evalExpr(in);
+                assert(StarbytesObjectTypecheck(cond,StarbytesBoolType()));
                 /// SemanticA Checks if Cond is a Boolean
-                auto boolVal = (RTInternalObject::BoolParams *)((RTInternalObject *)cond)->data;
+                auto boolVal = (bool)StarbytesBoolValue(cond);
                 // If true, eval Block
-                if(boolVal->value){
+                if(boolVal){
                     RTCode code;
                     in.read((char *)&code,sizeof(RTCode));
                     while(code != CODE_RTBLOCK_END){
@@ -387,7 +284,7 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObje
         bool hasValue;
         in.read((char *)&hasValue,sizeof(hasValue));
         if(hasValue) {
-            RTObject *object = evalExpr(in);
+            auto object = evalExpr(in);
             *return_val = object;
         }
         else {
@@ -402,10 +299,10 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,RTObje
         functions.push_back(funcTemp);
     }
     else if(code == CODE_RTIVKFUNC){
-        auto *funcTempRef = (RTFuncRefObject *)evalExpr(in);
+        auto funcTempRef = (StarbytesFuncRef)evalExpr(in);
         unsigned argCount;
         in.read((char *)&argCount,sizeof(argCount));
-        invokeFunc(in,funcTempRef->funcTemp,argCount);
+        invokeFunc(in,StarbytesFuncRefGetPtr(funcTempRef),argCount);
     }
 }
 
@@ -416,7 +313,7 @@ void InterpImpl::exec(std::istream & in){
     allocator->setScope(g);
     in.read((char *)&code,sizeof(RTCode));
     bool temp;
-    RTObject *temp2;
+    StarbytesObject temp2;
     while(code != CODE_MODULE_END){
         execNorm(code,in,&temp,&temp2);
         in.read((char *)&code,sizeof(RTCode));

@@ -11,12 +11,10 @@ STARBYTES_FUNC(fileOpen){
 
     auto in = new std::ifstream(fileVal);
 
-    StarbytesObjectDesc desc;
-    desc.name = "Stream";
-    desc.customData = in;
-    desc.customDataSize = sizeof(std::ifstream);
+    std::string name = STARBYTES_INSTANCE_FUNC(Stream,open);
+    
 
-    return StarbytesObjectCreateFromDesc(&desc);
+    return StarbytesObjectNew();
 };
 
 

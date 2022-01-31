@@ -5,16 +5,17 @@ namespace starbytes {
 
 using namespace Runtime;
 
-ModuleGenContext::ModuleGenContext(llvm::StringRef strRef,std::ostream & out):name(strRef),out(out){
+ModuleGenContext::ModuleGenContext(llvm::StringRef strRef,std::ostream & out,std::filesystem::path & outputPath):name(strRef),out(out),outputPath(outputPath){
     
 };
 
-ModuleGenContext ModuleGenContext::Create(llvm::StringRef strRef,std::ostream & os){
-    return ModuleGenContext(strRef,os);
+ModuleGenContext ModuleGenContext::Create(llvm::StringRef strRef,std::ostream & os,std::filesystem::path & outputPath){
+    return ModuleGenContext(strRef,os,outputPath);
 };
 
 Gen::Gen():
-codeGen(std::make_unique<CodeGen>())
+codeGen(std::make_unique<CodeGen>()),
+interfaceGen(std::make_unique<InterfaceGen>())
 {
     
 };
@@ -41,6 +42,9 @@ void Gen::consumeStmt(ASTStmt *stmt){
 
 void Gen::finish(){
     codeGen->finish();
+    std::ofstream out(std::filesystem::path(genContext->outputPath).append(genContext->name).concat(".starbsymtb"));
+    genContext->tableContext->main->serializePublic(out);
+    out.close();
 };
 
 

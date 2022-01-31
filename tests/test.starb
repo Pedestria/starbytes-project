@@ -1,4 +1,6 @@
 
+
+
 func myFunc(){
     return "this test!"
 }
@@ -13,6 +15,7 @@ print(myvar2)
 print(foo)
 
 if(bar){
+	
     print("YES")
 }
 else {

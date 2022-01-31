@@ -3,6 +3,8 @@
 #include "starbytes/Gen/Gen.h"
 #include "starbytes/RT/RTCode.h"
 
+#include <llvm/Support/SHA1.h>
+
 namespace starbytes {
 
 using namespace Runtime;
@@ -22,6 +24,7 @@ void CodeGen::setContext(ModuleGenContext *context){
 void CodeGen::finish(){
     RTCode code = CODE_MODULE_END;
     genContext->out.write((char *)&code,sizeof(RTCode));
+    
 }
 
 inline void write_ASTBlockStmt_to_context(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,CodeGen *astConsumer,bool isFunc = false){
@@ -82,6 +85,12 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         genContext->out << &funcTemplate;
         write_ASTBlockStmt_to_context(func_node->blockStmt,genContext,this,true);
     }
+    else if(stmt->type == CLASS_DECL){
+        auto class_decl = (ASTClassDecl *)stmt;
+        RTClass cls;
+        ASTIdentifier_to_RTID(class_decl->id,cls.name);
+        
+    }
     else if(stmt->type == COND_DECL){
         ASTConditionalDecl *cond_decl = (ASTConditionalDecl *)stmt;
         RTCode code = CODE_CONDITIONAL;
@@ -114,40 +123,32 @@ bool stmtCanBeConvertedToRTInternalObject(ASTStmt *stmt){
     return (stmt->type == ARRAY_EXPR) || (stmt->type == DICT_EXPR) || (stmt->type & LITERAL);
 }
 
-Runtime::RTInternalObject * CodeGen::exprToRTInternalObject(ASTExpr *expr){
-    RTInternalObject *ob = new RTInternalObject();
-    ob->isInternal = true;
+StarbytesObject CodeGen::exprToRTInternalObject(ASTExpr *expr){
+    StarbytesObject ob;
     if (expr->type == ARRAY_EXPR){
-        ob->type = RTINTOBJ_ARRAY;
-        RTInternalObject::ArrayParams *params = new RTInternalObject::ArrayParams();
+        ob = StarbytesArrayCreate();
         
         for(auto & expr : expr->exprArrayData){
-            auto __expr = exprToRTInternalObject(expr);
-            params->data.push_back(__expr);
+            auto obj = exprToRTInternalObject(expr);
+            StarbytesArrayPush(ob,obj);
         };
-        
-        ob->data = params;
     }
     else if(expr->type == STR_LITERAL){
         ASTLiteralExpr *literal_expr = (ASTLiteralExpr *)expr;
-        ob->type = RTINTOBJ_STR;
-        RTInternalObject::StringParams *params = new RTInternalObject::StringParams();
-        params->str = literal_expr->strValue.getValue();
-        ob->data = params;
+        ob = StarbytesStrNewWithData(literal_expr->strValue.getValue().data());
     }
     else if(expr->type == BOOL_LITERAL){
         ASTLiteralExpr *literal_expr = (ASTLiteralExpr *)expr;
-        ob->type = RTINTOBJ_BOOL;
-        RTInternalObject::BoolParams *params = new RTInternalObject::BoolParams();
-        params->value = literal_expr->boolValue.getValue();
-        ob->data = params;
+        ob = StarbytesBoolNew((StarbytesBoolVal)literal_expr->boolValue.getValue());
     }
     else if(expr->type == NUM_LITERAL){
         ASTLiteralExpr *literal_expr = (ASTLiteralExpr *)expr;
-        ob->type = RTINTOBJ_NUM;
-        RTInternalObject::NumberParams *params = new RTInternalObject::NumberParams();
-        params->value = literal_expr->floatValue.hasValue() ? literal_expr->floatValue.getValue() : starbytes_float_t(literal_expr->intValue.getValue());
-        ob->data = params;
+        if(literal_expr->floatValue.hasValue()){
+            ob = StarbytesNumNew(NumTypeFloat,literal_expr->floatValue.getValue());
+        }
+        else {
+            ob = StarbytesNumNew(NumTypeInt,literal_expr->intValue.getValue());
+        }
     }
     return ob;
 }
@@ -157,9 +158,9 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
     ASTExpr *expr = (ASTExpr *)stmt;
     /// Literals
     if(stmtCanBeConvertedToRTInternalObject(expr)){
-        RTInternalObject *obj = exprToRTInternalObject(expr);
-        genContext->out << obj;
-        delete obj;
+        auto obj = exprToRTInternalObject(expr);
+        genContext->out << &obj;
+        StarbytesObjectRelease(obj);
     }
     else if(stmt->type == ID_EXPR){
         SemanticsContext ctxt {*errStream,stmt};
@@ -180,6 +181,11 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
             genContext->out << &id;
         }
     }
+    else if(stmt->type == MEMBER_EXPR){
+        /// Member Expr
+        ///
+        
+    }
     else if(stmt->type == IVKE_EXPR){
         /// Invoke Expr
         std::cout << "Invoke Expr" << std::endl;
@@ -192,6 +198,9 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         for(auto arg : expr->exprArrayData){
             consumeStmt(arg);
         };
+    }
+    else {
+        
     };
 }
 

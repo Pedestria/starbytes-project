@@ -32,7 +32,10 @@ namespace starbytes {
             const Tok & aheadTok();
             void gotoNextTok();
             std::vector<Comment *> commentBuffer;
-            Comment * evalComment(const Tok & first_token); 
+            Comment * evalComment(const Tok & first_token);
+            /// @brief Build an Identifier.
+            /// @param first_token The First Token to Start building.
+            /// @param typeScope Whether this identifier references a type or defines a type.
             ASTIdentifier *buildIdentifier(const Tok & first_token,bool typeScope);
             ASTType * buildTypeFromTokenStream(const Tok & first_token,ASTStmt *parentStmt,ASTTypeContext & ctxt);
             ASTBlockStmt *evalBlockStmt(const Tok &first_token,ASTScope *parentScope);

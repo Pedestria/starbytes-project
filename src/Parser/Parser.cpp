@@ -17,6 +17,7 @@ namespace starbytes {
     semanticA(std::make_unique<SemanticA>(*syntaxA,*diagnosticsEngine)),
     astConsumer(astConsumer)
     {
+        ASTScopeGlobal->generateHashID();
         semanticA->start();
     }
 
@@ -24,6 +25,7 @@ namespace starbytes {
         CodeViewSrc codeViewDoc;
         lexer->tokenizeFromIStream(in,tokenStream,codeViewDoc);
         syntaxA->setTokenStream(tokenStream);
+        diagnosticsEngine->setCodeViewSrc(codeViewDoc);
 //        if(astConsumer.acceptsSymbolTableContext()){
 //            astConsumer.consumeSTableContext(&moduleParseContext.sTableContext);
 //        };

@@ -64,17 +64,22 @@ size_t SyntaxA::getTokenStreamWidth(){
     }
 
     ASTIdentifier *SyntaxA::buildIdentifier(const Tok & first_token,bool typeScope){
-        if(first_token.type == Tok::Identifier){
-            ASTIdentifier *id = new ASTIdentifier();
-            id->val = first_token.content;
-            id->loc.startLine = id->loc.endLine = first_token.srcPos.line;
-            id->loc.startCol = first_token.srcPos.startCol;
-            id->loc.endCol = first_token.srcPos.endCol;
-            return id;
+        if(typeScope){
+            
         }
         else {
-            return nullptr;
-        };
+            if(first_token.type == Tok::Identifier){
+                ASTIdentifier *id = new ASTIdentifier();
+                id->val = first_token.content;
+                id->loc.startLine = id->loc.endLine = first_token.srcPos.line;
+                id->loc.startCol = first_token.srcPos.startCol;
+                id->loc.endCol = first_token.srcPos.endCol;
+                return id;
+            }
+            else {
+                return nullptr;
+            };
+        }
     }
 
     ASTType *SyntaxA::buildTypeFromTokenStream(TokRef first_token,ASTStmt *parentStmt,ASTTypeContext & ctxt){

@@ -63,6 +63,8 @@ int main(int argc,const char *argv[]){
         auto script_name = llvm::sys::path::filename(script);
 
         auto code = llvm::sys::fs::create_directory("./.starbytes");
+        
+        auto p = std::filesystem::path("./.starbytes");
 
         starbytes::Gen gen;
        
@@ -70,7 +72,7 @@ int main(int argc,const char *argv[]){
 
         std::ofstream module_out(("./.starbytes/" + script_name + "." + STARBYTES_COMPILEDFILE_EXT).str(),std::ios::out | std::ios::binary);
 
-        auto moduleGenContext = starbytes::ModuleGenContext::Create(script_name.str(),module_out);
+        auto moduleGenContext = starbytes::ModuleGenContext::Create(script_name.str(),module_out,p);
 
         auto parseContext = starbytes::ModuleParseContext::Create(script_name.str());
         

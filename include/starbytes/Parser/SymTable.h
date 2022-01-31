@@ -20,22 +20,27 @@ namespace starbytes {
     
         struct SymbolTable {
             
+            struct Var {
+                ASTType *type;
+            };
+            
             struct Function {
                 ASTType *funcType;
                 ASTType *returnType;
                 llvm::StringMap<ASTType *> paramMap;
             };
+            
             struct Class {
-                ASTType *type;
+                ASTType *classType;
                 llvm::SmallVector<Function *,2> instMethods;
-            };
-            struct Var {
-                ASTType *type;
+                llvm::SmallVector<Var *,2> fields;
             };
             
             struct Entry {
                 void *data;
                 std::string name;
+                SrcLoc interfacePos;
+                SrcLoc sourcePos;
                 typedef enum : int {
                     Var,
                     Class,
@@ -46,17 +51,29 @@ namespace starbytes {
                 Ty type;
             };
         private:
+            
             friend struct STableContext;
             llvm::DenseMap<Entry *,ASTScope *> body;
+            llvm::SmallVector<std::string,2> deps;
+
         public:
+            void importModule(llvm::StringRef moduleName);
             void addSymbolInScope(Entry *entry,ASTScope * scope);
             bool symbolExists(llvm::StringRef symbolName,ASTScope *scope);
+            auto indexOf(llvm::StringRef symbolName,ASTScope *scope) -> decltype(body)::iterator;
+            
+            /// IO Methods
+            
+            static std::shared_ptr<SymbolTable> importPublic(std::istream & input);
+            /// Upon export of the SymbolTable only publically visible symbols will be serialized.
+            void serializePublic(std::ostream & out);
+            
             ~SymbolTable();
         };
 
         struct STableContext {
             std::unique_ptr<SymbolTable> main;
-            std::vector<SymbolTable *> otherTables;
+            std::vector<std::shared_ptr<SymbolTable>> otherTables;
             bool hasTable(SymbolTable *ptr);
             SymbolTable::Entry * findEntry(llvm::StringRef symbolName,SemanticsContext & ctxt,ASTScope *scope);
         };

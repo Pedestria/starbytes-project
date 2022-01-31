@@ -32,14 +32,14 @@ void DiagnosticBufferedLogger::logAll(){
             std::string s;
             llvm::raw_string_ostream stream(s);
             stream.enable_colors(true);
-            d->format(stream);
+            d->format(stream,*codeViewSrc);
             std::cout << s << std::endl;
         };
         delete d;
     };
 };
 
-void Diagnostic::format(llvm::raw_ostream & os){
+void Diagnostic::format(llvm::raw_ostream & os,CodeViewSrc & src){
     
 };
 

@@ -19,7 +19,7 @@ namespace starbytes {
         std::string code;
     };
 
-    void generateCodeView(CodeViewSrc &src,SrcLoc & loc,llvm::Optional<SrcLoc> highlightLoc);
+    void generateCodeView(CodeViewSrc &src,SrcLoc & loc);
 }
 
 #endif

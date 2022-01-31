@@ -9,7 +9,7 @@
 namespace starbytes {
 
     SemanticA::SemanticA(Syntax::SyntaxA & syntaxARef,DiagnosticBufferedLogger & errStream):syntaxARef(syntaxARef),errStream(errStream){
-
+            
     }
 
     void SemanticA::start(){
@@ -22,47 +22,65 @@ namespace starbytes {
      /// Only registers new symbols associated with top level decls!
     void SemanticA::addSTableEntryForDecl(ASTDecl *decl,Semantics::SymbolTable *tablePtr){
        
+        auto buildVarEntry = [&](ASTVarDecl::VarSpec &spec){
+            auto *e = new Semantics::SymbolTable::Entry();
+            auto data = new Semantics::SymbolTable::Var();
+            data->type = spec.type;
+            auto id = spec.id;
+            e->name = id->val;
+            e->data = data;
+            e->type = Semantics::SymbolTable::Entry::Var;
+            return e;
+        };
+        
+        auto buildFuncEntry = [&](ASTFuncDecl *func){
+            auto *e = new Semantics::SymbolTable::Entry();
+            auto data = new Semantics::SymbolTable::Function();
+            data->returnType = func->returnType;
+            data->funcType = func->funcType;
+            
+            for(auto & param_pair : func->params){
+                data->paramMap.insert(std::make_pair(param_pair.getFirst()->val,param_pair.getSecond()));
+            };
+            
+            e->name = func->funcId->val;
+            e->data = data;
+            e->type = Semantics::SymbolTable::Entry::Function;
+            return e;
+        };
+        
         switch (decl->type) {
             case VAR_DECL : {
                 auto *varDecl = (ASTVarDecl *)decl;
                 for(auto & spec : varDecl->specs) {
-                    auto *e = new Semantics::SymbolTable::Entry();
-                    auto data = new Semantics::SymbolTable::Var();
-                    data->type = spec.type;
-                    auto id = spec.id;
-                    e->name = id->val;
-                    e->data = data;
-                    e->type = Semantics::SymbolTable::Entry::Var;
-                    tablePtr->addSymbolInScope(e,varDecl->scope);
+                    tablePtr->addSymbolInScope(buildVarEntry(spec),varDecl->scope);
                 }
                 break;
             }
             case FUNC_DECL : {
                 auto *funcDecl = (ASTFuncDecl *)decl;
-                auto *e = new Semantics::SymbolTable::Entry();
-                auto data = new Semantics::SymbolTable::Function();
-                data->returnType = funcDecl->returnType;
-                data->funcType = funcDecl->funcType;
-                
-                for(auto & param_pair : funcDecl->params){
-                    data->paramMap.insert(std::make_pair(param_pair.getFirst()->val,param_pair.getSecond()));
-                };
-                
-                e->name = funcDecl->funcId->val;
-                e->data = data;
-                e->type = Semantics::SymbolTable::Entry::Function;
-                tablePtr->addSymbolInScope(e,decl->scope);
+                tablePtr->addSymbolInScope(buildFuncEntry(funcDecl),decl->scope);
                 break;
             }
-            // case CLS_DECL : {
-            //     ASTIdentifier *cls_id = (ASTIdentifier *)decl->declProps[0].dataPtr;
-            //     Semantics::SymbolTable::Entry *e = new Semantics::SymbolTable::Entry();
-            //     e->name = cls_id->val;
-            //     e->node = decl;
-            //     e->type = Semantics::SymbolTable::Entry::Class;
-            //     tablePtr->addSymbolInScope(e,decl->scope);
-            //     break;
-            // }
+             case CLASS_DECL : {
+                 auto classDecl = (ASTClassDecl *)decl;
+                 Semantics::SymbolTable::Entry *e = new Semantics::SymbolTable::Entry();
+                 e->name = classDecl->id->val;
+                 e->type = Semantics::SymbolTable::Entry::Class;
+                 auto data = new Semantics::SymbolTable::Class();
+                 e->data = data;
+                 data->classType = classDecl->classType;
+                 for(auto & f : classDecl->fields){
+                     for(auto & v_spec : f->specs){
+                         data->fields.push_back(new Semantics::SymbolTable::Var {v_spec.type});
+                     }
+                 }
+                 for(auto & m : classDecl->methods){
+                     data->instMethods.push_back(new Semantics::SymbolTable::Function {m->returnType,m->funcType});
+                 }
+                 tablePtr->addSymbolInScope(e,decl->scope);
+                 break;
+             }
         default : {
             break;
         }
@@ -117,7 +135,7 @@ namespace starbytes {
                         ASTIdentifier *func_id = funcNode->funcId;
                         
                         /// Ensure that Function declared is unique within the current scope.
-                        auto symEntry = symbolTableContext.main->symbolExists(func_id->val,ASTScopeGlobal);
+                        auto symEntry = symbolTableContext.main->symbolExists(func_id->val,scope);
                         if(symEntry){
                             return false;
                         };
@@ -151,6 +169,36 @@ namespace starbytes {
                             funcNode->returnType = return_type_implied;
                         };
 
+                        break;
+                    }
+                    case CLASS_DECL : {
+                        if(scope->type != ASTScope::Namespace && scope->type != ASTScope::Neutral){
+                            errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Class decl not allowed in class scope"),decl);
+                            return false;
+                        }
+                        auto classDecl = (ASTClassDecl *)decl;
+                        
+                        auto symEntry = symbolTableContext.main->symbolExists(classDecl->id->val, scope);
+                        
+                        if(symEntry){
+                            return false;
+                        }
+                        
+                        bool hasErrored;
+                        ASTScopeSemanticsContext scopeContext {classDecl->scope,nullptr};
+                        for(auto & f : classDecl->fields){
+                            auto rc = evalGenericDecl(f,symbolTableContext, scopeContext, &hasErrored);
+                        }
+                        
+                        for(auto & m : classDecl->methods){
+                            auto rc = checkSymbolsForStmtInScope(m, symbolTableContext,classDecl->scope);
+                            if(!rc){
+                                return false;
+                            }
+                        }
+                        
+                        
+                        return true;
                         break;
                     }
                     case RETURN_DECL : {

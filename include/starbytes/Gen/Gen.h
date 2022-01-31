@@ -5,6 +5,7 @@
 #include "starbytes/AST/AST.h"
 #include "starbytes/RT/RTCode.h"
 #include "CodeGen.h"
+#include "InterfaceGen.h"
 
 #ifndef STARBYTES_GEN_GEN_H
 #define STARBYTES_GEN_GEN_H
@@ -14,9 +15,10 @@ namespace starbytes {
         bool generateInterface = false;
         std::string name;
         std::ostream & out;
+        std::filesystem::path outputPath;
         Semantics::STableContext * tableContext;
-        static ModuleGenContext Create(llvm::StringRef strRef,std::ostream & out);
-        ModuleGenContext(llvm::StringRef strRef,std::ostream & out);
+        static ModuleGenContext Create(llvm::StringRef strRef,std::ostream & out,std::filesystem::path & outputPath);
+        ModuleGenContext(llvm::StringRef strRef,std::ostream & out,std::filesystem::path & outputPath);
     };
 
     class Gen : public ASTStreamConsumer {
@@ -25,6 +27,7 @@ namespace starbytes {
         friend class Parser;
         
         std::unique_ptr<CodeGen> codeGen;
+        std::unique_ptr<InterfaceGen> interfaceGen;
         
     public:
         Gen();

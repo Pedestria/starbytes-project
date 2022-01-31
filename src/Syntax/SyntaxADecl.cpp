@@ -334,6 +334,8 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                         
                         ASTScope *function_scope = new ASTScope({func_node->funcId->val,ASTScope::Function,parentScope});
                         
+                        function_scope->generateHashID();
+                        
                         auto block = evalBlockStmt(tok0,function_scope);
                         if(!block){
                             return nullptr;
@@ -360,9 +362,42 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,ASTScope *parentSco
                 auto n = new ASTClassDecl();
                 node = n;
                 node->type = CLASS_DECL;
-                TokRef tok0 = nextTok();
-//               
+                node->scope = parentScope;
+                Tok & tok0 = const_cast<Tok &>(nextTok());
                 
+                if(!(n->id = buildIdentifier(tok0,true))){
+                    return nullptr;
+                }
+//
+                ASTTypeContext ctxt;
+                ctxt.isPlaceholder = false;
+                n->classType = buildTypeFromTokenStream(tok0,n,ctxt);
+                
+                
+                tok0 = nextTok();
+                if(tok0.type != Tok::OpenBrace){
+                    return nullptr;
+                }
+                
+                tok0 = nextTok();
+                
+                auto s = new ASTScope {n->id->val,ASTScope::Class,parentScope};
+                
+                s->generateHashID();
+                
+                while(tok0.type != Tok::CloseBrace){
+                    auto decl = evalDecl(tok0,s);
+                    if(decl->type == VAR_DECL){
+                        n->fields.push_back((ASTVarDecl *)decl);
+                    }
+                    else if(decl->type == FUNC_DECL){
+                        n->methods.push_back((ASTFuncDecl *)decl);
+                    }
+                    else {
+                        std::cout << std::hex << decl->type << " type not allowed in class scope. Only " << VAR_DECL << " and " << FUNC_DECL << " allowed." << std::endl;
+                        return nullptr;
+                    }
+                }
             }
             else if(first_token.content == KW_IMUT){
                 /// Throw Unknown Error;

@@ -40,7 +40,7 @@ struct LexicalError : public Diagnostic {
     
     std::string message;
     SourcePos pos;
-    void format(llvm::raw_ostream &os) override{
+    void format(llvm::raw_ostream &os,CodeViewSrc & src) override{
         os << llvm::raw_ostream::RED << "LexerError: " << llvm::raw_ostream::RESET << message << "\n";
     };
     LexicalError(const llvm::formatv_object_base & formatted_message,SourcePos pos):message(formatted_message.str()),pos(pos){

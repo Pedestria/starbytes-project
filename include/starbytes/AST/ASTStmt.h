@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include <llvm/Support/SHA1.h>
+
 #ifndef STARBYTES_AST_ASTSTMT_H
 #define STARBYTES_AST_ASTSTMT_H
 
@@ -23,9 +25,12 @@ namespace starbytes {
             Neutral,
             Namespace,
             Function,
+            Class
         } ScopeType;
         ScopeType type;
         ASTScope *parentScope = nullptr;
+        std::string hash = "NONE";
+        void generateHashID();
     };
 
     extern ASTScope * ASTScopeGlobal;

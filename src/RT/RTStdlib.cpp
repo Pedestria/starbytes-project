@@ -1,6 +1,8 @@
 #include "RTStdlib.h"
 #include "llvm/Support/MathExtras.h"
 
+#include <llvm/ADT/DenseMap.h>
+
 #include <ctime>
 #include <iomanip>
 #include <iostream>
@@ -9,114 +11,95 @@ namespace starbytes {
     namespace Runtime::stdlib {
         inline void _print_timestamp(){
 //            auto t = time(NULL);
+                
 //            std::cout << "[" << std::asctime(gmtime(&t)) << "]" << std::flush;
         }
     
-        void _print_rt_internal_obj(RTInternalObject *object);
+        void _print_rt_internal_obj(StarbytesObject object,llvm::DenseMap<StarbytesClassType,std::string> &reg);
     
-        void _print_rt_obj(RTObject *object){
-            if(object->isInternal){
-                _print_rt_internal_obj((RTInternalObject *)object);
+        void _print_rt_obj(StarbytesObject object,llvm::DenseMap<StarbytesClassType,std::string> &reg){
+            if(StarbytesObjectIs(object)){
+                _print_rt_internal_obj(object,reg);
             }
             else {
+                StarbytesClassType t = StarbytesClassObjectGetClass(object);
                 
+                std::cout << reg.lookup(t) << "(" << std::flush;
+                unsigned prop_n = StarbytesObjectGetPropertyCount(object);
+                for(unsigned i = 0;i < prop_n;i++){
+                    if(i > 0){
+                        std::cout << ", " << std::flush;
+                    }
+                    auto prop = StarbytesObjectIndexProperty(object,i);
+                    std::cout << prop->name << "=" << std::flush;
+                    _print_rt_obj(prop->data,reg);
+                }
+                std::cout << ")" << std::flush;
             };
         }
     
-        void _print_rt_internal_obj(RTInternalObject *object){
-            switch (object->type) {
-                case RTINTOBJ_NUM : {
-                    auto *params = (RTInternalObject::NumberParams *)object->data;
+        void _print_rt_internal_obj(StarbytesObject object,llvm::DenseMap<StarbytesClassType,std::string> &reg){
+            if(StarbytesObjectTypecheck(object,StarbytesNumType())){
+                    starbytes_float_t v;
+            
+                    StarbytesNumConvertTo(object,NumTypeFloat);
+                    v = StarbytesNumGetFloatValue(object);
+            
                     std::cout << "\x1b[33m" << std::flush;
                     double int_temp;
-                    if(std::modf(params->value,&int_temp) == 0.f){
-                        std::cout << starbytes_int_t(params->value);
+                    if(std::modf(v,&int_temp) == 0.f){
+                        std::cout << starbytes_int_t(v);
                     }
                     else {
-                        std::cout << std::dec << params->value;
+                        std::cout << std::dec << v;
                     };
                     std::cout << "\x1b[0m" << std::flush;
-                    break;
                 }
-                case RTINTOBJ_BOOL : {
-                    auto *params = (RTInternalObject::BoolParams *)object->data;
-                    std::cout << "\x1b[35m" << std::boolalpha << params->value << std::noboolalpha << "\x1b[0m" << std::flush;
-                    break;
+                else if(StarbytesObjectTypecheck(object,StarbytesBoolType())){
+                    auto val = (bool)StarbytesBoolValue(object);
+                    std::cout << "\x1b[35m" << std::boolalpha << val << std::noboolalpha << "\x1b[0m" << std::flush;
                 }
-                case RTINTOBJ_STR : {
-                    auto *params = (RTInternalObject::StringParams *)object->data;
-                    std::cout << "\x1b[32m" << "\"" << params->str << "\"" << "\x1b[0m" << std::flush;
-                    break;
+                else if(StarbytesObjectTypecheck(object,StarbytesStrType())){
+                    auto data = StarbytesStrGetBuffer(object);
+                    std::cout << "\x1b[32m" << "\"" << data << "\"" << "\x1b[0m" << std::flush;
                 }
-                case RTINTOBJ_ARRAY :{
-                    auto *params = (RTInternalObject::ArrayParams *)object->data;
+                else if(StarbytesObjectTypecheck(object,StarbytesArrayType())){
+                    
                     std::cout << "[" << std::flush;
-                    auto obj_it = params->data.begin();
-                    while(obj_it != params->data.end()){
+                    auto length = StarbytesArrayGetLength(object);
+                    for(unsigned i = 0;i < length;i++){
                         
-                        if(obj_it != params->data.begin()){
+                        if(i > 0){
                             std::cout << "," << std::flush;
                         };
                         
-                        auto &obj = *obj_it;
-                        _print_rt_obj(obj);
-                        ++obj_it;
+                        _print_rt_obj(StarbytesArrayIndex(object,i),reg);
                     };
                     std::cout << "]" << std::flush;
-                    break;
                 }
-                case RTINTOBJ_DICTIONARY: {
-                    break;
+            /// Print StarbytesDict
+                else {
+                    std::cout << "{" << std::flush;
+                    StarbytesArray keys = StarbytesObjectGetProperty(object,"keys"),vals = StarbytesObjectGetProperty(object,"values");
+                    
+                    auto len = StarbytesArrayGetLength(keys);
+                    for(unsigned i = 0;i < len;i++){
+                        _print_rt_obj(StarbytesArrayIndex(keys,i),reg);
+                        std::cout << ":" << std::flush;
+                        _print_rt_obj(StarbytesArrayIndex(vals,i),reg);
+                    }
+                    std::cout << "}" << std::flush;
                 }
             }
-            
-        }
     
         /// Print Function
-        void print(RTObject *object){
+        void print(StarbytesObject object,llvm::DenseMap<StarbytesClassType,std::string> &reg){
 //            _print_timestamp();
-            _print_rt_obj(object);
+            _print_rt_obj(object,reg);
             std::cout << std::endl;
         }
     
-    
-        /// Array Object
-
-        void array_push(RTInternalObject::ArrayParams &array,RTObject *any){
-            array.data.push_back(any);
-        }
-        RTObject *array_index(RTInternalObject::ArrayParams &array,unsigned idx){
-            assert(idx < array.data.size());
-            return array.data[idx];
-        }
-        unsigned array_length(RTInternalObject::ArrayParams &array){
-            return array.data.size();
-        }
-
-
-        /// Number Object
-
-        starbytes_float_t num_add(RTInternalObject::NumberParams & lhs,RTInternalObject::NumberParams & rhs){
-            return lhs.value + rhs.value;
-        }
-
-        starbytes_float_t num_sub(RTInternalObject::NumberParams & lhs,RTInternalObject::NumberParams & rhs){
-            return lhs.value - rhs.value;
-        }
-        /// String Object
-
-        void string_concat(RTInternalObject::StringParams & in1,RTInternalObject::StringParams & in2,std::string & out){
-            out = in1.str + in2.str;
-        }
-
-        void string_substring(RTInternalObject::StringParams & in,unsigned idx,unsigned len,std::string & out){
-            out = in.str.substr(idx,len);
-        }
-    
-        unsigned string_length(RTInternalObject::StringParams & in){
-            return in.str.size();
-        }
-    
-    
     }
+
+    
 }

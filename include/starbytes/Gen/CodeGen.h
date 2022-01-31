@@ -14,7 +14,7 @@ class CodeGen final : public ASTStreamConsumer {
     ModuleGenContext *genContext;
     DiagnosticBufferedLogger * errStream;
     friend class Parser;
-    Runtime::RTInternalObject *exprToRTInternalObject(ASTExpr *expr);
+    StarbytesObject exprToRTInternalObject(ASTExpr *expr);
 public:
     void finish();
     void consumeSTableContext(Semantics::STableContext *table) override;

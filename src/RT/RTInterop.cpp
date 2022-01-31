@@ -2,6 +2,8 @@
 #include "starbytes/RT/RTCode.h"
 #include "llvm/Support/Path.h"
 #include <llvm/ADT/StringRef.h>
+#include <unicode/ustring.h>
+#include <llvm/ADT/ArrayRef.h>
 #include <new>
 
 #if defined(__ELF__) | defined(__MACH__)
@@ -11,12 +13,11 @@
 #include <windows.h>
 #endif
 
+typedef struct __StarbytesNativeModule StarbytesNativeModule;
+
 
 namespace starbytes::Runtime {
 
-    void runtime_object_delete(RTObject *obj);
-    void runtime_object_ref_inc(RTObject *obj);
-    void runtime_object_ref_dec(RTObject *obj);
 
     StarbytesNativeModule * starbytes_native_mod_load(llvm::StringRef path);
 
@@ -25,69 +26,6 @@ namespace starbytes::Runtime {
 using namespace starbytes::Runtime;
 
 
-
-extern "C"{
-
-struct __StarbytesObject {
-    RTObject *object;
-};
-
-StarbytesStr * StarbytesStrCreate(){
-    auto data = new __StarbytesObject;
-    auto *obj = new RTInternalObject();
-    obj->type = RTINTOBJ_STR;
-    auto params = new RTInternalObject::StringParams();
-    obj->data = params;
-    data->object = obj;
-    return data;
-}
-
-const char *StarbytesStrGetBuffer(StarbytesStr *str){
-    auto object = (RTInternalObject *)str->object;
-    auto stringParams = (RTInternalObject::StringParams *)object->data;
-    return stringParams->str.c_str();
-};
-
-unsigned StarbytesStrLength(StarbytesStr *str){
-    auto object = (RTInternalObject *)str->object;
-    auto stringParams = (RTInternalObject::StringParams *)object->data;
-    return stringParams->str.size();
-};
-
-void StarbytesStrDestroy(StarbytesStr *str){
-    assert(str->object->isInternal);
-    auto *obj = (RTInternalObject *)str->object;
-    assert(obj->type == RTINTOBJ_STR);
-    runtime_object_delete(obj);
-}
-
-struct __StarbytesFuncArgs {
-    RTObject **start;
-    RTObject **current;
-    unsigned len;
-};
-
-StarbytesObject * StarbytesFuncArgsGetArg(StarbytesFuncArgs *args){
-    assert(args->current != args->start + args->len && "No more args!");
-    args->len += 1;
-    args->current += 1;
-    auto obj = new __StarbytesObject;
-    obj->object = *args->current;
-    return obj;
-}
-
-StarbytesObject *StarbytesObjectCreateFromDesc(StarbytesObjectDesc *desc){
-    auto data = new __StarbytesObject;
-    auto obj = new RTObject;
-    obj->customData = desc->customData;
-    obj->customDataSize = desc->customDataSize;
-    data->object = obj;
-    return data;
-};
-
-void StarbytesObjectDestroy(StarbytesObject *obj){
-    runtime_object_delete(obj->object);
-}
 
 struct __StarbytesNativeModule {
     std::vector<StarbytesFuncDesc> desc;
@@ -104,10 +42,11 @@ StarbytesNativeModule *StarbytesNativeModuleCreate(){
 
 void StarbytesNativeModuleAddDesc(StarbytesNativeModule *module,StarbytesFuncDesc *desc){
     module->desc.push_back(*desc);
+    
 };
 
 
-}
+//}
 
 
 
@@ -148,6 +87,17 @@ void starbytes_native_mod_close(StarbytesNativeModule * mod){
 #endif
 }
 
+}
+
+
+StarbytesClassType StarbytesMakeClass(const char *name){
+    llvm::ArrayRef<uint8_t> raw((uint8_t *)name,strlen(name));
+    StarbytesClassType t = StarbytesFuncRefType();
+    for(auto b = raw.begin();b != raw.end();b++){
+        unsigned A = (unsigned)*b;
+        t = (t + ~A) >> 1;
+    }
+    return t;
 }
 
 

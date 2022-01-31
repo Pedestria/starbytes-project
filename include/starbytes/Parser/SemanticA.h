@@ -26,8 +26,9 @@ namespace starbytes {
         bool isError() override{
             return type == Error;
         };
-        void format(llvm::raw_ostream &os) override{
+        void format(llvm::raw_ostream &os,CodeViewSrc & src) override{
             os << llvm::raw_ostream::RED << "ERROR: " << llvm::raw_ostream::RESET << message << "\n";
+            generateCodeView(src,stmt->loc);
         };
         SemanticADiagnostic(Ty type,const llvm::formatv_object_base & message,ASTStmt *stmt):type(type),stmt(stmt),message(message){
             
