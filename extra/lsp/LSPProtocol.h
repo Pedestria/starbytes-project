@@ -11,14 +11,26 @@
 #define STARBYTES_LSP_LSPPROTOCOL_H
 
 namespace starbytes::lsp {
+   
 
 #define LSP_METHOD llvm::StringRef 
 #define DECL_LSP_METHOD extern LSP_METHOD
 
 DECL_LSP_METHOD Init;
 DECL_LSP_METHOD textDocOpen;
+DECL_LSP_METHOD completion;
+DECL_LSP_METHOD hover;
+DECL_LSP_METHOD definition;
 DECL_LSP_METHOD Exit;
 DECL_LSP_METHOD CancelRequest;
+
+
+void parseTextDocumentPositionParams(llvm::json::Value & param,SrcLoc & loc,std::string & doc);
+void parsePartialResultToken(llvm::json::Value & param,std::string & partialToken);
+void parseWorkDoneToken(llvm::json::Value & param,std::string & workDoneToken);
+void writePartialResultToken(llvm::json::Object & param,std::string & partialToken);
+void writeWorkDoneToken(llvm::json::Object & param,std::string & workDoneToken);
+
 
 struct MessageInfo {
     llvm::Optional<int> id;
@@ -33,13 +45,14 @@ struct InMessage {
 };
 
 enum class OutErrorCode : int {
-    NOT_INTIALIZED = -32002
+    NOT_INTIALIZED = -32002,
+    INVALID_PARAMS = -32603
 };
 
 struct OutError {
     OutErrorCode code;
-    std::string message;
-    llvm::Optional<llvm::json::Value> data;
+    std::string message = "";
+    llvm::Optional<llvm::json::Value> data = llvm::None;
 };
 
 
@@ -68,7 +81,7 @@ public:
 };
 
 struct DocumentEntry {
-    std::chrono::high_resolution_clock::time_point editTimestamp;
+    int version;
     std::ifstream is;
 };
 
@@ -82,6 +95,7 @@ public:
     bool fuzzyMatchInDocumentAtPosition(llvm::StringRef path,SrcLoc &loc,llvm::StringMap<LSPSymbolType> &listOut);
     Semantics::SymbolTable::Entry & getSymbolInfoInDocument(llvm::StringRef path,SrcLoc &refLoc);
     bool openDocument(llvm::StringRef path,SrcLoc &stopPos);
+    bool documentIsOpen(llvm::StringRef path);
     void closeDocument(llvm::StringRef path);
 };
 

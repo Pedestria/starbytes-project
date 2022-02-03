@@ -2,7 +2,6 @@
 #include "starbytes/RT/RTCode.h"
 #include "llvm/Support/Path.h"
 #include <llvm/ADT/StringRef.h>
-#include <unicode/ustring.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <new>
 

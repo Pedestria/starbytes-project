@@ -6,6 +6,7 @@
 #include "starbytes/RT/RTCode.h"
 #include "CodeGen.h"
 #include "InterfaceGen.h"
+#include <filesystem>
 
 #ifndef STARBYTES_GEN_GEN_H
 #define STARBYTES_GEN_GEN_H

@@ -1,6 +1,7 @@
 #include "starbytes/Parser/Parser.h"
 #include "starbytes/Gen/Gen.h"
 #include "starbytes/RT/RTEngine.h"
+#include <filesystem>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/FileSystem.h>
@@ -15,8 +16,10 @@ int main(int argc,char *argv[]){
 
     std::ofstream out("./test.stbxm",std::ios::out | std::ios::binary);
 
+    auto currentdir = std::filesystem::current_path();
+
     starbytes::Gen gen;
-    auto genContext = starbytes::ModuleGenContext::Create(module_name,out);
+    auto genContext = starbytes::ModuleGenContext::Create(module_name,out,currentdir);
     gen.setContext(&genContext);
 
     starbytes::Parser parser(gen);

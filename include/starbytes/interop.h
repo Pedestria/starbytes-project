@@ -3,6 +3,7 @@
 //
 
 #include <stdlib.h>
+#include <cstdint>
 
 #ifndef STARBYTES_INTEROP_H
 #define STARBYTES_INTEROP_H
@@ -144,6 +145,7 @@ StarbytesObject StarbytesDictGet(StarbytesDict dict,StarbytesObject key);
 ///
 ///@name Starbytes Boolean Methods
 ///
+
 typedef enum : uint8_t {
     StarbytesBoolTrue = 0x0,
     StarbytesBoolFalse = 0x1
