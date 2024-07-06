@@ -1,9 +1,4 @@
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/Support/Error.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <llvm/ADT/Optional.h>
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/StringMap.h>
+
 #include <vector>
 #include "starbytes/AST/AST.h"
 
@@ -12,7 +7,7 @@
 namespace starbytes {
 
     struct SemanticsContext {
-        DiagnosticBufferedLogger & errStream;
+        DiagnosticHandler & errStream;
         ASTStmt *currentStmt;
     };
 
@@ -27,20 +22,20 @@ namespace starbytes {
             struct Function {
                 ASTType *funcType;
                 ASTType *returnType;
-                llvm::StringMap<ASTType *> paramMap;
+                string_map<ASTType *> paramMap;
             };
             
             struct Class {
                 ASTType *classType;
-                llvm::SmallVector<Function *,2> instMethods;
-                llvm::SmallVector<Var *,2> fields;
+                std::vector<Function *> instMethods;
+                std::vector<Var *> fields;
             };
             
             struct Entry {
                 void *data;
                 std::string name;
-                SrcLoc interfacePos;
-                SrcLoc sourcePos;
+                Region interfacePos;
+                Region sourcePos;
                 typedef enum : int {
                     Var,
                     Class,
@@ -53,14 +48,14 @@ namespace starbytes {
         private:
             
             friend struct STableContext;
-            llvm::DenseMap<Entry *,ASTScope *> body;
-            llvm::SmallVector<std::string,2> deps;
+            std::map<Entry *,ASTScope *> body;
+            std::vector<std::string> deps;
 
         public:
-            void importModule(llvm::StringRef moduleName);
+            void importModule(string_ref moduleName);
             void addSymbolInScope(Entry *entry,ASTScope * scope);
-            bool symbolExists(llvm::StringRef symbolName,ASTScope *scope);
-            auto indexOf(llvm::StringRef symbolName,ASTScope *scope) -> decltype(body)::iterator;
+            bool symbolExists(string_ref symbolName,ASTScope *scope);
+            auto indexOf(string_ref symbolName,ASTScope *scope) -> decltype(body)::iterator;
             
             /// IO Methods
             
@@ -75,7 +70,7 @@ namespace starbytes {
             std::unique_ptr<SymbolTable> main;
             std::vector<std::shared_ptr<SymbolTable>> otherTables;
             bool hasTable(SymbolTable *ptr);
-            SymbolTable::Entry * findEntry(llvm::StringRef symbolName,SemanticsContext & ctxt,ASTScope *scope);
+            SymbolTable::Entry * findEntry(string_ref symbolName,SemanticsContext & ctxt,ASTScope *scope);
         };
     }
 

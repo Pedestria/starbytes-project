@@ -51,9 +51,9 @@ inline void write_ASTBlockStmt_to_context(ASTBlockStmt *blockStmt,ModuleGenConte
 
 
 inline void ASTIdentifier_to_RTID(ASTIdentifier *var,RTID &out){
-    llvm::StringRef name = var->val;
+    string_ref name = var->val;
     out.len = name.size();
-    out.value = name.data();
+    out.value = name.getBuffer();
 }
 
 
@@ -79,7 +79,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         ASTIdentifier_to_RTID(func_id,funcTemplate.name);
         for(auto & param_pair : func_node->params){
             RTID param_id;
-            ASTIdentifier_to_RTID(param_pair.getFirst(),param_id);
+            ASTIdentifier_to_RTID(param_pair.first,param_id);
             funcTemplate.argsTemplate.push_back(param_id);
         };
         genContext->out << &funcTemplate;
@@ -135,19 +135,19 @@ StarbytesObject CodeGen::exprToRTInternalObject(ASTExpr *expr){
     }
     else if(expr->type == STR_LITERAL){
         ASTLiteralExpr *literal_expr = (ASTLiteralExpr *)expr;
-        ob = StarbytesStrNewWithData(literal_expr->strValue.getValue().data());
+        ob = StarbytesStrNewWithData(literal_expr->strValue->data());
     }
     else if(expr->type == BOOL_LITERAL){
         ASTLiteralExpr *literal_expr = (ASTLiteralExpr *)expr;
-        ob = StarbytesBoolNew((StarbytesBoolVal)literal_expr->boolValue.getValue());
+        ob = StarbytesBoolNew((StarbytesBoolVal)*literal_expr->boolValue);
     }
     else if(expr->type == NUM_LITERAL){
         ASTLiteralExpr *literal_expr = (ASTLiteralExpr *)expr;
-        if(literal_expr->floatValue.hasValue()){
-            ob = StarbytesNumNew(NumTypeFloat,literal_expr->floatValue.getValue());
+        if(literal_expr->floatValue.has_value()){
+            ob = StarbytesNumNew(NumTypeFloat,*literal_expr->floatValue);
         }
         else {
-            ob = StarbytesNumNew(NumTypeInt,literal_expr->intValue.getValue());
+            ob = StarbytesNumNew(NumTypeInt,*literal_expr->intValue);
         }
     }
     return ob;

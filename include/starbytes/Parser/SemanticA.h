@@ -1,10 +1,4 @@
 #include "starbytes/Syntax/SyntaxA.h"
-#include <fstream>
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/Support/Error.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <llvm/ADT/Optional.h>
-#include <llvm/ADT/ArrayRef.h>
 #include "SymTable.h"
 
 #ifndef STARBYTES_PARSER_SEMANTICA_H
@@ -22,33 +16,20 @@ namespace starbytes {
         } Ty;
         Ty type;
         ASTStmt *stmt;
-        std::string message;
-        bool isError() override{
-            return type == Error;
-        };
-        void format(llvm::raw_ostream &os,CodeViewSrc & src) override{
-            os << llvm::raw_ostream::RED << "ERROR: " << llvm::raw_ostream::RESET << message << "\n";
-            generateCodeView(src,stmt->loc);
-        };
-        SemanticADiagnostic(Ty type,const llvm::formatv_object_base & message,ASTStmt *stmt):type(type),stmt(stmt),message(message){
-            
-        };
-        SemanticADiagnostic(Ty type,ASTStmt *stmt):type(type),stmt(stmt){
-            /// Please Set Message!
-        };
+        std::unique_ptr<Diagnostic> create(string_ref message,ASTStmt *stmt,Type ty);
         ~SemanticADiagnostic() override = default;
     };
 
     struct ASTScopeSemanticsContext {
         ASTScope *scope = nullptr;
-        llvm::DenseMap<ASTIdentifier *,ASTType *> *args = nullptr;
+        std::map<ASTIdentifier *,ASTType *> *args = nullptr;
     };
     /**
      * @brief The Semantics Analyzer
      * */
     class SemanticA {
         Syntax::SyntaxA & syntaxARef;
-        DiagnosticBufferedLogger & errStream;
+        DiagnosticHandler & errStream;
         bool typeExists(ASTType *type,
                         Semantics::STableContext & symbolTableContext,
                         ASTScope *scope);
@@ -76,7 +57,7 @@ namespace starbytes {
         bool checkSymbolsForStmtInScope(ASTStmt *stmt,
                                         Semantics::STableContext & symbolTableContext,
                                         ASTScope *scope,
-                                        llvm::Optional<Semantics::SymbolTable> tempSTable = {});
+                                        optional<Semantics::SymbolTable> tempSTable = {});
     public:
         static void start();
         void finish();
@@ -86,7 +67,7 @@ namespace starbytes {
                                  Semantics::STableContext & symbolTableContext);
 
         SemanticA(Syntax::SyntaxA & syntaxARef,
-                  DiagnosticBufferedLogger & errStream);
+                  DiagnosticHandler & errStream);
     };
 }
 

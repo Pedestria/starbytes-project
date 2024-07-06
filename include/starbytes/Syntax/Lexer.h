@@ -1,13 +1,7 @@
 #include <istream>
 #include <vector>
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/StringRef.h>
 #include "starbytes/Base/Diagnostic.h"
-#include <llvm/Support/FormatVariadic.h>
-#include <llvm/Support/FormatVariadicDetails.h>
-#include <llvm/Support/Compiler.h>
 #include "Toks.def"
-#include "starbytes/Base/CodeView.h"
 
 #ifndef STARBYTES_SYNTAX_LEXER_H
 #define STARBYTES_SYNTAX_LEXER_H
@@ -65,65 +59,65 @@ struct Tok {
 
 class Lexer {
     char buffer[150];
-    DiagnosticBufferedLogger & errStream;
+    DiagnosticHandler & errStream;
 public:
-    Lexer(DiagnosticBufferedLogger & errStream);
-    void tokenizeFromIStream(std::istream & in,std::vector<Tok> & tokStreamRef,CodeViewSrc &src);
+    Lexer(DiagnosticHandler & errStream);
+    void tokenizeFromIStream(std::istream & in,std::vector<Tok> & tokStreamRef);
 };
 
 }
 }
 
 
-namespace llvm {
-    template<>
-    struct format_provider<starbytes::Syntax::Tok> {
-        static void format(const starbytes::Syntax::Tok &V,raw_ostream &Stream, StringRef Style){
-            std::string tokTypeName;
-            using starbytes::Syntax::Tok;
-            switch (V.type) {
-                case Tok::Keyword : {
-                    tokTypeName = "Keyword";
-                    break;
-                }
-                case Tok::Identifier: {
-                    tokTypeName = "Identifier";
-                    break;
-                }
-                case Tok::OpenBrace : {
-                    tokTypeName = "OpenBrace";
-                    break;
-                }
-                case Tok::CloseBrace : {
-                    tokTypeName = "CloseBrace";
-                    break;
-                }
-                case Tok::Asterisk : {
-                    tokTypeName = "Asterisk";
-                    break;
-                }
-                case Tok::Colon : {
-                    tokTypeName = "Colon";
-                    break;
-                }
-                case Tok::Comma : {
-                    tokTypeName = "Comma";
-                    break;
-                }
-                default: {
-                    tokTypeName = "N/A";
-                    break;
-                }
-            }
+// namespace llvm {
+//     template<>
+//     struct format_provider<starbytes::Syntax::Tok> {
+//         static void format(const starbytes::Syntax::Tok &V,raw_ostream &Stream, StringRef Style){
+//             std::string tokTypeName;
+//             using starbytes::Syntax::Tok;
+//             switch (V.type) {
+//                 case Tok::Keyword : {
+//                     tokTypeName = "Keyword";
+//                     break;
+//                 }
+//                 case Tok::Identifier: {
+//                     tokTypeName = "Identifier";
+//                     break;
+//                 }
+//                 case Tok::OpenBrace : {
+//                     tokTypeName = "OpenBrace";
+//                     break;
+//                 }
+//                 case Tok::CloseBrace : {
+//                     tokTypeName = "CloseBrace";
+//                     break;
+//                 }
+//                 case Tok::Asterisk : {
+//                     tokTypeName = "Asterisk";
+//                     break;
+//                 }
+//                 case Tok::Colon : {
+//                     tokTypeName = "Colon";
+//                     break;
+//                 }
+//                 case Tok::Comma : {
+//                     tokTypeName = "Comma";
+//                     break;
+//                 }
+//                 default: {
+//                     tokTypeName = "N/A";
+//                     break;
+//                 }
+//             }
 
-            Stream << formatv(
-                "Syntax::Tok : {\n" 
-                "   type: {0}\n"
-                "   content:{1}\n"
-                "}"
-            ,tokTypeName,V.content);
-        };
-    };
-}
+//             Stream << formatv(
+//                 "Syntax::Tok : {\n" 
+//                 "   type: {0}\n"
+//                 "   content:{1}\n"
+//                 "}"
+//             ,tokTypeName,V.content);
+//         };
+//     };
+// }
 
 #endif

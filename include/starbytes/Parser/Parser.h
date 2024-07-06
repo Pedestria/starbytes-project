@@ -1,4 +1,5 @@
 #include <istream>
+#include <memory>
 #include "starbytes/Syntax/Lexer.h"
 #include "starbytes/Syntax/SyntaxA.h"
 #include "SemanticA.h"
@@ -14,7 +15,9 @@ namespace starbytes {
     };
 
     class Parser {
-        std::unique_ptr<DiagnosticBufferedLogger> diagnosticsEngine;
+
+        std::unique_ptr<DiagnosticHandler> diagnosticHandler;
+
         std::unique_ptr<Syntax::Lexer> lexer;
         std::unique_ptr<Syntax::SyntaxA> syntaxA;
         std::vector<Syntax::Tok> tokenStream;

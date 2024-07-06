@@ -1,7 +1,5 @@
 #include "ASTStmt.h"
 #include "Type.h"
-#include <llvm/ADT/Optional.h>
-#include <llvm/ADT/DenseMap.h>
 #include <vector>
 
 #ifndef STARBYTES_AST_ASTDECL_H
@@ -35,7 +33,7 @@ namespace starbytes {
             /// Initializer for Variable;
             ASTExpr *expr = nullptr;
         };
-        llvm::SmallVector<VarSpec,2> specs;
+        std::vector<VarSpec> specs;
     };
 
     class ASTFuncDecl : public ASTDecl {
@@ -43,7 +41,7 @@ namespace starbytes {
         ASTIdentifier *funcId;
         ASTType *funcType;
         ASTType *returnType;
-        llvm::DenseMap<ASTIdentifier *,ASTType *> params;
+        std::map<ASTIdentifier *,ASTType *> params;
         ASTBlockStmt *blockStmt;
     };
 
@@ -54,8 +52,8 @@ namespace starbytes {
         
         ASTType * classType;
 
-        llvm::SmallVector<ASTVarDecl *> fields;
-        llvm::SmallVector<ASTFuncDecl *> methods;
+        std::vector<ASTVarDecl *> fields;
+        std::vector<ASTFuncDecl *> methods;
     };
 
     class ASTReturnDecl : public ASTDecl {
@@ -70,7 +68,7 @@ namespace starbytes {
             ASTBlockStmt *blockStmt;
             bool isElse();
         };
-        llvm::SmallVector<CondDecl,2> specs;
+        std::vector<CondDecl> specs;
     };
 
     class ASTForDecl : public ASTDecl {

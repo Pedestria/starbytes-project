@@ -1,9 +1,7 @@
 #include "ASTNodes.def"
-#include "starbytes/Base/CodeView.h"
 #include <string>
 #include <vector>
-
-#include <llvm/Support/SHA1.h>
+#include "starbytes/Base/Diagnostic.h"
 
 #ifndef STARBYTES_AST_ASTSTMT_H
 #define STARBYTES_AST_ASTSTMT_H
@@ -29,19 +27,20 @@ namespace starbytes {
         } ScopeType;
         ScopeType type;
         ASTScope *parentScope = nullptr;
-        std::string hash = "NONE";
-        void generateHashID();
+        // std::string hash = "NONE";
+        // void generateHashID();
     };
 
     extern ASTScope * ASTScopeGlobal;
 
     class ASTStmt {
     public:
-        ASTScope * scope;
-        std::vector<Comment *> beforeComments;
-        std::vector<Comment *> afterComments;
+        std::shared_ptr<ASTScope> scope;
+        std::vector<Comment> beforeComments;
+        std::vector<Comment> afterComments;
         ASTNodeType type;
-        SrcLoc loc;
+        Region codeRegion;
+        std::string parentFile;
         // virtual ~ASTStmt();
     };
 }

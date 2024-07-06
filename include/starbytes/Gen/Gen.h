@@ -1,6 +1,5 @@
 #include <string>
 #include <fstream>
-#include <llvm/ADT/StringRef.h>
 #include "starbytes/Parser/SemanticA.h"
 #include "starbytes/AST/AST.h"
 #include "starbytes/RT/RTCode.h"
@@ -18,13 +17,13 @@ namespace starbytes {
         std::ostream & out;
         std::filesystem::path outputPath;
         Semantics::STableContext * tableContext;
-        static ModuleGenContext Create(llvm::StringRef strRef,std::ostream & out,std::filesystem::path & outputPath);
-        ModuleGenContext(llvm::StringRef strRef,std::ostream & out,std::filesystem::path & outputPath);
+        static ModuleGenContext Create(string_ref strRef,std::ostream & out,std::filesystem::path & outputPath);
+        ModuleGenContext(string_ref strRef,std::ostream & out,std::filesystem::path & outputPath);
     };
 
     class Gen : public ASTStreamConsumer {
         ModuleGenContext *genContext;
-        DiagnosticBufferedLogger * errStream;
+        DiagnosticHandler* errStream;
         friend class Parser;
         
         std::unique_ptr<CodeGen> codeGen;

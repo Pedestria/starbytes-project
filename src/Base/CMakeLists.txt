@@ -3,8 +3,8 @@ add_starbytes_lib(
     "starbytesBase"
     SOURCE_FILES 
     "Diagnostic.cpp"
-    "CodeView.cpp"
+    "CmdLine.cpp"
     HEADER_FILES
     "Diagnostic.h"
-    "CodeView.h"
+    "CmdLine.h"
 )

@@ -1,6 +1,4 @@
 #include "ASTStmt.h"
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/SmallString.h>
 #include "starbytes/AST/ASTNodes.def"
 #include "starbytes/Syntax/Toks.def"
 
@@ -33,7 +31,7 @@ namespace starbytes {
         /// @{
 
         /// The string of the operator
-        llvm::Optional<llvm::SmallString<TOK_OP_MAX_LENGTH>> oprtr_str;
+        std::optional<std::string> oprtr_str;
         /// @}
 
         /// @name Binary Expression / Member Expression Props
@@ -47,19 +45,19 @@ namespace starbytes {
         std::vector<ASTExpr *> exprArrayData;
 
         /// DictExpr Props
-        llvm::DenseMap<ASTExpr *,ASTExpr *> dictExpr;
+        std::map<ASTExpr *,ASTExpr *> dictExpr;
         static bool classof(ASTStmt *stmt);
     };
 
     class ASTLiteralExpr : public ASTExpr {
     public:
-        llvm::Optional<std::string> strValue;
+        std::optional<std::string> strValue;
         
-        llvm::Optional<bool> boolValue;
+        std::optional<bool> boolValue;
 
-        llvm::Optional<starbytes_int_t> intValue;
+        std::optional<starbytes_int_t> intValue;
 
-        llvm::Optional<starbytes_float_t> floatValue;
+        std::optional<starbytes_float_t> floatValue;
     };
 
 }

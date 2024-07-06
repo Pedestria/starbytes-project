@@ -66,27 +66,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 project ("Starbytes" C CXX)
 
-if(NOT LLVM_BUILD)
-	set(LLVM_BUILD FALSE)
-endif()
 
-if(NOT ${LLVM_BUILD})
-	find_package(LLVM REQUIRED)
-endif()
+set(RAPIDJSON_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/rapidjson/include")
+
+include_directories(${RAPIDJSON_INCLUDE_DIRS})
 
 
-
-
-include_directories(${LLVM_INCLUDE_DIRS})
-separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
-message("DEF: ${LLVM_DEFINITIONS_LIST}")
-add_definitions(${LLVM_DEFINITIONS_LIST})
-
-message("Found LLVM: ${LLVM_PACKAGE_VERSION}")
-
-
-
-llvm_map_components_to_libnames(llvm_libs support)
 
 
 include(./Starbytes.cmake)

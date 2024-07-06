@@ -1,5 +1,4 @@
 #include "Lexer.h"
-#include <llvm/ADT/ArrayRef.h>
 
 #ifndef STARBYTES_SYNTAX_SYNTAXA_H
 #define STARBYTES_SYNTAX_SYNTAXA_H
@@ -26,7 +25,7 @@ namespace starbytes {
         
         typedef const Tok & TokRef;
         class SyntaxA {
-            llvm::ArrayRef<Tok> token_stream;
+            array_ref<Tok> token_stream;
             unsigned privTokIndex;
             const Tok & nextTok();
             const Tok & aheadTok();
@@ -45,7 +44,7 @@ namespace starbytes {
             ASTDecl * evalDecl(const Tok & first_token,ASTScope *parentScope);
             ASTStmt * previousNode = nullptr;
         public:
-            void setTokenStream(llvm::ArrayRef<Tok> toks);
+            void setTokenStream(array_ref<Tok> toks);
             size_t getTokenStreamWidth();
             ASTStmt *nextStatement();
         };

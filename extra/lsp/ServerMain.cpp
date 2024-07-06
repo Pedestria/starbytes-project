@@ -1,26 +1,27 @@
 #include <chrono>
 #include <exception>
 #include <iostream>
-#include <llvm/Support/JSON.h>
+#include <rapidjson/document.h>
 
 #include "ServerMain.h"
 #include "LSPProtocol.h"
+#include "rapidjson/rapidjson.h"
 #include <future>
 #include <mutex>
 
 namespace starbytes::lsp {
 
 
-llvm::json::Object init_result
-({
-    {"capabilities",{
-      {"hoverProvider",true}
-    }},
-    {"serverInfo",{
-      {"name","Starbytes LSP"},
-      {"version","0.1"}
-    }}
-  });
+// rapidjson::Value init_result
+// ({
+//     {"capabilities",{
+//       {"hoverProvider",true}
+//     }},
+//     {"serverInfo",{
+//       {"name","Starbytes LSP"},
+//       {"version","0.1"}
+//     }}
+//   });
 
 
 
@@ -34,18 +35,22 @@ std::shared_ptr<InMessage> Server::getMessage() {
 
   std::string first;
   std::getline(in,first);
-  llvm::StringRef m = first;
+  string_ref m = first;
   int content_length;
-  auto ok =llvm::to_integer(m.substr(16,m.size()-1),content_length);
+  auto ok =m.substr_ref(16,m.size()-1).size();
   if(!ok){
     return nullptr;
   };
+  content_length = ok;
   // std::cout << content_length << std::endl;
   std::string buffer;
   buffer.resize(content_length);
   in.read(buffer.data(),content_length);
 
-  auto json = llvm::json::parse(buffer);
+ rapidjson::Document json;
+ json.Parse(buffer.c_str(),content_length);
+
+
   
   auto msg = std::make_shared<InMessage>();
 
@@ -54,8 +59,8 @@ std::shared_ptr<InMessage> Server::getMessage() {
     // std::cout << json.takeError() << std::endl;
   }
   else {
-    auto object = json->getAsObject();
-    auto id = object->get("id")->getAsInteger();
+    auto object = json.GetObject();
+    auto id = object["id"].GetInt();
     if(!id.hasValue()){
       msg->isNotification = true;
     }
@@ -63,8 +68,9 @@ std::shared_ptr<InMessage> Server::getMessage() {
         msg->info.id = (int)id.getValue();
     }
       
-    auto m = object->get("method")->getAsString();
-    msg->info.method = m.getValue();
+    auto m = object["method"].GetString();
+    auto m_len = object["method"].GetStringLength();
+    msg->info.method = std::string(m,m_len);
     
     return msg;
       
@@ -76,36 +82,41 @@ std::shared_ptr<InMessage> Server::getMessage() {
 void Server::sendMessage(std::shared_ptr<OutMessage> & o,MessageInfo & info){
     std::lock_guard<std::mutex> lk(mutex);
     
-    std::string j_str;
-    llvm::raw_string_ostream jout(j_str);
-    llvm::json::OStream os(jout);
-    os.objectBegin();
-    os.attribute("id",info.id);
-    os.attribute("method",info.method);
+    rapidjson::StringBuffer j_str;
+    rapidjson::Writer<rapidjson::StringBuffer> os(j_str);
+    rapidjson::Document d;
+    d.StartObject();
+    d.AddMember("id",info.id,d.GetAllocator());
+    d.AddMember("method",info.method,d.GetAllocator());
     if(o->result){
-        os.attribute("result",o->result.getValue());
+        d.AddMember("result",*o->result.value(),d.GetAllocator());
     }
     else {
-        os.attribute("error",llvm::json::Value(std::move(o->error.getValue())));
+        d.AddMember("error",*o->error.value(),d.GetAllocator());
     }
-    os.objectEnd();
-    jout.flush();
-    out << "Content-Length: " << j_str.size() << "\n\n" << j_str << std::flush;
+    d.EndObject(3);
+    d.Accept(os);
+    out << "Content-Length: " << j_str.GetSize() << "\n\n" << j_str.GetString() << std::flush;
 
 }
 
 void Server::sendError(OutError &err,std::shared_ptr<OutMessage> & out){
-    out->error = llvm::json::Object({
-        {"code",(int)err.code},
-    });
+    out->error = new rapidjson::Value(rapidjson::kObjectType);
+
+    rapidjson::Document d;
+    d.StartObject();
+    out->error.value()->SetObject({"code",err.code});
 
     if(!err.message.empty()){
-      out->error->insert({"message",err.message});
+      out->error.value->AddMember("message",err.message);
     }
 
     if(err.data){
       out->error->insert({"data",err.data.getValue()});
     }
+
+    d.EndObject(3);
+    d.Accept(os);
 
 }
 

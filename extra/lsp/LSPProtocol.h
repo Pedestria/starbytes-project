@@ -1,7 +1,8 @@
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/JSON.h>
-#include <llvm/ADT/StringMap.h>
-#include <llvm/ADT/Optional.h>
+
+#include <rapidjson/fwd.h>
+#include <rapidjson/writer.h>
+#include <rapidjson/reader.h>
+#include <rapidjson/document.h>
 #include <starbytes/AST/AST.h>
 #include <starbytes/Parser/Parser.h>
 #include <chrono>
@@ -13,7 +14,7 @@
 namespace starbytes::lsp {
    
 
-#define LSP_METHOD llvm::StringRef 
+#define LSP_METHOD std::string
 #define DECL_LSP_METHOD extern LSP_METHOD
 
 DECL_LSP_METHOD Init;
@@ -25,23 +26,23 @@ DECL_LSP_METHOD Exit;
 DECL_LSP_METHOD CancelRequest;
 
 
-void parseTextDocumentPositionParams(llvm::json::Value & param,SrcLoc & loc,std::string & doc);
-void parsePartialResultToken(llvm::json::Value & param,std::string & partialToken);
-void parseWorkDoneToken(llvm::json::Value & param,std::string & workDoneToken);
-void writePartialResultToken(llvm::json::Object & param,std::string & partialToken);
-void writeWorkDoneToken(llvm::json::Object & param,std::string & workDoneToken);
+void parseTextDocumentPositionParams(rapidjson::Value & param,Region & loc,std::string & doc);
+void parsePartialResultToken(rapidjson::Value * param,std::string & partialToken);
+void parseWorkDoneToken(rapidjson::Value * param,std::string & workDoneToken);
+void writePartialResultToken(rapidjson::Value & param,std::string & partialToken);
+void writeWorkDoneToken(rapidjson::Value & param,std::string & workDoneToken);
 
 
 struct MessageInfo {
-    llvm::Optional<int> id;
+    std::optional<int> id;
     std::string method;
-    llvm::Optional<std::string> progressToken;
+     std::optional<std::string> progressToken;
 };
 
 struct InMessage {
   MessageInfo info;
   bool isNotification = false;
-  llvm::json::Value params;
+  rapidjson::Value * params;
 };
 
 enum class OutErrorCode : int {
@@ -52,13 +53,13 @@ enum class OutErrorCode : int {
 struct OutError {
     OutErrorCode code;
     std::string message = "";
-    llvm::Optional<llvm::json::Value> data = llvm::None;
+    std::optional<rapidjson::Value *> data;
 };
 
 
 struct OutMessage {
-  llvm::Optional<llvm::json::Value> result;
-  llvm::Optional<llvm::json::Object> error;
+  std::optional<rapidjson::Value *> result;
+  std::optional<rapidjson::Value *> error;
 };
 
 
@@ -86,17 +87,23 @@ struct DocumentEntry {
 };
 
 class WorkspaceManager {
-    llvm::StringMap<DocumentEntry> openDocuments;
+    string_map<DocumentEntry> openDocuments;
     std::unique_ptr<Parser> parser;
     std::unique_ptr<ASTLocker> locker;
     
     void _tryParse(std::istream & in);
 public:
-    bool fuzzyMatchInDocumentAtPosition(llvm::StringRef path,SrcLoc &loc,llvm::StringMap<LSPSymbolType> &listOut);
-    Semantics::SymbolTable::Entry & getSymbolInfoInDocument(llvm::StringRef path,SrcLoc &refLoc);
-    bool openDocument(llvm::StringRef path,SrcLoc &stopPos);
-    bool documentIsOpen(llvm::StringRef path);
-    void closeDocument(llvm::StringRef path);
+    bool fuzzyMatchInDocumentAtPosition(string_ref path,Region &loc,string_map<LSPSymbolType> &listOut);
+    Semantics::SymbolTable::Entry & getSymbolInfoInDocument(string_ref path,Region &refLoc);
+    bool openDocument(string_ref path,Region &stopPos);
+    bool documentIsOpen(string_ref path);
+    void closeDocument(string_ref path);
+};
+/** Context for managing JSON IO in the server*/
+struct ThreadedServerContext {
+    rapidjson::Document inputJSON;
+    rapidjson::Document outputJSON;
+
 };
 
 

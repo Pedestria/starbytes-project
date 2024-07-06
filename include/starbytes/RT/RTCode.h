@@ -3,8 +3,6 @@
 #include <cstdint>
 #include <vector>
 #include <istream>
-#include <llvm/ADT/SmallString.h>
-#include <llvm/ADT/StringMap.h>
 
 #include <starbytes/interop.h>
 

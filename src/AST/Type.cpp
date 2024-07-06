@@ -25,8 +25,8 @@ namespace starbytes {
         typeParams.push_back(param);
     }
 
-    llvm::StringRef ASTType::getName() const{
-        return name;
+    string_ref ASTType::getName() const{
+        return {name};
     }
 
     ASTStmt *ASTType::getParentNode() const{

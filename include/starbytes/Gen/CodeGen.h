@@ -12,7 +12,7 @@ struct ModuleGenContext;
 
 class CodeGen final : public ASTStreamConsumer {
     ModuleGenContext *genContext;
-    DiagnosticBufferedLogger * errStream;
+    DiagnosticHandler * errStream;
     friend class Parser;
     StarbytesObject exprToRTInternalObject(ASTExpr *expr);
 public:
