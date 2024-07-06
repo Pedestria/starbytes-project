@@ -59,7 +59,7 @@ std::unique_ptr<DiagnosticHandler> DiagnosticHandler::createDefault(std::ostream
     return std::make_unique<DiagnosticHandler>(DiagnosticHandler(out));
 }
 
-DiagnosticHandler & DiagnosticHandler::operator<<(DiagnosticPtr diagnostic){
+DiagnosticHandler & DiagnosticHandler::push(DiagnosticPtr diagnostic){
     buffer.push_back(diagnostic);
     return *this;
 };

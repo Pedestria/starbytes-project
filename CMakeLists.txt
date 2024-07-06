@@ -6,7 +6,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 option(USE_VCPKG "Use vcpkg manager!" OFF)
 option(USE_VCPKG_AS_TOOLCHAIN "Use vcpkg cmake toolchain file" OFF)
 set(ENABLE_STARBYTES_LSP TRUE)
-set(STARBYTES_PROJECT_VERSION "v0.2")
+
+
+set(STARBYTES_PROJECT_VERSION "0.4")
 message("Starbytes Project Version " ${STARBYTES_PROJECT_VERSION})
 
 macro(find_vcpkg USE_TOOLCHAIN)
@@ -56,9 +58,9 @@ endif()
 # endif()
 
 
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED YES)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
+# set(CMAKE_C_STANDARD 11)
+# set(CMAKE_C_STANDARD_REQUIRED YES)
+# set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 # set(CMAKE_LINK_FLAGS "${CMAKE_LINK_FLAGS} -frtti")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
@@ -71,7 +73,7 @@ set(RAPIDJSON_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/rapidjson/include")
 
 include_directories(${RAPIDJSON_INCLUDE_DIRS})
 
-
+add_compile_definitions(STARBYTES_VERSION=${STARBYTES_PROJECT_VERSION})
 
 
 include(./Starbytes.cmake)

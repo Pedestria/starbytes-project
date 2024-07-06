@@ -74,7 +74,7 @@ class DiagnosticHandler {
 
     public:
     static std::unique_ptr<DiagnosticHandler> createDefault(std::ostream & out);
-    SELF & operator<<(DiagnosticPtr diagnostic);
+    SELF & push(DiagnosticPtr diagnostic);
     bool empty();
     bool hasErrored();
     void logAll();

@@ -23,6 +23,9 @@ extern "C" {
 
 typedef const char * CString;
 
+CString CStringMake(const char *buf);
+void CStringFree(const char *buf);
+
 typedef size_t StarbytesClassType;
 
 StarbytesClassType StarbytesStrType();

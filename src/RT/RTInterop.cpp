@@ -1,8 +1,6 @@
 #include "starbytes/interop.h"
 #include "starbytes/RT/RTCode.h"
-#include "llvm/Support/Path.h"
-#include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/ArrayRef.h>
+#include "starbytes/Base/ADT.h"
 #include <new>
 
 #if defined(__ELF__) | defined(__MACH__)
@@ -14,11 +12,22 @@
 
 typedef struct __StarbytesNativeModule StarbytesNativeModule;
 
+CString CStringMake(const char *buf){
+    auto len = std::strlen(buf);
+    auto new_buf = new char[len];
+    std::copy(buf,buf + len,new_buf);
+    return new_buf;
+}
+
+void CStringFree(const char *buf){
+    delete [] buf;
+}
+
 
 namespace starbytes::Runtime {
 
 
-    StarbytesNativeModule * starbytes_native_mod_load(llvm::StringRef path);
+    StarbytesNativeModule * starbytes_native_mod_load(string_ref path);
 
 }
 
@@ -90,7 +99,7 @@ void starbytes_native_mod_close(StarbytesNativeModule * mod){
 
 
 StarbytesClassType StarbytesMakeClass(const char *name){
-    llvm::ArrayRef<uint8_t> raw((uint8_t *)name,strlen(name));
+    starbytes::array_ref<uint8_t> raw((uint8_t *)name,strlen(name));
     StarbytesClassType t = StarbytesFuncRefType();
     for(auto b = raw.begin();b != raw.end();b++){
         unsigned A = (unsigned)*b;
@@ -98,6 +107,8 @@ StarbytesClassType StarbytesMakeClass(const char *name){
     }
     return t;
 }
+
+
 
 
 

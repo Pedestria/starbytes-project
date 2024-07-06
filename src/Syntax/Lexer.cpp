@@ -1,20 +1,18 @@
 #include "starbytes/Syntax/Lexer.h"
-#include "llvm/ADT/StringExtras.h"
-#include <llvm/Support/raw_ostream.h>
 #include <iostream>
 
 namespace starbytes::Syntax {
 
-bool isBooleanLiteral(llvm::StringRef str){
+bool isBooleanLiteral(string_ref str){
     return (str == TOK_TRUE) || (str == TOK_FALSE);
 }
 
-bool isKeyword(llvm::StringRef str){
+bool isKeyword(string_ref str){
     return (str == KW_DECL) || (str == KW_IMUT) || (str == KW_IMPORT)
     || (str == KW_FUNC) || (str == KW_IF) || (str == KW_ELIF) || (str == KW_ELSE) || (str == KW_RETURN);
 }
 
-bool isNumber(llvm::StringRef str,bool * isFloating){
+bool isNumber(string_ref str,bool * isFloating){
     *isFloating = false;
     for(auto & c : str){
 
@@ -23,7 +21,7 @@ bool isNumber(llvm::StringRef str,bool * isFloating){
             continue;
         }
 
-        if(!llvm::isDigit(c)){
+        if(!std::isdigit(c)){
             return false;
             break;
         };
@@ -34,32 +32,30 @@ bool isNumber(llvm::StringRef str,bool * isFloating){
 
 struct LexicalError : public Diagnostic {
     
-    bool isError() override{
-        return true;
-    };
-    
     std::string message;
     SourcePos pos;
-    void format(llvm::raw_ostream &os,CodeViewSrc & src) override{
-        os << llvm::raw_ostream::RED << "LexerError: " << llvm::raw_ostream::RESET << message << "\n";
-    };
-    LexicalError(const llvm::formatv_object_base & formatted_message,SourcePos pos):message(formatted_message.str()),pos(pos){
+
+    static DiagnosticPtr create(std::string message, SourcePos & pos);
+    // void format(llvm::raw_ostream &os,CodeViewSrc & src) override{
+    //     os << llvm::raw_ostream::RED << "LexerError: " << llvm::raw_ostream::RESET << message << "\n";
+    // };
+    // LexicalError(const llvm::formatv_object_base & formatted_message,SourcePos pos):message(formatted_message.str()),pos(pos){
         
-    };
+    // };
 };
 
 
 
-Lexer::Lexer(DiagnosticBufferedLogger & errStream):buffer(),errStream(errStream){
+Lexer::Lexer(DiagnosticHandler & errStream):buffer(),errStream(errStream){
     
 }
 
-void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamRef,CodeViewSrc &src){
+void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamRef){
     auto getChar = [&](){
         char rc = in.get();
         // std::cout << "getChar:" << rc << std::endl;
-        if(rc != -1)
-            src.code += rc;
+        // if(rc != -1)
+        //     src.code += rc;
         return rc;
     };
     
@@ -105,7 +101,7 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
         bufferEnd = bufferStart;
     };
     
-    src.code = "";
+    // src.code = "";
     
     char c;
     // bool finish = false;

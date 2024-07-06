@@ -70,9 +70,9 @@ int main(int argc,const char *argv[]){
 
         std::ofstream module_out(("./.starbytes/" + script_name + "." + STARBYTES_COMPILEDFILE_EXT).str(),std::ios::out | std::ios::binary);
 
-        auto moduleGenContext = starbytes::ModuleGenContext::Create(script_name.str(),module_out,compile_mod_path);
+        auto moduleGenContext = starbytes::ModuleGenContext::Create(script_name,module_out,compile_mod_path);
 
-        auto parseContext = starbytes::ModuleParseContext::Create(script_name.str());
+        auto parseContext = starbytes::ModuleParseContext::Create(script_name);
         
         gen.setContext(&moduleGenContext);
 
@@ -81,14 +81,14 @@ int main(int argc,const char *argv[]){
         parser.parseFromStream(in,parseContext);
         if(!parser.finish()){
             module_out.close();
-            llvm::sys::fs::remove("./.starbytes/" + script_name + "." + STARBYTES_COMPILEDFILE_EXT);
+            std::filesystem::remove("./.starbytes/" + script_name + "." + STARBYTES_COMPILEDFILE_EXT);
             return -1;
         }
         else {
             gen.finish();
             module_out.close();
 
-            std::ifstream rtcode_in(("./.starbytes/" + script_name + "." + STARBYTES_COMPILEDFILE_EXT).str(),std::ios::in | std::ios::binary);
+            std::ifstream rtcode_in("./.starbytes/" + script_name + "." + STARBYTES_COMPILEDFILE_EXT,std::ios::in | std::ios::binary);
 
             auto interp = starbytes::Runtime::Interp::Create();
             interp->exec(rtcode_in);

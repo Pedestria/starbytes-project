@@ -3,8 +3,8 @@
 #include <fstream>
 
 STARBYTES_FUNC(fileOpen){
-    StarbytesStr *file = StarbytesFuncArgsGetArg(args);
-    StarbytesStr *mode = StarbytesFuncArgsGetArg(args);
+    StarbytesStr file = StarbytesFuncArgsGetArg(args);
+    StarbytesStr mode = StarbytesFuncArgsGetArg(args);
 
     auto fileVal = StarbytesStrGetBuffer(file);
     auto modeVal = StarbytesStrGetBuffer(mode);
@@ -13,15 +13,19 @@ STARBYTES_FUNC(fileOpen){
 
     std::string name = STARBYTES_INSTANCE_FUNC(Stream,open);
     
+    StarbytesClassType t = StarbytesMakeClass("Stream");
 
-    return StarbytesObjectNew();
+    return StarbytesObjectNew(t);
 };
 
 
 STARBYTES_NATIVE_MOD_MAIN(){
     auto module = StarbytesNativeModuleCreate();
-    STARBYTES_FUNC_DESC(fileOpen,2);
-    StarbytesNativeModuleAddDesc(module,&fileOpen_desc);
+    StarbytesFuncDesc d;
+    d.name = CStringMake("fileOpen");
+    d.argCount = 2;
+    d.callback = fileOpen;
+    StarbytesNativeModuleAddDesc(module,&d);
     return module;
 };
 

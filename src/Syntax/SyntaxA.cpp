@@ -3,7 +3,7 @@
 
 namespace starbytes::Syntax {
 
-void SyntaxA::setTokenStream(llvm::ArrayRef<Tok> toks){
+void SyntaxA::setTokenStream(array_ref<Tok> toks){
     token_stream = toks;
     privTokIndex = 0;
 }

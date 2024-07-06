@@ -1,10 +1,11 @@
-#include <llvm/Support/InitLLVM.h>
-#include <llvm/Support/CommandLine.h>
+
 
 #include "starbytes/AST/ASTNodes.def"
 #include "starbytes/RT/RTCode.h"
+#include "starbytes/Base/ADT.h"
 #include <iostream>
 #include <fstream>
+#include "starbytes/Base/Diagnostic.h"
 
 namespace starbytes {
 
@@ -31,8 +32,8 @@ class Disassembler {
             out << " ";
             out << funcTemp.argsTemplate.size() << " ";
             for(auto arg : funcTemp.argsTemplate){
-                llvm::StringRef arg_name (arg.value,arg.len);
-                out << arg_name.data() << " ";
+                string_ref arg_name (arg.value,arg.len);
+                out << arg_name << " ";
             };
             out << std::endl;
             in.seekg(funcTemp.block_start_pos);
@@ -160,23 +161,27 @@ public:
 
 };
 
-namespace {
+// namespace {
 
-llvm::cl::opt<std::string> file("file",llvm::cl::desc("The Starbytes Module to disassemble."));
+// llvm::cl::opt<std::string> file("file",llvm::cl::desc("The Starbytes Module to disassemble."));
 
-llvm::cl::alias f("f",llvm::cl::aliasopt(file),llvm::cl::desc("An alias for the option --file"),llvm::cl::NotHidden);
+// llvm::cl::alias f("f",llvm::cl::aliasopt(file),llvm::cl::desc("An alias for the option --file"),llvm::cl::NotHidden);
 
-}
+};
 
 int main(int argc,const char *argv[]){
-    llvm::InitLLVM _llvm(argc,argv);
+    // llvm::InitLLVM _llvm(argc,argv);
         
 
-    auto okay = llvm::cl::ParseCommandLineOptions(argc,argv);
+    // auto okay = llvm::cl::ParseCommandLineOptions(argc,argv);
 
     if(!okay){
         return 1;
     };
+
+    auto error_engine = starbytes::DiagnosticHandler::createDefault(std::cout);
+
+    std::string file;
     
     std::ifstream in(file,std::ios::in | std::ios::binary);
 
@@ -190,8 +195,13 @@ int main(int argc,const char *argv[]){
 
     }
     else {
-        llvm::errs() << "Failed to Read File: " << file;
+        error_engine->push(starbytes::StandardDiagnostic::createError("Failed to read file"));
     };
 
-//    return 0;
+    if(error_engine->hasErrored()){
+        error_engine->logAll();
+        return 1;
+    }
+
+   return 0;
 };

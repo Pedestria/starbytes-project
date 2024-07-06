@@ -17,3 +17,5 @@ starbytes-lang/tools/main/Starbytes.cpp
 cmake-build-debug
 cmake-build-release
 .starbytes
+deps
+*.sh

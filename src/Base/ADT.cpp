@@ -26,6 +26,18 @@ namespace starbytes {
     bool string_ref_t<T>::equals(const T *str){
         return __equals(str,std::char_traits<T>::length(str));
     }
+
+    template<typename T>
+    bool string_ref_t<T>::operator==(const T *str){
+        return __equals(str,std::char_traits<T>::length(str));
+    }
+
+     template<typename T>
+    bool string_ref_t<T>::operator==(std::string & str){
+        return equals(str);
+    }
+
+
     template<typename T>
     T & string_ref_t<T>::operator[](uint32_t index){
         return buffer[index];
@@ -58,6 +70,16 @@ namespace starbytes {
       template<typename T>
       uint32_t string_ref_t<T>::size(){
           return l;
+      }
+
+      template<typename T>
+      typename array_ref<T>::iterator array_ref<T>::begin(){
+        return buffer;
+      }
+
+      template<typename T>
+      typename array_ref<T>::iterator array_ref<T>::end(){
+        return buffer + l;
       }
 
 }
