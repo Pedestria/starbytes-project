@@ -1,10 +1,10 @@
-#include "starbytes/Base/CmdLine.h"
+#include "starbytes/base/CmdLine.h"
 #include <string>
-#include "starbytes/Base/ADT.h"
+#include "starbytes/base/ADT.h"
 #include <vector>
 #include <iostream>
 #include <cassert>
-#include "starbytes/Base/Diagnostic.h"
+#include "starbytes/base/Diagnostic.h"
 
 namespace starbytes::cl {
    
@@ -72,7 +72,7 @@ namespace starbytes::cl {
      FlagBuilder & FlagBuilder::mapVar(std::string & str){
         assert(ptr->type == Flag::NONE && "CANNOT MAP ANOTHER VARIALE TYPE ALREADY EXITING TYPE");
         ptr->type = Flag::STRING;
-        ptr->s = str;
+        ptr->s = str.data();
         return *this;
     }
     
@@ -94,7 +94,7 @@ namespace starbytes::cl {
             }
 
             if(noCmdFound){
-                stdDiagnosticHandler << StandardDiagnostic::createError("Unknown Command:");
+                stdDiagnosticHandler->push(StandardDiagnostic::createError("Unknown Command:"));
                 
             }
 

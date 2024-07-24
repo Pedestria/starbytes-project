@@ -102,11 +102,21 @@ endif()
 
 install(DIRECTORY "include/" DESTINATION "${CMAKE_INSTALL_PREFIX}/include" FILES_MATCHING PATTERN "*.h")
 
-add_subdirectory("src")
-add_subdirectory("driver")
-add_subdirectory("extra")
+file(GLOB STARBYTES_BASE_SRCS ${CMAKE_SOURCE_DIR}/src/base/*.cpp)
+file(GLOB STARBYTES_COMPILER_SRCS ${CMAKE_SOURCE_DIR}/src/compiler/*.cpp)
+file(GLOB STARBYTES_RUNTIME_SRCS ${CMAKE_SOURCE_DIR}/src/runtime/*.cpp ${CMAKE_SOURCE_DIR}/src/runtime/*.c)
+
+file(GLOB STARBYTES_BASE_HEADERS ${CMAKE_SOURCE_DIR}/include/base/*.h)
+file(GLOB STARBYTES_COMPILER_HEADERS ${CMAKE_SOURCE_DIR}/include/compiler/*.h)
+file(GLOB STARBYTES_RUNTIME_HEADERS ${CMAKE_SOURCE_DIR}/include/runtime/*.h)
+
+add_starbytes_lib(LIB_NAME "starbytesBase" SOURCE_FILES ${STARBYTES_BASE_SRCS} HEADER_FILES ${STARBYTES_BASE_HEADERS})
+add_starbytes_lib(LIB_NAME "starbytesCompiler" SOURCE_FILES ${STARBYTES_COMPILER_SRCS} HEADER_FILES ${STARBYTES_COMPILER_HEADERS} LIBS_TO_LINK "starbytesBase")
+add_starbytes_lib(LIB_NAME "starbytesRuntime" SOURCE_FILES ${STARBYTES_RUNTIME_SRCS} HEADER_FILES ${STARBYTES_RUNTIME_HEADERS} LIBS_TO_LINK "starbytesBase;starbytesCompiler")
+
+
+add_subdirectory("tools")
 add_subdirectory("tests")
-add_subdirectory("embed")
 add_subdirectory("stdlib")
 # add_subdirectory("ide")
 # TODO : Get Starbytes Compilation to work!

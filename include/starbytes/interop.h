@@ -3,7 +3,7 @@
 //
 
 #include <stdlib.h>
-#include <cstdint>
+#include <stdint.h>
 
 #ifndef STARBYTES_INTEROP_H
 #define STARBYTES_INTEROP_H
@@ -111,7 +111,7 @@ void StarbytesStrDestroy(StarbytesStr );
 
 /// @name Starbytes Array Methods
 /// @{
-StarbytesArray  StarbytesArrayCreate();
+StarbytesArray  StarbytesArrayNew();
 StarbytesArray StarbytesArrayCopy(StarbytesArray);
 void StarbytesArrayPush(StarbytesArray array,StarbytesObject obj);
 void StarbytesArrayPop(StarbytesArray array);
