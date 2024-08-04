@@ -8,25 +8,17 @@
 #include "rapidjson/rapidjson.h"
 #include <future>
 #include <mutex>
+#include <type_traits>
 
 namespace starbytes::lsp {
 
 
-// rapidjson::Value init_result
-// ({
-//     {"capabilities",{
-//       {"hoverProvider",true}
-//     }},
-//     {"serverInfo",{
-//       {"name","Starbytes LSP"},
-//       {"version","0.1"}
-//     }}
-//   });
+std::string output = "{{\"capabilities\",{{\"hoverProvider\",true}}},{\"serverInfo\",{{\"name\",\"Starbytes LSP\"},{\"version\",\"0.1\"}}}}";
 
 
 
 Server::Server(starbytes::lsp::ServerOptions &options)
-    : in(options.in),out(options.os) {
+    : in(options.in),out(options.os),serverContext(new ThreadedServerContext()),messageIO(serverContext) {
 
 }
 
@@ -53,19 +45,19 @@ std::shared_ptr<InMessage> Server::getMessage() {
 
   
   auto msg = std::make_shared<InMessage>();
-
-  if(!json){
+  
+  if(json.HasParseError()){
     return nullptr;
     // std::cout << json.takeError() << std::endl;
   }
   else {
     auto object = json.GetObject();
-    auto id = object["id"].GetInt();
-    if(!id.hasValue()){
+    auto id = object.HasMember("id");
+    if(!id){
       msg->isNotification = true;
-    }
+    } 
     else {
-        msg->info.id = (int)id.getValue();
+        msg->info.id = object["id"].GetInt();
     }
       
     auto m = object["method"].GetString();
@@ -84,10 +76,10 @@ void Server::sendMessage(std::shared_ptr<OutMessage> & o,MessageInfo & info){
     
     rapidjson::StringBuffer j_str;
     rapidjson::Writer<rapidjson::StringBuffer> os(j_str);
-    rapidjson::Document d;
+    rapidjson::Document & d = serverContext->outputJSON;
     d.StartObject();
-    d.AddMember("id",info.id,d.GetAllocator());
-    d.AddMember("method",info.method,d.GetAllocator());
+    d.AddMember("id",info.id.value(),d.GetAllocator());
+    d.AddMember("method",rapidjson::StringRef(info.method.c_str()),d.GetAllocator());
     if(o->result){
         d.AddMember("result",*o->result.value(),d.GetAllocator());
     }
@@ -96,28 +88,35 @@ void Server::sendMessage(std::shared_ptr<OutMessage> & o,MessageInfo & info){
     }
     d.EndObject(3);
     d.Accept(os);
-    out << "Content-Length: " << j_str.GetSize() << "\n\n" << j_str.GetString() << std::flush;
 
+    out << "Content-Length: " << j_str.GetSize() << "\n\n" << j_str.GetString() << std::flush;
+    serverContext->resetOutputJson();
 }
 
 void Server::sendError(OutError &err,std::shared_ptr<OutMessage> & out){
     out->error = new rapidjson::Value(rapidjson::kObjectType);
 
-    rapidjson::Document d;
+     rapidjson::StringBuffer j_str;
+    rapidjson::Writer<rapidjson::StringBuffer> os(j_str);
+    rapidjson::Document & d = serverContext->outputJSON;
     d.StartObject();
-    out->error.value()->SetObject({"code",err.code});
-
+    out->error.value()->AddMember("code",(int)err.code,serverContext->outputJSON.GetAllocator());
+    unsigned mem_count = 1;
     if(!err.message.empty()){
-      out->error.value->AddMember("message",err.message);
+      out->error.value()->AddMember("message",rapidjson::StringRef(err.message.c_str()),serverContext->outputJSON.GetAllocator());
+      mem_count++;
     }
 
     if(err.data){
-      out->error->insert({"data",err.data.getValue()});
+      out->error.value()->AddMember("data",err.data.value()->GetObject(),serverContext->outputJSON.GetAllocator());
+       mem_count++;
     }
 
-    d.EndObject(3);
+    d.EndObject(mem_count);
     d.Accept(os);
 
+    this->out << "Content-Length: " << j_str.GetSize() << "\n\n" << j_str.GetString() << std::flush;
+    serverContext->resetOutputJson();
 }
 
 void Server::consumeNotification(std::shared_ptr<InMessage> & in){
@@ -134,18 +133,18 @@ void Server::buildCancellableRequest(std::shared_ptr<InMessage> & initialMessage
     auto & t = threadsInFlight.emplace_back([&](std::shared_ptr<InMessage> initialMessage,std::promise<std::shared_ptr<OutMessage>> out){
        auto m = std::make_shared<OutMessage>();
        {
-          llvm::StringRef method = initialMessage->info.method;
+          string_ref method = initialMessage->info.method;
           if(method == completion){
           
           }
           else if(method == hover){
 
             std::string documentId,pTk,wdTk;
-            SrcLoc loc{};
+            Region loc{};
 
-            parseTextDocumentPositionParams(initialMessage->params,loc, documentId);
-            parsePartialResultToken(initialMessage->params,pTk);
-            parseWorkDoneToken(initialMessage->params,wdTk);
+            messageIO.parseTextDocumentPositionParams(*initialMessage.get()->params,loc, documentId);
+            messageIO.parsePartialResultToken(initialMessage.get()->params,pTk);
+            messageIO.parseWorkDoneToken(initialMessage.get()->params,wdTk);
 
             if(!workspaceManager.documentIsOpen(documentId)){
               OutError err {OutErrorCode::INVALID_PARAMS};
@@ -194,7 +193,7 @@ void Server::replyToRequest(std::shared_ptr<InMessage> & in)
 {
     if(in->info.method == Init){
         auto init_msg = std::make_shared<OutMessage>();
-        init_msg->result = llvm::json::Value(std::move(init_result));
+        // init_msg->result = new rapidjson::Value(init_result);
         sendMessage(init_msg,in->info);
     }
     else {

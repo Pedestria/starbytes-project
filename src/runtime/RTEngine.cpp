@@ -316,6 +316,11 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
         in.read((char *)&argCount,sizeof(argCount));
         invokeFunc(in,StarbytesFuncRefGetPtr(funcTempRef),argCount);
     }
+    else if(code == CODE_RTCLASS_DEF){
+        RTClass _class;
+        in >> &_class;
+        classes.push_back(_class);
+    }
 }
 
 void InterpImpl::exec(std::istream & in){

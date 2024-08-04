@@ -1,4 +1,6 @@
 #include "LSPProtocol.h"
+#include "rapidjson/document.h"
+#include "rapidjson/rapidjson.h"
 
 namespace starbytes::lsp {
 
@@ -11,40 +13,65 @@ LSP_METHOD definition = "textDocument/definition";
 LSP_METHOD Exit = "shutdown";
 LSP_METHOD CancelRequest = "cancelRequest";
 
-void parseTextDocumentPositionParams(llvm::json::Value & param,SrcLoc & loc,std::string & doc){
-    auto obj = param.getAsObject();
-    auto pos = obj->getObject("position");
-    loc.startLine = loc.endLine = (unsigned)pos->getInteger("line").getValue();
-    loc.startCol = loc.endCol = (unsigned)pos->getInteger("character").getValue();
-    doc = obj->getObject("textDocument")->getString("uri").getValue();
+void ThreadedServerContext::resetInputJson(){
+    inputJSON.RemoveAllMembers();
+    inputJSON.GetAllocator().Clear();
+}
+
+void ThreadedServerContext::resetOutputJson(){
+    outputJSON.RemoveAllMembers();
+    outputJSON.GetAllocator().Clear();
+}
+
+MessageIO::MessageIO(std::shared_ptr<ThreadedServerContext> & serverContext):serverContext(serverContext){
+    
+}
+
+void MessageIO::parseTextDocumentPositionParams(rapidjson::Value & param,Region & loc,std::string & doc){
+    auto obj = param.GetObject();
+    auto & pos = obj["position"];
+    loc.startLine = loc.endLine = (unsigned)pos["line"].GetInt();
+    loc.startCol = loc.endCol = (unsigned)pos["character"].GetInt();
+    doc = obj["textDocument"]["uri"].GetString();
 };
 
-void parsePartialResultToken(llvm::json::Value & param,std::string & partialToken){
-    auto obj = param.getAsObject();
-    auto t = obj->getString("partialResultToken");
-    if(t){
-        partialToken = t.getValue();
+void MessageIO::parsePartialResultToken(rapidjson::Value * param,std::string & partialToken){
+    auto obj = param->GetObject();
+    auto hasMember = obj.HasMember("partialResultToken");
+    if(hasMember){
+        partialToken = obj["partialResultToken"].GetString();
     }
 }
 
-void parseWorkDoneToken(llvm::json::Value & param,std::string & workDoneToken){
-    auto obj = param.getAsObject();
-    auto t = obj->getString("workDoneToken");
-    if(t){
-        workDoneToken = t.getValue();
+void MessageIO::parseWorkDoneToken(rapidjson::Value * param,std::string & workDoneToken){
+    auto obj = param->GetObject();
+    auto hasMember = obj.HasMember("workDoneToken");
+    if(hasMember){
+        workDoneToken = obj["workDoneToken"].GetString();
     }
 }
 
-void writePartialResultToken(llvm::json::Object & param,std::string & partialToken){
+void MessageIO::writePartialResultToken(rapidjson::Value & param,std::string & partialToken){
     if(!partialToken.empty()){
-        param.insert({"partialResultToken",partialToken});
+        param.AddMember("partialResultToken",rapidjson::StringRef(partialToken.c_str()),serverContext->outputJSON.GetAllocator());
     }
 }
 
-void writeWorkDoneToken(llvm::json::Object & param,std::string & workDoneToken){
+void MessageIO::writeWorkDoneToken(rapidjson::Value & param,std::string & workDoneToken){
     if(!workDoneToken.empty()){
-        param.insert({"workDoneToken",workDoneToken});
+        param.AddMember("workDoneToken",rapidjson::StringRef(workDoneToken.c_str()),serverContext->outputJSON.GetAllocator());
     }
 }
+
+bool WorkspaceManager::documentIsOpen(string_ref path){
+    return openDocuments.find(path) != openDocuments.end();
+}
+
+Semantics::SymbolTable::Entry &  WorkspaceManager::getSymbolInfoInDocument(string_ref path, Region &refLoc){
+    Semantics::SymbolTable sym;
+    
+}
+
+
 
 }

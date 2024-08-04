@@ -54,6 +54,11 @@ inline void ASTIdentifier_to_RTID(ASTIdentifier *var,RTID &out){
     out.value = name.getBuffer();
 }
 
+/*
+ Generates runtime code. 
+ (Breaks down complex/nested expressions to optimize runtime.)
+*/
+
 
 void CodeGen::consumeDecl(ASTDecl *stmt){
     if(stmt->type == VAR_DECL){
@@ -87,7 +92,16 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         auto class_decl = (ASTClassDecl *)stmt;
         RTClass cls;
         ASTIdentifier_to_RTID(class_decl->id,cls.name);
-        
+        /// Initial class info write out.
+        genContext->out << &cls;
+        genContext->out << class_decl->fields.size(); 
+        for(auto & f : class_decl->fields){
+            consumeDecl(f);
+        }
+        genContext->out << class_decl->methods.size();
+        for(auto & m : class_decl->methods){
+            consumeDecl(m);
+        }
     }
     else if(stmt->type == COND_DECL){
         ASTConditionalDecl *cond_decl = (ASTConditionalDecl *)stmt;
@@ -151,6 +165,14 @@ StarbytesObject CodeGen::exprToRTInternalObject(ASTExpr *expr){
     return ob;
 }
 
+void flattenObjectExpression(ASTExpr * memberExpr,RTID & id){
+    std::ostringstream ss;
+    ss << memberExpr->leftExpr->id->val << "_" << memberExpr->rightExpr->id->val;
+    auto str_res = ss.str();
+    id.len = str_res.size();
+    str_res.copy(const_cast<char *>(id.value),str_res.size());
+}
+
 
 void CodeGen::consumeStmt(ASTStmt *stmt){
     ASTExpr *expr = (ASTExpr *)stmt;
@@ -181,7 +203,15 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
     }
     else if(stmt->type == MEMBER_EXPR){
         /// Member Expr
-        ///
+        /// Break down expression.
+        /// Object property or instance function
+        if(expr->leftExpr->type == ID_EXPR){
+            RTID id;
+            flattenObjectExpression(expr,id);
+        }
+        else {
+
+        }
         
     }
     else if(stmt->type == IVKE_EXPR){

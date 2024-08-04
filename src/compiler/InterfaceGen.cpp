@@ -1,4 +1,5 @@
 #include "starbytes/compiler/InterfaceGen.h"
+#include "starbytes/compiler/ASTNodes.def"
 #include "starbytes/compiler/Gen.h"
 
 
@@ -40,6 +41,18 @@ void InterfaceGen::consumeDecl(ASTDecl *stmt) {
         case CLASS_DECL : {
             auto node = (ASTClassDecl*)stmt;
             out << KW_CLASS << " " << node->id->val << " " << "{";
+            for(auto & func : node->fields){
+                consumeDecl(func);
+            }
+            for(auto & func : node->methods){
+                consumeDecl(func);
+            }
+            out << "}" << std::endl << std::endl;
+            break;
+        }
+        case INTERFACE_DECL : {
+             auto node = (ASTClassDecl*)stmt;
+            out << KW_INTERFACE << " " << node->id->val << " " << "{";
             for(auto & func : node->methods){
                 consumeDecl(func);
             }

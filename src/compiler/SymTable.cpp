@@ -66,7 +66,12 @@ void importScope(ASTScope **scope,array_ref<std::shared_ptr<ASTScope>> importedM
 }
 
 void importType(ASTType **type,std::istream & in){
-
+    SymbolTableCode code;
+    in.read((char *)&code,sizeof(code));
+    SymTableID id{};
+    in >> id;
+    /// Recrete type (Parent node is not nesccary. Only when code needs to be viewed will it show location)
+    *type = ASTType::Create(id.id,nullptr);
 };
 void exportType(ASTType *type,std::ostream & out){
     SymbolTableCode c = DECLARE_TYPE;

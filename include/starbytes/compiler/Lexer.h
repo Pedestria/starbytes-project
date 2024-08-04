@@ -47,6 +47,7 @@ struct Tok {
         PlusEqual,
         MinusEqual,
         Dot,
+        CommentContent,
         LineCommentBegin,
         BlockCommentBegin,
         BlockCommentEnd,

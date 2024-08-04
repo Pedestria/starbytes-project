@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include "ADT.h"
 
 #ifndef STARBYTES_BASE_CMDLINE_H
 #define STARBYTES_BASE_CMDLINE_H
@@ -10,55 +11,46 @@ namespace starbytes{
     
     namespace cl {
 
-        struct Command;
-        struct Flag;
-
-        typedef enum : int{
-            None,
-            String,
-            Bool,
-            Int
-        } FlagType;
-
-        typedef char FlagTypeNull;
-        #define NULL_FLAG_VAL '\0'
-
-        class FlagBuilder;
-
-        // #define FLAG_BUILDER_FUNC FlagBuilder flag(std::string name,char ch,FlagType type,,CommandBuilder & parentCommand);
-
-        struct CommandBuilder {
-            Command *ptr = nullptr;
-            friend  CommandBuilder command(std::string name);
-            // friend FLAG_BUILDER_FUNC;
+        struct CommandData {
+            std::string name;
+            std::string desc;
+        };
+        struct FlagData {
+            std::string name;
+            std::vector<std::string> aliases;
+            std::string desc;
+            std::string sub;
+            typedef enum : int {
+                FlagDataTypeInt,
+                FlagDataTypeString,
+                FlagDataTypeBool
+            } T;
+            T type;
+            void *data;
         };
 
-        static CommandBuilder NULL_COMMAND= {};
-
-        struct FlagBuilder {
-            Flag * ptr;
-            // friend FLAG_BUILDER_FUNC;
-            friend class CommandBuilder;
+        class Parser {
+            std::vector<CommandData> cmds;
+            std::vector<FlagData> flags;
         public:
-            FlagBuilder & mapVar(bool t);
-            FlagBuilder & mapVar(std::string & t);
-        };
-        
-        CommandBuilder command(std::string name);
+            
 
-        template<class T = FlagTypeNull>
-        FlagBuilder flag(std::string name,char ch = '\0',FlagType type = FlagType::None,T val = NULL_FLAG_VAL,CommandBuilder & parentCommand = cl::NULL_COMMAND){
-            FlagBuilder f;
-            return f;
+            void command(std::string name);
+
+            void option(std::string name,std::string sub);
+
+            void flag(std::string name,int & i,std::string sub);
+            void flag(std::string name,bool & b,std::string sub);
+            void flag(std::string name,std::string & s,std::string sub);
+
+            void alias(std::string name,std::string sub);
+            
+            /**
+            Only Run This Option Once
+            */
+            bool parse(char **args,int argc);
+
         };
-        
-       
-       
-        
-        /**
-        Only Run This Option Once
-        */
-        void parse(char **args,int argc);
     }
     
 };

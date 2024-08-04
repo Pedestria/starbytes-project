@@ -46,13 +46,17 @@ size_t SyntaxA::getTokenStreamWidth(){
         switch (first_token.type) {
             case Tok::BlockCommentBegin : {
                 rc = new Comment();
-                rc->type = Comment::Line;
+                rc->type = Comment::Block;
+                TokRef next = nextTok();
+                while(next.type != Tok::BlockCommentEnd){
+                    rc->val += next.content;
+                }
                 return rc;
                 break;
             }
             case Tok::LineCommentBegin : {
                 rc = new Comment();
-                rc->type = Comment::Block;
+                rc->type = Comment::Line;
                 return rc;
                 break;
             }

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include <istream>
+#include <map>
 
 #include <starbytes/interop.h>
 
@@ -33,18 +34,35 @@ typedef unsigned char RTCode;
 #define CODE_CONDITIONAL 0x0C
 #define CODE_CONDITIONAL_END 0x0D
 #define CODE_RTFUNC_REF 0x0E
+#define CODE_UNARY_OPERATOR 0x0F
+#define CODE_BINARY_OPERATOR 0x10
 
-#define COND_TYPE_IF 0x0
-#define COND_TYPE_ELSE 0x1
-#define COND_TYPE_LOOPIF 0x2
+/// Condtional Type
+#define COND_TYPE_IF 0x0 // if()
+#define COND_TYPE_ELSE 0x1 // else
+#define COND_TYPE_LOOPIF 0x2 // while()
 
+/// Runtime Internal Object Type
+#define RTINTOBJ_STR 0x1 // "Hello World"
+#define RTINTOBJ_ARRAY 0x2 // ["a","b","c"]
+#define RTINTOBJ_DICTIONARY 0x3 // {"a":"b","c":"d"}
+#define RTINTOBJ_BOOL 0x4 // true
+#define RTINTOBJ_NUM 0x5 // 1
 
-#define RTINTOBJ_STR 0x1
-#define RTINTOBJ_ARRAY 0x2
-#define RTINTOBJ_DICTIONARY 0x3
-#define RTINTOBJ_BOOL 0x4
-#define RTINTOBJ_NUM 0x5
+/// Unary Operator Type
 
+#define UNARY_OP_PLUS 0x0 // ++
+#define UNARY_OP_MINUS 0x1 // --
+#define UNARY_OP_NOT 0x2 // !
+
+/// Binary Operator Type
+
+#define BINARY_OP_PLUS 0x00 // +
+#define BINARY_OP_MINUS 0x01 // -
+#define BINARY_OP_PLUS_EQUAL 0x02 // +=
+#define BINARY_MINUS_EQUAL 0x03 // -=
+#define BINARY_EQUAL_EQUAL 0x04 // ==
+#define BINARY_NOT_EQUAL 0x05 // !=
 
 #define RTCODE_STREAM_OBJECT(object) \
 std::ostream & operator <<(std::ostream & os,object * obj); \
@@ -82,8 +100,10 @@ RTCODE_STREAM_OBJECT(RTFuncTemplate)
 
 struct RTClass {
     RTID name;
-    StarbytesClassType module_id;
+    std::map<RTVar,StarbytesObject> properties;
+    std::vector<RTFuncTemplate> methods;
 };
+
 
 RTCODE_STREAM_OBJECT(RTClass)
 

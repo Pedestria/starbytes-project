@@ -10,11 +10,18 @@
 /// Keyword
 #define KW(name) TOK(name)
 
+#define LINE_COMMENT TOK("//")
+#define BODY_COMMENT TOK("/*")
+
 #define TOK_ID(name) TOK(name)
 
 #define TOK_COLON TOK(":")
 #define TOK_QUESTION TOK("?")
 #define TOK_EXCL TOK("!")
+#define TOK_LBRACE TOK("{")
+#define TOK_RBRACE TOK("}")
+#define TOK_LBRACKET TOK("[")
+#define TOK_RBRACKET TOK("]")
 
 #define OP_LCARROT OP(">")
 #define OP_RCARROT OP("<")
@@ -37,6 +44,7 @@
 
 #define KW_IMPORT KW("import")
 #define KW_CLASS KW("class")
+#define KW_INTERFACE KW("interface")
 #define KW_DECL KW("decl")
 #define KW_FUNC KW("func")
 #define KW_RETURN KW("return")

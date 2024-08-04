@@ -27,9 +27,9 @@ namespace starbytes {
         lexer->tokenizeFromIStream(in,tokenStream);
         syntaxA->setTokenStream(tokenStream);
         // diagnosticHandler->setCodeViewSrc(codeViewDoc);
-//        if(astConsumer.acceptsSymbolTableContext()){
-//            astConsumer.consumeSTableContext(&moduleParseContext.sTableContext);
-//        };
+       if(astConsumer.acceptsSymbolTableContext()){
+           astConsumer.consumeSTableContext(&moduleParseContext.sTableContext);
+       };
         ASTStmt *stmt;
         while((stmt = syntaxA->nextStatement()) != nullptr){
             auto check  = semanticA->checkSymbolsForStmt(stmt,moduleParseContext.sTableContext);

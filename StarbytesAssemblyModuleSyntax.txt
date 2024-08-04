@@ -44,11 +44,12 @@ ivk_fnc("Foo",{&crt_stb_num(1),&crt_stb_num(2)})
 
 
 clfnc = Call Function (// Reference to function variable,// Parameters)
+clclsfnc = Call Class Function
 crtcls = Create Class (// Name,//Properties,//Methods)
 crtvr = Create Variable (// Name,//Immutable ?,//Loose ?)
 stvr = Set Variable (// Variable to refer,// Class instance to set)
-crtcls_prty = Create Class Property(// Name,//Immutable ?,//Loose ?)
-rfcls_prty = Reference Class Property(// Name)
+crtobj_prty = Create Object Property(// Name,//Immutable ?,//Loose ?)
+rfobj_prty = Reference Object Property(// Name)
 rfvr = Reference Variable (//Name)
 crt_stb_num = Create Starbytes Number (//Type,//Val)
 crt_stb_str = Create Starbytes String (//Val)
@@ -70,6 +71,8 @@ rfvr = 06
 
 end = End Program
 end = 00
+
+
 
 // lang : starbytes-asm
 

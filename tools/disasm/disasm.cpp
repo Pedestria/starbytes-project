@@ -1,11 +1,11 @@
 
 
-#include "starbytes/AST/ASTNodes.def"
-#include "starbytes/RT/RTCode.h"
-#include "starbytes/Base/ADT.h"
+#include "starbytes/compiler/ASTNodes.def"
+#include "starbytes/compiler/RTCode.h"
+#include "starbytes/base/ADT.h"
 #include <iostream>
 #include <fstream>
-#include "starbytes/Base/Diagnostic.h"
+#include "starbytes/base/Diagnostic.h"
 
 namespace starbytes {
 
@@ -167,12 +167,12 @@ public:
 
 // llvm::cl::alias f("f",llvm::cl::aliasopt(file),llvm::cl::desc("An alias for the option --file"),llvm::cl::NotHidden);
 
-};
+// };
 
 int main(int argc,const char *argv[]){
     // llvm::InitLLVM _llvm(argc,argv);
         
-
+    bool okay = true;
     // auto okay = llvm::cl::ParseCommandLineOptions(argc,argv);
 
     if(!okay){

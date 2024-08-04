@@ -35,6 +35,10 @@ void StreamLogger::color(unsigned color){
     #endif
 }
 
+void StreamLogger::floatPoint(const float &f){
+    out << std::to_string(f);
+}
+
 void StreamLogger::string(string_ref s){
     out.write(s.getBuffer(),s.size());
 }

@@ -3,7 +3,7 @@
 #include <fstream>
 #include <future>
 
-#include <starbytes/Parser/Parser.h>
+#include <starbytes/compiler/Parser.h>
 
 #ifndef STARBYTES_LSP_SERVERMAIN_H
 #define STARBYTES_LSP_SERVERMAIN_H
@@ -26,7 +26,11 @@ class Server {
     
   std::ostream & out;
 
+  std::shared_ptr<ThreadedServerContext> serverContext;
+
   WorkspaceManager workspaceManager;
+
+  MessageIO messageIO;
 
   std::vector<std::thread> threadsInFlight;
 

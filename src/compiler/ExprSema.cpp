@@ -4,7 +4,17 @@
 namespace starbytes {
 
  #define PRINT_FUNC_ID "print"
+  #define EXIT_FUNC_ID "exit"
+
 auto print_func_type = ASTType::Create(PRINT_FUNC_ID,nullptr);
+auto exit_func_type = ASTType::Create(EXIT_FUNC_ID,nullptr);
+
+ASTType *isBuiltinType(ASTIdentifier *id){
+    if(id->val == PRINT_FUNC_ID){
+        return print_func_type;
+    };
+}
+
 
 ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                                        Semantics::STableContext & symbolTableContext,
@@ -14,14 +24,15 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
             case ID_EXPR : {
                 ASTIdentifier *id_ = expr_to_eval->id;
                 SemanticsContext ctxt {errStream,expr_to_eval};
-                
+
+                auto _is_builtin_type = isBuiltinType(id_);
                 /// 1. Check and see if id is a builtin func.
-                if(id_->val == PRINT_FUNC_ID){
+                if(_is_builtin_type){
                     id_->type = ASTIdentifier::Function;
-                    return print_func_type;
+                    return _is_builtin_type;
                 };
 
-                /// 1. Check if scope context has args.. (In Function Context)
+                /// 2. Check if scope context has args.. (In Function Context)
 
                 if(scopeContext.scope->type == ASTScope::Function){
                     for(auto & __arg : *scopeContext.args){
@@ -33,7 +44,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     
                 };
 
-                /// 2. Else, do normal symbol matching.
+                /// 3. Else, do normal symbol matching.
 
                 auto symbol_ = symbolTableContext.findEntry(id_->val,ctxt,scopeContext.scope);
                 // std::cout << "SYMBOL_PTR:" << symbol_ << std::endl;

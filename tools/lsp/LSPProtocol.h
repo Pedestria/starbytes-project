@@ -3,8 +3,9 @@
 #include <rapidjson/writer.h>
 #include <rapidjson/reader.h>
 #include <rapidjson/document.h>
-#include <starbytes/AST/AST.h>
-#include <starbytes/Parser/Parser.h>
+
+#include <starbytes/compiler/AST.h>
+#include <starbytes/compiler/Parser.h>
 #include <chrono>
 #include <fstream>
 
@@ -26,11 +27,6 @@ DECL_LSP_METHOD Exit;
 DECL_LSP_METHOD CancelRequest;
 
 
-void parseTextDocumentPositionParams(rapidjson::Value & param,Region & loc,std::string & doc);
-void parsePartialResultToken(rapidjson::Value * param,std::string & partialToken);
-void parseWorkDoneToken(rapidjson::Value * param,std::string & workDoneToken);
-void writePartialResultToken(rapidjson::Value & param,std::string & partialToken);
-void writeWorkDoneToken(rapidjson::Value & param,std::string & workDoneToken);
 
 
 struct MessageInfo {
@@ -81,30 +77,65 @@ public:
     void consumeSTableContext(Semantics::STableContext *table) override;
 };
 
+/** Context for managing JSON IO in the server*/
+struct ThreadedServerContext {
+
+    rapidjson::Document inputJSON;
+    
+    rapidjson::Document outputJSON;
+
+     void resetInputJson();
+
+    void resetOutputJson();
+};
+
+class MessageIO {
+    std::shared_ptr<ThreadedServerContext> serverContext;
+public:
+
+    void parseTextDocumentPositionParams(rapidjson::Value & param,Region & loc,std::string & doc);
+
+    void parsePartialResultToken(rapidjson::Value * param,std::string & partialToken);
+
+    void parseWorkDoneToken(rapidjson::Value * param,std::string & workDoneToken);
+
+    void writePartialResultToken(rapidjson::Value & param,std::string & partialToken);
+
+    void writeWorkDoneToken(rapidjson::Value & param,std::string & workDoneToken);
+
+    MessageIO(std::shared_ptr<ThreadedServerContext> & serverContext);
+
+};
+
+
+
 struct DocumentEntry {
     int version;
     std::ifstream is;
 };
 
+
+
 class WorkspaceManager {
     string_map<DocumentEntry> openDocuments;
     std::unique_ptr<Parser> parser;
     std::unique_ptr<ASTLocker> locker;
+
+    
+
     
     void _tryParse(std::istream & in);
 public:
+
+
     bool fuzzyMatchInDocumentAtPosition(string_ref path,Region &loc,string_map<LSPSymbolType> &listOut);
     Semantics::SymbolTable::Entry & getSymbolInfoInDocument(string_ref path,Region &refLoc);
     bool openDocument(string_ref path,Region &stopPos);
     bool documentIsOpen(string_ref path);
     void closeDocument(string_ref path);
 };
-/** Context for managing JSON IO in the server*/
-struct ThreadedServerContext {
-    rapidjson::Document inputJSON;
-    rapidjson::Document outputJSON;
 
-};
+
 
 
 };
