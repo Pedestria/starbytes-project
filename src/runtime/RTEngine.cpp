@@ -319,7 +319,7 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
     else if(code == CODE_RTCLASS_DEF){
         RTClass _class;
         in >> &_class;
-        classes.push_back(_class);
+        classes.emplace_back(std::move(_class));
     }
 }
 

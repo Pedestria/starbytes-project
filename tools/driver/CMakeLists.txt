@@ -1,9 +1,0 @@
-add_starbytes_tool(
-    NAME
-    "starbytes"
-    FILES 
-    "main.cpp"
-    INCLUDE_LIB 
-    DEPENDENCIES 
-    ${STARBYTES_ALL_LIBS}
-)

@@ -32,6 +32,11 @@ namespace starbytes{
         class Parser {
             std::vector<CommandData> cmds;
             std::vector<FlagData> flags;
+
+            void logHelp();
+
+            void checkFlags(bool underCmd,string_ref sub);
+
         public:
             
 

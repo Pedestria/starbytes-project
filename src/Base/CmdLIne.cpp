@@ -8,7 +8,6 @@
 
 namespace starbytes::cl {
    
-    
 
     void splitResultFromFlagIfNeeded(string_ref & origin,string_ref & result){
         auto eqs_it = std::find(origin.begin(),origin.end(),'=');
@@ -102,6 +101,26 @@ namespace starbytes::cl {
         data.data = &s;
         flags.push_back(std::move(data));
     }
+
+    void Parser::checkFlags(bool underCmd,string_ref sub){
+        
+    }
+
+    void Parser::logHelp(){
+        auto out = StreamLogger(std::cout);
+        out.open();
+        out.string("PROG_NAME");
+        out.lineBreak(3);
+        out.string("COMMANDS:");
+        out.lineBreak(2);
+        for(auto & _cmd: cmds){
+            out.string(_cmd.name);
+            out.string(" - ");
+            out.string(_cmd.desc);
+            out.lineBreak(1);
+        }
+        out.close();
+    }
     
     //// Parses cmd line options
     /// Allows for flag options: `--flag <value>` or `--flag=<value>`
@@ -109,7 +128,8 @@ namespace starbytes::cl {
 
          auto checkForCmd = cmds.size() > 0;
          int startIndex = checkForCmd? 1 : 0;
-
+         
+         std::string cmdName;
          auto noCmdFound = true;
 
         if(checkForCmd){
@@ -118,6 +138,8 @@ namespace starbytes::cl {
             for(auto & _cmd: cmds){
                 if(_cmd.name.compare(cmd.getBuffer()) == 0){
                     noCmdFound = false;
+                    cmdName = args[startIndex];
+                    break;
                 }
             }
 
@@ -132,6 +154,11 @@ namespace starbytes::cl {
 
          for(unsigned i = startIndex;i++;argc > i){
              string_ref current_arg(args[i]);
+
+             if(current_arg == "--help" || current_arg == "-help") {
+                logHelp();
+                return false;
+             }
 
              string_ref edited_arg, result;
 
@@ -151,7 +178,12 @@ namespace starbytes::cl {
             }
             // Search for the flag on the subcommand specified 
             if(!noCmdFound){
-                
+                for(auto & _cmd: cmds){
+                    if(_cmd.name == cmdName){
+
+                        break;
+                    }
+                }
             }
             else {
 

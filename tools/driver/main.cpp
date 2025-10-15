@@ -47,12 +47,14 @@ int main(int argc,const char *argv[]){
 
     std::string s;
 
-    auto m = starbytes::cl::flag("modulename",'m').mapVar(s);
+    starbytes::cl::Parser parser;
 
-    auto compileCmd = starbytes::cl::command("compile");
+    parser.flag("modulename",s,"main");
+
+    parser.command("compile");
+
+    auto run = parser.parse((char **)argv,argc);
     
-    auto run = true;
-
     std::string script;
     
     if(run){
@@ -98,7 +100,7 @@ int main(int argc,const char *argv[]){
             interp->exec(rtcode_in);
         };
     };
-    
+    starbytes::stdDiagnosticHandler->logAll();
     
     return 0;
 }

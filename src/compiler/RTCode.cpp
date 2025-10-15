@@ -75,7 +75,7 @@ namespace Runtime {
 
     RTCODE_STREAM_OBJECT_IN_IMPL(RTClass){
         is >> &obj->name;
-        is.read((char *)&obj->module_id,sizeof(size_t));
+        // is.read((char *)&obj->module_id,sizeof(size_t));
         return is;
     }
 
@@ -83,7 +83,7 @@ namespace Runtime {
         RTCode code = CODE_RTCLASS_DEF;
         os.write((char *)&code,sizeof(RTCode));
         os << &obj->name;
-        os.write((char *)&obj->module_id,sizeof(size_t));
+        // os.write((char *)&obj->module_id,sizeof(size_t));
         return os;
     }
 
