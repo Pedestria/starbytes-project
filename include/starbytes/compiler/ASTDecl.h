@@ -63,6 +63,7 @@ namespace starbytes {
         std::map<ASTIdentifier *,ASTType *> params;
         ASTBlockStmt *blockStmt = nullptr;
         bool declarationOnly = false;
+        bool isLazy = false;
     };
 
     class ASTConstructorDecl : public ASTDecl {

@@ -143,12 +143,24 @@ static std::string emittedNameForScopeMember(ModuleGenContext *context,ASTExpr *
 }
 
 static bool unaryOpCodeFromSymbol(const std::string &op,RTCode &out){
+    if(op == "+"){
+        out = UNARY_OP_PLUS;
+        return true;
+    }
     if(op == "-"){
         out = UNARY_OP_MINUS;
         return true;
     }
     if(op == "!"){
         out = UNARY_OP_NOT;
+        return true;
+    }
+    if(op == "~"){
+        out = UNARY_OP_BITWISE_NOT;
+        return true;
+    }
+    if(op == "await"){
+        out = UNARY_OP_AWAIT;
         return true;
     }
     return false;
@@ -205,6 +217,26 @@ static bool binaryOpCodeFromSymbol(const std::string &op,RTCode &out){
     }
     if(op == "||"){
         out = BINARY_LOGIC_OR;
+        return true;
+    }
+    if(op == "&"){
+        out = BINARY_BITWISE_AND;
+        return true;
+    }
+    if(op == "|"){
+        out = BINARY_BITWISE_OR;
+        return true;
+    }
+    if(op == "^"){
+        out = BINARY_BITWISE_XOR;
+        return true;
+    }
+    if(op == "<<"){
+        out = BINARY_SHIFT_LEFT;
+        return true;
+    }
+    if(op == ">>"){
+        out = BINARY_SHIFT_RIGHT;
         return true;
     }
     return false;
@@ -321,6 +353,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         ASTIdentifier *func_id = func_node->funcId;
         ASTIdentifier_to_RTID(func_id,funcTemplate.name);
         funcTemplate.attributes = convertAttributes(func_node->attributes);
+        funcTemplate.isLazy = func_node->isLazy;
         for(auto & param_pair : func_node->params){
             RTID param_id;
             ASTIdentifier_to_RTID(param_pair.first,param_id);
@@ -362,6 +395,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             RTFuncTemplate methodTemplate;
             ASTIdentifier_to_RTID(methodDecl->funcId,methodTemplate.name);
             methodTemplate.attributes = convertAttributes(methodDecl->attributes);
+            methodTemplate.isLazy = methodDecl->isLazy;
             for(auto &paramPair : methodDecl->params){
                 RTID paramId;
                 ASTIdentifier_to_RTID(paramPair.first,paramId);
@@ -390,6 +424,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             RTFuncTemplate runtimeMethod;
             runtimeMethod.name = makeOwnedRTID(mangleClassMethodName(className,methodDecl->funcId->val));
             runtimeMethod.attributes = convertAttributes(methodDecl->attributes);
+            runtimeMethod.isLazy = methodDecl->isLazy;
             for(auto &paramPair : methodDecl->params){
                 RTID paramId;
                 ASTIdentifier_to_RTID(paramPair.first,paramId);
@@ -635,6 +670,17 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
     }
     else if(stmt->type == BINARY_EXPR){
         auto op = expr->oprtr_str.value_or("");
+        if(op == KW_IS){
+            if(!expr->leftExpr || !expr->runtimeTypeCheckName.has_value()){
+                return;
+            }
+            RTCode code = CODE_RTTYPECHECK;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            consumeStmt(expr->leftExpr);
+            RTID typeId = makeOwnedRTID(expr->runtimeTypeCheckName.value());
+            genContext->out << &typeId;
+            return;
+        }
         RTCode binaryCode = BINARY_OP_PLUS;
         if(!binaryOpCodeFromSymbol(op,binaryCode)){
             return;
@@ -668,6 +714,21 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
             }
             else if(assignOp == "%="){
                 binaryOp = "%";
+            }
+            else if(assignOp == "&="){
+                binaryOp = "&";
+            }
+            else if(assignOp == "|="){
+                binaryOp = "|";
+            }
+            else if(assignOp == "^="){
+                binaryOp = "^";
+            }
+            else if(assignOp == "<<="){
+                binaryOp = "<<";
+            }
+            else if(assignOp == ">>="){
+                binaryOp = ">>";
             }
             else {
                 return;

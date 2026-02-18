@@ -370,8 +370,17 @@ namespace starbytes::Syntax {
     };
 
     ASTExpr *SyntaxA::evalExpr(TokRef first_token,std::shared_ptr<ASTScope> parentScope){
+        auto tokAt = [&](size_t index) -> Tok {
+            if(index >= token_stream.size()){
+                return token_stream[token_stream.size() - 1];
+            }
+            return token_stream[index];
+        };
+
         auto parseUnary = [&](auto &&self,Tok tok) -> ASTExpr * {
-            if(tok.type == Tok::Minus || tok.type == Tok::Exclamation){
+            bool isAwaitKeyword = tok.type == Tok::Keyword && tok.content == KW_AWAIT;
+            if(tok.type == Tok::Plus || tok.type == Tok::Minus || tok.type == Tok::Exclamation
+               || tok.type == Tok::BitwiseNOT || isAwaitKeyword){
                 Tok opTok = tok;
                 tok = nextTok();
                 auto *operand = self(self,tok);
@@ -421,17 +430,54 @@ namespace starbytes::Syntax {
             return expr;
         };
 
-        auto parseRelational = [&](auto &&self,Tok tok) -> ASTExpr * {
+        auto parseShift = [&](auto &&self,Tok tok) -> ASTExpr * {
             auto *expr = parseAdditive(parseAdditive,tok);
             if(!expr){
                 return nullptr;
             }
             tok = token_stream[privTokIndex];
-            while(tok.type == Tok::LessThan || tok.type == Tok::LessEqual
-                  || tok.type == Tok::GreaterThan || tok.type == Tok::GreaterEqual){
+            while(true){
+                bool isShiftLeft = tok.type == Tok::LessThan && tokAt(privTokIndex + 1).type == Tok::LessThan;
+                bool isShiftRight = tok.type == Tok::GreaterThan && tokAt(privTokIndex + 1).type == Tok::GreaterThan;
+                bool isShiftAssign = (isShiftLeft || isShiftRight) && tokAt(privTokIndex + 2).type == Tok::Equal;
+                if(!isShiftLeft && !isShiftRight){
+                    break;
+                }
+                if(isShiftAssign){
+                    break;
+                }
                 Tok opTok = tok;
+                opTok.content = isShiftLeft? "<<" : ">>";
+                tok = nextTok();
                 tok = nextTok();
                 auto *rhs = parseAdditive(parseAdditive,tok);
+                if(!rhs){
+                    return nullptr;
+                }
+                expr = makeBinaryExpr(opTok,expr,rhs);
+                tok = token_stream[privTokIndex];
+            }
+            return expr;
+        };
+
+        auto parseRelational = [&](auto &&self,Tok tok) -> ASTExpr * {
+            auto *expr = parseShift(parseShift,tok);
+            if(!expr){
+                return nullptr;
+            }
+            tok = token_stream[privTokIndex];
+            while(true){
+                bool lessRel = tok.type == Tok::LessThan && tokAt(privTokIndex + 1).type != Tok::LessThan;
+                bool greaterRel = tok.type == Tok::GreaterThan && tokAt(privTokIndex + 1).type != Tok::GreaterThan;
+                bool isRelOp = lessRel || tok.type == Tok::LessEqual
+                    || greaterRel || tok.type == Tok::GreaterEqual
+                    || (tok.type == Tok::Keyword && tok.content == KW_IS);
+                if(!isRelOp){
+                    break;
+                }
+                Tok opTok = tok;
+                tok = nextTok();
+                auto *rhs = parseShift(parseShift,tok);
                 if(!rhs){
                     return nullptr;
                 }
@@ -460,8 +506,65 @@ namespace starbytes::Syntax {
             return expr;
         };
 
-        auto parseLogicAnd = [&](auto &&self,Tok tok) -> ASTExpr * {
+        auto parseBitwiseAnd = [&](auto &&self,Tok tok) -> ASTExpr * {
             auto *expr = parseEquality(parseEquality,tok);
+            if(!expr){
+                return nullptr;
+            }
+            tok = token_stream[privTokIndex];
+            while(tok.type == Tok::BitwiseAND && tokAt(privTokIndex + 1).type != Tok::Equal){
+                Tok opTok = tok;
+                tok = nextTok();
+                auto *rhs = parseEquality(parseEquality,tok);
+                if(!rhs){
+                    return nullptr;
+                }
+                expr = makeBinaryExpr(opTok,expr,rhs);
+                tok = token_stream[privTokIndex];
+            }
+            return expr;
+        };
+
+        auto parseBitwiseXor = [&](auto &&self,Tok tok) -> ASTExpr * {
+            auto *expr = parseBitwiseAnd(parseBitwiseAnd,tok);
+            if(!expr){
+                return nullptr;
+            }
+            tok = token_stream[privTokIndex];
+            while(tok.type == Tok::BitwiseXOR && tokAt(privTokIndex + 1).type != Tok::Equal){
+                Tok opTok = tok;
+                tok = nextTok();
+                auto *rhs = parseBitwiseAnd(parseBitwiseAnd,tok);
+                if(!rhs){
+                    return nullptr;
+                }
+                expr = makeBinaryExpr(opTok,expr,rhs);
+                tok = token_stream[privTokIndex];
+            }
+            return expr;
+        };
+
+        auto parseBitwiseOr = [&](auto &&self,Tok tok) -> ASTExpr * {
+            auto *expr = parseBitwiseXor(parseBitwiseXor,tok);
+            if(!expr){
+                return nullptr;
+            }
+            tok = token_stream[privTokIndex];
+            while(tok.type == Tok::BitwiseOR && tokAt(privTokIndex + 1).type != Tok::Equal){
+                Tok opTok = tok;
+                tok = nextTok();
+                auto *rhs = parseBitwiseXor(parseBitwiseXor,tok);
+                if(!rhs){
+                    return nullptr;
+                }
+                expr = makeBinaryExpr(opTok,expr,rhs);
+                tok = token_stream[privTokIndex];
+            }
+            return expr;
+        };
+
+        auto parseLogicAnd = [&](auto &&self,Tok tok) -> ASTExpr * {
+            auto *expr = parseBitwiseOr(parseBitwiseOr,tok);
             if(!expr){
                 return nullptr;
             }
@@ -504,18 +607,50 @@ namespace starbytes::Syntax {
                 return nullptr;
             }
             tok = token_stream[privTokIndex];
-            bool isAssignment = tok.type == Tok::Equal
-                || tok.type == Tok::PlusEqual
-                || tok.type == Tok::MinusEqual
-                || tok.type == Tok::AsteriskEqual
-                || tok.type == Tok::FSlashEqual
-                || tok.type == Tok::PercentEqual;
-            if(!isAssignment){
+            std::string assignmentOp;
+            size_t assignmentTokCount = 0;
+            if(tok.type == Tok::Equal
+               || tok.type == Tok::PlusEqual
+               || tok.type == Tok::MinusEqual
+               || tok.type == Tok::AsteriskEqual
+               || tok.type == Tok::FSlashEqual
+               || tok.type == Tok::PercentEqual){
+                assignmentOp = tok.content;
+                assignmentTokCount = 1;
+            }
+            else if((tok.type == Tok::BitwiseAND || tok.type == Tok::BitwiseOR || tok.type == Tok::BitwiseXOR)
+                    && tokAt(privTokIndex + 1).type == Tok::Equal){
+                assignmentOp = tok.content + "=";
+                assignmentTokCount = 2;
+            }
+            else if(tok.type == Tok::LessThan && tokAt(privTokIndex + 1).type == Tok::LessThan
+                    && tokAt(privTokIndex + 2).type == Tok::Equal){
+                assignmentOp = "<<=";
+                assignmentTokCount = 3;
+            }
+            else if(tok.type == Tok::LessThan && tokAt(privTokIndex + 1).type == Tok::LessEqual){
+                assignmentOp = "<<=";
+                assignmentTokCount = 2;
+            }
+            else if(tok.type == Tok::GreaterThan && tokAt(privTokIndex + 1).type == Tok::GreaterThan
+                    && tokAt(privTokIndex + 2).type == Tok::Equal){
+                assignmentOp = ">>=";
+                assignmentTokCount = 3;
+            }
+            else if(tok.type == Tok::GreaterThan && tokAt(privTokIndex + 1).type == Tok::GreaterEqual){
+                assignmentOp = ">>=";
+                assignmentTokCount = 2;
+            }
+
+            if(assignmentTokCount == 0){
                 return lhs;
             }
-            Tok opTok = tok;
-            tok = nextTok();
-            auto *rhs = self(self,tok);
+
+            Tok rhsTok = tok;
+            for(size_t i = 0;i < assignmentTokCount;++i){
+                rhsTok = nextTok();
+            }
+            auto *rhs = self(self,rhsTok);
             if(!rhs){
                 return nullptr;
             }
@@ -523,7 +658,7 @@ namespace starbytes::Syntax {
             assignNode->type = ASSIGN_EXPR;
             assignNode->leftExpr = lhs;
             assignNode->rightExpr = rhs;
-            assignNode->oprtr_str = opTok.content;
+            assignNode->oprtr_str = assignmentOp;
             assignNode->codeRegion = lhs->codeRegion;
             return assignNode;
         };

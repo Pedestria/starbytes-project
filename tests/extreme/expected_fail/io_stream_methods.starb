@@ -1,0 +1,19 @@
+import IO
+
+decl root = ".starbytes/extreme-suite-fail"
+decl textPath = root + "/sample.txt"
+
+secure(decl mk = createDirectory(root,true)) catch {}
+secure(decl wt = writeText(textPath,"alpha\nbeta","utf-8")) catch {}
+secure(decl tf = openText(textPath,"r+","utf-8","\n",-1)) catch (error:String) {
+    print("IO-STREAM-OPEN-CATCH")
+    print(error)
+}
+print(tf.readable())
+secure(decl line = tf.readLine()) catch {
+    print("IO-STREAM-READLINE-CATCH")
+}
+print(line)
+secure(decl closeTextOk = tf.close()) catch {
+    print("IO-STREAM-CLOSE-CATCH")
+}

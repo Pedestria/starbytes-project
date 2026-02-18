@@ -211,6 +211,10 @@ namespace Runtime {
                 }
                 break;
             }
+            case CODE_RTTYPECHECK:
+                skipExpr(is);
+                skipRTIDPayload(is);
+                break;
             default:
                 break;
         }
@@ -240,6 +244,9 @@ namespace Runtime {
             skipRTIDPayload(is);
             --argCount;
         }
+        bool isLazy = false;
+        is.read((char *)&isLazy,sizeof(isLazy));
+        (void)isLazy;
         auto checkpoint = is.tellg();
         RTCode code = CODE_MODULE_END;
         is.read((char *)&code,sizeof(RTCode));
@@ -450,6 +457,7 @@ namespace Runtime {
             obj->argsTemplate.push_back(std::move(id));
             --argCount;
         };
+        is.read((char *)&obj->isLazy,sizeof(obj->isLazy));
         is.read((char *)&obj->blockByteSize,sizeof(obj->blockByteSize));
         auto checkpoint = is.tellg();
         RTCode code = CODE_MODULE_END;
@@ -479,6 +487,7 @@ namespace Runtime {
         for(auto & arg : obj->argsTemplate){
             os << &arg;
         };
+        os.write((char *)&obj->isLazy,sizeof(obj->isLazy));
         os.write((char *)&obj->blockByteSize,sizeof(obj->blockByteSize));
         return os;
     }

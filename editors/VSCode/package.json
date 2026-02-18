@@ -1,7 +1,7 @@
 {
     "name": "topperalex.starbytes",
     "displayName": "Starbytes Extension For VSCode",
-    "version": "0.0.0",
+    "version": "0.5.0",
     "activationEvents": [
         "onLanguage:starbytes",
         "onLanguage:starbytes-project"

@@ -12,6 +12,7 @@ namespace starbytes {
     ASTType * FLOAT_TYPE = ASTType::Create("Float",nullptr,false);
     ASTType * REGEX_TYPE = ASTType::Create("Regex",nullptr,false);
     ASTType * ANY_TYPE = ASTType::Create("Any",nullptr,false);
+    ASTType * TASK_TYPE = ASTType::Create("Task",nullptr,false);
 
     ASTType *ASTType::Create(string_ref name,ASTStmt *parentNode,bool isPlaceholder,bool isAlias){
         auto obj = new ASTType();

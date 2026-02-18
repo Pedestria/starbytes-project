@@ -11,7 +11,9 @@ bool isBooleanLiteral(string_ref str){
 bool isKeyword(string_ref str){
     return (str == KW_DECL) || (str == KW_IMUT) || (str == KW_IMPORT)
     || (str == KW_FUNC) || (str == KW_IF) || (str == KW_ELIF) || (str == KW_ELSE) || (str == KW_RETURN)
-    || (str == KW_CLASS) || (str == KW_INTERFACE) || (str == KW_FOR) || (str == KW_WHILE)
+    || (str == KW_CLASS) || (str == KW_STRUCT) || (str == KW_INTERFACE) || (str == KW_ENUM)
+    || (str == KW_LAZY) || (str == KW_AWAIT) || (str == KW_IS)
+    || (str == KW_FOR) || (str == KW_WHILE)
     || (str == KW_SECURE) || (str == KW_CATCH)
     || (str == KW_NEW) || (str == KW_SCOPE)
     || (str == KW_DEF);
@@ -319,9 +321,15 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 PUSH_CHAR(c);
                 c = aheadChar();
                 if(c == '='){
-                    PUSH_CHAR(c);
-                    pushToken(Tok::LessEqual);
-                    INCREMENT_TO_NEXT_CHAR;
+                    bool partOfShiftAssign = !tokStreamRef.empty() && tokStreamRef.back().type == Tok::LessThan;
+                    if(partOfShiftAssign){
+                        pushToken(Tok::LessThan);
+                    }
+                    else {
+                        PUSH_CHAR(c);
+                        pushToken(Tok::LessEqual);
+                        INCREMENT_TO_NEXT_CHAR;
+                    }
                 }
                 else {
                     pushToken(Tok::LessThan);
@@ -332,9 +340,15 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 PUSH_CHAR(c);
                 c = aheadChar();
                 if(c == '='){
-                    PUSH_CHAR(c);
-                    pushToken(Tok::GreaterEqual);
-                    INCREMENT_TO_NEXT_CHAR;
+                    bool partOfShiftAssign = !tokStreamRef.empty() && tokStreamRef.back().type == Tok::GreaterThan;
+                    if(partOfShiftAssign){
+                        pushToken(Tok::GreaterThan);
+                    }
+                    else {
+                        PUSH_CHAR(c);
+                        pushToken(Tok::GreaterEqual);
+                        INCREMENT_TO_NEXT_CHAR;
+                    }
                 }
                 else {
                     pushToken(Tok::GreaterThan);
@@ -365,6 +379,16 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 else {
                     pushToken(Tok::BitwiseOR);
                 }
+                break;
+            }
+            case '^': {
+                PUSH_CHAR(c);
+                pushToken(Tok::BitwiseXOR);
+                break;
+            }
+            case '~': {
+                PUSH_CHAR(c);
+                pushToken(Tok::BitwiseNOT);
                 break;
             }
             case '?': {

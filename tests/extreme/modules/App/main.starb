@@ -1,0 +1,11 @@
+import Util
+import Time
+
+print(inc(41))
+
+secure(decl tz = timezoneUTC()) catch (error:String) {
+    print("APP-TIME-CATCH")
+    print(error)
+}
+print(tz.id())
+print("APP-MODULE-OK")

@@ -1,0 +1,4 @@
+import ExternalLib
+
+print(extlibValue())
+print("MODPATH-OK")

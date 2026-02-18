@@ -46,6 +46,7 @@ typedef unsigned char RTCode;
 #define CODE_RTINDEX_GET 0x18
 #define CODE_RTINDEX_SET 0x19
 #define CODE_RTDICT_LITERAL 0x1A
+#define CODE_RTTYPECHECK 0x1B
 
 /// Condtional Type
 #define COND_TYPE_IF 0x0 // if()
@@ -61,9 +62,11 @@ typedef unsigned char RTCode;
 
 /// Unary Operator Type
 
-#define UNARY_OP_PLUS 0x0 // ++
-#define UNARY_OP_MINUS 0x1 // --
+#define UNARY_OP_PLUS 0x0 // +
+#define UNARY_OP_MINUS 0x1 // -
 #define UNARY_OP_NOT 0x2 // !
+#define UNARY_OP_AWAIT 0x3 // await
+#define UNARY_OP_BITWISE_NOT 0x4 // ~
 
 /// Binary Operator Type
 
@@ -80,6 +83,11 @@ typedef unsigned char RTCode;
 #define BINARY_GREATER_EQUAL 0x0A // >=
 #define BINARY_LOGIC_AND 0x0B // &&
 #define BINARY_LOGIC_OR 0x0C // ||
+#define BINARY_BITWISE_AND 0x0D // &
+#define BINARY_BITWISE_OR 0x0E // |
+#define BINARY_BITWISE_XOR 0x0F // ^
+#define BINARY_SHIFT_LEFT 0x10 // <<
+#define BINARY_SHIFT_RIGHT 0x11 // >>
 
 #define RTCODE_STREAM_OBJECT(object) \
 std::ostream & operator <<(std::ostream & os,object * obj); \
@@ -132,6 +140,7 @@ struct RTFuncTemplate {
     unsigned invocations = 0;
     std::vector<RTID> argsTemplate;
     std::vector<RTAttribute> attributes;
+    bool isLazy = false;
     size_t blockByteSize = 0;
     /// Position of CODE_RTBLOCK_BEGIN
     std::istream::pos_type block_start_pos;

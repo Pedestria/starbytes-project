@@ -407,6 +407,10 @@ static bool isNumericType(ASTType *type){
     return type && (type->nameMatches(INT_TYPE) || type->nameMatches(FLOAT_TYPE));
 }
 
+static bool isIntType(ASTType *type){
+    return type && type->nameMatches(INT_TYPE);
+}
+
 static bool isStringType(ASTType *type){
     return type && type->nameMatches(STRING_TYPE);
 }
@@ -421,6 +425,19 @@ static bool isDictType(ASTType *type){
 
 static bool isArrayType(ASTType *type){
     return type && type->nameMatches(ARRAY_TYPE);
+}
+
+static bool isTaskType(ASTType *type){
+    return type && type->nameMatches(TASK_TYPE);
+}
+
+static ASTType *makeTaskType(ASTType *innerType,ASTStmt *node){
+    if(!innerType){
+        return nullptr;
+    }
+    auto *taskType = ASTType::Create(TASK_TYPE->getName(),node,false,false);
+    taskType->addTypeParam(cloneTypeNode(innerType,node));
+    return taskType;
 }
 
 static ASTType *promoteNumericType(ASTType *lhs,ASTType *rhs,ASTStmt *node){
@@ -463,6 +480,14 @@ static ASTType *inferBinaryResultType(ASTExpr *expr,
             return nullptr;
         }
         return numericType;
+    }
+
+    if(op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>"){
+        if(isIntType(lhs) && isIntType(rhs)){
+            return INT_TYPE;
+        }
+        errStream.push(SemanticADiagnostic::create("Bitwise and shift operators require Int operands.",expr,Diagnostic::Error));
+        return nullptr;
     }
 
     if(op == "==" || op == "!="){
@@ -683,6 +708,14 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 }
                 operandType = normalizeType(operandType);
                 auto op = expr_to_eval->oprtr_str.value_or("");
+                if(op == "+"){
+                    if(!isNumericType(operandType)){
+                        errStream.push(SemanticADiagnostic::create("Unary `+` requires numeric operand.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    type = operandType;
+                    break;
+                }
                 if(op == "-"){
                     if(!isNumericType(operandType)){
                         errStream.push(SemanticADiagnostic::create("Unary `-` requires numeric operand.",expr_to_eval,Diagnostic::Error));
@@ -699,6 +732,26 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     type = BOOL_TYPE;
                     break;
                 }
+                if(op == "~"){
+                    if(!isIntType(operandType)){
+                        errStream.push(SemanticADiagnostic::create("Unary `~` requires Int operand.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    type = INT_TYPE;
+                    break;
+                }
+                if(op == "await"){
+                    if(!isTaskType(operandType)){
+                        errStream.push(SemanticADiagnostic::create("`await` requires a Task value.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    if(operandType->typeParams.size() != 1 || !operandType->typeParams.front()){
+                        errStream.push(SemanticADiagnostic::create("Task type must include exactly one type argument for `await`.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    type = normalizeType(cloneTypeNode(operandType->typeParams.front(),expr_to_eval));
+                    break;
+                }
                 errStream.push(SemanticADiagnostic::create("Unsupported unary operator.",expr_to_eval,Diagnostic::Error));
                 return nullptr;
             }
@@ -706,6 +759,132 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 if(!expr_to_eval->leftExpr || !expr_to_eval->rightExpr){
                     errStream.push(SemanticADiagnostic::create("Malformed binary expression.",expr_to_eval,Diagnostic::Error));
                     return nullptr;
+                }
+                auto op = expr_to_eval->oprtr_str.value_or("");
+                if(op == KW_IS){
+                    auto *lhsType = evalExprForTypeId(expr_to_eval->leftExpr,symbolTableContext,scopeContext);
+                    if(!lhsType){
+                        return nullptr;
+                    }
+
+                    auto resolveRuntimeTypeNameFromType = [&](auto &&self,ASTType *candidateType) -> std::optional<std::string> {
+                        if(!candidateType){
+                            return std::nullopt;
+                        }
+                        auto *resolved = normalizeType(candidateType);
+                        if(!resolved){
+                            return std::nullopt;
+                        }
+                        auto resolvedName = resolved->getName().getBuffer();
+                        if(resolved->nameMatches(STRING_TYPE) || resolved->nameMatches(ARRAY_TYPE)
+                           || resolved->nameMatches(DICTIONARY_TYPE) || resolved->nameMatches(BOOL_TYPE)
+                           || resolved->nameMatches(INT_TYPE) || resolved->nameMatches(FLOAT_TYPE)
+                           || resolved->nameMatches(REGEX_TYPE) || resolved->nameMatches(ANY_TYPE)
+                           || resolved->nameMatches(TASK_TYPE)){
+                            return resolvedName;
+                        }
+
+                        auto *entry = findTypeEntryNoDiag(symbolTableContext,resolved->getName(),scopeContext.scope);
+                        if(!entry){
+                            std::ostringstream ss;
+                            ss << "Unknown type `" << resolved->getName() << "` in runtime type check.";
+                            errStream.push(SemanticADiagnostic::create(ss.str(),expr_to_eval,Diagnostic::Error));
+                            return std::nullopt;
+                        }
+                        if(entry->type == Semantics::SymbolTable::Entry::Interface){
+                            errStream.push(SemanticADiagnostic::create("Runtime `is` does not support interface types.",expr_to_eval,Diagnostic::Error));
+                            return std::nullopt;
+                        }
+                        if(entry->type == Semantics::SymbolTable::Entry::Class){
+                            if(!entry->emittedName.empty()){
+                                return entry->emittedName;
+                            }
+                            return entry->name;
+                        }
+                        if(entry->type == Semantics::SymbolTable::Entry::TypeAlias){
+                            auto *aliasData = (Semantics::SymbolTable::TypeAlias *)entry->data;
+                            if(!aliasData || !aliasData->aliasType){
+                                errStream.push(SemanticADiagnostic::create("Type alias symbol is missing target type.",expr_to_eval,Diagnostic::Error));
+                                return std::nullopt;
+                            }
+                            auto *aliasResolved = resolveAliasType(aliasData->aliasType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+                            return self(self,aliasResolved);
+                        }
+                        errStream.push(SemanticADiagnostic::create("Right side of `is` must be a runtime type.",expr_to_eval,Diagnostic::Error));
+                        return std::nullopt;
+                    };
+
+                    std::optional<std::string> runtimeTypeName;
+                    auto *rhsExpr = expr_to_eval->rightExpr;
+                    if(rhsExpr->type == ID_EXPR && rhsExpr->id){
+                        auto rawName = rhsExpr->id->val;
+                        if(rawName == STRING_TYPE->getName().getBuffer() || rawName == ARRAY_TYPE->getName().getBuffer()
+                           || rawName == DICTIONARY_TYPE->getName().getBuffer() || rawName == BOOL_TYPE->getName().getBuffer()
+                           || rawName == INT_TYPE->getName().getBuffer() || rawName == FLOAT_TYPE->getName().getBuffer()
+                           || rawName == REGEX_TYPE->getName().getBuffer() || rawName == ANY_TYPE->getName().getBuffer()
+                           || rawName == TASK_TYPE->getName().getBuffer()){
+                            runtimeTypeName = rawName;
+                        }
+                        else {
+                            auto *entry = findTypeEntryNoDiag(symbolTableContext,rawName,scopeContext.scope);
+                            if(!entry){
+                                std::ostringstream ss;
+                                ss << "Unknown type `" << rawName << "` in runtime type check.";
+                                errStream.push(SemanticADiagnostic::create(ss.str(),rhsExpr,Diagnostic::Error));
+                                return nullptr;
+                            }
+                            if(entry->type == Semantics::SymbolTable::Entry::Interface){
+                                errStream.push(SemanticADiagnostic::create("Runtime `is` does not support interface types.",rhsExpr,Diagnostic::Error));
+                                return nullptr;
+                            }
+                            if(entry->type == Semantics::SymbolTable::Entry::Class){
+                                rhsExpr->id->type = ASTIdentifier::Class;
+                                if(!entry->emittedName.empty()){
+                                    rhsExpr->id->val = entry->emittedName;
+                                    runtimeTypeName = entry->emittedName;
+                                }
+                                else {
+                                    runtimeTypeName = entry->name;
+                                }
+                            }
+                            else if(entry->type == Semantics::SymbolTable::Entry::TypeAlias){
+                                auto *aliasData = (Semantics::SymbolTable::TypeAlias *)entry->data;
+                                if(!aliasData || !aliasData->aliasType){
+                                    errStream.push(SemanticADiagnostic::create("Type alias symbol is missing target type.",rhsExpr,Diagnostic::Error));
+                                    return nullptr;
+                                }
+                                runtimeTypeName = resolveRuntimeTypeNameFromType(resolveRuntimeTypeNameFromType,aliasData->aliasType);
+                            }
+                            else {
+                                errStream.push(SemanticADiagnostic::create("Right side of `is` must be a type.",rhsExpr,Diagnostic::Error));
+                                return nullptr;
+                            }
+                        }
+                    }
+                    else if(rhsExpr->type == MEMBER_EXPR){
+                        auto *rhsType = evalExprForTypeId(rhsExpr,symbolTableContext,scopeContext);
+                        if(!rhsType){
+                            return nullptr;
+                        }
+                        bool isClassRef = rhsExpr->rightExpr && rhsExpr->rightExpr->id
+                            && rhsExpr->rightExpr->id->type == ASTIdentifier::Class;
+                        if(!isClassRef){
+                            errStream.push(SemanticADiagnostic::create("Right side of `is` must be a class or builtin type.",rhsExpr,Diagnostic::Error));
+                            return nullptr;
+                        }
+                        runtimeTypeName = resolveRuntimeTypeNameFromType(resolveRuntimeTypeNameFromType,rhsType);
+                    }
+                    else {
+                        errStream.push(SemanticADiagnostic::create("Right side of `is` must be a type identifier.",rhsExpr,Diagnostic::Error));
+                        return nullptr;
+                    }
+
+                    if(!runtimeTypeName.has_value() || runtimeTypeName->empty()){
+                        return nullptr;
+                    }
+                    expr_to_eval->runtimeTypeCheckName = runtimeTypeName;
+                    type = BOOL_TYPE;
+                    break;
                 }
                 auto *lhsType = evalExprForTypeId(expr_to_eval->leftExpr,symbolTableContext,scopeContext);
                 auto *rhsType = evalExprForTypeId(expr_to_eval->rightExpr,symbolTableContext,scopeContext);
@@ -886,6 +1065,21 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     else if(assignOp == "%="){
                         syntheticBinary->oprtr_str = "%";
                     }
+                    else if(assignOp == "&="){
+                        syntheticBinary->oprtr_str = "&";
+                    }
+                    else if(assignOp == "|="){
+                        syntheticBinary->oprtr_str = "|";
+                    }
+                    else if(assignOp == "^="){
+                        syntheticBinary->oprtr_str = "^";
+                    }
+                    else if(assignOp == "<<="){
+                        syntheticBinary->oprtr_str = "<<";
+                    }
+                    else if(assignOp == ">>="){
+                        syntheticBinary->oprtr_str = ">>";
+                    }
                     else {
                         errStream.push(SemanticADiagnostic::create("Unsupported compound assignment operator.",expr_to_eval,Diagnostic::Error));
                         delete syntheticBinary;
@@ -1030,7 +1224,8 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         }
                         ++paramIt;
                     }
-                    type = normalizeType(funcData->returnType ? funcData->returnType : VOID_TYPE);
+                    auto *resolvedReturnType = normalizeType(funcData->returnType ? funcData->returnType : VOID_TYPE);
+                    type = funcData->isLazy ? normalizeType(makeTaskType(resolvedReturnType,expr_to_eval)) : resolvedReturnType;
                     break;
                 }
 
@@ -1072,7 +1267,8 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             ++paramIt;
                         }
                         auto *boundReturn = substituteTypeParams(lookup.method->returnType ? lookup.method->returnType : VOID_TYPE,classBindings,expr_to_eval);
-                        type = normalizeType(boundReturn);
+                        auto *resolvedReturnType = normalizeType(boundReturn);
+                        type = lookup.method->isLazy ? normalizeType(makeTaskType(resolvedReturnType,expr_to_eval)) : resolvedReturnType;
                         break;
                     }
                     auto *typeEntry = findTypeEntryNoDiag(symbolTableContext,baseType->getName(),scopeContext.scope);
@@ -1111,7 +1307,8 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             ++paramIt;
                         }
                         auto *boundReturn = substituteTypeParams(method->returnType ? method->returnType : VOID_TYPE,interfaceBindings,expr_to_eval);
-                        type = normalizeType(boundReturn);
+                        auto *resolvedReturnType = normalizeType(boundReturn);
+                        type = method->isLazy ? normalizeType(makeTaskType(resolvedReturnType,expr_to_eval)) : resolvedReturnType;
                         break;
                     }
                     ASTStmt *classNode = baseType->getParentNode();
@@ -1133,7 +1330,8 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                                 return nullptr;
                             }
                         }
-                        type = normalizeType(methodDecl->returnType ? methodDecl->returnType : VOID_TYPE);
+                        auto *resolvedReturnType = normalizeType(methodDecl->returnType ? methodDecl->returnType : VOID_TYPE);
+                        type = methodDecl->isLazy ? normalizeType(makeTaskType(resolvedReturnType,expr_to_eval)) : resolvedReturnType;
                         break;
                     }
                     return nullptr;
@@ -1313,7 +1511,8 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         ++param_decls_it;
                     };
                     /// return return-type
-                    type = normalizeType(funcData->returnType);
+                    auto *resolvedReturnType = normalizeType(funcData->returnType ? funcData->returnType : VOID_TYPE);
+                    type = funcData->isLazy ? normalizeType(makeTaskType(resolvedReturnType,expr_to_eval)) : resolvedReturnType;
                 };
                 
                 /// 1. Eval Args.

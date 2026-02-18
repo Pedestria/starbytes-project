@@ -48,12 +48,23 @@
 #define OP_MODEQUAL OP("%=")
 #define OP_LOGIC_AND OP("&&")
 #define OP_LOGIC_OR OP("||")
+#define OP_BITWISE_AND OP("&")
+#define OP_BITWISE_OR OP("|")
+#define OP_BITWISE_XOR OP("^")
+#define OP_BITWISE_NOT OP("~")
+#define OP_SHIFT_LEFT OP("<<")
+#define OP_SHIFT_RIGHT OP(">>")
 
 #define TOK_OP_MAX_LENGTH 2
 
 #define KW_IMPORT KW("import")
 #define KW_CLASS KW("class")
+#define KW_STRUCT KW("struct")
 #define KW_INTERFACE KW("interface")
+#define KW_ENUM KW("enum")
+#define KW_LAZY KW("lazy")
+#define KW_AWAIT KW("await")
+#define KW_IS KW("is")
 #define KW_DECL KW("decl")
 #define KW_FUNC KW("func")
 #define KW_RETURN KW("return")

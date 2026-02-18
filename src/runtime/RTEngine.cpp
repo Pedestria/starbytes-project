@@ -12,6 +12,7 @@
 #include <set>
 #include <unordered_map>
 #include <vector>
+#include <deque>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
@@ -255,6 +256,13 @@ StarbytesNativeModule * starbytes_native_mod_load(string_ref path);
 StarbytesFuncCallback starbytes_native_mod_load_function(StarbytesNativeModule * mod,string_ref name);
 void starbytes_native_mod_close(StarbytesNativeModule * mod);
 
+struct ScheduledTaskCall {
+    StarbytesTask task = nullptr;
+    std::string funcName;
+    std::vector<StarbytesObject> args;
+    StarbytesObject boundSelf = nullptr;
+};
+
 class InterpImpl final : public Interp {
     std::unique_ptr<RTAllocator> allocator;
     
@@ -263,6 +271,9 @@ class InterpImpl final : public Interp {
     std::vector<RTFuncTemplate> functions;
     std::vector<StarbytesNativeModule *> nativeModules;
     std::unordered_map<std::string,StarbytesFuncCallback> nativeCallbackCache;
+    std::deque<ScheduledTaskCall> microtaskQueue;
+    bool isDrainingMicrotasks = false;
+    std::istream *activeInput = nullptr;
 
     map<StarbytesClassType,std::string> runtimeClassRegistry;
     string_map<StarbytesClassType> classTypeByName;
@@ -285,6 +296,11 @@ class InterpImpl final : public Interp {
     void executeRuntimeBlock(std::istream &in,RTCode endCode,bool *willReturn,StarbytesObject *return_val);
     StarbytesFuncCallback findNativeCallback(string_ref callbackName);
     StarbytesObject invokeNativeFunc(std::istream &in,StarbytesFuncCallback callback,unsigned argCount,StarbytesObject boundSelf);
+    StarbytesObject invokeNativeFuncWithValues(StarbytesFuncCallback callback,const std::vector<StarbytesObject> &args,StarbytesObject boundSelf);
+    StarbytesObject invokeFuncWithValues(RTFuncTemplate *func_temp,const std::vector<StarbytesObject> &args,StarbytesObject boundSelf = nullptr);
+    StarbytesTask scheduleLazyCall(std::istream &in,RTFuncTemplate *func_temp,unsigned argCount,StarbytesObject boundSelf = nullptr);
+    void processOneMicrotask();
+    void processMicrotasks();
     
     StarbytesObject evalExpr(std::istream &in);
     
@@ -434,6 +450,226 @@ StarbytesObject InterpImpl::invokeNativeFunc(std::istream &in,
     return result;
 }
 
+StarbytesObject InterpImpl::invokeNativeFuncWithValues(StarbytesFuncCallback callback,
+                                                       const std::vector<StarbytesObject> &args,
+                                                       StarbytesObject boundSelf){
+    std::vector<StarbytesObject> callArgs;
+    callArgs.reserve(args.size() + (boundSelf ? 1u : 0u));
+    if(boundSelf){
+        StarbytesObjectReference(boundSelf);
+        callArgs.push_back(boundSelf);
+    }
+    for(auto *arg : args){
+        StarbytesObjectReference(arg);
+        callArgs.push_back(arg);
+    }
+    _StarbytesFuncArgs nativeArgs;
+    nativeArgs.argc = (unsigned)callArgs.size();
+    nativeArgs.index = 0;
+    nativeArgs.argv = callArgs.empty()? nullptr : callArgs.data();
+    auto result = callback((StarbytesFuncArgs)&nativeArgs);
+    for(auto *arg : callArgs){
+        if(arg){
+            StarbytesObjectRelease(arg);
+        }
+    }
+    return result;
+}
+
+StarbytesObject InterpImpl::invokeFuncWithValues(RTFuncTemplate *func_temp,
+                                                 const std::vector<StarbytesObject> &args,
+                                                 StarbytesObject boundSelf){
+    if(!func_temp){
+        return nullptr;
+    }
+    std::string parentScope = allocator->currentScope;
+    string_ref func_name = {func_temp->name.value,(uint32_t)func_temp->name.len};
+
+    if(func_name == "print"){
+        if(!args.empty()){
+            stdlib::print(args.front(),runtimeClassRegistry);
+        }
+        return nullptr;
+    }
+
+    auto nativeCallbackName = resolveNativeCallbackName(func_temp);
+    if(!nativeCallbackName.empty()){
+        auto callback = findNativeCallback(string_ref(nativeCallbackName));
+        if(callback){
+            return invokeNativeFuncWithValues(callback,args,boundSelf);
+        }
+        if(func_temp->blockByteSize == 0){
+            lastRuntimeError = "native callback `" + nativeCallbackName + "` is not loaded";
+            return nullptr;
+        }
+    }
+
+    std::string funcScope = std::string(func_name) + std::to_string(func_temp->invocations);
+    if(boundSelf){
+        StarbytesObjectReference(boundSelf);
+        allocator->allocVariable(string_ref("self"),boundSelf,funcScope);
+    }
+
+    auto func_param_it = func_temp->argsTemplate.begin();
+    for(auto *arg : args){
+        if(func_param_it != func_temp->argsTemplate.end()){
+            StarbytesObjectReference(arg);
+            allocator->allocVariable(string_ref(func_param_it->value,func_param_it->len),arg,funcScope);
+            ++func_param_it;
+        }
+    }
+
+    allocator->setScope(funcScope);
+    auto current_pos = func_temp->block_start_pos;
+    if(!activeInput){
+        allocator->clearScope();
+        allocator->setScope(parentScope);
+        return nullptr;
+    }
+    auto &bodyIn = *activeInput;
+    auto resumePos = bodyIn.tellg();
+    bodyIn.clear();
+    bodyIn.seekg(current_pos);
+
+    func_temp->invocations += 1;
+    RTCode code = CODE_MODULE_END;
+    if(!bodyIn.read((char *)&code,sizeof(RTCode))){
+        bodyIn.clear();
+        bodyIn.seekg(resumePos);
+        allocator->clearScope();
+        allocator->setScope(parentScope);
+        return nullptr;
+    }
+    bool willReturn = false;
+    StarbytesObject return_val = nullptr;
+    while(bodyIn.good() && code != CODE_RTFUNCBLOCK_END){
+        if(!willReturn){
+            execNorm(code,bodyIn,&willReturn,&return_val);
+            processMicrotasks();
+        }
+        if(!bodyIn.read((char *)&code,sizeof(RTCode))){
+            break;
+        }
+    }
+    bodyIn.clear();
+    bodyIn.seekg(resumePos);
+    allocator->clearScope();
+    allocator->setScope(parentScope);
+    return return_val;
+}
+
+StarbytesTask InterpImpl::scheduleLazyCall(std::istream &in,
+                                           RTFuncTemplate *func_temp,
+                                           unsigned argCount,
+                                           StarbytesObject boundSelf){
+    auto task = StarbytesTaskNew();
+    if(!task || !func_temp){
+        if(task){
+            StarbytesTaskReject(task,"invalid lazy function");
+        }
+        discardExprArgs(in,argCount);
+        return task;
+    }
+
+    ScheduledTaskCall call;
+    call.task = task;
+    StarbytesObjectReference(task);
+    call.funcName = rtidToString(func_temp->name);
+    call.args.reserve(argCount);
+    if(boundSelf){
+        StarbytesObjectReference(boundSelf);
+        call.boundSelf = boundSelf;
+    }
+    while(argCount > 0){
+        auto arg = evalExpr(in);
+        if(!arg){
+            StarbytesTaskReject(task,lastRuntimeError.empty()? "lazy argument evaluation failed" : lastRuntimeError.c_str());
+            lastRuntimeError.clear();
+            if(call.boundSelf){
+                StarbytesObjectRelease(call.boundSelf);
+                call.boundSelf = nullptr;
+            }
+            StarbytesObjectRelease(call.task);
+            call.task = nullptr;
+            return task;
+        }
+        call.args.push_back(arg);
+        --argCount;
+    }
+    microtaskQueue.push_back(std::move(call));
+    return task;
+}
+
+void InterpImpl::processOneMicrotask(){
+    if(microtaskQueue.empty()){
+        return;
+    }
+    ScheduledTaskCall call = std::move(microtaskQueue.front());
+    microtaskQueue.pop_front();
+    if(!call.task){
+        if(call.task){
+            StarbytesObjectRelease(call.task);
+        }
+        if(call.boundSelf){
+            StarbytesObjectRelease(call.boundSelf);
+        }
+        for(auto *arg : call.args){
+            if(arg){
+                StarbytesObjectRelease(arg);
+            }
+        }
+        return;
+    }
+
+    auto *runtimeFunc = findFunctionByName(string_ref(call.funcName));
+    if(!runtimeFunc){
+        StarbytesTaskReject(call.task,"lazy function no longer exists");
+        for(auto *arg : call.args){
+            if(arg){
+                StarbytesObjectRelease(arg);
+            }
+        }
+        if(call.boundSelf){
+            StarbytesObjectRelease(call.boundSelf);
+        }
+        StarbytesObjectRelease(call.task);
+        return;
+    }
+
+    auto result = invokeFuncWithValues(runtimeFunc,call.args,call.boundSelf);
+    if(result){
+        StarbytesTaskResolve(call.task,result);
+        StarbytesObjectRelease(result);
+        lastRuntimeError.clear();
+    }
+    else {
+        auto message = lastRuntimeError.empty()? std::string("task failed") : lastRuntimeError;
+        StarbytesTaskReject(call.task,message.c_str());
+        lastRuntimeError.clear();
+    }
+
+    for(auto *arg : call.args){
+        if(arg){
+            StarbytesObjectRelease(arg);
+        }
+    }
+    if(call.boundSelf){
+        StarbytesObjectRelease(call.boundSelf);
+    }
+    StarbytesObjectRelease(call.task);
+}
+
+void InterpImpl::processMicrotasks(){
+    if(isDrainingMicrotasks){
+        return;
+    }
+    isDrainingMicrotasks = true;
+    while(!microtaskQueue.empty()){
+        processOneMicrotask();
+    }
+    isDrainingMicrotasks = false;
+}
+
 
 StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_temp,unsigned argCount,StarbytesObject boundSelf){
     if(!func_temp){
@@ -510,6 +746,7 @@ StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_te
     while(in.good() && code != CODE_RTFUNCBLOCK_END){
         if(!willReturn){
             execNorm(code,in,&willReturn,&return_val);
+            processMicrotasks();
         }
         if(!in.read((char *)&code,sizeof(RTCode))){
             break;
@@ -566,7 +803,14 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 discardExprArgs(in,argCount);
                 return nullptr;
             }
-            auto returnValue = invokeFunc(in,StarbytesFuncRefGetPtr(funcRefObject),argCount);
+            auto *funcTemplate = StarbytesFuncRefGetPtr(funcRefObject);
+            StarbytesObject returnValue = nullptr;
+            if(funcTemplate && funcTemplate->isLazy){
+                returnValue = scheduleLazyCall(in,funcTemplate,argCount);
+            }
+            else {
+                returnValue = invokeFunc(in,funcTemplate,argCount);
+            }
             StarbytesObjectRelease(funcRefObject);
             return returnValue;
         }
@@ -576,6 +820,22 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             auto operand = evalExpr(in);
             if(!operand){
                 return nullptr;
+            }
+            if(unaryCode == UNARY_OP_PLUS){
+                if(!StarbytesObjectTypecheck(operand,StarbytesNumType())){
+                    StarbytesObjectRelease(operand);
+                    return nullptr;
+                }
+                auto operandType = StarbytesNumGetType(operand);
+                StarbytesObject result = nullptr;
+                if(operandType == NumTypeFloat){
+                    result = StarbytesNumNew(NumTypeFloat,StarbytesNumGetFloatValue(operand));
+                }
+                else {
+                    result = StarbytesNumNew(NumTypeInt,StarbytesNumGetIntValue(operand));
+                }
+                StarbytesObjectRelease(operand);
+                return result;
             }
             if(unaryCode == UNARY_OP_MINUS){
                 if(!StarbytesObjectTypecheck(operand,StarbytesNumType())){
@@ -602,6 +862,44 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 StarbytesObjectRelease(operand);
                 return StarbytesBoolNew((StarbytesBoolVal)!current);
             }
+            if(unaryCode == UNARY_OP_BITWISE_NOT){
+                if(!StarbytesObjectTypecheck(operand,StarbytesNumType()) || StarbytesNumGetType(operand) != NumTypeInt){
+                    StarbytesObjectRelease(operand);
+                    return nullptr;
+                }
+                auto val = StarbytesNumGetIntValue(operand);
+                StarbytesObjectRelease(operand);
+                return StarbytesNumNew(NumTypeInt,(starbytes_int_t)(~val));
+            }
+            if(unaryCode == UNARY_OP_AWAIT){
+                if(!StarbytesObjectTypecheck(operand,StarbytesTaskType())){
+                    StarbytesObjectRelease(operand);
+                    lastRuntimeError = "`await` requires a Task value";
+                    return nullptr;
+                }
+                while(StarbytesTaskGetState(operand) == StarbytesTaskPending){
+                    if(microtaskQueue.empty()){
+                        lastRuntimeError = "await stalled on unresolved task";
+                        break;
+                    }
+                    processMicrotasks();
+                }
+                auto state = StarbytesTaskGetState(operand);
+                if(state == StarbytesTaskResolved){
+                    auto value = StarbytesTaskGetValue(operand);
+                    StarbytesObjectRelease(operand);
+                    return value;
+                }
+                auto reason = StarbytesTaskGetError(operand);
+                if(reason){
+                    lastRuntimeError = reason;
+                }
+                else if(lastRuntimeError.empty()){
+                    lastRuntimeError = "task rejected";
+                }
+                StarbytesObjectRelease(operand);
+                return nullptr;
+            }
             StarbytesObjectRelease(operand);
             return nullptr;
         }
@@ -609,19 +907,62 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             RTCode binaryCode = BINARY_OP_PLUS;
             in.read((char *)&binaryCode,sizeof(binaryCode));
             auto lhs = evalExpr(in);
-            auto rhs = evalExpr(in);
-            if(!lhs || !rhs){
+            if(!lhs){
+                skipExpr(in);
+                return nullptr;
+            }
+
+            auto releaseLhs = [&](){
                 if(lhs){
                     StarbytesObjectRelease(lhs);
+                    lhs = nullptr;
                 }
-                if(rhs){
+            };
+
+            if(binaryCode == BINARY_LOGIC_AND || binaryCode == BINARY_LOGIC_OR){
+                if(!StarbytesObjectTypecheck(lhs,StarbytesBoolType())){
+                    releaseLhs();
+                    skipExpr(in);
+                    return nullptr;
+                }
+
+                bool l = (bool)StarbytesBoolValue(lhs);
+                if(binaryCode == BINARY_LOGIC_AND && !l){
+                    releaseLhs();
+                    skipExpr(in);
+                    return StarbytesBoolNew((StarbytesBoolVal)false);
+                }
+                if(binaryCode == BINARY_LOGIC_OR && l){
+                    releaseLhs();
+                    skipExpr(in);
+                    return StarbytesBoolNew((StarbytesBoolVal)true);
+                }
+
+                auto rhs = evalExpr(in);
+                if(!rhs){
+                    releaseLhs();
+                    return nullptr;
+                }
+                if(!StarbytesObjectTypecheck(rhs,StarbytesBoolType())){
+                    releaseLhs();
                     StarbytesObjectRelease(rhs);
+                    return nullptr;
                 }
+                bool r = (bool)StarbytesBoolValue(rhs);
+                StarbytesObjectRelease(rhs);
+                releaseLhs();
+                bool result = (binaryCode == BINARY_LOGIC_AND)? (l && r) : (l || r);
+                return StarbytesBoolNew((StarbytesBoolVal)result);
+            }
+
+            auto rhs = evalExpr(in);
+            if(!rhs){
+                releaseLhs();
                 return nullptr;
             }
 
             auto finish = [&](StarbytesObject result){
-                StarbytesObjectRelease(lhs);
+                releaseLhs();
                 StarbytesObjectRelease(rhs);
                 return result;
             };
@@ -730,14 +1071,33 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 }
                 return finish(nullptr);
             }
-            if(binaryCode == BINARY_LOGIC_AND || binaryCode == BINARY_LOGIC_OR){
-                if(!(StarbytesObjectTypecheck(lhs,StarbytesBoolType()) && StarbytesObjectTypecheck(rhs,StarbytesBoolType()))){
+            if(binaryCode == BINARY_BITWISE_AND || binaryCode == BINARY_BITWISE_OR ||
+               binaryCode == BINARY_BITWISE_XOR || binaryCode == BINARY_SHIFT_LEFT ||
+               binaryCode == BINARY_SHIFT_RIGHT){
+                if(!(StarbytesObjectTypecheck(lhs,StarbytesNumType()) && StarbytesObjectTypecheck(rhs,StarbytesNumType()))){
                     return finish(nullptr);
                 }
-                bool l = (bool)StarbytesBoolValue(lhs);
-                bool r = (bool)StarbytesBoolValue(rhs);
-                bool result = (binaryCode == BINARY_LOGIC_AND)? (l && r) : (l || r);
-                return finish(StarbytesBoolNew((StarbytesBoolVal)result));
+                if(StarbytesNumGetType(lhs) != NumTypeInt || StarbytesNumGetType(rhs) != NumTypeInt){
+                    return finish(nullptr);
+                }
+                auto lhsVal = (starbytes_int_t)StarbytesNumGetIntValue(lhs);
+                auto rhsVal = (starbytes_int_t)StarbytesNumGetIntValue(rhs);
+                if((binaryCode == BINARY_SHIFT_LEFT || binaryCode == BINARY_SHIFT_RIGHT) && rhsVal < 0){
+                    return finish(nullptr);
+                }
+                if(binaryCode == BINARY_BITWISE_AND){
+                    return finish(StarbytesNumNew(NumTypeInt,lhsVal & rhsVal));
+                }
+                if(binaryCode == BINARY_BITWISE_OR){
+                    return finish(StarbytesNumNew(NumTypeInt,lhsVal | rhsVal));
+                }
+                if(binaryCode == BINARY_BITWISE_XOR){
+                    return finish(StarbytesNumNew(NumTypeInt,lhsVal ^ rhsVal));
+                }
+                if(binaryCode == BINARY_SHIFT_LEFT){
+                    return finish(StarbytesNumNew(NumTypeInt,(starbytes_int_t)(lhsVal << rhsVal)));
+                }
+                return finish(StarbytesNumNew(NumTypeInt,(starbytes_int_t)(lhsVal >> rhsVal)));
             }
             return finish(nullptr);
         }
@@ -771,6 +1131,69 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 --pairCount;
             }
             return dict;
+        }
+        case CODE_RTTYPECHECK: {
+            auto object = evalExpr(in);
+            RTID typeId;
+            in >> &typeId;
+            std::string targetType = rtidToString(typeId);
+            bool matches = false;
+            if(targetType == "Any"){
+                matches = (object != nullptr);
+            }
+            else if(object){
+                if(targetType == "String"){
+                    matches = StarbytesObjectTypecheck(object,StarbytesStrType());
+                }
+                else if(targetType == "Bool"){
+                    matches = StarbytesObjectTypecheck(object,StarbytesBoolType());
+                }
+                else if(targetType == "Array"){
+                    matches = StarbytesObjectTypecheck(object,StarbytesArrayType());
+                }
+                else if(targetType == "Dict"){
+                    matches = StarbytesObjectTypecheck(object,StarbytesDictType());
+                }
+                else if(targetType == "Regex"){
+                    matches = StarbytesObjectTypecheck(object,StarbytesRegexType());
+                }
+                else if(targetType == "Task"){
+                    matches = StarbytesObjectTypecheck(object,StarbytesTaskType());
+                }
+                else if(targetType == "Int"){
+                    matches = StarbytesObjectTypecheck(object,StarbytesNumType())
+                        && StarbytesNumGetType(object) == NumTypeInt;
+                }
+                else if(targetType == "Float"){
+                    matches = StarbytesObjectTypecheck(object,StarbytesNumType())
+                        && StarbytesNumGetType(object) == NumTypeFloat;
+                }
+                else if(!StarbytesObjectIs(object)){
+                    auto classType = StarbytesClassObjectGetClass(object);
+                    auto *classMeta = findClassByType(classType);
+                    std::set<std::string> visited;
+                    while(classMeta){
+                        auto className = rtidToString(classMeta->name);
+                        if(visited.find(className) != visited.end()){
+                            break;
+                        }
+                        visited.insert(className);
+                        if(className == targetType){
+                            matches = true;
+                            break;
+                        }
+                        if(!classMeta->hasSuperClass){
+                            break;
+                        }
+                        auto superName = rtidToString(classMeta->superClassName);
+                        classMeta = findClassByName(string_ref(superName));
+                    }
+                }
+            }
+            if(object){
+                StarbytesObjectRelease(object);
+            }
+            return StarbytesBoolNew((StarbytesBoolVal)matches);
         }
         case CODE_RTINDEX_GET: {
             auto collection = evalExpr(in);
@@ -1025,7 +1448,13 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 return nullptr;
             }
 
-            auto result = invokeFunc(in,runtimeMethod,argCount,object);
+            StarbytesObject result = nullptr;
+            if(runtimeMethod->isLazy){
+                result = scheduleLazyCall(in,runtimeMethod,argCount,object);
+            }
+            else {
+                result = invokeFunc(in,runtimeMethod,argCount,object);
+            }
             StarbytesObjectRelease(object);
             return result;
             break;
@@ -1193,6 +1622,12 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             }
             break;
         }
+        case CODE_RTTYPECHECK: {
+            skipExpr(in);
+            RTID typeId;
+            in >> &typeId;
+            break;
+        }
         default:
             break;
     }
@@ -1303,6 +1738,7 @@ void InterpImpl::executeRuntimeBlock(std::istream &in,RTCode endCode,bool *willR
     while(in.good() && currentCode != endCode){
         if(!*willReturn){
             execNorm(currentCode,in,willReturn,return_val);
+            processMicrotasks();
         }
         else {
             skipRuntimeStmt(in,currentCode);
@@ -1480,6 +1916,7 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
     else if(code == CODE_RTIVKFUNC
          || code == CODE_UNARY_OPERATOR
          || code == CODE_BINARY_OPERATOR
+         || code == CODE_RTTYPECHECK
          || code == CODE_RTMEMBER_SET
          || code == CODE_RTMEMBER_IVK
          || code == CODE_RTMEMBER_GET
@@ -1512,21 +1949,41 @@ void InterpImpl::exec(std::istream & in){
     RTCode code = CODE_MODULE_END;
     std::string g = "GLOBAL";
     allocator->setScope(g);
+    activeInput = &in;
     if(!in.read((char *)&code,sizeof(RTCode))){
+        activeInput = nullptr;
         return;
     }
     bool temp = false;
     StarbytesObject temp2 = nullptr;
     while(in.good() && code != CODE_MODULE_END){
         execNorm(code,in,&temp,&temp2);
+        processMicrotasks();
         if(!in.read((char *)&code,sizeof(RTCode))){
             break;
         }
     };
+    processMicrotasks();
     allocator->clearScope();
+    activeInput = nullptr;
 }
 
 InterpImpl::~InterpImpl(){
+    while(!microtaskQueue.empty()){
+        auto call = std::move(microtaskQueue.front());
+        microtaskQueue.pop_front();
+        if(call.task){
+            StarbytesObjectRelease(call.task);
+        }
+        if(call.boundSelf){
+            StarbytesObjectRelease(call.boundSelf);
+        }
+        for(auto *arg : call.args){
+            if(arg){
+                StarbytesObjectRelease(arg);
+            }
+        }
+    }
     for(auto *module : nativeModules){
         starbytes_native_mod_close(module);
     }

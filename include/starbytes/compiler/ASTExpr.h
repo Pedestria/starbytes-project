@@ -37,6 +37,7 @@ namespace starbytes {
 
         /// The string of the operator
         std::optional<std::string> oprtr_str;
+        std::optional<std::string> runtimeTypeCheckName;
         /// @}
 
         /// @name Binary Expression / Member Expression Props

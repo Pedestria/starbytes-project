@@ -181,6 +181,18 @@ mathA /= 4
 print(mathA)
 mathA %= 4
 print(mathA)
+mathA &= 7
+print(mathA)
+mathA |= 2
+print(mathA)
+mathA ^= 1
+print(mathA)
+mathA <<= 1
+print(mathA)
+mathA >>= 2
+print(mathA)
+print(~mathA)
+print(+mathA)
 
 decl concat = "sum:" + arithmetic
 print(concat)
@@ -254,3 +266,84 @@ print(boxed.get())
 decl dog = new Dog()
 print(dog.getName())
 print(dog.name)
+
+struct Point {
+    decl x:Int = 1
+    decl imut label:String = "pt"
+}
+
+enum Priority {
+    LOW
+    MEDIUM = 3
+    HIGH
+}
+
+decl point = new Point()
+print(point.x)
+point.x = 7
+print(point.x)
+print(point.label)
+
+print(Priority.LOW)
+print(Priority.MEDIUM)
+print(Priority.HIGH)
+
+lazy delayedGreeting(name:String) String {
+    return "hello " + name
+}
+
+lazy func badRegexTask() Regex! {
+    return /(/g
+}
+
+decl pendingGreeting = delayedGreeting("starbytes")
+print(pendingGreeting)
+decl greeting = await pendingGreeting
+print(greeting)
+
+decl typedTask:Task<String> = delayedGreeting("typed")
+decl typedGreeting = await typedTask
+print(typedGreeting)
+
+decl inlineGreeting = await delayedGreeting("inline")
+print(inlineGreeting)
+
+secure(decl failedRegex = await badRegexTask()) catch (error:String) {
+    print(error)
+}
+
+def AnimalAlias = Animal
+def NumAlias = Int
+def NumAlias2 = NumAlias
+
+decl intVal:Int = 7
+decl floatVal:Float = 7.5
+print(intVal is Int)
+print(intVal is Float)
+print(floatVal is Float)
+print(floatVal is Int)
+print(intVal is NumAlias)
+print(intVal is NumAlias2)
+print(intVal is Any)
+
+print(dog is Dog)
+print(dog is Animal)
+print(dog is AnimalAlias)
+print(dog is Any)
+print(dog is String)
+
+print(scopedPet is Models.Pet)
+print(point is Point)
+print(point is Animal)
+
+print(greeting is String)
+print(typedTask is Task)
+
+decl rttcCount:Int = 0
+while(rttcCount < 64){
+    if(((dog is Animal) && (dog is Dog) && (rttcCount is Int)) == false){
+        print("RTTC-LOOP-FAIL")
+    }
+    rttcCount += 1
+}
+print(rttcCount)

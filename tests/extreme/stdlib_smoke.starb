@@ -1,0 +1,132 @@
+import IO
+import Time
+import Threading
+import Unicode
+
+decl root = ".starbytes/extreme-suite"
+decl textPath = root + "/sample.txt"
+decl binPath = root + "/sample.bin"
+
+secure(decl mk = createDirectory(root,true)) catch {
+    print("IO-MKDIR-CATCH")
+}
+print(exists(root))
+secure(decl wt = writeText(textPath,"alpha\nbeta","utf-8")) catch {
+    print("IO-WT-CATCH")
+}
+secure(decl rt = readText(textPath,"utf-8")) catch {
+    print("IO-RT-CATCH")
+}
+print(rt)
+secure(decl ls = listDirectory(root)) catch {
+    print("IO-LS-CATCH")
+}
+print(ls)
+secure(decl wb = writeBytes(binPath,[65,66,67,68])) catch {
+    print("IO-WB-CATCH")
+}
+secure(decl rb = readBytes(binPath)) catch {
+    print("IO-RB-CATCH")
+}
+print(rb[0])
+print(rb[3])
+
+decl d0 = durationZero()
+secure(decl d5 = durationFromMillis(5)) catch {
+    print("TIME-D5-CATCH")
+}
+secure(decl da = durationAdd(d0,d5)) catch {
+    print("TIME-ADD-CATCH")
+}
+print(da.milliseconds())
+
+secure(decl tz = timezoneUTC()) catch {
+    print("TIME-TZ-CATCH")
+}
+print(tz.id())
+secure(decl now = utcNow()) catch {
+    print("TIME-NOW-CATCH")
+}
+secure(decl iso = formatISO8601(now,tz)) catch {
+    print("TIME-ISO-CATCH")
+}
+print(iso)
+secure(decl parsed = parseISO8601("2024-01-02T03:04:05Z")) catch {
+    print("TIME-PARSE-CATCH")
+}
+print(parsed.year())
+secure(decl badTime = parseISO8601("bad")) catch (error:String) {
+    print("TIME-BAD-PARSE-CATCH")
+    print(error)
+}
+
+secure(decl mx = mutexCreate()) catch {
+    print("TH-MX-CATCH")
+}
+print(mx.tryLock())
+secure(decl mxUnlock = mx.unlock()) catch {
+    print("TH-MX-UNLOCK-CATCH")
+}
+
+secure(decl sem = semaphoreCreate(0,2)) catch {
+    print("TH-SEM-CATCH")
+}
+print(sem.currentCount())
+secure(decl acq0 = sem.acquire(0)) catch {
+    print("TH-ACQ0-CATCH")
+}
+print(acq0)
+secure(decl rel1 = sem.release(1)) catch {
+    print("TH-REL1-CATCH")
+}
+secure(decl acq1 = sem.acquire(0)) catch {
+    print("TH-ACQ1-CATCH")
+}
+print(acq1)
+
+secure(decl evt = eventCreate(false,true)) catch {
+    print("TH-EVT-CATCH")
+}
+print(evt.isSet())
+secure(decl wait0 = evt.wait(1)) catch {
+    print("TH-WAIT0-CATCH")
+}
+print(wait0)
+secure(decl set0 = evt.set()) catch {
+    print("TH-SET-CATCH")
+}
+secure(decl wait1 = evt.wait(1)) catch {
+    print("TH-WAIT1-CATCH")
+}
+print(wait1)
+secure(decl reset0 = evt.reset()) catch {
+    print("TH-RESET-CATCH")
+}
+print(evt.isSet())
+
+secure(decl y = yieldNow()) catch {
+    print("TH-YIELD-CATCH")
+}
+secure(decl s = sleepMillis(0)) catch {
+    print("TH-SLEEP-CATCH")
+}
+print(hardwareConcurrency())
+print(currentThreadId())
+
+secure(decl loc = localeCurrent()) catch {
+    print("UNI-LOC-CATCH")
+}
+print(loc.id())
+secure(decl folded = caseFold("Straße")) catch {
+    print("UNI-FOLD-CATCH")
+}
+print(folded)
+
+secure(decl rmText = remove(textPath)) catch {
+    print("IO-RM-TEXT-CATCH")
+}
+secure(decl rmBin = remove(binPath)) catch {
+    print("IO-RM-BIN-CATCH")
+}
+
+print("EXTREME-STDLIB-SMOKE-OK")

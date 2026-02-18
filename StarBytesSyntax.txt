@@ -72,7 +72,15 @@ def Func = (a:String) Void
 struct SomeStruct {
     decl data:String 
     decl imut otherData:String
+    // No methods on structs
 }
+// Enum
+enum Something {
+	ONE
+	TWO = 2
+	THREE
+}
+
 //Variable Declaration
 decl hello:String = "Hello"
 //Constant Declaration (Types can be inferred)
@@ -82,11 +90,7 @@ decl imut myConst = 4
 decl hello:MyClass<String>
 decl hello = new MyClass<String>();
 
-enum Something {
-	ONE
-	TWO
-	THREE
-}
+
 
 // Type Defintion
 def
@@ -124,6 +128,8 @@ secure(decl var = someOption()) catch {
 
 }
 
+
+// RTTC.
 if(var is String){
 
 }

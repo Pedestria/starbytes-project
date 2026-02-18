@@ -68,6 +68,28 @@ namespace starbytes {
                     auto flags = flagsObj ? StarbytesStrGetBuffer(flagsObj) : (char *)"";
                     std::cout << "\x1b[36m" << "/" << pattern << "/" << flags << "\x1b[0m" << std::flush;
                 }
+            else if(StarbytesObjectTypecheck(object,StarbytesTaskType())){
+                    auto state = StarbytesTaskGetState(object);
+                    if(state == StarbytesTaskPending){
+                        std::cout << "<Task pending>" << std::flush;
+                    }
+                    else if(state == StarbytesTaskResolved){
+                        auto value = StarbytesTaskGetValue(object);
+                        std::cout << "<Task resolved:" << std::flush;
+                        if(value){
+                            _print_rt_obj(value,reg);
+                            StarbytesObjectRelease(value);
+                        }
+                        else {
+                            std::cout << "null" << std::flush;
+                        }
+                        std::cout << ">" << std::flush;
+                    }
+                    else {
+                        auto err = StarbytesTaskGetError(object);
+                        std::cout << "<Task rejected:" << (err ? err : "error") << ">" << std::flush;
+                    }
+                }
             else if(StarbytesObjectTypecheck(object,StarbytesArrayType())){
                     
                     std::cout << "[" << std::flush;

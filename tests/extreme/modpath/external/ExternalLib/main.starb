@@ -1,0 +1,3 @@
+func extlibValue() String {
+    return "EXT-LIB-VALUE"
+}

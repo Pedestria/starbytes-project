@@ -41,6 +41,8 @@ struct Tok {
         LogicOR,
         BitwiseAND,
         BitwiseOR,
+        BitwiseXOR,
+        BitwiseNOT,
         LessThan,
         LessEqual,
         GreaterThan,

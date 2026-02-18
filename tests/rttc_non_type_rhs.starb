@@ -1,0 +1,2 @@
+decl value:Int = 3
+decl flag = value is value

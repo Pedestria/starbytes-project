@@ -202,6 +202,15 @@ class Disassembler {
                 --pairCount;
             }
         }
+        else if(code == CODE_RTTYPECHECK){
+            out << "CODE_RTTYPECHECK ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            RTID typeId;
+            in >> &typeId;
+            out << " " << typeId.len << " ";
+            out.write(typeId.value,sizeof(char) * typeId.len);
+        }
         else if(code == CODE_CONDITIONAL){
             unsigned count;
             in.read((char *)&count,sizeof(count));
@@ -246,7 +255,7 @@ public:
             if(code == CODE_RTIVKFUNC || code == CODE_CONDITIONAL || code == CODE_RTREGEX_LITERAL
                || code == CODE_UNARY_OPERATOR || code == CODE_BINARY_OPERATOR
                || code == CODE_RTVAR_SET || code == CODE_RTINDEX_GET || code == CODE_RTINDEX_SET
-               || code == CODE_RTDICT_LITERAL){
+               || code == CODE_RTDICT_LITERAL || code == CODE_RTTYPECHECK){
                 _disasm_expr(code);
             }
             else {

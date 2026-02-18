@@ -49,6 +49,9 @@ namespace starbytes {
         public:
             void setTokenStream(array_ref<Tok> toks);
             size_t getTokenStreamWidth();
+            bool isAtEnd();
+            const Tok &currentTok();
+            void consumeCurrentTok();
             ASTStmt *nextStatement();
         };
     };

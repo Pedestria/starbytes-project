@@ -1,0 +1,127 @@
+name: Starbytes Partitioned CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+jobs:
+  detect_changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.filter.outputs.core }}
+      tools: ${{ steps.filter.outputs.tools }}
+      stdlib: ${{ steps.filter.outputs.stdlib }}
+      tests: ${{ steps.filter.outputs.tests }}
+      buildsystem: ${{ steps.filter.outputs.buildsystem }}
+      docs_only: ${{ steps.filter.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            core:
+              - "src/base/**"
+              - "src/compiler/**"
+              - "src/runtime/**"
+              - "include/starbytes/**"
+            tools:
+              - "tools/**"
+            stdlib:
+              - "stdlib/**"
+            tests:
+              - "tests/**"
+            buildsystem:
+              - "CMakeLists.txt"
+              - "Starbytes.cmake"
+              - "tools/CMakeLists.txt"
+              - "tests/CMakeLists.txt"
+              - "stdlib/CMakeLists.txt"
+            docs_only:
+              - "README.md"
+              - "STARBYTES_ROADMAP.md"
+              - "docs/**"
+
+  build_core:
+    name: Build Core
+    needs: detect_changes
+    if: needs.detect_changes.outputs.core == 'true' || needs.detect_changes.outputs.buildsystem == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+      - run: cmake --build build --target starbytesBase starbytesCompiler starbytesRuntime -j"$(nproc)"
+
+  build_tools:
+    name: Build Tools (${{ matrix.target }})
+    needs: detect_changes
+    if: needs.detect_changes.outputs.tools == 'true' || needs.detect_changes.outputs.core == 'true' || needs.detect_changes.outputs.buildsystem == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - starbytes
+          - starbytes-disasm
+          - starbytes-lsp
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+      - run: cmake --build build --target ${{ matrix.target }} -j"$(nproc)"
+
+  build_stdlib:
+    name: Build Stdlib (${{ matrix.target }})
+    needs: detect_changes
+    if: needs.detect_changes.outputs.stdlib == 'true' || needs.detect_changes.outputs.core == 'true' || needs.detect_changes.outputs.buildsystem == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - IO
+          - Unicode
+          - Time
+          - Threading
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+      - run: cmake --build build --target ${{ matrix.target }} -j"$(nproc)"
+
+  build_tests:
+    name: Build Tests (${{ matrix.target }})
+    needs: detect_changes
+    if: needs.detect_changes.outputs.tests == 'true' || needs.detect_changes.outputs.core == 'true' || needs.detect_changes.outputs.buildsystem == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - lex-test
+          - parse-test
+          - compile-test
+          - run-test
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+      - run: cmake --build build --target ${{ matrix.target }} -j"$(nproc)"
+
+  full_gate_main:
+    name: Full Gate (${{ matrix.os }})
+    if: github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build --target all -j4

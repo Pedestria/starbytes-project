@@ -593,6 +593,7 @@ namespace starbytes {
             data->name = sourceName;
             data->returnType = func->returnType;
             data->funcType = func->funcType;
+            data->isLazy = func->isLazy;
             
             for(auto & param_pair : func->params){
                 data->paramMap.insert(std::make_pair(param_pair.first->val,param_pair.second));
@@ -664,6 +665,7 @@ namespace starbytes {
                      method->name = m->funcId->val;
                      method->returnType = m->returnType;
                      method->funcType = m->funcType;
+                     method->isLazy = m->isLazy;
                      for(auto & param_pair : m->params){
                          method->paramMap.insert(std::make_pair(param_pair.first->val,param_pair.second));
                      }
@@ -720,6 +722,7 @@ namespace starbytes {
                     method->name = methodDecl->funcId->val;
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
+                    method->isLazy = methodDecl->isLazy;
                     for(auto &paramPair : methodDecl->params){
                         method->paramMap.insert(std::make_pair(paramPair.first->val,paramPair.second));
                     }
@@ -797,6 +800,14 @@ namespace starbytes {
         if(isGenericParamName(genericTypeParams,type->getName()) || type->isGenericParam){
             if(!type->typeParams.empty()){
                 errStream.push(SemanticADiagnostic::create("Generic type parameters cannot have nested type arguments.",diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
+                return false;
+            }
+            return true;
+        }
+
+        if(type->nameMatches(TASK_TYPE)){
+            if(type->typeParams.size() != 1){
+                errStream.push(SemanticADiagnostic::create("Type `Task` expects exactly one type argument.",diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
                 return false;
             }
             return true;

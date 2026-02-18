@@ -1,0 +1,14 @@
+interface Named {
+    func getName() String
+}
+
+class User : Named {
+    decl name:String = "alex"
+
+    func getName() String {
+        return self.name
+    }
+}
+
+decl user = new User()
+decl flag = user is Named

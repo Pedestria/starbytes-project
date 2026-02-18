@@ -71,6 +71,10 @@ size_t StarbytesRegexType(){
     return 7;
 }
 
+size_t StarbytesTaskType(){
+    return 8;
+}
+
 int StarbytesObjectIs(StarbytesObject obj){
     if(obj == NULL){
         return 0;
@@ -81,7 +85,8 @@ int StarbytesObjectIs(StarbytesObject obj){
         || (obj->type == StarbytesNumType())
         || (obj->type == StarbytesBoolType())
         || (obj->type == StarbytesFuncRefType())
-        || (obj->type == StarbytesRegexType());
+        || (obj->type == StarbytesRegexType())
+        || (obj->type == StarbytesTaskType());
 };
 
 
@@ -662,3 +667,96 @@ StarbytesFuncTemplate * StarbytesFuncRefGetPtr(StarbytesFuncRef ref){
     StarbytesFuncRefPriv * privData = (StarbytesFuncRefPriv *)ref->privData;
     return privData->ref;
 };
+
+/// Starbytes Task
+
+typedef struct {
+    StarbytesTaskState state;
+    StarbytesObject value;
+    char *error;
+} StarbytesTaskPriv;
+
+void _StarbytesTaskFree(void *data){
+    StarbytesTaskPriv *priv = (StarbytesTaskPriv *)data;
+    if(priv->value){
+        StarbytesObjectRelease(priv->value);
+    }
+    if(priv->error){
+        free(priv->error);
+    }
+    free(priv);
+}
+
+StarbytesTask StarbytesTaskNew(){
+    StarbytesObject obj = StarbytesObjectNew(StarbytesTaskType());
+    StarbytesTaskPriv privData;
+    privData.state = StarbytesTaskPending;
+    privData.value = NULL;
+    privData.error = NULL;
+    obj->privData = malloc(sizeof(StarbytesTaskPriv));
+    obj->freePrivData = _StarbytesTaskFree;
+    memcpy(obj->privData,&privData,sizeof(StarbytesTaskPriv));
+    return obj;
+}
+
+StarbytesTaskState StarbytesTaskGetState(StarbytesTask task){
+    if(!task || !task->privData){
+        return StarbytesTaskRejected;
+    }
+    StarbytesTaskPriv *privData = (StarbytesTaskPriv *)task->privData;
+    return privData->state;
+}
+
+void StarbytesTaskResolve(StarbytesTask task,StarbytesObject value){
+    if(!task || !task->privData){
+        return;
+    }
+    StarbytesTaskPriv *privData = (StarbytesTaskPriv *)task->privData;
+    if(privData->state != StarbytesTaskPending){
+        return;
+    }
+    privData->state = StarbytesTaskResolved;
+    if(value){
+        StarbytesObjectReference(value);
+    }
+    privData->value = value;
+}
+
+void StarbytesTaskReject(StarbytesTask task,const char *error){
+    if(!task || !task->privData){
+        return;
+    }
+    StarbytesTaskPriv *privData = (StarbytesTaskPriv *)task->privData;
+    if(privData->state != StarbytesTaskPending){
+        return;
+    }
+    privData->state = StarbytesTaskRejected;
+    if(error){
+        size_t len = strlen(error);
+        privData->error = (char *)malloc(len + 1);
+        memcpy(privData->error,error,len + 1);
+    }
+}
+
+StarbytesObject StarbytesTaskGetValue(StarbytesTask task){
+    if(!task || !task->privData){
+        return NULL;
+    }
+    StarbytesTaskPriv *privData = (StarbytesTaskPriv *)task->privData;
+    if(privData->state != StarbytesTaskResolved || !privData->value){
+        return NULL;
+    }
+    StarbytesObjectReference(privData->value);
+    return privData->value;
+}
+
+CString StarbytesTaskGetError(StarbytesTask task){
+    if(!task || !task->privData){
+        return NULL;
+    }
+    StarbytesTaskPriv *privData = (StarbytesTaskPriv *)task->privData;
+    if(privData->state != StarbytesTaskRejected){
+        return NULL;
+    }
+    return privData->error;
+}

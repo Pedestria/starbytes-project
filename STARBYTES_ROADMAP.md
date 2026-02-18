@@ -13,21 +13,59 @@ This roadmap turns Starbytes from a promising prototype into a complete interpre
 
 ## Current Status Summary
 
-Implemented foundations include:
+Implemented language/runtime/tooling features include:
 
-- Lexer/parser for core declarations and expressions.
-- Classes, constructors, field initializers, scopes (`scope`), attributes.
-- Optional (`?`) and throwable (`!`) type qualifiers with `secure(... ) catch`.
-- Runtime regex literals compiled with PCRE2.
-- Basic LSP completion/highlighting.
+- Core declarations and expressions:
+  - `decl` / `imut`
+  - `func`, `return`
+  - `if` / `elif` / `else`, `while`, `for`
+  - arithmetic/comparison/logical operators and compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`).
+- Type and error model:
+  - optional (`?`) and throwable (`!`) qualifiers
+  - `secure(... ) catch` handling
+  - type aliases (`def`)
+  - runtime type checking via `is` (supports aliases; interface targets are intentionally rejected).
+- Object model:
+  - classes, inheritance, constructors, fields/methods, attributes (`@native`, `@readonly`, `@deprecated`)
+  - interfaces
+  - structs
+  - enums.
+- Async/lazy surface:
+  - `lazy` declarations
+  - `await`
+  - `Task<T>` type flow in semantic/codegen/runtime paths (single-threaded execution model).
+- Data/collections:
+  - array and dictionary literals
+  - indexing and mutation.
+- Regex:
+  - runtime regex literal compilation with PCRE2 and catchable failures.
+- Modules/imports/driver:
+  - module graph discovery from file or directory
+  - import resolution across local/module/stdlib folders
+  - cycle detection diagnostics
+  - advanced driver flags (`run`/`compile`/`check`, native loading flags, output controls, help/version).
+- Native stdlib integration:
+  - module baselines for `IO`, `Time`, `Threading`, and `Unicode` with auto-load and explicit `--native` support.
+- Tooling baseline:
+  - basic LSP token completion/highlighting.
 
-Primary missing areas:
+Known gaps and stability risks:
 
-- Full expression operator semantics (`==`, `!=`, logical ops, compound assignment, etc.).
-- Plain variable assignment codegen/runtime completion.
-- Full collection semantics (typed arrays/dicts, indexing, mutation ops).
-- Complete module/import behavior.
-- Broader standard library and mature tooling capabilities.
+- Typed collection enforcement/inference is still incomplete (M2 not fully closed).
+- Some native stdlib surfaces are unstable and currently tracked as expected-fail crash repro cases (notably parts of advanced `IO` stream methods and advanced `Unicode` operations).
+- LSP remains at baseline capabilities; semantic navigation/refactoring features are still pending.
+- Diagnostics and error-code standardization are not yet fully unified across parser/sema/runtime.
+
+## Phase Progress Snapshot
+
+- M1 Core Language Closure: largely complete.
+- M2 Type System/Data Model: partial.
+- M3 Modules and Imports: baseline complete.
+- M4 Standard Library Baseline: baseline implemented, stabilization in progress.
+- M5 Diagnostics: partial.
+- M6 LSP Maturity: early baseline only.
+- M7 Syntax Surface Completion: mostly complete for documented keywords, lambda/function-type ergonomics still pending.
+- M8 Tooling/Release Readiness: in progress.
 
 ---
 
@@ -217,11 +255,9 @@ Goal: either fully implement planned syntax or formally trim it.
 ### Scope
 
 - Resolve status of currently partial/reserved constructs:
-  - `interface`
-  - `struct`
-  - `enum`
   - lambda syntax
-  - async/lazy/await
+  - function type syntax ergonomics
+  - any remaining documented-but-partial constructs
 - Decide keep/drop for each and align docs + parser + sema + runtime.
 
 ### Deliverables
@@ -290,22 +326,19 @@ Apply to all phases:
 
 ## Immediate Next Sprint (Recommended)
 
-Sprint objective: finish M1.
+Sprint objective: stabilize implemented features and close high-risk runtime gaps (M2/M4/M5).
 
 ### Sprint Backlog
 
-1. Implement precedence-based expression parser.
-2. Wire operator opcodes in codegen/runtime.
-3. Add plain variable assignment emission and execution.
-4. Add operator/type mismatch diagnostics with source spans.
-5. Build focused tests:
-   - operator matrix tests
-   - assignment tests
-   - control-flow predicate tests
+1. Fix unstable native stdlib paths identified by extreme tests (IO stream methods, advanced Unicode paths).
+2. Expand typed collection/type-compatibility semantic checks (arrays/dicts, optional/throwable interactions).
+3. Add regression tests for all current expected-fail crash repros and move them to expected-pass.
+4. Harden diagnostics consistency and error-code surfacing across parser/sema/runtime.
+5. Refresh language docs to match actual implemented semantics (`is`, `Task`, module/native behavior, stdlib caveats).
 
 ### Sprint Done Definition
 
-- `tests` includes full operator coverage for implemented syntax.
-- No known mismatch between parser-recognized operators and runtime support.
-- Docs updated with final operator precedence and behavior.
-
+- No crash-level failures in stdlib baseline paths under the extreme suite.
+- Typed collection semantics produce deterministic diagnostics for invalid programs.
+- Expected-fail crash repro tests are either resolved or tracked with explicit issue references.
+- Docs and syntax references match runtime behavior with no known contradictions.

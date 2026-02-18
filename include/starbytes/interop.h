@@ -35,6 +35,7 @@ StarbytesClassType StarbytesDictType();
 StarbytesClassType StarbytesBoolType();
 StarbytesClassType StarbytesFuncRefType();
 StarbytesClassType StarbytesRegexType();
+StarbytesClassType StarbytesTaskType();
 
 
 typedef struct _StarbytesObject * StarbytesObject;
@@ -78,6 +79,7 @@ typedef StarbytesObject StarbytesDict;
 typedef StarbytesObject StarbytesBool;
 typedef StarbytesObject StarbytesNum;
 typedef StarbytesObject StarbytesFuncRef;
+typedef StarbytesObject StarbytesTask;
 
 /// @}
 ///
@@ -168,6 +170,21 @@ StarbytesBoolVal StarbytesBoolValue(StarbytesBool);
 
 StarbytesFuncRef StarbytesFuncRefNew(StarbytesFuncTemplate *funcTemplate);
 StarbytesFuncTemplate * StarbytesFuncRefGetPtr(StarbytesFuncRef);
+///@}
+
+/// @name Starbytes Task Methods
+typedef enum : uint8_t {
+    StarbytesTaskPending = 0x0,
+    StarbytesTaskResolved = 0x1,
+    StarbytesTaskRejected = 0x2
+} StarbytesTaskState;
+
+StarbytesTask StarbytesTaskNew();
+StarbytesTaskState StarbytesTaskGetState(StarbytesTask task);
+void StarbytesTaskResolve(StarbytesTask task,StarbytesObject value);
+void StarbytesTaskReject(StarbytesTask task,const char *error);
+StarbytesObject StarbytesTaskGetValue(StarbytesTask task);
+CString StarbytesTaskGetError(StarbytesTask task);
 ///@}
 
 StarbytesObject StarbytesFuncArgsGetArg(StarbytesFuncArgs args);

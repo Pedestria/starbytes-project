@@ -24,6 +24,27 @@ size_t SyntaxA::getTokenStreamWidth(){
     return token_stream.size();
 }
 
+bool SyntaxA::isAtEnd(){
+    if(token_stream.size() == 0){
+        return true;
+    }
+    return token_stream[privTokIndex].type == Tok::EndOfFile;
+}
+
+const Tok &SyntaxA::currentTok(){
+    return token_stream[privTokIndex];
+}
+
+void SyntaxA::consumeCurrentTok(){
+    if(token_stream.size() == 0){
+        return;
+    }
+    if(token_stream[privTokIndex].type == Tok::EndOfFile){
+        return;
+    }
+    ++privTokIndex;
+}
+
  ASTStmt * SyntaxA::nextStatement(){
         TokRef t = token_stream[privTokIndex];
         if(t.type == Tok::EndOfFile){
@@ -128,6 +149,10 @@ size_t SyntaxA::getTokenStreamWidth(){
         }
         else if(tok_id == "Any"){
             baseType = ANY_TYPE;
+            isBuiltinType = true;
+        }
+        else if(tok_id == "Task"){
+            baseType = TASK_TYPE;
             isBuiltinType = true;
         }
         else {

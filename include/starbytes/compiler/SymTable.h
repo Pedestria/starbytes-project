@@ -26,6 +26,7 @@ namespace starbytes {
                 ASTType *funcType;
                 ASTType *returnType;
                 string_map<ASTType *> paramMap;
+                bool isLazy = false;
             };
             
             struct Class {

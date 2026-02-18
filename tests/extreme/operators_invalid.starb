@@ -1,0 +1,3 @@
+decl value:Int = 7
+decl flag:Bool = true
+decl broken = value & flag

@@ -22,7 +22,13 @@ void InterfaceGen::consumeDecl(ASTDecl *stmt) {
     switch (stmt->type) {
         case FUNC_DECL: {
             auto node = (ASTFuncDecl *)stmt;
-            out << KW_FUNC << " " << node->funcId->val << "(";
+            if(node->isLazy){
+                out << KW_LAZY << " " << KW_FUNC << " ";
+            }
+            else {
+                out << KW_FUNC << " ";
+            }
+            out << node->funcId->val << "(";
             
             unsigned idx = 0;
             for(auto & n : node->params){

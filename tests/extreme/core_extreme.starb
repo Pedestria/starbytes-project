@@ -1,0 +1,178 @@
+scope Extreme {
+    decl banner:String = "extreme-core"
+
+    func bump(x:Int) Int {
+        return x + 1
+    }
+}
+
+def IntAlias = Int
+def IntAlias2 = IntAlias
+
+enum Mode {
+    FAST
+    SAFE = 9
+    DEBUG
+}
+
+struct Pair {
+    decl left:Int = 0
+    decl right:Int = 0
+}
+
+interface Mapper<T> {
+    func map(v:T) T {
+        return v
+    }
+}
+
+class NumberMapper : Mapper<IntAlias2> {
+    func map(v:IntAlias2) IntAlias2 {
+        return v + 1
+    }
+}
+
+class BaseNode {
+    decl tag:String = "base"
+}
+
+class LeafNode : BaseNode {
+    new(){
+        self.tag = "leaf"
+    }
+}
+
+class BoolProbe {
+    decl hits:Int = 0
+}
+
+func touchProbe(p:BoolProbe) Bool {
+    p.hits += 1
+    return true
+}
+
+lazy delayedMath(a:Int,b:Int) Int {
+    return (a + b) * 2
+}
+
+lazy func badRegexTask() Regex! {
+    return /(/g
+}
+
+func maybe(flag:Bool) String? {
+    if(flag){
+        return "ok"
+    }
+    return "none"
+}
+
+print(Extreme.banner)
+print(Extreme.bump(5))
+print(Mode.FAST)
+print(Mode.SAFE)
+print(Mode.DEBUG)
+
+decl pair = new Pair()
+pair.left = 7
+pair.right = 11
+print(pair.left + pair.right)
+
+decl mapper = new NumberMapper()
+print(mapper.map(10))
+
+decl leaf = new LeafNode()
+print(leaf.tag)
+print(leaf is LeafNode)
+print(leaf is BaseNode)
+print(leaf is Int)
+
+secure(decl maybeA = maybe(true)) catch {
+    print("MAYBE-A-CATCH")
+}
+print(maybeA)
+
+decl maybeMissing:String?
+secure(decl maybeB = maybeMissing) catch {
+    print("MAYBE-B-CATCH")
+}
+
+decl base:IntAlias2 = 3
+decl pending:Task<IntAlias2> = delayedMath(base,4)
+decl done = await pending
+print(done)
+print(done is IntAlias)
+print(done is IntAlias2)
+print(done is Any)
+
+decl bitA:Int = 14
+decl bitB:Int = 5
+decl bitAnd = bitA & bitB
+decl bitOr = bitA | bitB
+decl bitXor = bitA ^ bitB
+decl bitShl = bitB << 2
+decl bitShr = bitA >> 1
+decl bitNot = ~bitB
+decl bitPlus = +done
+
+bitA &= 7
+bitA |= 1
+bitA ^= 3
+bitA <<= 1
+bitA >>= 2
+
+if(bitAnd == 4 && bitOr == 15 && bitXor == 11 && bitShl == 20 && bitShr == 7 && bitNot == -6 && bitA == 2 && bitPlus == done){
+    print("OPS-BITWISE-OK")
+}
+else {
+    print("OPS-BITWISE-FAIL")
+}
+
+decl probe = new BoolProbe()
+decl scAnd = false && touchProbe(probe)
+decl scOr = true || touchProbe(probe)
+if(scAnd == false && scOr == true && probe.hits == 0){
+    print("OPS-SHORTCIRCUIT-OK")
+}
+else {
+    print("OPS-SHORTCIRCUIT-FAIL")
+}
+
+secure(decl broken = await badRegexTask()) catch (error:String) {
+    print("LAZY-REGEX-CATCH")
+    print(error)
+}
+
+decl bag = {"name":"extreme","count":1,"ok":true}
+bag["count"] += 4
+print(bag["name"])
+print(bag["count"])
+
+decl nums = [1,2,3,4,5]
+nums[0] += 9
+nums[4] *= 2
+print(nums[0])
+print(nums[4])
+
+decl idx:Int = 0
+decl checksum:Int = 0
+while(idx < 128){
+    checksum += idx
+    if((idx % 2) == 0){
+        checksum += 1
+    }
+    elif((idx % 3) == 0){
+        checksum += 2
+    }
+    else {
+        checksum += 3
+    }
+    idx += 1
+}
+print(checksum)
+
+if((checksum > 0 && done > 0) || (done < 0)){
+    print("EXTREME-CORE-OK")
+}
+else {
+    print("EXTREME-CORE-FAIL")
+}

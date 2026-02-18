@@ -34,8 +34,21 @@ namespace starbytes {
        if(astConsumer.acceptsSymbolTableContext()){
            astConsumer.consumeSTableContext(&moduleParseContext.sTableContext);
        };
-        ASTStmt *stmt;
-        while((stmt = syntaxA->nextStatement()) != nullptr){
+        while(true){
+            ASTStmt *stmt = syntaxA->nextStatement();
+            if(!stmt){
+                if(syntaxA->isAtEnd()){
+                    break;
+                }
+                auto tok = syntaxA->currentTok();
+                Region region;
+                region.startLine = region.endLine = tok.srcPos.line;
+                region.startCol = tok.srcPos.startCol;
+                region.endCol = tok.srcPos.endCol;
+                diagnosticHandler->push(StandardDiagnostic::createError(fmtString("Unexpected token `@{0}`.",tok.content),region));
+                syntaxA->consumeCurrentTok();
+                continue;
+            }
             auto check  = semanticA->checkSymbolsForStmt(stmt,moduleParseContext.sTableContext);
             if(check){
                 if(stmt->type & DECL){
@@ -50,8 +63,7 @@ namespace starbytes {
             else {
 //                break;
             }
-        
-        };
+        }
         tokenStream.clear();
        
     }

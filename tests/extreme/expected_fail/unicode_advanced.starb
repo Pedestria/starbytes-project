@@ -1,0 +1,17 @@
+import Unicode
+
+secure(decl loc = localeCurrent()) catch {
+    print("UNICODE-LOC-CATCH")
+}
+print(loc.id())
+
+secure(decl folded = caseFold("Straße")) catch {
+    print("UNICODE-FOLD-CATCH")
+}
+print(folded)
+
+// Currently unstable in runtime; kept as crash repro regression test.
+secure(decl contains = containsFolded("StarBytes","star",loc)) catch {
+    print("UNICODE-CONTAINS-CATCH")
+}
+print(contains)

@@ -91,6 +91,10 @@ struct ModuleGraph {
     bool rootHasMainSource = false;
 };
 
+struct ResolverContext {
+    std::vector<std::filesystem::path> moduleSearchDirs;
+};
+
 std::string makeAbsolutePathString(const std::filesystem::path &path) {
     std::error_code ec;
     auto weak = std::filesystem::weakly_canonical(path, ec);
@@ -109,6 +113,130 @@ std::string normalizeImportModuleName(const std::string &name) {
         out.pop_back();
     }
     return out;
+}
+
+bool lineIsCommentOrEmpty(const std::string &line) {
+    size_t index = 0;
+    while(index < line.size() && std::isspace(static_cast<unsigned char>(line[index]))) {
+        ++index;
+    }
+    if(index >= line.size()) {
+        return true;
+    }
+    if(line[index] == '#') {
+        return true;
+    }
+    if(line[index] == '/' && (index + 1) < line.size() && line[index + 1] == '/') {
+        return true;
+    }
+    return false;
+}
+
+bool loadModulePathFile(const std::filesystem::path &path,
+                        std::vector<std::filesystem::path> &outDirs,
+                        std::unordered_set<std::string> &seenDirs,
+                        std::vector<std::string> &warnings) {
+    std::ifstream in(path, std::ios::in);
+    if(!in.is_open()) {
+        return true;
+    }
+
+    const auto baseDir = path.parent_path();
+    std::string rawLine;
+    unsigned lineNo = 0;
+    while(std::getline(in, rawLine)) {
+        ++lineNo;
+        if(lineIsCommentOrEmpty(rawLine)) {
+            continue;
+        }
+
+        auto begin = rawLine.find_first_not_of(" \t\r\n");
+        auto end = rawLine.find_last_not_of(" \t\r\n");
+        if(begin == std::string::npos || end == std::string::npos) {
+            continue;
+        }
+        auto entry = rawLine.substr(begin, end - begin + 1);
+        std::filesystem::path entryPath(entry);
+        if(entryPath.is_relative()) {
+            entryPath = baseDir / entryPath;
+        }
+
+        std::error_code ec;
+        if(!std::filesystem::exists(entryPath, ec) || ec || !std::filesystem::is_directory(entryPath, ec) || ec) {
+            warnings.push_back("Ignoring invalid .starbmodpath entry `" + entry + "` at " +
+                               path.string() + ":" + std::to_string(lineNo));
+            continue;
+        }
+
+        auto normalized = makeAbsolutePathString(entryPath);
+        if(seenDirs.insert(normalized).second) {
+            outDirs.emplace_back(normalized);
+        }
+    }
+    return true;
+}
+
+std::filesystem::path executableDirectoryFromArgv0(const char *argv0) {
+    if(!argv0 || std::string(argv0).empty()) {
+        return std::filesystem::current_path();
+    }
+    std::filesystem::path p(argv0);
+    std::error_code ec;
+    if(p.is_relative()) {
+        p = std::filesystem::absolute(p, ec);
+        if(ec) {
+            p = std::filesystem::current_path() / p;
+        }
+    }
+    auto dir = p.parent_path();
+    if(dir.empty()) {
+        dir = std::filesystem::current_path();
+    }
+    return std::filesystem::path(makeAbsolutePathString(dir));
+}
+
+ResolverContext buildResolverContext(const std::filesystem::path &inputPath,
+                                     const std::filesystem::path &workspaceRoot,
+                                     const char *argv0,
+                                     std::vector<std::string> &warnings) {
+    ResolverContext context;
+    std::unordered_set<std::string> seenDirs;
+
+    auto appendDir = [&](const std::filesystem::path &dir) {
+        auto normalized = makeAbsolutePathString(dir);
+        if(seenDirs.insert(normalized).second) {
+            context.moduleSearchDirs.emplace_back(normalized);
+        }
+    };
+
+    auto loadAtRoot = [&](const std::filesystem::path &rootDir) {
+        std::error_code ec;
+        if(!std::filesystem::exists(rootDir, ec) || ec || !std::filesystem::is_directory(rootDir, ec) || ec) {
+            return;
+        }
+        loadModulePathFile(rootDir / ".starbmodpath", context.moduleSearchDirs, seenDirs, warnings);
+        auto parent = rootDir.parent_path();
+        if(!parent.empty()) {
+            loadModulePathFile(parent / ".starbmodpath", context.moduleSearchDirs, seenDirs, warnings);
+        }
+    };
+
+    appendDir(workspaceRoot);
+    appendDir(workspaceRoot / "modules");
+    appendDir(workspaceRoot / "stdlib");
+
+    auto exeDir = executableDirectoryFromArgv0(argv0);
+    loadAtRoot(exeDir);
+
+    std::error_code ec;
+    auto inputRoot = std::filesystem::is_directory(inputPath, ec) && !ec ? inputPath : inputPath.parent_path();
+    if(inputRoot.empty()) {
+        inputRoot = workspaceRoot;
+    }
+    inputRoot = std::filesystem::path(makeAbsolutePathString(inputRoot));
+    loadAtRoot(inputRoot);
+
+    return context;
 }
 
 std::vector<std::string> extractImportsFromSource(const std::string &sourceText) {
@@ -212,13 +340,17 @@ bool collectModuleSourcesInDirectory(const std::filesystem::path &moduleDir,
 
 std::optional<std::filesystem::path> resolveImportModuleDirectory(const std::string &moduleName,
                                                                   const std::filesystem::path &currentModuleDir,
-                                                                  const std::filesystem::path &workspaceRoot) {
+                                                                  const std::filesystem::path &workspaceRoot,
+                                                                  const ResolverContext &resolverContext) {
     std::vector<std::filesystem::path> candidates;
     candidates.push_back(currentModuleDir / moduleName);
     candidates.push_back(currentModuleDir.parent_path() / moduleName);
     candidates.push_back(workspaceRoot / moduleName);
     candidates.push_back(workspaceRoot / "modules" / moduleName);
     candidates.push_back(workspaceRoot / "stdlib" / moduleName);
+    for(const auto &root : resolverContext.moduleSearchDirs) {
+        candidates.push_back(root / moduleName);
+    }
 
     for(const auto &candidate : candidates) {
         std::error_code ec;
@@ -246,6 +378,7 @@ std::string joinCycle(const std::vector<std::string> &stack, const std::string &
 
 bool discoverModuleGraphByDirectory(const std::filesystem::path &moduleDir,
                                     const std::filesystem::path &workspaceRoot,
+                                    const ResolverContext &resolverContext,
                                     ModuleGraph &graph,
                                     std::unordered_set<std::string> &visiting,
                                     std::vector<std::string> &stack,
@@ -281,14 +414,14 @@ bool discoverModuleGraphByDirectory(const std::filesystem::path &moduleDir,
     }
 
     for(const auto &importName : unit.imports) {
-        auto resolvedDir = resolveImportModuleDirectory(importName, unit.moduleDir, workspaceRoot);
+        auto resolvedDir = resolveImportModuleDirectory(importName, unit.moduleDir, workspaceRoot, resolverContext);
         if(!resolvedDir.has_value()) {
             error = "Failed to resolve imported module `" + importName + "` from `" + moduleDir.string() + "`.";
             visiting.erase(moduleKey);
             stack.pop_back();
             return false;
         }
-        if(!discoverModuleGraphByDirectory(*resolvedDir, workspaceRoot, graph, visiting, stack, error)) {
+        if(!discoverModuleGraphByDirectory(*resolvedDir, workspaceRoot, resolverContext, graph, visiting, stack, error)) {
             visiting.erase(moduleKey);
             stack.pop_back();
             return false;
@@ -304,6 +437,7 @@ bool discoverModuleGraphByDirectory(const std::filesystem::path &moduleDir,
 
 bool discoverModuleGraphBySingleFile(const std::filesystem::path &sourceFile,
                                      const std::filesystem::path &workspaceRoot,
+                                     const ResolverContext &resolverContext,
                                      ModuleGraph &graph,
                                      std::string &error) {
     ModuleBuildUnit rootUnit;
@@ -325,12 +459,12 @@ bool discoverModuleGraphBySingleFile(const std::filesystem::path &sourceFile,
     std::unordered_set<std::string> visiting;
     std::vector<std::string> stack;
     for(const auto &importName : rootUnit.imports) {
-        auto resolvedDir = resolveImportModuleDirectory(importName, rootUnit.moduleDir, workspaceRoot);
+        auto resolvedDir = resolveImportModuleDirectory(importName, rootUnit.moduleDir, workspaceRoot, resolverContext);
         if(!resolvedDir.has_value()) {
             error = "Failed to resolve imported module `" + importName + "` from `" + sourceFile.string() + "`.";
             return false;
         }
-        if(!discoverModuleGraphByDirectory(*resolvedDir, workspaceRoot, graph, visiting, stack, error)) {
+        if(!discoverModuleGraphByDirectory(*resolvedDir, workspaceRoot, resolverContext, graph, visiting, stack, error)) {
             return false;
         }
     }
@@ -346,13 +480,14 @@ bool discoverModuleGraphBySingleFile(const std::filesystem::path &sourceFile,
 
 bool discoverModuleGraph(const std::filesystem::path &inputPath,
                          const std::filesystem::path &workspaceRoot,
+                         const ResolverContext &resolverContext,
                          ModuleGraph &graph,
                          std::string &error) {
     std::error_code ec;
     if(std::filesystem::is_directory(inputPath, ec)) {
         std::unordered_set<std::string> visiting;
         std::vector<std::string> stack;
-        if(!discoverModuleGraphByDirectory(inputPath, workspaceRoot, graph, visiting, stack, error)) {
+        if(!discoverModuleGraphByDirectory(inputPath, workspaceRoot, resolverContext, graph, visiting, stack, error)) {
             return false;
         }
         graph.rootKey = makeAbsolutePathString(inputPath);
@@ -367,7 +502,7 @@ bool discoverModuleGraph(const std::filesystem::path &inputPath,
         return false;
     }
 
-    return discoverModuleGraphBySingleFile(inputPath, workspaceRoot, graph, error);
+    return discoverModuleGraphBySingleFile(inputPath, workspaceRoot, resolverContext, graph, error);
 }
 
 std::string defaultModuleNameForPath(const std::filesystem::path &path) {
@@ -451,6 +586,7 @@ std::vector<std::filesystem::path> collectAutoNativeModulePaths(const DriverOpti
                                                                 const ModuleGraph &graph,
                                                                 const std::filesystem::path &compiledModulePath,
                                                                 const std::filesystem::path &workspaceRoot,
+                                                                const ResolverContext &resolverContext,
                                                                 std::vector<std::string> &warnings) {
     std::vector<std::filesystem::path> paths;
     if(!opts.autoLoadNative) {
@@ -466,6 +602,9 @@ std::vector<std::filesystem::path> collectAutoNativeModulePaths(const DriverOpti
     baseSearchDirs.push_back(compiledModulePath.parent_path());
     baseSearchDirs.push_back(workspaceRoot / "stdlib");
     baseSearchDirs.push_back(workspaceRoot / "build" / "stdlib");
+    for(const auto &root : resolverContext.moduleSearchDirs) {
+        baseSearchDirs.push_back(root);
+    }
 
     std::unordered_set<std::string> seen;
     for(const auto &unitKey : graph.buildOrder) {
@@ -813,10 +952,15 @@ int main(int argc, const char *argv[]) {
 
     auto workspaceRoot = std::filesystem::current_path();
     auto absoluteInputPath = std::filesystem::path(makeAbsolutePathString(inputPath));
+    std::vector<std::string> resolverWarnings;
+    auto resolverContext = buildResolverContext(absoluteInputPath, workspaceRoot, argv[0], resolverWarnings);
+    for(const auto &warning : resolverWarnings) {
+        std::cerr << "Warning: " << warning << std::endl;
+    }
 
     ModuleGraph graph;
     std::string graphError;
-    if(!discoverModuleGraph(absoluteInputPath, workspaceRoot, graph, graphError)) {
+    if(!discoverModuleGraph(absoluteInputPath, workspaceRoot, resolverContext, graph, graphError)) {
         std::cerr << graphError << std::endl;
         return 1;
     }
@@ -944,7 +1088,7 @@ int main(int argc, const char *argv[]) {
         }
 
         std::vector<std::string> autoNativeWarnings;
-        auto autoNativePaths = collectAutoNativeModulePaths(opts, graph, compiledModulePath, workspaceRoot, autoNativeWarnings);
+        auto autoNativePaths = collectAutoNativeModulePaths(opts, graph, compiledModulePath, workspaceRoot, resolverContext, autoNativeWarnings);
         for(const auto &warning : autoNativeWarnings) {
             std::cerr << "Warning: " << warning << std::endl;
         }

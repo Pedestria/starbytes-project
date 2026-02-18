@@ -1,0 +1,7 @@
+import Time
+
+secure(decl tz = timezoneUTC()) catch (error:String) {
+    print("EXPLICIT-NATIVE-CATCH")
+    print(error)
+}
+print(tz.id())
