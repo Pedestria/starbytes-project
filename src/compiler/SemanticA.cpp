@@ -116,12 +116,159 @@ namespace starbytes {
         return out.str();
     }
 
+    static bool regionHasLocation(const Region &region){
+        return region.startLine > 0 || region.endLine > 0 || region.startCol > 0 || region.endCol > 0;
+    }
+
+    static Region deriveRegionFromExpr(ASTExpr *expr);
+
+    static Region deriveRegionFromDecl(ASTDecl *decl){
+        if(!decl){
+            return {};
+        }
+        if(regionHasLocation(decl->codeRegion)){
+            return decl->codeRegion;
+        }
+        if(decl->type == VAR_DECL){
+            auto *varDecl = (ASTVarDecl *)decl;
+            if(!varDecl->specs.empty()){
+                auto &spec = varDecl->specs.front();
+                if(spec.id && regionHasLocation(spec.id->codeRegion)){
+                    return spec.id->codeRegion;
+                }
+                if(spec.expr){
+                    auto region = deriveRegionFromExpr(spec.expr);
+                    if(regionHasLocation(region)){
+                        return region;
+                    }
+                }
+            }
+        }
+        else if(decl->type == FUNC_DECL){
+            auto *funcDecl = (ASTFuncDecl *)decl;
+            if(funcDecl->funcId && regionHasLocation(funcDecl->funcId->codeRegion)){
+                return funcDecl->funcId->codeRegion;
+            }
+        }
+        else if(decl->type == CLASS_DECL){
+            auto *classDecl = (ASTClassDecl *)decl;
+            if(classDecl->id && regionHasLocation(classDecl->id->codeRegion)){
+                return classDecl->id->codeRegion;
+            }
+        }
+        else if(decl->type == RETURN_DECL){
+            auto *retDecl = (ASTReturnDecl *)decl;
+            if(retDecl->expr){
+                auto region = deriveRegionFromExpr(retDecl->expr);
+                if(regionHasLocation(region)){
+                    return region;
+                }
+            }
+        }
+        else if(decl->type == COND_DECL){
+            auto *condDecl = (ASTConditionalDecl *)decl;
+            if(!condDecl->specs.empty() && condDecl->specs.front().expr){
+                auto region = deriveRegionFromExpr(condDecl->specs.front().expr);
+                if(regionHasLocation(region)){
+                    return region;
+                }
+            }
+        }
+        else if(decl->type == FOR_DECL){
+            auto *forDecl = (ASTForDecl *)decl;
+            if(forDecl->expr){
+                auto region = deriveRegionFromExpr(forDecl->expr);
+                if(regionHasLocation(region)){
+                    return region;
+                }
+            }
+        }
+        else if(decl->type == WHILE_DECL){
+            auto *whileDecl = (ASTWhileDecl *)decl;
+            if(whileDecl->expr){
+                auto region = deriveRegionFromExpr(whileDecl->expr);
+                if(regionHasLocation(region)){
+                    return region;
+                }
+            }
+        }
+        else if(decl->type == SECURE_DECL){
+            auto *secureDecl = (ASTSecureDecl *)decl;
+            if(secureDecl->guardedDecl && !secureDecl->guardedDecl->specs.empty() && secureDecl->guardedDecl->specs.front().expr){
+                auto region = deriveRegionFromExpr(secureDecl->guardedDecl->specs.front().expr);
+                if(regionHasLocation(region)){
+                    return region;
+                }
+            }
+        }
+        return {};
+    }
+
+    static Region deriveRegionFromExpr(ASTExpr *expr){
+        if(!expr){
+            return {};
+        }
+        if(regionHasLocation(expr->codeRegion)){
+            return expr->codeRegion;
+        }
+        if(expr->id && regionHasLocation(expr->id->codeRegion)){
+            return expr->id->codeRegion;
+        }
+        if(expr->callee){
+            auto region = deriveRegionFromExpr(expr->callee);
+            if(regionHasLocation(region)){
+                return region;
+            }
+        }
+        if(expr->leftExpr){
+            auto region = deriveRegionFromExpr(expr->leftExpr);
+            if(regionHasLocation(region)){
+                return region;
+            }
+        }
+        if(expr->rightExpr){
+            auto region = deriveRegionFromExpr(expr->rightExpr);
+            if(regionHasLocation(region)){
+                return region;
+            }
+        }
+        if(!expr->exprArrayData.empty()){
+            auto region = deriveRegionFromExpr(expr->exprArrayData.front());
+            if(regionHasLocation(region)){
+                return region;
+            }
+        }
+        return {};
+    }
+
+    static Region deriveRegionFromStmt(ASTStmt *stmt){
+        if(!stmt){
+            return {};
+        }
+        if(regionHasLocation(stmt->codeRegion)){
+            return stmt->codeRegion;
+        }
+        if(stmt->type & DECL){
+            return deriveRegionFromDecl((ASTDecl *)stmt);
+        }
+        if(stmt->type & EXPR){
+            return deriveRegionFromExpr((ASTExpr *)stmt);
+        }
+        return {};
+    }
+
     DiagnosticPtr SemanticADiagnostic::create(string_ref message, ASTStmt *stmt, Type ty){
-        std::ostringstream new_message;
-        stmt->printToStream(new_message);
-        new_message << " " << message;
-        auto msg = new_message.str();
-        return StandardDiagnostic::createError(msg);
+        auto region = deriveRegionFromStmt(stmt);
+        if(ty == Diagnostic::Warning){
+            if(regionHasLocation(region)){
+                return StandardDiagnostic::createWarning(message,region);
+            }
+            return StandardDiagnostic::createWarning(message);
+        }
+        if(regionHasLocation(region)){
+            return StandardDiagnostic::createError(message,region);
+        }
+        return StandardDiagnostic::createError(message);
     }
 
     SemanticA::SemanticA(Syntax::SyntaxA & syntaxARef,DiagnosticHandler & errStream):syntaxARef(syntaxARef),errStream(errStream){
@@ -137,13 +284,14 @@ namespace starbytes {
      /// Only registers new symbols associated with top level decls!
     void SemanticA::addSTableEntryForDecl(ASTDecl *decl,Semantics::SymbolTable *tablePtr){
        
-        auto buildVarEntry = [&](ASTVarDecl::VarSpec &spec,std::shared_ptr<ASTScope> scope){
+        auto buildVarEntry = [&](ASTVarDecl::VarSpec &spec,std::shared_ptr<ASTScope> scope,bool isReadonly){
             std::string sourceName = spec.id->val;
             std::string emittedName = buildEmittedName(scope,sourceName);
             auto *e = new Semantics::SymbolTable::Entry();
             auto data = new Semantics::SymbolTable::Var();
             data->name = sourceName;
             data->type = spec.type;
+            data->isReadonly = isReadonly;
             e->name = sourceName;
             e->emittedName = emittedName;
             e->data = data;
@@ -177,7 +325,7 @@ namespace starbytes {
             case VAR_DECL : {
                 auto *varDecl = (ASTVarDecl *)decl;
                 for(auto & spec : varDecl->specs) {
-                    tablePtr->addSymbolInScope(buildVarEntry(spec,varDecl->scope),varDecl->scope);
+                    tablePtr->addSymbolInScope(buildVarEntry(spec,varDecl->scope,varDecl->isConst),varDecl->scope);
                 }
                 break;
             }
@@ -200,7 +348,7 @@ namespace starbytes {
                  classDecl->classType = data->classType;
                  classDecl->id->val = emittedName;
                  for(auto & f : classDecl->fields){
-                     bool readonlyField = false;
+                     bool readonlyField = f->isConst;
                      for(auto &attr : f->attributes){
                          if(attr.name == "readonly"){
                              readonlyField = true;
@@ -248,6 +396,13 @@ namespace starbytes {
                 tablePtr->addSymbolInScope(entry,decl->scope);
                 break;
             }
+            case SECURE_DECL : {
+                auto *secureDecl = (ASTSecureDecl *)decl;
+                if(secureDecl->guardedDecl){
+                    addSTableEntryForDecl(secureDecl->guardedDecl,tablePtr);
+                }
+                break;
+            }
         default : {
             break;
         }
@@ -266,7 +421,8 @@ namespace starbytes {
            type->nameMatches(DICTIONARY_TYPE) ||
            type->nameMatches(BOOL_TYPE) ||
            type->nameMatches(INT_TYPE) ||
-           type->nameMatches(FLOAT_TYPE)){
+           type->nameMatches(FLOAT_TYPE) ||
+           type->nameMatches(REGEX_TYPE)){
             return true;
         }
         auto *entry = contextTableContext.findEntryNoDiag(type->getName(),scope);

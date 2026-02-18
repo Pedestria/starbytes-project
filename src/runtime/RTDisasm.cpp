@@ -17,6 +17,41 @@ class Disassembler {
             out << " ";
             _disasm_expr(code);
         }
+        else if(code == CODE_RTSECURE_DECL){
+            RTID targetVar;
+            in >> &targetVar;
+            out << "CODE_RTSECURE_DECL " << targetVar.len << " ";
+            out.write(targetVar.value,sizeof(char) * targetVar.len);
+            bool hasCatchBinding = false;
+            in.read((char *)&hasCatchBinding,sizeof(hasCatchBinding));
+            out << " " << std::boolalpha << hasCatchBinding << std::noboolalpha;
+            if(hasCatchBinding){
+                RTID catchBinding;
+                in >> &catchBinding;
+                out << " " << catchBinding.len << " ";
+                out.write(catchBinding.value,sizeof(char) * catchBinding.len);
+            }
+            bool hasCatchType = false;
+            in.read((char *)&hasCatchType,sizeof(hasCatchType));
+            out << " " << std::boolalpha << hasCatchType << std::noboolalpha;
+            if(hasCatchType){
+                RTID catchType;
+                in >> &catchType;
+                out << " " << catchType.len << " ";
+                out.write(catchType.value,sizeof(char) * catchType.len);
+            }
+            in.read((char *)&code,sizeof(RTCode));
+            out << " ";
+            _disasm_expr(code);
+            in.read((char *)&code,sizeof(RTCode));
+            out << " CODE_RTBLOCK_BEGIN" << std::endl;
+            while(code != CODE_RTBLOCK_END){
+                _disasm_expr(code);
+                in.read((char *)&code,sizeof(RTCode));
+                out << std::endl;
+            }
+            out << "CODE_RTBLOCK_END";
+        }
         else if(code == CODE_RTFUNC){
             RTFuncTemplate funcTemp;
             in >> &funcTemp;
@@ -92,6 +127,16 @@ class Disassembler {
         else if(code == CODE_RTOBJCREATE){
             
         }
+        else if(code == CODE_RTREGEX_LITERAL){
+            RTID patternId;
+            RTID flagsId;
+            in >> &patternId;
+            in >> &flagsId;
+            out << "CODE_RTREGEX_LITERAL " << patternId.len << " ";
+            out.write(patternId.value,sizeof(char) * patternId.len);
+            out << " " << flagsId.len << " ";
+            out.write(flagsId.value,sizeof(char) * flagsId.len);
+        }
         else if (code == CODE_RTVAR_REF){
             RTID id;
             in >> &id;
@@ -139,7 +184,7 @@ public:
         RTCode code;
         in.read((char *)&code,sizeof(RTCode));
         while (code != CODE_MODULE_END) {
-            if(code == CODE_RTIVKFUNC || code == CODE_CONDITIONAL){
+            if(code == CODE_RTIVKFUNC || code == CODE_CONDITIONAL || code == CODE_RTREGEX_LITERAL){
                 _disasm_expr(code);
             }
             else {

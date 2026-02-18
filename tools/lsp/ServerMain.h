@@ -1,9 +1,9 @@
+#include <istream>
+#include <ostream>
+#include <string>
+#include <unordered_map>
 
-#include "LSPProtocol.h"
-#include <fstream>
-#include <future>
-
-#include <starbytes/compiler/Parser.h>
+#include <rapidjson/document.h>
 
 #ifndef STARBYTES_LSP_SERVERMAIN_H
 #define STARBYTES_LSP_SERVERMAIN_H
@@ -14,39 +14,37 @@ namespace starbytes {
 namespace lsp {
 
 struct ServerOptions {
- std::istream & in;
- std::ostream & os;
+  std::istream &in;
+  std::ostream &os;
 };
 
-/**
- * */
 class Server {
-    
-  std::istream & in;
-    
-  std::ostream & out;
-
-  std::shared_ptr<ThreadedServerContext> serverContext;
-
-  WorkspaceManager workspaceManager;
-
-  MessageIO messageIO;
-
-  std::vector<std::thread> threadsInFlight;
-
-  std::mutex mutex;
+  std::istream &in;
+  std::ostream &out;
 
   bool serverOn = true;
-    
-  std::shared_ptr<InMessage> getMessage();
-  void sendError(OutError &err,std::shared_ptr<OutMessage> & out);
-  void sendMessage(std::shared_ptr<OutMessage> & outmessage,MessageInfo & info);
-  void consumeNotification(std::shared_ptr<InMessage> & inmessage);
+  bool shutdownRequested = false;
 
-  void buildCancellableRequest(std::shared_ptr<InMessage> & initialMessage);
-  void replyToRequest(std::shared_ptr<InMessage> & inmessage);
-  void processMessage(std::shared_ptr<InMessage> & inmessage);
-  void cycle();
+  std::unordered_map<std::string, std::string> openDocuments;
+
+  bool readMessage(std::string &body);
+  void writeMessage(rapidjson::Document &doc);
+  void writeResult(const rapidjson::Value &id, rapidjson::Value &result);
+  void writeError(const rapidjson::Value &id, int code, const char *message);
+
+  static std::string trim(const std::string &in);
+  static bool isIdentifierChar(char c);
+  static std::string extractPrefixAtPosition(const std::string &text, unsigned line, unsigned character);
+
+  void handleInitialize(rapidjson::Document &request);
+  void handleShutdown(rapidjson::Document &request);
+  void handleCompletion(rapidjson::Document &request);
+  void handleSemanticTokens(rapidjson::Document &request);
+  void handleDidOpen(rapidjson::Document &request);
+  void handleDidChange(rapidjson::Document &request);
+  void handleDidClose(rapidjson::Document &request);
+  void processRequest(rapidjson::Document &request);
+  void processNotification(rapidjson::Document &request);
 public:
   explicit Server(starbytes::lsp::ServerOptions &options);
   void run();

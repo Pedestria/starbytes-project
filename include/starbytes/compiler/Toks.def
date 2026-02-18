@@ -53,6 +53,9 @@
 #define KW_ELSE KW("else")
 #define KW_ELIF KW("elif")
 #define KW_FOR KW("for")
+#define KW_WHILE KW("while")
+#define KW_SECURE KW("secure")
+#define KW_CATCH KW("catch")
 #define KW_NEW KW("new")
 #define KW_SCOPE KW("scope")
 

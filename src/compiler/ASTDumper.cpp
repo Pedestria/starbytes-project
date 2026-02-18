@@ -173,6 +173,43 @@ namespace starbytes {
                 };
             };
         }
+        else if(decl->type == FOR_DECL){
+            auto *forDecl = (ASTForDecl *)decl;
+            os << "ForDecl : {\n" << std::flush;
+            os << pad << "   expr:" << std::flush;
+            printStmt(forDecl->expr,level + 1);
+            os << pad << "   block:" << std::flush;
+            printBlockStmt(forDecl->blockStmt,level + 1);
+            os << pad << "}" << std::endl;
+        }
+        else if(decl->type == WHILE_DECL){
+            auto *whileDecl = (ASTWhileDecl *)decl;
+            os << "WhileDecl : {\n" << std::flush;
+            os << pad << "   expr:" << std::flush;
+            printStmt(whileDecl->expr,level + 1);
+            os << pad << "   block:" << std::flush;
+            printBlockStmt(whileDecl->blockStmt,level + 1);
+            os << pad << "}" << std::endl;
+        }
+        else if(decl->type == SECURE_DECL){
+            auto *secureDecl = (ASTSecureDecl *)decl;
+            os << "SecureDecl : {\n" << std::flush;
+            os << pad << "   decl:" << std::flush;
+            if(secureDecl->guardedDecl){
+                printDecl(secureDecl->guardedDecl,level + 1);
+            }
+            if(secureDecl->catchErrorId){
+                os << pad << "   catchError:" << secureDecl->catchErrorId->val << std::endl;
+            }
+            if(secureDecl->catchErrorType){
+                os << pad << "   catchType:" << secureDecl->catchErrorType->getName() << std::endl;
+            }
+            os << pad << "   catchBlock:" << std::flush;
+            if(secureDecl->catchBlock){
+                printBlockStmt(secureDecl->catchBlock,level + 1);
+            }
+            os << pad << "}" << std::endl;
+        }
         else if(decl->type == RETURN_DECL){
             ASTReturnDecl *return_decl = (ASTReturnDecl *)decl;
             os << "ReturnDecl : {\n" << std::flush;
@@ -243,6 +280,13 @@ namespace starbytes {
                       os << literal_expr->floatValue.value() << std::endl;
                   };
                   os << pad << "}\n" << std::endl;
+        }
+        else if(expr->type == REGEX_LITERAL){
+            ASTLiteralExpr *literal_expr = (ASTLiteralExpr *)expr;
+            os << "RegexLiteral: {\n" << pad
+               << "   pattern:/" << literal_expr->regexPattern.value_or("")
+               << "/" << literal_expr->regexFlags.value_or("") << "\n" << pad
+               << "}\n" << std::endl;
         };
         
     }

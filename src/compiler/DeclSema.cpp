@@ -13,13 +13,41 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
         case VAR_DECL : {
             auto varDecl = (ASTVarDecl *)stmt;
             for(auto & spec : varDecl->specs){
+                if(varDecl->isConst && !spec.expr){
+                    std::ostringstream ss;
+                    ss << "Const variable `" << spec.id->val << "` must be initialized.";
+                    errStream.push(SemanticADiagnostic::create(ss.str(),varDecl,Diagnostic::Error));
+                    *hasErrored = true;
+                    return nullptr;
+                }
                 if(spec.type != nullptr){
                     if(spec.expr){
-                        // Type Decl and Type Implication Comparison
-                        if(!typeMatches(spec.type,spec.expr,symbolTableContext,scopeContext))
-                        {
-                            *hasErrored = true;
-                            return nullptr;
+                        if(varDecl->isSecureWrapped){
+                            auto *exprType = evalExprForTypeId(spec.expr,symbolTableContext,scopeContext);
+                            if(!exprType){
+                                *hasErrored = true;
+                                return nullptr;
+                            }
+                            ASTType *checkType = exprType;
+                            if(exprType->isOptional || exprType->isThrowable){
+                                checkType = ASTType::Create(exprType->getName(),varDecl,false,false);
+                            }
+                            if(!spec.type->match(checkType,[&](std::string message){
+                                std::ostringstream ss;
+                                ss << message << "\nContext: Type `" << exprType->getName() << "` was implied from secure var initializer";
+                                errStream.push(SemanticADiagnostic::create(ss.str(),varDecl,Diagnostic::Error));
+                            })){
+                                *hasErrored = true;
+                                return nullptr;
+                            }
+                        }
+                        else {
+                            // Type Decl and Type Implication Comparison
+                            if(!typeMatches(spec.type,spec.expr,symbolTableContext,scopeContext))
+                            {
+                                *hasErrored = true;
+                                return nullptr;
+                            }
                         }
                     }
                 }
@@ -40,7 +68,26 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
                         *hasErrored = true;
                         return nullptr;
                     };
+                    if(varDecl->isSecureWrapped && (type->isOptional || type->isThrowable)){
+                        auto *normalizedType = ASTType::Create(type->getName(),varDecl,false,false);
+                        spec.type = normalizedType;
+                    }
+                    else {
                     spec.type = type;
+                    }
+                }
+
+                if(spec.expr){
+                    auto *initType = evalExprForTypeId(spec.expr,symbolTableContext,scopeContext);
+                    if(!initType){
+                        *hasErrored = true;
+                        return nullptr;
+                    }
+                    if((initType->isOptional || initType->isThrowable) && !varDecl->isSecureWrapped){
+                        errStream.push(SemanticADiagnostic::create("Optional or throwable values must be captured with a secure declaration.",varDecl,Diagnostic::Error));
+                        *hasErrored = true;
+                        return nullptr;
+                    }
                 }
             };
             break;
@@ -82,6 +129,116 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
             };
             
             
+            break;
+        }
+        case FOR_DECL:
+        case WHILE_DECL:
+        {
+            ASTExpr *conditionExpr = nullptr;
+            ASTBlockStmt *loopBlock = nullptr;
+            if(stmt->type == FOR_DECL){
+                auto *forDecl = (ASTForDecl *)stmt;
+                conditionExpr = forDecl->expr;
+                loopBlock = forDecl->blockStmt;
+            }
+            else {
+                auto *whileDecl = (ASTWhileDecl *)stmt;
+                conditionExpr = whileDecl->expr;
+                loopBlock = whileDecl->blockStmt;
+            }
+
+            if(!conditionExpr || !loopBlock){
+                errStream.push(SemanticADiagnostic::create("Malformed loop declaration.",stmt,Diagnostic::Error));
+                *hasErrored = true;
+                return nullptr;
+            }
+
+            ASTType *condResType = evalExprForTypeId(conditionExpr,symbolTableContext,scopeContext);
+            if(!condResType){
+                *hasErrored = true;
+                return nullptr;
+            }
+
+            if(!condResType->match(BOOL_TYPE,[&](std::string){
+                errStream.push(SemanticADiagnostic::create("Context: Expression was evaluated in as a loop condition",conditionExpr,Diagnostic::Error));
+            })){
+                *hasErrored = true;
+                return nullptr;
+            }
+
+            bool hasFailed;
+            ASTType *blockReturnType = evalBlockStmtForASTType(loopBlock, symbolTableContext,&hasFailed,scopeContext,scopeContext.args != nullptr);
+            if(hasFailed){
+                *hasErrored = true;
+                return nullptr;
+            }
+
+            if(scopeContext.scope->type == ASTScope::Function){
+                t = blockReturnType;
+            }
+            break;
+        }
+        case SECURE_DECL:
+        {
+            auto *secureDecl = (ASTSecureDecl *)stmt;
+            if(!secureDecl->guardedDecl || secureDecl->guardedDecl->specs.empty() || !secureDecl->catchBlock){
+                errStream.push(SemanticADiagnostic::create("Malformed secure declaration.",stmt,Diagnostic::Error));
+                *hasErrored = true;
+                return nullptr;
+            }
+
+            bool guardedDeclErrored = false;
+            evalGenericDecl(secureDecl->guardedDecl,symbolTableContext,scopeContext,&guardedDeclErrored);
+            if(guardedDeclErrored){
+                *hasErrored = true;
+                return nullptr;
+            }
+
+            auto &guardedSpec = secureDecl->guardedDecl->specs.front();
+            if(!guardedSpec.expr){
+                errStream.push(SemanticADiagnostic::create("Secure declaration requires an initializer expression.",stmt,Diagnostic::Error));
+                *hasErrored = true;
+                return nullptr;
+            }
+
+            auto *guardedExprType = evalExprForTypeId(guardedSpec.expr,symbolTableContext,scopeContext);
+            if(!guardedExprType){
+                *hasErrored = true;
+                return nullptr;
+            }
+            if(!guardedExprType->isOptional && !guardedExprType->isThrowable){
+                errStream.push(SemanticADiagnostic::create("Secure declaration requires an optional or throwable initializer.",stmt,Diagnostic::Error));
+                *hasErrored = true;
+                return nullptr;
+            }
+
+            if(secureDecl->catchErrorType && !typeExists(secureDecl->catchErrorType,symbolTableContext,scopeContext.scope)){
+                errStream.push(SemanticADiagnostic::create("Unknown catch error type in secure declaration.",stmt,Diagnostic::Error));
+                *hasErrored = true;
+                return nullptr;
+            }
+
+            std::map<ASTIdentifier *,ASTType *> catchArgs;
+            ASTScopeSemanticsContext catchScopeContext {secureDecl->catchBlock->parentScope,scopeContext.args};
+            if(secureDecl->catchErrorId){
+                if(scopeContext.args){
+                    catchArgs = *scopeContext.args;
+                }
+                auto *catchType = secureDecl->catchErrorType ? secureDecl->catchErrorType : STRING_TYPE;
+                catchArgs.insert(std::make_pair(secureDecl->catchErrorId,catchType));
+                catchScopeContext.args = &catchArgs;
+            }
+
+            bool catchBlockFailed = false;
+            ASTType *catchBlockReturnType = evalBlockStmtForASTType(secureDecl->catchBlock,symbolTableContext,&catchBlockFailed,catchScopeContext,catchScopeContext.args != nullptr);
+            if(catchBlockFailed){
+                *hasErrored = true;
+                return nullptr;
+            }
+
+            if(scopeContext.scope->type == ASTScope::Function){
+                t = catchBlockReturnType;
+            }
             break;
         }
         default: {

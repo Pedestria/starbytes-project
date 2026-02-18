@@ -4,6 +4,7 @@
 #include "starbytes/compiler/AST.h"
 #include "starbytes/compiler/ASTDumper.h"
 #include <iostream>
+#include <sstream>
 
 namespace starbytes {
 
@@ -23,10 +24,13 @@ namespace starbytes {
     }
 
     void Parser::parseFromStream(std::istream &in,ModuleParseContext &moduleParseContext){
-        Region codeViewDoc;
-        lexer->tokenizeFromIStream(in,tokenStream);
+        std::ostringstream sourceBuffer;
+        sourceBuffer << in.rdbuf();
+        auto sourceText = sourceBuffer.str();
+        diagnosticHandler->setCodeViewSource(moduleParseContext.name,sourceText);
+        std::istringstream lexerInput(sourceText);
+        lexer->tokenizeFromIStream(lexerInput,tokenStream);
         syntaxA->setTokenStream(tokenStream);
-        // diagnosticHandler->setCodeViewSrc(codeViewDoc);
        if(astConsumer.acceptsSymbolTableContext()){
            astConsumer.consumeSTableContext(&moduleParseContext.sTableContext);
        };

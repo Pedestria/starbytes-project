@@ -19,6 +19,10 @@ namespace starbytes {
         bool isPlaceholder;
         
         bool isAlias;
+
+        bool isOptional = false;
+
+        bool isThrowable = false;
         
         std::vector<ASTType *> typeParams;
         
@@ -42,11 +46,18 @@ extern ASTType * DICTIONARY_TYPE;
 extern ASTType * BOOL_TYPE;
 extern ASTType * INT_TYPE;
 extern ASTType * FLOAT_TYPE;
+extern ASTType * REGEX_TYPE;
 
-template<>
-struct FormatProvider<starbytes::ASTType> {
+    template<>
+    struct FormatProvider<starbytes::ASTType> {
     static void format(std::ostream & os,starbytes::ASTType &object ){
            os << object.getName();
+           if(object.isOptional){
+               os << "?";
+           }
+           if(object.isThrowable){
+               os << "!";
+           }
            os.flush();
         if(!object.typeParams.empty()){
                 typedef decltype(object.typeParams)::iterator TypeParamIt;

@@ -10,6 +10,7 @@ typedef long starbytes_int_t;
 #define STR_LITERAL (0x000010 | LITERAL)
 #define NUM_LITERAL (0x000020 | LITERAL)
 #define BOOL_LITERAL (0x000030 | LITERAL)
+#define REGEX_LITERAL (0x000040 | LITERAL)
 
 #define DECL 0x000F00
 
@@ -17,6 +18,8 @@ typedef long starbytes_int_t;
 #define VAR_DECL (0x001000 | DECL)
 #define COND_DECL (0x002000 | DECL)
 #define FOR_DECL (0x00B000 | DECL)
+#define WHILE_DECL (0x00D000 | DECL)
+#define SECURE_DECL (0x00E000 | DECL)
 
 /// Scope Specific Decls
 /// - Global Scope Only -->

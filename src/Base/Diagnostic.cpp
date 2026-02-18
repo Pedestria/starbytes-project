@@ -1,4 +1,5 @@
 #include "starbytes/base/Diagnostic.h"
+#include "starbytes/base/CodeView.h"
 #include <iostream>
 #include <ostream>
 #include <sstream>
@@ -6,17 +7,8 @@
 
 namespace starbytes {
 
-inline void makeCarrots(unsigned start,unsigned length,std::ostream & out){
-    out << "\x1b[31m";
-    while(start > 0){
-        out << " " << std::endl;
-        --start;
-    }
-    while(length > 0){
-        out << "^" << std::flush;
-        --length;
-    }
-    out << "\x1b[0m" << std::endl;
+static bool regionHasLocation(const Region &region){
+    return region.startLine > 0 || region.endLine > 0 || region.startCol > 0 || region.endCol > 0;
 }
 
 StreamLogger::StreamLogger(std::ostream & out):out(out){
@@ -39,35 +31,48 @@ void StreamLogger::floatPoint(const float &f){
     out << std::to_string(f);
 }
 
+void StreamLogger::integer(const int &i){
+    out << i;
+}
+
 void StreamLogger::string(string_ref s){
     out.write(s.getBuffer(),s.size());
 }
 
 void StreamLogger::lineBreak(unsigned c){
-    if(c > 0){
+    while(c > 0){
         out << "\n";
-        out.flush();
         --c;
     }
+    out.flush();
 }
 
 void StreamLogger::close(){
     out.flush();
 }
 
-DiagnosticHandler::DiagnosticHandler(std::ostream & out):logger(out){
+DiagnosticHandler::DiagnosticHandler(std::ostream & out):logger(out),codeView(nullptr){
 
 }
 
+DiagnosticHandler::~DiagnosticHandler() = default;
+
 
 std::unique_ptr<DiagnosticHandler> DiagnosticHandler::createDefault(std::ostream & out){
-    return std::make_unique<DiagnosticHandler>(DiagnosticHandler(out));
+    return std::unique_ptr<DiagnosticHandler>(new DiagnosticHandler(out));
 }
 
 DiagnosticHandler & DiagnosticHandler::push(DiagnosticPtr diagnostic){
     buffer.emplace_back(diagnostic);
     return *this;
 };
+
+void DiagnosticHandler::setCodeViewSource(std::string sourceName,std::string sourceText){
+    if(!codeView){
+        codeView = std::make_unique<CodeView>();
+    }
+    codeView->setSource(std::move(sourceName),std::move(sourceText));
+}
 
 bool DiagnosticHandler::empty(){
     return buffer.empty();
@@ -87,7 +92,8 @@ void DiagnosticHandler::logAll(){
     while(!buffer.empty()){
         auto & d = buffer.front();
         if(!d->resolved){
-            d->send(logger);
+            d->send(logger,codeView.get());
+            logger.lineBreak();
         };
         buffer.pop_front();
     };
@@ -103,6 +109,14 @@ DiagnosticPtr StandardDiagnostic::createError(string_ref message){
     return std::make_shared<StandardDiagnostic>(std::move(d));
 }
 
+DiagnosticPtr StandardDiagnostic::createError(string_ref message,const Region &region){
+    StandardDiagnostic d {};
+    d.message = message.getBuffer();
+    d.t = Diagnostic::Error;
+    d.location = region;
+    return std::make_shared<StandardDiagnostic>(std::move(d));
+}
+
 DiagnosticPtr StandardDiagnostic::createWarning(string_ref message){
     StandardDiagnostic d {};
     d.message = message.getBuffer();
@@ -110,9 +124,18 @@ DiagnosticPtr StandardDiagnostic::createWarning(string_ref message){
     return std::make_shared<StandardDiagnostic>(std::move(d));
 }
 
-auto ERROR_MESSAGE = "error:";
+DiagnosticPtr StandardDiagnostic::createWarning(string_ref message,const Region &region){
+    StandardDiagnostic d {};
+    d.message = message.getBuffer();
+    d.t = Diagnostic::Warning;
+    d.location = region;
+    return std::make_shared<StandardDiagnostic>(std::move(d));
+}
 
-void StandardDiagnostic::send(StreamLogger & logger){
+auto ERROR_MESSAGE = "error:";
+auto WARNING_MESSAGE = "warning:";
+
+void StandardDiagnostic::send(StreamLogger & logger,const CodeView *view){
     if(t == Error){
         logger.color(LOGGER_COLOR_RED);
         logger.string(const_cast<char *>(ERROR_MESSAGE));
@@ -121,7 +144,18 @@ void StandardDiagnostic::send(StreamLogger & logger){
         logger.string(message);
     }
     else {
-
+        logger.color(LOGGER_COLOR_YELLOW);
+        logger.string(const_cast<char *>(WARNING_MESSAGE));
+        logger.color(LOGGER_COLOR_RESET);
+        logger.lineBreak();
+        logger.string(message);
+    }
+    if(location.has_value() && view && view->hasSource() && regionHasLocation(location.value())){
+        auto rendered = view->renderRegion(location.value());
+        if(!rendered.empty()){
+            logger.lineBreak();
+            logger.string(rendered);
+        }
     }
 };
 

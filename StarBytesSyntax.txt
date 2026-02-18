@@ -12,6 +12,7 @@ func hello (hello:String) String {
 //Scope Declaration / Namespace Declaration (Cannot make functions calls from within a scope)
 scope Scope0 {
 	//Class Declaration
+    
     class MyClass <T> {
         decl data:String 
         decl imut otherData:String
@@ -38,9 +39,9 @@ interface ClassInterface {
     decl imut otherData:String
 }
 //Type Declaration
-deftype IntOrString = Integer || String
+def IntOrString = Integer | String
 // Function Type Declaration
-deftype Func = (a:String) -> Void
+deft Func = (a:String):Void
 
 //Structure Delcaration
 struct SomeStruct {
@@ -63,7 +64,8 @@ enum Something {
 }
 
 // Type Defintion
-deftype FUNCTYPE = [String a,Number] -> Number
+def
+def FUNCTYPE = [String a,Number] -> Number
 
 /// Inline Function
 decl lambda hello:FUNCTYPE = [String a,Number b] -> Number {
@@ -71,9 +73,9 @@ decl lambda hello:FUNCTYPE = [String a,Number b] -> Number {
 }
 
 //Secure Variables/Expressions
-//THIS WAY! (Probably This Way!)
+// Regex.
 // Regex compile throws an error ( func regexCompile(str:String) -> Regex!  )
-secure(decl var = %/(?:word1|word2)/g%) catch (error:RegexParseExpection) {
+secure(decl var = /(?:word1|word2)/gm) catch (error:RegexParseExpection) {
 
 }
 // 
@@ -93,12 +95,28 @@ secure(decl var = someOption()) catch {
 
 }
 
+if(var is String){
+
+}
+elif(var == 3){
+
+}
+else{
 
 }
 
-//Optional Return Function
-func otherFunc () String? {
 
+
+
+
+//Optional Return 
+func otherFunc () String? {
+    return ""
+}
+
+//Throwable Return 
+func hello (hello:String) Integer! {
+	
 }
 
 

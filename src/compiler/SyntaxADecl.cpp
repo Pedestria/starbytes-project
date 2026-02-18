@@ -274,6 +274,141 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                 };
                 
             }
+            else if(currentTok.content == KW_FOR || currentTok.content == KW_WHILE){
+                bool isWhileLoop = (currentTok.content == KW_WHILE);
+                ASTExpr *conditionExpr = nullptr;
+                ASTBlockStmt *loopBlock = nullptr;
+
+                if(isWhileLoop){
+                    auto *whileDecl = new ASTWhileDecl();
+                    node = whileDecl;
+                    node->type = WHILE_DECL;
+                    node->scope = parentScope;
+                }
+                else {
+                    auto *forDecl = new ASTForDecl();
+                    node = forDecl;
+                    node->type = FOR_DECL;
+                    node->scope = parentScope;
+                }
+
+                Tok tok0 = nextTok();
+                if(tok0.type != Tok::OpenParen){
+                    return nullptr;
+                }
+
+                tok0 = nextTok();
+                conditionExpr = evalExpr(tok0,parentScope);
+                if(!conditionExpr){
+                    return nullptr;
+                }
+
+                tok0 = token_stream[privTokIndex];
+                if(tok0.type != Tok::CloseParen){
+                    return nullptr;
+                }
+
+                tok0 = nextTok();
+                if(tok0.type != Tok::OpenBrace){
+                    return nullptr;
+                }
+
+                std::shared_ptr<ASTScope> loopScope(new ASTScope({isWhileLoop ? "WHILE_LOOP_DECL" : "FOR_LOOP_DECL",ASTScope::Neutral,parentScope}));
+                loopScope->generateHashID();
+                loopBlock = evalBlockStmt(tok0,loopScope);
+                if(!loopBlock){
+                    return nullptr;
+                }
+
+                if(isWhileLoop){
+                    auto *whileDecl = (ASTWhileDecl *)node;
+                    whileDecl->expr = conditionExpr;
+                    whileDecl->blockStmt = loopBlock;
+                }
+                else {
+                    auto *forDecl = (ASTForDecl *)node;
+                    forDecl->expr = conditionExpr;
+                    forDecl->blockStmt = loopBlock;
+                }
+                gotoNextTok();
+            }
+            else if(currentTok.content == KW_SECURE){
+                auto *secureDecl = new ASTSecureDecl();
+                node = secureDecl;
+                node->type = SECURE_DECL;
+                node->scope = parentScope;
+
+                Tok tok0 = nextTok();
+                if(tok0.type != Tok::OpenParen){
+                    return nullptr;
+                }
+
+                tok0 = nextTok();
+                auto *innerDecl = evalDecl(tok0,parentScope);
+                if(!innerDecl || innerDecl->type != VAR_DECL){
+                    return nullptr;
+                }
+                auto *guardedDecl = (ASTVarDecl *)innerDecl;
+                guardedDecl->isSecureWrapped = true;
+                if(guardedDecl->specs.size() != 1 || !guardedDecl->specs.front().expr){
+                    return nullptr;
+                }
+                secureDecl->guardedDecl = guardedDecl;
+
+                tok0 = token_stream[privTokIndex];
+                if(tok0.type != Tok::CloseParen){
+                    return nullptr;
+                }
+
+                tok0 = nextTok();
+                if(tok0.type != Tok::Keyword || tok0.content != KW_CATCH){
+                    return nullptr;
+                }
+
+                tok0 = nextTok();
+                if(tok0.type == Tok::OpenParen){
+                    Tok errTok = nextTok();
+                    if(errTok.type != Tok::Identifier){
+                        return nullptr;
+                    }
+                    secureDecl->catchErrorId = buildIdentifier(errTok,false);
+                    if(!secureDecl->catchErrorId){
+                        return nullptr;
+                    }
+
+                    Tok colonTok = nextTok();
+                    if(colonTok.type != Tok::Colon){
+                        return nullptr;
+                    }
+
+                    Tok typeTok = nextTok();
+                    ASTTypeContext typeCtxt;
+                    typeCtxt.isPlaceholder = true;
+                    secureDecl->catchErrorType = buildTypeFromTokenStream(typeTok,secureDecl,typeCtxt);
+                    if(!secureDecl->catchErrorType){
+                        return nullptr;
+                    }
+
+                    Tok closeCatchSigTok = nextTok();
+                    if(closeCatchSigTok.type != Tok::CloseParen){
+                        return nullptr;
+                    }
+
+                    tok0 = nextTok();
+                }
+
+                if(tok0.type != Tok::OpenBrace){
+                    return nullptr;
+                }
+
+                std::shared_ptr<ASTScope> catchScope(new ASTScope({"SECURE_CATCH_DECL",ASTScope::Neutral,parentScope}));
+                catchScope->generateHashID();
+                secureDecl->catchBlock = evalBlockStmt(tok0,catchScope);
+                if(!secureDecl->catchBlock){
+                    return nullptr;
+                }
+                gotoNextTok();
+            }
             else if(currentTok.content == KW_RETURN){
                 ASTReturnDecl *return_decl = new ASTReturnDecl();
                 node = return_decl;
@@ -581,9 +716,17 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
             }
             else if(currentTok.content == KW_ELSE){
                 return nullptr;
+            }
+            else if(currentTok.content == KW_CATCH){
+                return nullptr;
             };
 
             node->attributes = std::move(parsedAttributes);
+            if(node && node->codeRegion.startLine == 0){
+                node->codeRegion.startLine = node->codeRegion.endLine = first_token.srcPos.line;
+                node->codeRegion.startCol = first_token.srcPos.startCol;
+                node->codeRegion.endCol = first_token.srcPos.endCol;
+            }
             return node;
         }
         else {

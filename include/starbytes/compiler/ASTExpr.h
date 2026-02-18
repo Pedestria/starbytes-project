@@ -56,6 +56,10 @@ namespace starbytes {
     class ASTLiteralExpr : public ASTExpr {
     public:
         std::optional<std::string> strValue;
+
+        std::optional<std::string> regexPattern;
+
+        std::optional<std::string> regexFlags;
         
         std::optional<bool> boolValue;
 

@@ -61,6 +61,13 @@ namespace starbytes {
                     auto data = StarbytesStrGetBuffer(object);
                     std::cout << "\x1b[32m" << "\"" << data << "\"" << "\x1b[0m" << std::flush;
                 }
+            else if(StarbytesObjectTypecheck(object,StarbytesRegexType())){
+                    auto patternObj = StarbytesObjectGetProperty(object,"pattern");
+                    auto flagsObj = StarbytesObjectGetProperty(object,"flags");
+                    auto pattern = patternObj ? StarbytesStrGetBuffer(patternObj) : (char *)"";
+                    auto flags = flagsObj ? StarbytesStrGetBuffer(flagsObj) : (char *)"";
+                    std::cout << "\x1b[36m" << "/" << pattern << "/" << flags << "\x1b[0m" << std::flush;
+                }
             else if(StarbytesObjectTypecheck(object,StarbytesArrayType())){
                     
                     std::cout << "[" << std::flush;

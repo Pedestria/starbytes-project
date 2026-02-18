@@ -67,6 +67,10 @@ size_t StarbytesCustomClassType(){
     return 6;
 }
 
+size_t StarbytesRegexType(){
+    return 7;
+}
+
 int StarbytesObjectIs(StarbytesObject obj){
     if(obj == NULL){
         return 0;
@@ -76,7 +80,8 @@ int StarbytesObjectIs(StarbytesObject obj){
         || (obj->type == StarbytesDictType())
         || (obj->type == StarbytesNumType())
         || (obj->type == StarbytesBoolType())
-        || (obj->type == StarbytesFuncRefType());
+        || (obj->type == StarbytesFuncRefType())
+        || (obj->type == StarbytesRegexType());
 };
 
 
@@ -649,6 +654,5 @@ StarbytesFuncTemplate * StarbytesFuncRefGetPtr(StarbytesFuncRef ref){
     StarbytesFuncRefPriv * privData = (StarbytesFuncRefPriv *)ref->privData;
     return privData->ref;
 };
-
 
 

@@ -1,17 +1,12 @@
-import io
-# import requests
 import os
+import subprocess
 
-def download_lib(a,b):
-    lib = requests.get(a)
-    file = io.open(a,"wb")
-    file.write(lib.content)
-    file.close()
-
-
-def git_lib(a,b):
-    os.system(f"git clone {a} {b}")
-    
+def git_lib(repo_url, dst_path):
+    if os.path.isdir(dst_path):
+        print(f"skip: {dst_path} already exists")
+        return
+    subprocess.check_call(["git", "clone", "--depth", "1", repo_url, dst_path])
 
 
-git_lib("https://github.com/Tencent/rapidjson.git","deps/rapidjson")
+git_lib("https://github.com/Tencent/rapidjson.git", "deps/rapidjson")
+git_lib("https://github.com/PCRE2Project/pcre2.git", "deps/pcre2")

@@ -34,6 +34,7 @@ StarbytesClassType StarbytesNumType();
 StarbytesClassType StarbytesDictType();
 StarbytesClassType StarbytesBoolType();
 StarbytesClassType StarbytesFuncRefType();
+StarbytesClassType StarbytesRegexType();
 
 
 typedef struct _StarbytesObject * StarbytesObject;

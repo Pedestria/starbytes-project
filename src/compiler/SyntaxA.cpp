@@ -87,38 +87,80 @@ size_t SyntaxA::getTokenStreamWidth(){
     }
 
     ASTType *SyntaxA::buildTypeFromTokenStream(TokRef first_token,ASTStmt *parentStmt,ASTTypeContext & ctxt){
-        if(first_token.type == Tok::Identifier){
-            
-            string_ref tok_id (first_token.content);
-            if(tok_id == "Void"){
-                return VOID_TYPE;
-            }
-            else if(tok_id == "String"){
-                return STRING_TYPE;
-            }
-            else if(tok_id == "Bool"){
-                return BOOL_TYPE;
-            }
-            else if(tok_id == "Array"){
-                return ARRAY_TYPE;
-            }
-            else if(tok_id == "Dict"){
-                return DICTIONARY_TYPE;
-            }
-            else if(tok_id == "Int"){
-                return INT_TYPE;
-            }
-            else if(tok_id == "Float"){
-                return FLOAT_TYPE;
-            }
-            else {
-                return ASTType::Create(first_token.content.c_str(),parentStmt,ctxt.isPlaceholder,ctxt.isAlias);
-            };
-            
+        if(first_token.type != Tok::Identifier){
+            return nullptr;
+        }
+
+        ASTType *baseType = nullptr;
+        bool isBuiltinType = false;
+        string_ref tok_id (first_token.content);
+        if(tok_id == "Void"){
+            baseType = VOID_TYPE;
+            isBuiltinType = true;
+        }
+        else if(tok_id == "String"){
+            baseType = STRING_TYPE;
+            isBuiltinType = true;
+        }
+        else if(tok_id == "Bool"){
+            baseType = BOOL_TYPE;
+            isBuiltinType = true;
+        }
+        else if(tok_id == "Array"){
+            baseType = ARRAY_TYPE;
+            isBuiltinType = true;
+        }
+        else if(tok_id == "Dict"){
+            baseType = DICTIONARY_TYPE;
+            isBuiltinType = true;
+        }
+        else if(tok_id == "Int"){
+            baseType = INT_TYPE;
+            isBuiltinType = true;
+        }
+        else if(tok_id == "Float"){
+            baseType = FLOAT_TYPE;
+            isBuiltinType = true;
+        }
+        else if(tok_id == "Regex"){
+            baseType = REGEX_TYPE;
+            isBuiltinType = true;
         }
         else {
-            return nullptr;
-        };
+            baseType = ASTType::Create(first_token.content.c_str(),parentStmt,ctxt.isPlaceholder,ctxt.isAlias);
+        }
+
+        bool sawOptional = false;
+        bool sawThrowable = false;
+        while(true){
+            auto qualifierTok = aheadTok();
+            if(qualifierTok.type == Tok::QuestionMark){
+                sawOptional = true;
+                gotoNextTok();
+                continue;
+            }
+            if(qualifierTok.type == Tok::Exclamation){
+                sawThrowable = true;
+                gotoNextTok();
+                continue;
+            }
+            break;
+        }
+
+        if(!sawOptional && !sawThrowable){
+            return baseType;
+        }
+
+        if(!isBuiltinType){
+            baseType->isOptional = baseType->isOptional || sawOptional;
+            baseType->isThrowable = baseType->isThrowable || sawThrowable;
+            return baseType;
+        }
+
+        auto *qualifiedType = ASTType::Create(baseType->getName(),parentStmt,false,false);
+        qualifiedType->isOptional = baseType->isOptional || sawOptional;
+        qualifiedType->isThrowable = baseType->isThrowable || sawThrowable;
+        return qualifiedType;
     }
 
 }

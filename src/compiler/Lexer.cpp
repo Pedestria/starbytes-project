@@ -11,7 +11,9 @@ bool isBooleanLiteral(string_ref str){
 bool isKeyword(string_ref str){
     return (str == KW_DECL) || (str == KW_IMUT) || (str == KW_IMPORT)
     || (str == KW_FUNC) || (str == KW_IF) || (str == KW_ELIF) || (str == KW_ELSE) || (str == KW_RETURN)
-    || (str == KW_CLASS) || (str == KW_INTERFACE) || (str == KW_FOR) || (str == KW_NEW) || (str == KW_SCOPE);
+    || (str == KW_CLASS) || (str == KW_INTERFACE) || (str == KW_FOR) || (str == KW_WHILE)
+    || (str == KW_SECURE) || (str == KW_CATCH)
+    || (str == KW_NEW) || (str == KW_SCOPE);
 }
 
 bool isNumber(string_ref str,bool * isFloating){
@@ -181,6 +183,87 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 pushToken(Tok::Colon);
                 break;
             }
+            case '/': {
+                int ahead = aheadChar();
+                if(ahead == '/'){
+                    INCREMENT_TO_NEXT_CHAR;
+                    ++pos.endCol;
+                    while((c = getChar()) != EOF && c != '\n'){
+                        ++pos.endCol;
+                    }
+                    if(c == '\n'){
+                        ++pos.line;
+                        pos.endCol = 0;
+                    }
+                    break;
+                }
+                if(ahead == '*'){
+                    INCREMENT_TO_NEXT_CHAR;
+                    ++pos.endCol;
+                    int prev = 0;
+                    while((c = getChar()) != EOF){
+                        if(c == '\n'){
+                            ++pos.line;
+                            pos.endCol = 0;
+                        }
+                        else {
+                            ++pos.endCol;
+                        }
+                        if(prev == '*' && c == '/'){
+                            break;
+                        }
+                        prev = c;
+                    }
+                    break;
+                }
+
+                PUSH_CHAR(c);
+                bool escaped = false;
+                bool terminated = false;
+                while((c = getChar()) != EOF){
+                    if(c == '\n'){
+                        ++pos.line;
+                        pos.endCol = 0;
+                        break;
+                    }
+                    PUSH_CHAR(c);
+                    if(c == '/' && !escaped){
+                        terminated = true;
+                        break;
+                    }
+                    if(c == '\\' && !escaped){
+                        escaped = true;
+                    }
+                    else {
+                        escaped = false;
+                    }
+                }
+                if(terminated){
+                    while(true){
+                        int flag = aheadChar();
+                        if(!std::isalpha((unsigned char)flag)){
+                            break;
+                        }
+                        INCREMENT_TO_NEXT_CHAR;
+                        PUSH_CHAR(flag);
+                    }
+                    pushToken(Tok::RegexLiteral);
+                }
+                else {
+                    pushToken(Tok::FSlash);
+                }
+                break;
+            }
+            case '?': {
+                PUSH_CHAR(c);
+                pushToken(Tok::QuestionMark);
+                break;
+            }
+            case '!': {
+                PUSH_CHAR(c);
+                pushToken(Tok::Exclamation);
+                break;
+            }
             case '=' : {
                 PUSH_CHAR(c);
                 c = aheadChar();
@@ -229,7 +312,7 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                    
                 }
                 else if(std::isspace(static_cast<unsigned char>(c))){
-                    
+                    ++pos.endCol;
                 };
                 break;
             }

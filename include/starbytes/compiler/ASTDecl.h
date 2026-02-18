@@ -45,6 +45,7 @@ namespace starbytes {
     class ASTVarDecl : public ASTDecl {
     public:
         bool isConst = false;
+        bool isSecureWrapped = false;
         struct VarSpec {
             ASTIdentifier *id;
             ASTType *type = nullptr;
@@ -98,13 +99,22 @@ namespace starbytes {
 
     class ASTForDecl : public ASTDecl {
     public:
-        
+        ASTExpr *expr;
+        ASTBlockStmt *blockStmt;
     };
 
     class ASTWhileDecl : public ASTDecl {
     public:
         ASTExpr *expr;
         ASTBlockStmt *blockStmt;
+    };
+
+    class ASTSecureDecl : public ASTDecl {
+    public:
+        ASTVarDecl *guardedDecl = nullptr;
+        ASTIdentifier *catchErrorId = nullptr;
+        ASTType *catchErrorType = nullptr;
+        ASTBlockStmt *catchBlock = nullptr;
     };
 
 }

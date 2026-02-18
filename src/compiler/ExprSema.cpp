@@ -52,7 +52,7 @@ static Semantics::SymbolTable::Var *findClassField(Semantics::SymbolTable::Class
 
 static ASTType *findClassFieldTypeFromDecl(ASTClassDecl *classDecl,string_ref fieldName,bool *isReadonly){
     for(auto *fieldDecl : classDecl->fields){
-        bool readonlyField = false;
+        bool readonlyField = fieldDecl->isConst;
         for(auto &attr : fieldDecl->attributes){
             if(attr.name == "readonly"){
                 readonlyField = true;
@@ -98,11 +98,35 @@ static Semantics::SymbolTable::Function *findConstructorByArity(Semantics::Symbo
     return nullptr;
 }
 
+static Semantics::SymbolTable::Entry *findVarEntry(Semantics::STableContext &symbolTableContext,
+                                                   string_ref symbolName,
+                                                   std::shared_ptr<ASTScope> scope){
+    auto *entry = symbolTableContext.findEntryNoDiag(symbolName,scope);
+    if(entry && entry->type == Semantics::SymbolTable::Entry::Var){
+        return entry;
+    }
+    entry = symbolTableContext.findEntryByEmittedNoDiag(symbolName);
+    if(entry && entry->type == Semantics::SymbolTable::Entry::Var){
+        return entry;
+    }
+    return nullptr;
+}
+
 static std::shared_ptr<ASTScope> scopeFromEntry(Semantics::SymbolTable::Entry *entry){
     if(!entry || entry->type != Semantics::SymbolTable::Entry::Scope || !entry->data){
         return nullptr;
     }
     return *((std::shared_ptr<ASTScope> *)entry->data);
+}
+
+static ASTType *cloneTypeWithQualifiers(ASTType *baseType,ASTStmt *parentNode,bool optional,bool throwable){
+    if(!baseType){
+        return nullptr;
+    }
+    auto *result = ASTType::Create(baseType->getName(),parentNode,false,false);
+    result->isOptional = optional;
+    result->isThrowable = throwable;
+    return result;
 }
 
 
@@ -124,7 +148,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
 
                 /// 2. Check if scope context has args.. (In Function Context)
 
-                if(scopeContext.scope->type == ASTScope::Function && scopeContext.args != nullptr){
+                if(scopeContext.args != nullptr){
                     for(auto & __arg : *scopeContext.args){
                         if(__arg.first->match(id_)){
                             id_->type = ASTIdentifier::Var;
@@ -192,6 +216,11 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
             case STR_LITERAL:
             {
                 type = STRING_TYPE;
+                break;
+            }
+            case REGEX_LITERAL:
+            {
+                type = cloneTypeWithQualifiers(REGEX_TYPE,expr_to_eval,false,true);
                 break;
             }
             case NUM_LITERAL : {
@@ -316,6 +345,17 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     return nullptr;
                 }
 
+                if(expr_to_eval->leftExpr->type == ID_EXPR && expr_to_eval->leftExpr->id){
+                    auto *varEntry = findVarEntry(symbolTableContext,expr_to_eval->leftExpr->id->val,scopeContext.scope);
+                    if(varEntry){
+                        auto *varData = (Semantics::SymbolTable::Var *)varEntry->data;
+                        if(varData && varData->isReadonly){
+                            errStream.push(SemanticADiagnostic::create("Cannot assign to const variable.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                    }
+                }
+
                 if(expr_to_eval->leftExpr->type == MEMBER_EXPR){
                     auto *memberExpr = expr_to_eval->leftExpr;
                     if(memberExpr->isScopeAccess){
@@ -331,7 +371,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
                         auto *field = findClassField(classData,memberExpr->rightExpr->id->val);
                         if(field && field->isReadonly){
-                            errStream.push(SemanticADiagnostic::create("Cannot assign to @readonly field.",expr_to_eval,Diagnostic::Error));
+                            errStream.push(SemanticADiagnostic::create("Cannot assign to readonly/const field.",expr_to_eval,Diagnostic::Error));
                             return nullptr;
                         }
                     }
@@ -342,7 +382,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             auto *fieldType = findClassFieldTypeFromDecl((ASTClassDecl *)classNode,memberExpr->rightExpr->id->val,&readonly);
                             (void)fieldType;
                             if(readonly){
-                                errStream.push(SemanticADiagnostic::create("Cannot assign to @readonly field.",expr_to_eval,Diagnostic::Error));
+                                errStream.push(SemanticADiagnostic::create("Cannot assign to readonly/const field.",expr_to_eval,Diagnostic::Error));
                                 return nullptr;
                             }
                         }

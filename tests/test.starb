@@ -86,10 +86,12 @@ decl myvar = ["hello","world"]
 decl myvar2 = myFunc()
 decl foo = 34.12
 decl bar = false
+decl imut myConst = 4
 
 print(bar)
 print(myvar2)
 print(foo)
+print(myConst)
 
 if(bar){
 	
@@ -99,11 +101,65 @@ else {
     print("NO")
 }
 
+class LoopState {
+    decl run:Bool = true
+}
 
+decl whileState = new LoopState()
+while(whileState.run){
+    print("WHILE-ONCE")
+    whileState.run = false
+}
 
+decl forState = new LoopState()
+for(forState.run){
+    print("FOR-ONCE")
+    forState.run = false
+}
 
+if(bar){
+    print("IF-BRANCH")
+}
+elif(forState.run){
+    print("ELIF-BRANCH")
+}
+else {
+    print("ELSE-BRANCH")
+}
 
+func maybeName() String? {
+    return "optional-value"
+}
 
+func riskyName() String! {
+    return "throwable-value"
+}
+
+secure(decl optionalValue = maybeName()) catch {
+    print("OPTIONAL-CATCH")
+}
+print(optionalValue)
+
+secure(decl throwableValue = riskyName()) catch {
+    print("THROW-CATCH")
+}
+print(throwableValue)
+
+decl missingValue:String?
+secure(decl recoveredValue = missingValue) catch (error:String) {
+    print("SECURE-CATCH")
+}
+
+secure(decl compiledRegex = /(?:word1|word2)/gm) catch (error:String) {
+    print("REGEX-CATCH")
+    print(error)
+}
+print(compiledRegex)
+
+secure(decl badRegex = /(/g) catch (error:String) {
+    print("REGEX-ERROR")
+    print(error)
+}
 
 
 

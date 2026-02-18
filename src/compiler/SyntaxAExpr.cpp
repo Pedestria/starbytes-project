@@ -6,6 +6,40 @@
 
 namespace starbytes::Syntax {
 
+    static Region regionFromToken(const Tok &tok){
+        Region region;
+        region.startLine = region.endLine = tok.srcPos.line;
+        region.startCol = tok.srcPos.startCol;
+        region.endCol = tok.srcPos.endCol;
+        return region;
+    }
+
+    static bool splitRegexLiteral(const std::string &literal,std::string &pattern,std::string &flags){
+        if(literal.size() < 2 || literal.front() != '/'){
+            return false;
+        }
+        bool escaped = false;
+        size_t closeIndex = std::string::npos;
+        for(size_t i = 1;i < literal.size();++i){
+            char c = literal[i];
+            if(c == '/' && !escaped){
+                closeIndex = i;
+                break;
+            }
+            if(c == '\\' && !escaped){
+                escaped = true;
+            }
+            else {
+                escaped = false;
+            }
+        }
+        if(closeIndex == std::string::npos){
+            return false;
+        }
+        pattern = literal.substr(1,closeIndex - 1);
+        flags = literal.substr(closeIndex + 1);
+        return true;
+    }
 
     /**
      Its important to note that there are three kinds of AST expression nodes that get evaluated.
@@ -32,8 +66,23 @@ namespace starbytes::Syntax {
             if(tokRef.type == Tok::StringLiteral){
                 literal_expr = new ASTLiteralExpr();
                 literal_expr->type = STR_LITERAL;
+                literal_expr->codeRegion = regionFromToken(tokRef);
                 
                 literal_expr->strValue = tokRef.content.substr(1,tokRef.content.size()-2);
+                expr = literal_expr;
+                tokRef = nextTok();
+            }
+            else if(tokRef.type == Tok::RegexLiteral){
+                std::string pattern;
+                std::string flags;
+                if(!splitRegexLiteral(tokRef.content,pattern,flags)){
+                    return nullptr;
+                }
+                literal_expr = new ASTLiteralExpr();
+                literal_expr->type = REGEX_LITERAL;
+                literal_expr->codeRegion = regionFromToken(tokRef);
+                literal_expr->regexPattern = std::move(pattern);
+                literal_expr->regexFlags = std::move(flags);
                 expr = literal_expr;
                 tokRef = nextTok();
             }
@@ -41,6 +90,7 @@ namespace starbytes::Syntax {
                 literal_expr = new ASTLiteralExpr();
                 
                 literal_expr->type = BOOL_LITERAL;
+                literal_expr->codeRegion = regionFromToken(tokRef);
                 literal_expr->boolValue = (tokRef.content == TOK_TRUE? true : tokRef.content == TOK_FALSE? false : false);
                 
                 expr = literal_expr;
@@ -50,6 +100,7 @@ namespace starbytes::Syntax {
                 literal_expr = new ASTLiteralExpr();
 
                 literal_expr->type = NUM_LITERAL;
+                literal_expr->codeRegion = regionFromToken(tokRef);
                 if(tokRef.type == Tok::FloatingNumericLiteral){
                    starbytes_float_t val = ::atof(tokRef.content.c_str());
                    literal_expr->floatValue = val;
@@ -65,6 +116,7 @@ namespace starbytes::Syntax {
                 ASTExpr *node = new ASTExpr();
                 expr = node;
                 node->type = ARRAY_EXPR;
+                node->codeRegion = regionFromToken(tokRef);
                 tokRef = nextTok();
                 auto firstExpr = evalExpr(tokRef,parentScope);
                 if(!firstExpr){
@@ -99,6 +151,7 @@ namespace starbytes::Syntax {
                     /// ERROR
                 };
                 node->id = id;
+                node->codeRegion = id->codeRegion;
                 tokRef = nextTok();
                 
             }
@@ -113,6 +166,7 @@ namespace starbytes::Syntax {
                 if(!classExpr->id){
                     return nullptr;
                 }
+                classExpr->codeRegion = classExpr->id->codeRegion;
                 tokRef = nextTok();
                 while(tokRef.type == Tok::Dot){
                     tokRef = nextTok();
@@ -129,6 +183,7 @@ namespace starbytes::Syntax {
                         return nullptr;
                     }
                     memberExpr->rightExpr = rightExpr;
+                    memberExpr->codeRegion = rightExpr->id->codeRegion;
                     classExpr = memberExpr;
                     tokRef = nextTok();
                 }
@@ -140,6 +195,7 @@ namespace starbytes::Syntax {
                 ctorInvoke->type = IVKE_EXPR;
                 ctorInvoke->isConstructorCall = true;
                 ctorInvoke->callee = classExpr;
+                ctorInvoke->codeRegion = classExpr->codeRegion;
 
                 tokRef = nextTok();
                 while(tokRef.type != Tok::CloseParen){
@@ -184,6 +240,7 @@ namespace starbytes::Syntax {
                     return nullptr;
                 }
                 memberExpr->rightExpr = right;
+                memberExpr->codeRegion = right->id->codeRegion;
                 expr = memberExpr;
                 tokRef = nextTok();
                 continue;
@@ -193,6 +250,7 @@ namespace starbytes::Syntax {
                 auto node = new ASTExpr();
                 node->type = IVKE_EXPR;
                 node->callee = expr;
+                node->codeRegion = expr->codeRegion;
                 
                 tokRef = nextTok();
                 
@@ -229,6 +287,7 @@ namespace starbytes::Syntax {
             auto node = new ASTExpr();
             node->type = ASSIGN_EXPR;
             node->leftExpr = expr;
+            node->codeRegion = expr->codeRegion;
             tokRef = nextTok();
             auto *rhsExpr = evalExpr(tokRef,parentScope);
             if(!rhsExpr){
@@ -247,6 +306,7 @@ namespace starbytes::Syntax {
                 auto node = new ASTExpr();
                 node->type = BINARY_EXPR;
                 node->leftExpr = expr;
+                node->codeRegion = expr->codeRegion;
                 tokRef = nextTok();
                 
                 ASTExpr *rexpr = evalArgExpr(tokRef,parentScope);
@@ -259,6 +319,7 @@ namespace starbytes::Syntax {
                 auto node = new ASTExpr();
                 node->type = BINARY_EXPR;
                 node->leftExpr = expr;
+                node->codeRegion = expr->codeRegion;
                 tokRef = nextTok();
                 
                 ASTExpr *rexpr = evalArgExpr(tokRef,parentScope);

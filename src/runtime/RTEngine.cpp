@@ -8,6 +8,9 @@
 #include <cstring>
 #include <cassert>
 
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h>
+
 #include "starbytes/interop.h"
 
 namespace starbytes::Runtime {
@@ -25,6 +28,29 @@ static std::string rtidToString(const RTID &id){
 
 static std::string mangleClassMethodName(const std::string &className,const std::string &methodName){
     return "__" + className + "__" + methodName;
+}
+
+static uint32_t regexCompileOptionsFromFlags(const std::string &flags){
+    uint32_t options = 0;
+    for(char flag : flags){
+        switch(flag){
+            case 'i':
+                options |= PCRE2_CASELESS;
+                break;
+            case 'm':
+                options |= PCRE2_MULTILINE;
+                break;
+            case 's':
+                options |= PCRE2_DOTALL;
+                break;
+            case 'u':
+                options |= PCRE2_UTF;
+                break;
+            default:
+                break;
+        }
+    }
+    return options;
 }
 
 
@@ -59,7 +85,14 @@ public:
         }
         else {
             auto & var_map = found->second;
-            var_map.insert(std::make_pair(name,obj));
+            auto existing = var_map.find(std::string(name));
+            if(existing != var_map.end()){
+                StarbytesObjectRelease(existing->second);
+                existing->second = obj;
+            }
+            else {
+                var_map.insert(std::make_pair(name,obj));
+            }
         };
     };
     void allocVariable(string_ref name,StarbytesObject obj,string_ref scope){
@@ -71,7 +104,14 @@ public:
         }
         else {
             auto & var_map = found->second;
-            var_map.insert(std::make_pair(name,obj));
+            auto existing = var_map.find(std::string(name));
+            if(existing != var_map.end()){
+                StarbytesObjectRelease(existing->second);
+                existing->second = obj;
+            }
+            else {
+                var_map.insert(std::make_pair(name,obj));
+            }
         };
     };
 
@@ -126,6 +166,7 @@ class InterpImpl final : public Interp {
     map<StarbytesClassType,std::string> runtimeClassRegistry;
     string_map<StarbytesClassType> classTypeByName;
     map<StarbytesClassType,size_t> classIndexByType;
+    std::string lastRuntimeError;
 
     void execNorm(RTCode &code,std::istream &in,bool * willReturn,StarbytesObject *return_val);
     
@@ -134,6 +175,11 @@ class InterpImpl final : public Interp {
     RTClass *findClassByType(StarbytesClassType classType);
     RTFuncTemplate *findFunctionByName(string_ref functionName);
     void discardExprArgs(std::istream &in,unsigned argCount);
+    void skipExpr(std::istream &in);
+    void skipExprFromCode(std::istream &in,RTCode code);
+    void skipRuntimeStmt(std::istream &in,RTCode code);
+    void skipRuntimeBlock(std::istream &in,RTCode endCode);
+    void executeRuntimeBlock(std::istream &in,RTCode endCode,bool *willReturn,StarbytesObject *return_val);
     
     StarbytesObject evalExpr(std::istream &in);
     
@@ -492,10 +538,245 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             return result;
             break;
         }
+        case CODE_RTREGEX_LITERAL: {
+            RTID patternId;
+            RTID flagsId;
+            in >> &patternId;
+            in >> &flagsId;
+
+            std::string pattern = rtidToString(patternId);
+            std::string flags = rtidToString(flagsId);
+            uint32_t options = regexCompileOptionsFromFlags(flags);
+            int errCode = 0;
+            PCRE2_SIZE errOffset = 0;
+            pcre2_code_8 *compiled = pcre2_compile_8(
+                (PCRE2_SPTR8)pattern.c_str(),
+                PCRE2_ZERO_TERMINATED,
+                options,
+                &errCode,
+                &errOffset,
+                nullptr
+            );
+            if(!compiled){
+                lastRuntimeError = "regex compile error";
+                unsigned char buffer[256] = {0};
+                int msgRc = pcre2_get_error_message_8(errCode,buffer,sizeof(buffer));
+                if(msgRc > 0){
+                    lastRuntimeError = std::string((char *)buffer,(size_t)msgRc);
+                }
+                else if(msgRc == 0 && buffer[0] != '\0'){
+                    lastRuntimeError = std::string((char *)buffer);
+                }
+
+                if(!lastRuntimeError.empty()){
+                    lastRuntimeError += " (offset ";
+                    lastRuntimeError += std::to_string((size_t)errOffset);
+                    lastRuntimeError += ")";
+                }
+                return nullptr;
+            }
+            pcre2_code_free_8(compiled);
+
+            StarbytesObject regexObj = StarbytesObjectNew(StarbytesRegexType());
+            StarbytesObjectAddProperty(regexObj,(char *)"pattern",StarbytesStrNewWithData(pattern.c_str()));
+            StarbytesObjectAddProperty(regexObj,(char *)"flags",StarbytesStrNewWithData(flags.c_str()));
+            lastRuntimeError.clear();
+            return regexObj;
+        }
         default:
             break;
     }
     return nullptr;
+}
+
+void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
+    switch (code) {
+        case CODE_RTOBJCREATE:
+        case CODE_RTINTOBJCREATE: {
+            StarbytesObject object = nullptr;
+            in >> &object;
+            if(object){
+                StarbytesObjectRelease(object);
+            }
+            break;
+        }
+        case CODE_RTVAR_REF:
+        case CODE_RTFUNC_REF: {
+            RTID id;
+            in >> &id;
+            break;
+        }
+        case CODE_RTIVKFUNC: {
+            skipExpr(in);
+            unsigned argCount = 0;
+            in.read((char *)&argCount,sizeof(argCount));
+            while(argCount > 0){
+                skipExpr(in);
+                --argCount;
+            }
+            break;
+        }
+        case CODE_RTNEWOBJ: {
+            RTID classId;
+            in >> &classId;
+            unsigned argCount = 0;
+            in.read((char *)&argCount,sizeof(argCount));
+            while(argCount > 0){
+                skipExpr(in);
+                --argCount;
+            }
+            break;
+        }
+        case CODE_RTMEMBER_GET: {
+            skipExpr(in);
+            RTID memberId;
+            in >> &memberId;
+            break;
+        }
+        case CODE_RTMEMBER_SET: {
+            skipExpr(in);
+            RTID memberId;
+            in >> &memberId;
+            skipExpr(in);
+            break;
+        }
+        case CODE_RTMEMBER_IVK: {
+            skipExpr(in);
+            RTID memberId;
+            in >> &memberId;
+            unsigned argCount = 0;
+            in.read((char *)&argCount,sizeof(argCount));
+            while(argCount > 0){
+                skipExpr(in);
+                --argCount;
+            }
+            break;
+        }
+        case CODE_RTREGEX_LITERAL: {
+            RTID patternId;
+            RTID flagsId;
+            in >> &patternId;
+            in >> &flagsId;
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+void InterpImpl::skipExpr(std::istream &in){
+    RTCode exprCode = CODE_MODULE_END;
+    if(!in.read((char *)&exprCode,sizeof(RTCode))){
+        return;
+    }
+    skipExprFromCode(in,exprCode);
+}
+
+void InterpImpl::skipRuntimeStmt(std::istream &in,RTCode code){
+    if(code == CODE_RTVAR){
+        RTVar var;
+        in >> &var;
+        if(var.hasInitValue){
+            skipExpr(in);
+        }
+        return;
+    }
+    if(code == CODE_RTRETURN){
+        bool hasValue = false;
+        in.read((char *)&hasValue,sizeof(hasValue));
+        if(hasValue){
+            skipExpr(in);
+        }
+        return;
+    }
+    if(code == CODE_RTSECURE_DECL){
+        RTID targetVarId;
+        in >> &targetVarId;
+        bool hasCatchBinding = false;
+        in.read((char *)&hasCatchBinding,sizeof(hasCatchBinding));
+        if(hasCatchBinding){
+            RTID catchBindingId;
+            in >> &catchBindingId;
+        }
+        bool hasCatchType = false;
+        in.read((char *)&hasCatchType,sizeof(hasCatchType));
+        if(hasCatchType){
+            RTID catchTypeId;
+            in >> &catchTypeId;
+        }
+        skipExpr(in);
+        RTCode blockBegin = CODE_MODULE_END;
+        in.read((char *)&blockBegin,sizeof(blockBegin));
+        if(blockBegin == CODE_RTBLOCK_BEGIN){
+            skipRuntimeBlock(in,CODE_RTBLOCK_END);
+        }
+        return;
+    }
+    if(code == CODE_CONDITIONAL){
+        unsigned condSpecCount = 0;
+        in.read((char *)&condSpecCount,sizeof(condSpecCount));
+        while(condSpecCount > 0){
+            RTCode specType = COND_TYPE_IF;
+            in.read((char *)&specType,sizeof(specType));
+            if(specType != COND_TYPE_ELSE){
+                skipExpr(in);
+            }
+            RTCode blockBegin = CODE_MODULE_END;
+            in.read((char *)&blockBegin,sizeof(blockBegin));
+            if(blockBegin == CODE_RTBLOCK_BEGIN){
+                skipRuntimeBlock(in,CODE_RTBLOCK_END);
+            }
+            else if(blockBegin == CODE_RTFUNCBLOCK_BEGIN){
+                skipRuntimeBlock(in,CODE_RTFUNCBLOCK_END);
+            }
+            --condSpecCount;
+        }
+        RTCode endCode = CODE_MODULE_END;
+        in.read((char *)&endCode,sizeof(endCode));
+        return;
+    }
+    if(code == CODE_RTFUNC){
+        RTFuncTemplate tempFunc;
+        in >> &tempFunc;
+        return;
+    }
+    if(code == CODE_RTCLASS_DEF){
+        RTClass tempClass;
+        in >> &tempClass;
+        return;
+    }
+    skipExprFromCode(in,code);
+}
+
+void InterpImpl::skipRuntimeBlock(std::istream &in,RTCode endCode){
+    RTCode currentCode = CODE_MODULE_END;
+    if(!in.read((char *)&currentCode,sizeof(currentCode))){
+        return;
+    }
+    while(in.good() && currentCode != endCode){
+        skipRuntimeStmt(in,currentCode);
+        if(!in.read((char *)&currentCode,sizeof(currentCode))){
+            break;
+        }
+    }
+}
+
+void InterpImpl::executeRuntimeBlock(std::istream &in,RTCode endCode,bool *willReturn,StarbytesObject *return_val){
+    RTCode currentCode = CODE_MODULE_END;
+    if(!in.read((char *)&currentCode,sizeof(currentCode))){
+        return;
+    }
+    while(in.good() && currentCode != endCode){
+        if(!*willReturn){
+            execNorm(currentCode,in,willReturn,return_val);
+        }
+        else {
+            skipRuntimeStmt(in,currentCode);
+        }
+        if(!in.read((char *)&currentCode,sizeof(currentCode))){
+            break;
+        }
+    }
 }
 
 void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,StarbytesObject *return_val){
@@ -510,52 +791,139 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
             allocator->allocVariable(var_name,val);
         }
     }
-    else if(code == CODE_CONDITIONAL){
-        unsigned cond_spec_count;
-        in.read((char *)&cond_spec_count,sizeof(cond_spec_count));
-        while(cond_spec_count > 0){
-            RTCode spec_ty;
-            in.read((char *)&spec_ty,sizeof(RTCode));
-            if(spec_ty == COND_TYPE_IF){
-                auto cond = evalExpr(in);
-                assert(StarbytesObjectTypecheck(cond,StarbytesBoolType()));
-                /// SemanticA Checks if Cond is a Boolean
-                auto boolVal = (bool)StarbytesBoolValue(cond);
-                // If true, eval Block
-                if(boolVal){
-                    RTCode code;
-                    in.read((char *)&code,sizeof(RTCode));
-                    while(code != CODE_RTBLOCK_END){
-                        if(!*willReturn)
-                            execNorm(code,in,willReturn,return_val);
-                        in.read((char *)&code,sizeof(RTCode));
-                    };
+    else if(code == CODE_RTSECURE_DECL){
+        RTID targetVarId;
+        in >> &targetVarId;
+        bool hasCatchBinding = false;
+        in.read((char *)&hasCatchBinding,sizeof(hasCatchBinding));
+        RTID catchBindingId;
+        if(hasCatchBinding){
+            in >> &catchBindingId;
+        }
+        bool hasCatchType = false;
+        in.read((char *)&hasCatchType,sizeof(hasCatchType));
+        if(hasCatchType){
+            RTID catchTypeId;
+            in >> &catchTypeId;
+        }
 
-                    while(code != CODE_CONDITIONAL_END)
-                        in.read((char *)&code,sizeof(RTCode));
-                    break;
-                }
-                ///Else Skip to next Conditional
-                else 
-                    while(code != CODE_RTBLOCK_END)
-                        in.read((char *)&code,sizeof(RTCode));
-
+        auto guardedValue = evalExpr(in);
+        RTCode blockBegin = CODE_MODULE_END;
+        in.read((char *)&blockBegin,sizeof(blockBegin));
+        if(blockBegin != CODE_RTBLOCK_BEGIN){
+            if(guardedValue){
+                StarbytesObjectRelease(guardedValue);
             }
-            else if(spec_ty == COND_TYPE_ELSE){
-                RTCode code;
-                in.read((char *)&code,sizeof(RTCode));
-                while(code != CODE_RTBLOCK_END){
-                    if(!*willReturn)
-                        execNorm(code,in,willReturn,return_val);
-                    in.read((char *)&code,sizeof(RTCode));
-                };
+            return;
+        }
 
-                while(code != CODE_CONDITIONAL_END)
-                    in.read((char *)&code,sizeof(RTCode));
-                break;
-            };
-            --cond_spec_count;
-        };
+        if(guardedValue){
+            allocator->allocVariable(string_ref(targetVarId.value,targetVarId.len),guardedValue);
+            skipRuntimeBlock(in,CODE_RTBLOCK_END);
+            lastRuntimeError.clear();
+        }
+        else {
+            if(hasCatchBinding){
+                auto errorText = lastRuntimeError.empty()? std::string("error") : lastRuntimeError;
+                auto errorObject = StarbytesStrNewWithData(errorText.c_str());
+                allocator->allocVariable(string_ref(catchBindingId.value,catchBindingId.len),errorObject);
+            }
+            lastRuntimeError.clear();
+            executeRuntimeBlock(in,CODE_RTBLOCK_END,willReturn,return_val);
+        }
+    }
+    else if(code == CODE_CONDITIONAL){
+        unsigned condSpecCount = 0;
+        in.read((char *)&condSpecCount,sizeof(condSpecCount));
+        bool branchTaken = false;
+        for(unsigned i = 0;i < condSpecCount;i++){
+            RTCode specType = COND_TYPE_IF;
+            in.read((char *)&specType,sizeof(specType));
+
+            if(specType == COND_TYPE_IF){
+                bool condition = false;
+                if(!branchTaken && !*willReturn){
+                    auto condObject = evalExpr(in);
+                    assert(StarbytesObjectTypecheck(condObject,StarbytesBoolType()));
+                    condition = (bool)StarbytesBoolValue(condObject);
+                    StarbytesObjectRelease(condObject);
+                }
+                else {
+                    skipExpr(in);
+                }
+
+                RTCode blockBegin = CODE_MODULE_END;
+                in.read((char *)&blockBegin,sizeof(blockBegin));
+                if(blockBegin != CODE_RTBLOCK_BEGIN){
+                    continue;
+                }
+
+                if(condition && !branchTaken && !*willReturn){
+                    executeRuntimeBlock(in,CODE_RTBLOCK_END,willReturn,return_val);
+                    branchTaken = true;
+                }
+                else {
+                    skipRuntimeBlock(in,CODE_RTBLOCK_END);
+                }
+                continue;
+            }
+
+            if(specType == COND_TYPE_ELSE){
+                RTCode blockBegin = CODE_MODULE_END;
+                in.read((char *)&blockBegin,sizeof(blockBegin));
+                if(blockBegin != CODE_RTBLOCK_BEGIN){
+                    continue;
+                }
+
+                if(!branchTaken && !*willReturn){
+                    executeRuntimeBlock(in,CODE_RTBLOCK_END,willReturn,return_val);
+                    branchTaken = true;
+                }
+                else {
+                    skipRuntimeBlock(in,CODE_RTBLOCK_END);
+                }
+                continue;
+            }
+
+            if(specType == COND_TYPE_LOOPIF){
+                auto conditionPos = in.tellg();
+                auto loopExitPos = conditionPos;
+                while(true){
+                    in.clear();
+                    in.seekg(conditionPos);
+                    auto condObject = evalExpr(in);
+                    assert(StarbytesObjectTypecheck(condObject,StarbytesBoolType()));
+                    bool condition = (bool)StarbytesBoolValue(condObject);
+                    StarbytesObjectRelease(condObject);
+
+                    RTCode blockBegin = CODE_MODULE_END;
+                    in.read((char *)&blockBegin,sizeof(blockBegin));
+                    if(blockBegin != CODE_RTBLOCK_BEGIN){
+                        loopExitPos = in.tellg();
+                        break;
+                    }
+
+                    if(condition && !*willReturn){
+                        executeRuntimeBlock(in,CODE_RTBLOCK_END,willReturn,return_val);
+                        loopExitPos = in.tellg();
+                        if(*willReturn){
+                            break;
+                        }
+                    }
+                    else {
+                        skipRuntimeBlock(in,CODE_RTBLOCK_END);
+                        loopExitPos = in.tellg();
+                        break;
+                    }
+                }
+                in.clear();
+                in.seekg(loopExitPos);
+                continue;
+            }
+        }
+
+        RTCode conditionalEnd = CODE_MODULE_END;
+        in.read((char *)&conditionalEnd,sizeof(conditionalEnd));
     }
     else if(code == CODE_RTRETURN){
         bool hasValue;
@@ -579,7 +947,8 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
          || code == CODE_RTMEMBER_SET
          || code == CODE_RTMEMBER_IVK
          || code == CODE_RTMEMBER_GET
-         || code == CODE_RTNEWOBJ){
+         || code == CODE_RTNEWOBJ
+         || code == CODE_RTREGEX_LITERAL){
         in.seekg(-static_cast<std::streamoff>(sizeof(RTCode)),std::ios_base::cur);
         auto result = evalExpr(in);
         if(result){

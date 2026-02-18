@@ -40,6 +40,8 @@ typedef unsigned char RTCode;
 #define CODE_RTMEMBER_GET 0x12
 #define CODE_RTMEMBER_SET 0x13
 #define CODE_RTMEMBER_IVK 0x14
+#define CODE_RTSECURE_DECL 0x15
+#define CODE_RTREGEX_LITERAL 0x16
 
 /// Condtional Type
 #define COND_TYPE_IF 0x0 // if()

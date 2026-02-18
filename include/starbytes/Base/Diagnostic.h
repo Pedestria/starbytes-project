@@ -1,5 +1,6 @@
 #include <deque>
 #include <iostream>
+#include <memory>
 #include <sstream>
 
 #include "ADT.h"
@@ -10,19 +11,20 @@
 namespace starbytes {
 
 #define LOGGER_COLOR_RESET 0x00
-#define LOGGER_COLOR_RED 0x00
-#define LOGGER_COLOR_BLUE 0x00
-#define LOGGER_COLOR_GREEN 0x00
-#define LOGGER_COLOR_YELLOW 0x00
+#define LOGGER_COLOR_RED 31
+#define LOGGER_COLOR_BLUE 34
+#define LOGGER_COLOR_GREEN 32
+#define LOGGER_COLOR_YELLOW 33
 
 struct Region{
-    unsigned startCol;
-    unsigned startLine;
-    unsigned endCol;
-    unsigned endLine;
+    unsigned startCol = 0;
+    unsigned startLine = 0;
+    unsigned endCol = 0;
+    unsigned endLine = 0;
 };
 
  
+class CodeView;
 
    class StreamLogger {
 
@@ -42,6 +44,8 @@ struct Region{
 
 struct Diagnostic {
     std::string message;
+    optional<Region> location;
+    std::string sourceName;
     typedef enum : int {
         Error,
         Warning,
@@ -52,7 +56,7 @@ struct Diagnostic {
     Type getType();
     bool isError();
     
-    virtual void send(StreamLogger & os) {};
+    virtual void send(StreamLogger & os,const CodeView *view = nullptr) {};
     virtual ~Diagnostic() = default;
 };
 
@@ -60,22 +64,27 @@ typedef std::shared_ptr<Diagnostic> DiagnosticPtr;
 
 struct StandardDiagnostic : public Diagnostic {
     static DiagnosticPtr createError(string_ref message);
+    static DiagnosticPtr createError(string_ref message,const Region &region);
     static DiagnosticPtr createWarning(string_ref message);
-    void send(StreamLogger & os) override;
+    static DiagnosticPtr createWarning(string_ref message,const Region &region);
+    void send(StreamLogger & os,const CodeView *view = nullptr) override;
 };
 
 class DiagnosticHandler {
     protected:
     std::deque<DiagnosticPtr> buffer;
     StreamLogger logger;
+    std::unique_ptr<CodeView> codeView;
 
     using SELF = DiagnosticHandler;
 
     DiagnosticHandler(std::ostream & out);
 
     public:
+    ~DiagnosticHandler();
     static std::unique_ptr<DiagnosticHandler> createDefault(std::ostream & out);
     SELF & push(DiagnosticPtr diagnostic);
+    void setCodeViewSource(std::string sourceName,std::string sourceText);
     bool empty();
     bool hasErrored();
     void logAll();

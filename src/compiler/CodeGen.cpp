@@ -210,6 +210,40 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             }
         };
     }
+    else if(stmt->type == SECURE_DECL){
+        auto *secureDecl = (ASTSecureDecl *)stmt;
+        if(!secureDecl->guardedDecl || secureDecl->guardedDecl->specs.empty() || !secureDecl->catchBlock){
+            return;
+        }
+        auto &guardedSpec = secureDecl->guardedDecl->specs.front();
+        if(!guardedSpec.id || !guardedSpec.expr){
+            return;
+        }
+
+        RTCode code = CODE_RTSECURE_DECL;
+        genContext->out.write((const char *)&code,sizeof(RTCode));
+        RTID targetVarId;
+        ASTIdentifier_to_RTID(guardedSpec.id,targetVarId);
+        genContext->out << &targetVarId;
+
+        bool hasCatchBinding = secureDecl->catchErrorId != nullptr;
+        genContext->out.write((const char *)&hasCatchBinding,sizeof(hasCatchBinding));
+        if(hasCatchBinding){
+            RTID catchBindingId;
+            ASTIdentifier_to_RTID(secureDecl->catchErrorId,catchBindingId);
+            genContext->out << &catchBindingId;
+        }
+
+        bool hasCatchType = secureDecl->catchErrorType != nullptr;
+        genContext->out.write((const char *)&hasCatchType,sizeof(hasCatchType));
+        if(hasCatchType){
+            RTID catchTypeId = makeOwnedRTID(std::string(secureDecl->catchErrorType->getName()));
+            genContext->out << &catchTypeId;
+        }
+
+        consumeStmt(guardedSpec.expr);
+        write_ASTBlockStmt_to_context(secureDecl->catchBlock,genContext,this);
+    }
     else if(stmt->type == FUNC_DECL){
         ASTFuncDecl *func_node = (ASTFuncDecl *)stmt;
         RTFuncTemplate funcTemplate;
@@ -356,6 +390,34 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         code = CODE_CONDITIONAL_END;
         genContext->out.write((char *)&code,sizeof(RTCode));
     }
+    else if(stmt->type == FOR_DECL || stmt->type == WHILE_DECL){
+        ASTExpr *loopExpr = nullptr;
+        ASTBlockStmt *loopBlock = nullptr;
+        if(stmt->type == FOR_DECL){
+            auto *forDecl = (ASTForDecl *)stmt;
+            loopExpr = forDecl->expr;
+            loopBlock = forDecl->blockStmt;
+        }
+        else {
+            auto *whileDecl = (ASTWhileDecl *)stmt;
+            loopExpr = whileDecl->expr;
+            loopBlock = whileDecl->blockStmt;
+        }
+        if(!loopExpr || !loopBlock){
+            return;
+        }
+
+        RTCode code = CODE_CONDITIONAL;
+        genContext->out.write((char *)&code,sizeof(RTCode));
+        unsigned count = 1;
+        genContext->out.write((char *)&count,sizeof(count));
+        RTCode spec_ty = COND_TYPE_LOOPIF;
+        genContext->out.write((char *)&spec_ty,sizeof(RTCode));
+        consumeStmt(loopExpr);
+        write_ASTBlockStmt_to_context(loopBlock,genContext,this);
+        code = CODE_CONDITIONAL_END;
+        genContext->out.write((char *)&code,sizeof(RTCode));
+    }
     else if(stmt->type == RETURN_DECL){
         ASTReturnDecl *return_decl = (ASTReturnDecl *)stmt;
         RTCode code = CODE_RTRETURN;
@@ -405,6 +467,16 @@ StarbytesObject CodeGen::exprToRTInternalObject(ASTExpr *expr){
 
 void CodeGen::consumeStmt(ASTStmt *stmt){
     ASTExpr *expr = (ASTExpr *)stmt;
+    if(stmt->type == REGEX_LITERAL){
+        auto *literalExpr = (ASTLiteralExpr *)stmt;
+        RTCode code = CODE_RTREGEX_LITERAL;
+        genContext->out.write((const char *)&code,sizeof(RTCode));
+        RTID patternId = makeOwnedRTID(literalExpr->regexPattern.value_or(""));
+        RTID flagsId = makeOwnedRTID(literalExpr->regexFlags.value_or(""));
+        genContext->out << &patternId;
+        genContext->out << &flagsId;
+        return;
+    }
     /// Literals
     if(stmtCanBeConvertedToRTInternalObject(expr)){
         auto obj = exprToRTInternalObject(expr);

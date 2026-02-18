@@ -169,6 +169,10 @@ namespace Runtime {
                 }
                 break;
             }
+            case CODE_RTREGEX_LITERAL:
+                skipRTIDPayload(is);
+                skipRTIDPayload(is);
+                break;
             default:
                 break;
         }
@@ -275,6 +279,26 @@ namespace Runtime {
             is.read((char *)&hasValue,sizeof(hasValue));
             if(hasValue){
                 skipExpr(is);
+            }
+            return;
+        }
+        if(code == CODE_RTSECURE_DECL){
+            skipRTIDPayload(is);
+            bool hasCatchBinding = false;
+            is.read((char *)&hasCatchBinding,sizeof(hasCatchBinding));
+            if(hasCatchBinding){
+                skipRTIDPayload(is);
+            }
+            bool hasCatchType = false;
+            is.read((char *)&hasCatchType,sizeof(hasCatchType));
+            if(hasCatchType){
+                skipRTIDPayload(is);
+            }
+            skipExpr(is);
+            RTCode blockBegin = CODE_MODULE_END;
+            is.read((char *)&blockBegin,sizeof(blockBegin));
+            if(blockBegin == CODE_RTBLOCK_BEGIN){
+                skipRuntimeBlock(is,CODE_RTBLOCK_END);
             }
             return;
         }

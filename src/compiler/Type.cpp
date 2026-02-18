@@ -10,10 +10,13 @@ namespace starbytes {
     ASTType * BOOL_TYPE  = ASTType::Create("Bool",nullptr,false);
     ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
     ASTType * FLOAT_TYPE = ASTType::Create("Float",nullptr,false);
+    ASTType * REGEX_TYPE = ASTType::Create("Regex",nullptr,false);
 
     ASTType *ASTType::Create(string_ref name,ASTStmt *parentNode,bool isPlaceholder,bool isAlias){
         auto obj = new ASTType();
         obj->isAlias = isAlias;
+        obj->isOptional = false;
+        obj->isThrowable = false;
         obj->name = name.getBuffer();
         obj->parentNode = parentNode;
         obj->isPlaceholder = isPlaceholder;
@@ -37,11 +40,25 @@ namespace starbytes {
     }
 
     bool ASTType::match(ASTType *other,std::function<void(std::string message)> log){
+        if(!other){
+            log("Type comparison failed against null type.");
+            return false;
+        }
         bool first_m = name == other->name;
         if(!first_m){
             log(fmtString("Type `{0}` does not match type `{1}`",*this,*other));
             return false;
         };
+
+        if(!isOptional && other->isOptional){
+            log(fmtString("Type `{0}` does not accept optional type `{1}`",*this,*other));
+            return false;
+        }
+
+        if(!isThrowable && other->isThrowable){
+            log(fmtString("Type `{0}` does not accept throwable type `{1}`",*this,*other));
+            return false;
+        }
         
         bool second_m = true;
         if(!typeParams.empty()){
