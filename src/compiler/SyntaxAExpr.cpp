@@ -15,7 +15,7 @@ namespace starbytes::Syntax {
      */
 
     ASTExpr *SyntaxA::evalDataExpr(TokRef first_token,std::shared_ptr<ASTScope> parentScope){
-        Tok & tokRef = const_cast<Tok &>(first_token);
+        Tok tokRef = first_token;
         ASTExpr *expr = nullptr;
         /// Paren Unwrapping
         if(tokRef.type == Tok::OpenParen){
@@ -72,6 +72,7 @@ namespace starbytes::Syntax {
                 };
 
                 node->exprArrayData.push_back(firstExpr);
+                tokRef = token_stream[privTokIndex];
                 /// Last Tok from recent ast expr evaluation.
                 while(tokRef.type == Tok::Comma){
                     tokRef = nextTok();
@@ -80,6 +81,7 @@ namespace starbytes::Syntax {
                         /// ERROR
                     };
                     node->exprArrayData.push_back(expr);
+                    tokRef = token_stream[privTokIndex];
                 };
 
                 if(tokRef.type != Tok::CloseBracket){
@@ -100,6 +102,60 @@ namespace starbytes::Syntax {
                 tokRef = nextTok();
                 
             }
+            else if(tokRef.type == Tok::Keyword && tokRef.content == KW_NEW){
+                tokRef = nextTok();
+                if(tokRef.type != Tok::Identifier){
+                    return nullptr;
+                }
+                ASTExpr *classExpr = new ASTExpr();
+                classExpr->type = ID_EXPR;
+                classExpr->id = buildIdentifier(tokRef,false);
+                if(!classExpr->id){
+                    return nullptr;
+                }
+                tokRef = nextTok();
+                while(tokRef.type == Tok::Dot){
+                    tokRef = nextTok();
+                    if(tokRef.type != Tok::Identifier){
+                        return nullptr;
+                    }
+                    ASTExpr *memberExpr = new ASTExpr();
+                    memberExpr->type = MEMBER_EXPR;
+                    memberExpr->leftExpr = classExpr;
+                    auto *rightExpr = new ASTExpr();
+                    rightExpr->type = ID_EXPR;
+                    rightExpr->id = buildIdentifier(tokRef,false);
+                    if(!rightExpr->id){
+                        return nullptr;
+                    }
+                    memberExpr->rightExpr = rightExpr;
+                    classExpr = memberExpr;
+                    tokRef = nextTok();
+                }
+                if(tokRef.type != Tok::OpenParen){
+                    return nullptr;
+                }
+
+                ASTExpr *ctorInvoke = new ASTExpr();
+                ctorInvoke->type = IVKE_EXPR;
+                ctorInvoke->isConstructorCall = true;
+                ctorInvoke->callee = classExpr;
+
+                tokRef = nextTok();
+                while(tokRef.type != Tok::CloseParen){
+                    ASTExpr *argExpr = evalExpr(tokRef,parentScope);
+                    if(!argExpr){
+                        return nullptr;
+                    }
+                    ctorInvoke->exprArrayData.push_back(argExpr);
+                    tokRef = token_stream[privTokIndex];
+                    if(tokRef.type == Tok::Comma){
+                        tokRef = nextTok();
+                    }
+                }
+                tokRef = nextTok();
+                expr = ctorInvoke;
+            }
             
         };
         return expr;
@@ -107,36 +163,56 @@ namespace starbytes::Syntax {
     
     ASTExpr * SyntaxA::evalArgExpr(const Tok & first_token,std::shared_ptr<ASTScope> parentScope){
         auto expr = evalDataExpr(first_token,parentScope);
-        Tok & tokRef = const_cast<Tok &>(token_stream[privTokIndex]);
-        /// MemberExpr
-        if(tokRef.type == Tok::Dot){
-            ASTExpr *memberExpr = new ASTExpr();
-            memberExpr->leftExpr = expr;
-            tokRef = nextTok();
-            auto other_expr = evalDataExpr(tokRef,parentScope);
-            if(!other_expr)
-                return nullptr;
-            if(other_expr->type == ID_EXPR)
-                memberExpr->rightExpr = other_expr;
-            else;
-                /// Throw Error;
-            expr = memberExpr;
+        if(!expr){
+            return nullptr;
         }
-        /// InvokeExpr
-        else if(tokRef.type == Tok::OpenParen){
-            auto node = new ASTExpr();
-            node->type = IVKE_EXPR;
-            node->callee = expr;
-            
-            tokRef = nextTok();
-            
-            while(tokRef.type != Tok::CloseParen){
-                ASTExpr *expr = evalExpr(tokRef,parentScope);
-                node->exprArrayData.push_back(expr);
-            };
-            
-            tokRef = nextTok();
-            expr = node;
+        Tok tokRef = token_stream[privTokIndex];
+        while(true){
+            /// MemberExpr
+            if(tokRef.type == Tok::Dot){
+                ASTExpr *memberExpr = new ASTExpr();
+                memberExpr->type = MEMBER_EXPR;
+                memberExpr->leftExpr = expr;
+                tokRef = nextTok();
+                if(tokRef.type != Tok::Identifier){
+                    return nullptr;
+                }
+                ASTExpr *right = new ASTExpr();
+                right->type = ID_EXPR;
+                right->id = buildIdentifier(tokRef,false);
+                if(!right->id){
+                    return nullptr;
+                }
+                memberExpr->rightExpr = right;
+                expr = memberExpr;
+                tokRef = nextTok();
+                continue;
+            }
+            /// InvokeExpr
+            if(tokRef.type == Tok::OpenParen){
+                auto node = new ASTExpr();
+                node->type = IVKE_EXPR;
+                node->callee = expr;
+                
+                tokRef = nextTok();
+                
+                while(tokRef.type != Tok::CloseParen){
+                    ASTExpr *argExpr = evalExpr(tokRef,parentScope);
+                    if(!argExpr){
+                        return nullptr;
+                    }
+                    node->exprArrayData.push_back(argExpr);
+                    tokRef = token_stream[privTokIndex];
+                    if(tokRef.type == Tok::Comma){
+                        tokRef = nextTok();
+                    }
+                };
+                
+                tokRef = nextTok();
+                expr = node;
+                continue;
+            }
+            break;
         }
         return expr;
     };
@@ -144,7 +220,24 @@ namespace starbytes::Syntax {
     ASTExpr *SyntaxA::evalExpr(TokRef first_token,std::shared_ptr<ASTScope> parentScope){
         
         ASTExpr *expr = evalArgExpr(first_token,parentScope);
-        Tok & tokRef = const_cast<Tok &>(token_stream[privTokIndex]);
+        if(!expr){
+            return nullptr;
+        }
+        Tok tokRef = token_stream[privTokIndex];
+
+        if(tokRef.type == Tok::Equal){
+            auto node = new ASTExpr();
+            node->type = ASSIGN_EXPR;
+            node->leftExpr = expr;
+            tokRef = nextTok();
+            auto *rhsExpr = evalExpr(tokRef,parentScope);
+            if(!rhsExpr){
+                return nullptr;
+            }
+            node->rightExpr = rhsExpr;
+            expr = node;
+            return expr;
+        }
         
         /// Eval CompoundExpr
 
@@ -160,6 +253,7 @@ namespace starbytes::Syntax {
                 node->rightExpr = rexpr;
                 
                 expr = node;
+                tokRef = token_stream[privTokIndex];
             }
             else if(tokRef.type == Tok::Minus){
                 auto node = new ASTExpr();
@@ -172,6 +266,7 @@ namespace starbytes::Syntax {
               
                  
                 expr = node;
+                tokRef = token_stream[privTokIndex];
             }
             else {
                 break;

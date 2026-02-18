@@ -16,10 +16,13 @@ namespace starbytes {
         struct SymbolTable {
             
             struct Var {
+                std::string name;
                 ASTType *type;
+                bool isReadonly = false;
             };
             
             struct Function {
+                std::string name;
                 ASTType *funcType;
                 ASTType *returnType;
                 string_map<ASTType *> paramMap;
@@ -34,6 +37,7 @@ namespace starbytes {
             struct Entry {
                 void *data;
                 std::string name;
+                std::string emittedName;
                 Region interfacePos;
                 Region sourcePos;
                 typedef enum : int {
@@ -70,6 +74,9 @@ namespace starbytes {
             std::unique_ptr<SymbolTable> main;
             std::vector<std::shared_ptr<SymbolTable>> otherTables;
             bool hasTable(SymbolTable *ptr);
+            SymbolTable::Entry * findEntryNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope);
+            SymbolTable::Entry * findEntryInExactScopeNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope);
+            SymbolTable::Entry * findEntryByEmittedNoDiag(string_ref emittedName);
             SymbolTable::Entry * findEntry(string_ref symbolName,SemanticsContext & ctxt,std::shared_ptr<ASTScope> scope);
         };
     }

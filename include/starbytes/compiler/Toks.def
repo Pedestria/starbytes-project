@@ -53,6 +53,8 @@
 #define KW_ELSE KW("else")
 #define KW_ELIF KW("elif")
 #define KW_FOR KW("for")
+#define KW_NEW KW("new")
+#define KW_SCOPE KW("scope")
 
 #define TOK_TRUE TOK("true")
 #define TOK_FALSE TOK("false")

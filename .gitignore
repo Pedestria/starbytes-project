@@ -1,5 +1,6 @@
 out
 build
+build-asan
 .vs
 *.symlink
 .clangd/

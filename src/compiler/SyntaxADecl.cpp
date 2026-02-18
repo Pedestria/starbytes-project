@@ -1,12 +1,14 @@
 #include "starbytes/compiler/ASTNodes.def"
 #include "starbytes/compiler/SyntaxA.h"
 #include "starbytes/compiler/AST.h"
+#include <cstdlib>
+#include <string>
 
 namespace starbytes::Syntax {
 
 
 ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<ASTScope> parentScope) {
-    Tok & tok0 = const_cast<Tok &>(first_token);
+    Tok tok0 = first_token;
     
     if(tok0.type == Tok::OpenBrace){
         ASTBlockStmt *block = new ASTBlockStmt();
@@ -40,7 +42,99 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
 }
 
     ASTDecl *SyntaxA::evalDecl(TokRef first_token,std::shared_ptr<ASTScope> parentScope){
-        if(first_token.type == Tok::Keyword){
+        Tok currentTok = first_token;
+        std::vector<ASTAttribute> parsedAttributes;
+
+        auto parseAttributeValueExpr = [&](TokRef tok) -> ASTExpr * {
+            if(tok.type == Tok::StringLiteral){
+                auto *literal = new ASTLiteralExpr();
+                literal->type = STR_LITERAL;
+                literal->strValue = tok.content.substr(1,tok.content.size()-2);
+                return literal;
+            }
+            if(tok.type == Tok::BooleanLiteral){
+                auto *literal = new ASTLiteralExpr();
+                literal->type = BOOL_LITERAL;
+                literal->boolValue = (tok.content == TOK_TRUE);
+                return literal;
+            }
+            if(tok.type == Tok::NumericLiteral || tok.type == Tok::FloatingNumericLiteral){
+                auto *literal = new ASTLiteralExpr();
+                literal->type = NUM_LITERAL;
+                if(tok.type == Tok::FloatingNumericLiteral){
+                    literal->floatValue = (starbytes_float_t)::atof(tok.content.c_str());
+                }
+                else {
+                    literal->intValue = (starbytes_int_t)std::stoll(tok.content);
+                }
+                return literal;
+            }
+            if(tok.type == Tok::Identifier){
+                auto *expr = new ASTExpr();
+                expr->type = ID_EXPR;
+                expr->id = buildIdentifier(tok,false);
+                return expr;
+            }
+            return nullptr;
+        };
+
+        auto parseAttributes = [&]() -> bool {
+            while(currentTok.type == Tok::AtSign){
+                ASTAttribute attr;
+                Tok attrNameTok = nextTok();
+                if(attrNameTok.type != Tok::Identifier){
+                    return false;
+                }
+                attr.name = attrNameTok.content;
+
+                Tok lookahead = aheadTok();
+                if(lookahead.type == Tok::OpenParen){
+                    gotoNextTok();
+                    Tok argTok = nextTok();
+                    while(argTok.type != Tok::CloseParen){
+                        ASTAttributeArg arg;
+                        if(argTok.type == Tok::Identifier){
+                            Tok maybeEq = aheadTok();
+                            if(maybeEq.type == Tok::Equal){
+                                arg.key = argTok.content;
+                                gotoNextTok();
+                                argTok = nextTok();
+                            }
+                        }
+
+                        auto *valueExpr = parseAttributeValueExpr(argTok);
+                        if(!valueExpr){
+                            return false;
+                        }
+                        arg.value = valueExpr;
+                        attr.args.push_back(arg);
+
+                        argTok = nextTok();
+                        if(argTok.type == Tok::Comma){
+                            argTok = nextTok();
+                            continue;
+                        }
+                        if(argTok.type != Tok::CloseParen){
+                            return false;
+                        }
+                    }
+                    gotoNextTok();
+                }
+                else {
+                    gotoNextTok();
+                }
+
+                parsedAttributes.push_back(std::move(attr));
+                currentTok = token_stream[privTokIndex];
+            }
+            return true;
+        };
+
+        if(!parseAttributes()){
+            return nullptr;
+        }
+
+        if(currentTok.type == Tok::Keyword){
             ASTDecl *node;
             // if(!commentBuffer.empty()){   
             //     previousNode->afterComments = commentBuffer;             
@@ -49,7 +143,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
             // };
 
             /// Import Decl Parse
-            if(first_token.content == KW_IMPORT){
+            if(currentTok.content == KW_IMPORT){
                 ASTImportDecl *imp_decl = new ASTImportDecl();
                 node = imp_decl;
                 node->type = IMPORT_DECL;
@@ -60,12 +154,37 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                 imp_decl->moduleName = mod_id;
                 gotoNextTok();
             }
-            else if(first_token.content == KW_IF){
+            else if(currentTok.content == KW_SCOPE){
+                auto *scopeDecl = new ASTScopeDecl();
+                node = scopeDecl;
+                node->type = SCOPE_DECL;
+                node->scope = parentScope;
+
+                Tok tok0 = nextTok();
+                scopeDecl->scopeId = buildIdentifier(tok0,false);
+                if(!scopeDecl->scopeId){
+                    return nullptr;
+                }
+                tok0 = nextTok();
+                if(tok0.type != Tok::OpenBrace){
+                    return nullptr;
+                }
+
+                auto scopeNode = std::shared_ptr<ASTScope>(new ASTScope{scopeDecl->scopeId->val,ASTScope::Namespace,parentScope});
+                scopeNode->generateHashID();
+                auto *blockStmt = evalBlockStmt(tok0,scopeNode);
+                if(!blockStmt){
+                    return nullptr;
+                }
+                scopeDecl->blockStmt = blockStmt;
+                gotoNextTok();
+            }
+            else if(currentTok.content == KW_IF){
                 ASTConditionalDecl *condDecl = new ASTConditionalDecl();
                 node = condDecl;
                 node->type = COND_DECL;
                 
-                Tok & tok0 = const_cast<Tok &>(nextTok());
+                Tok tok0 = nextTok();
                 if(tok0.type != Tok::OpenParen){
                     /// Throw Error
                 };
@@ -155,12 +274,12 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                 };
                 
             }
-            else if(first_token.content == KW_RETURN){
+            else if(currentTok.content == KW_RETURN){
                 ASTReturnDecl *return_decl = new ASTReturnDecl();
                 node = return_decl;
                 node->type = RETURN_DECL;
                 node->scope = parentScope;
-                TokRef tok0 = nextTok();
+                Tok tok0 = nextTok();
                 ASTExpr * val = evalExpr(tok0,parentScope);
                 if(!val){
                     return_decl->expr = nullptr;
@@ -173,19 +292,19 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                 
             }
             /// Var Decl Parse
-            else if(first_token.content == KW_DECL){
+            else if(currentTok.content == KW_DECL){
                 ASTVarDecl *varDecl = new ASTVarDecl();
                 node = varDecl;
                 node->type = VAR_DECL;
                 node->scope = parentScope;
-                TokRef tok0 = nextTok();
+                Tok tok0 = nextTok();
                 if(tok0.type == Tok::Keyword){
                     if(tok0.content == KW_IMUT)
                         varDecl->isConst = true;
                     else; 
                         /// Throw Error;
                 }
-                Tok & tok1 = const_cast<Tok &>(tok0.type == Tok::Keyword? nextTok() : tok0);
+                Tok tok1 = (tok0.type == Tok::Keyword? nextTok() : tok0);
                 if(tok1.type == Tok::Identifier){
                     ASTIdentifier * id = buildIdentifier(tok1,false);
                     if(!id){
@@ -215,31 +334,29 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
 
                     if(tok1.type != Tok::Equal){
                         varDecl->specs.push_back(spec);
-                        return varDecl;
-                    };
-
-                    tok1 = nextTok();
-                    ASTExpr * val = evalExpr(tok1,parentScope);
-                    if(!val){
-                       // Throw Error 
-                    };
-                    /// Var Initializer
-
-                    spec.expr = val;
-                    
-                    varDecl->specs.push_back(spec);
+                    }
+                    else {
+                        tok1 = nextTok();
+                        ASTExpr * val = evalExpr(tok1,parentScope);
+                        if(!val){
+                           // Throw Error 
+                        };
+                        /// Var Initializer
+                        spec.expr = val;
+                        varDecl->specs.push_back(spec);
+                    }
                    
                 }
                 else {
                     /// Throw Error.
                 };
             }
-            else if(first_token.content == KW_FUNC){
+            else if(currentTok.content == KW_FUNC){
                 ASTFuncDecl *func_node = new ASTFuncDecl();
                 node = func_node;
                 node->type = FUNC_DECL;
                 node->scope = parentScope;
-                Tok & tok0 = const_cast<Tok &>(nextTok());
+                Tok tok0 = nextTok();
                 
                 if(!(func_node->funcId = buildIdentifier(tok0,false))){
                     /// Throw Error
@@ -358,14 +475,14 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
             // else {
             //     node = nullptr;
             // }
-            else if(first_token.content == KW_CLASS){
+            else if(currentTok.content == KW_CLASS){
                 auto n = new ASTClassDecl();
                 node = n;
                 node->type = CLASS_DECL;
                 node->scope = parentScope;
-                Tok & tok0 = const_cast<Tok &>(nextTok());
+                Tok tok0 = nextTok();
                 
-                if(!(n->id = buildIdentifier(tok0,true))){
+                if(!(n->id = buildIdentifier(tok0,false))){
                     return nullptr;
                 }
 //
@@ -378,15 +495,17 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                 if(tok0.type != Tok::OpenBrace){
                     return nullptr;
                 }
-                
-                tok0 = nextTok();
-                
+
                 std::shared_ptr<ASTScope> s (new ASTScope {n->id->val,ASTScope::Class,parentScope});
                 
                 s->generateHashID();
-                
+
+                tok0 = nextTok();
                 while(tok0.type != Tok::CloseBrace){
                     auto decl = evalDecl(tok0,s);
+                    if(!decl){
+                        return nullptr;
+                    }
                     if(decl->type == VAR_DECL){
                         n->fields.push_back((ASTVarDecl *)decl);
                     }
@@ -397,16 +516,19 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                         std::cout << std::hex << decl->type << " type not allowed in class scope. Only " << VAR_DECL << " and " << FUNC_DECL << " allowed." << std::endl;
                         return nullptr;
                     }
+                    tok0 = token_stream[privTokIndex];
                 }
+                gotoNextTok();
             }
-            else if(first_token.content == KW_IMUT){
+            else if(currentTok.content == KW_IMUT){
                 /// Throw Unknown Error;
                 return nullptr;
             }
-            else if(first_token.content == KW_ELSE){
+            else if(currentTok.content == KW_ELSE){
                 return nullptr;
             };
 
+            node->attributes = std::move(parsedAttributes);
             return node;
         }
         else {

@@ -1,4 +1,53 @@
 
+scope Core {
+    decl greeting:String = "hello_scope"
+
+    func makeWord() String {
+        return "scope-fn"
+    }
+
+    scope Math {
+        func answer() Int {
+            return 42
+        }
+    }
+}
+
+scope Models {
+    class Pet {
+        decl name:String
+
+        func getKind() String {
+            return "pet"
+        }
+    }
+}
+
+@deprecated("Legacy model")
+class Person {
+    @readonly
+    decl id:String
+    decl name:String
+
+    @native(name="person_getName")
+    func getName() String {
+        return "person"
+    }
+}
+
+decl p = new Person()
+p.name = "alextopper"
+print(p.name)
+print(p.getName())
+
+decl scopedPet = new Models.Pet()
+scopedPet.name = "milo"
+print(scopedPet.name)
+print(scopedPet.getKind())
+print(Core.greeting)
+print(Core.makeWord())
+print(Core.Math.answer())
+
 
 
 func myFunc(){
@@ -21,9 +70,6 @@ if(bar){
 else {
     print("NO")
 }
-
-
-
 
 
 

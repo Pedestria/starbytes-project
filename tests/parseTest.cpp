@@ -1,17 +1,17 @@
-#include "starbytes/Parser/Parser.h"
-#include "starbytes/AST/ASTDumper.h"
-#include <llvm/Support/InitLLVM.h>
-#include <llvm/Support/CommandLine.h>
+#include "starbytes/compiler/Parser.h"
+#include "starbytes/compiler/ASTDumper.h"
+#include <fstream>
 
 int main(int argc,char * argv[]){
-    llvm::InitLLVM init(argc,argv);
-    
-    llvm::cl::ParseCommandLineOptions(argc,argv);
-
     auto consumer = starbytes::ASTDumper::CreateStdoutASTDumper();
-
     starbytes::Parser parser(*consumer);
-    std::ifstream in("./tests/test.stb");
+    std::ifstream in("./test.starb");
+    if(!in.is_open()){
+        in.open("./tests/test.starb");
+    }
+    if(!in.is_open()){
+        return 1;
+    }
     auto parseContext = starbytes::ModuleParseContext::Create("Test");
     parser.parseFromStream(in,parseContext);
     if(!parser.finish()){

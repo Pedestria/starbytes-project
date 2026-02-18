@@ -22,6 +22,23 @@ struct _StarbytesObject {
     
 };
 
+struct _StarbytesFuncArgs {
+    unsigned argc;
+    unsigned index;
+    StarbytesObject *argv;
+};
+
+static void _StarbytesPrivDataFreeDefault(void *data){
+    free(data);
+}
+
+StarbytesObject StarbytesFuncArgsGetArg(StarbytesFuncArgs args){
+    if(args == NULL || args->argv == NULL || args->index >= args->argc){
+        return NULL;
+    }
+    return args->argv[args->index++];
+}
+
 size_t StarbytesStrType(){
     return 0;
 }
@@ -46,17 +63,20 @@ size_t StarbytesFuncRefType(){
     return 5;
 }
 
+size_t StarbytesCustomClassType(){
+    return 6;
+}
+
 int StarbytesObjectIs(StarbytesObject obj){
     if(obj == NULL){
         return 0;
     }
-    else {
-        assert(obj->type && "NOT A STARBYTES OBJECT");
-        if(obj->type | (StarbytesNumType() | StarbytesStrType() | StarbytesDictType() | StarbytesArrayType())){
-            return 1;
-        }
-        return 0;
-    }
+    return (obj->type == StarbytesStrType())
+        || (obj->type == StarbytesArrayType())
+        || (obj->type == StarbytesDictType())
+        || (obj->type == StarbytesNumType())
+        || (obj->type == StarbytesBoolType())
+        || (obj->type == StarbytesFuncRefType());
 };
 
 
@@ -66,6 +86,8 @@ StarbytesObject StarbytesObjectNew(StarbytesClassType type){
     obj.props = NULL;
     obj.refCount = 1;
     obj.type = type;
+    obj.privData = NULL;
+    obj.freePrivData = _StarbytesPrivDataFreeDefault;
     
     StarbytesObject mem = (StarbytesObject)malloc(sizeof(struct _StarbytesObject));
     memcpy(mem,&obj,sizeof(struct _StarbytesObject));
@@ -131,7 +153,9 @@ void StarbytesObjectRelease(StarbytesObject obj){
             ++prop_ptr;
         }
         free(obj->props);
-        obj->freePrivData(obj->privData);
+        if(obj->freePrivData){
+            obj->freePrivData(obj->privData);
+        }
         free(obj);
     }
 }
@@ -329,11 +353,12 @@ StarbytesStr StarbytesStrCopy(StarbytesStr str){
 StarbytesStr StarbytesStrNewWithData(const char * data){
     StarbytesStr str = StarbytesStrNew(StrEncodingUTF8);
     StarbytesObject len = StarbytesObjectGetProperty(str,"length");
-    unsigned int dataLen = strlen(data);
+    unsigned int dataLen = (unsigned int)strlen(data);
     StarbytesNumAssign(len,NumTypeInt,dataLen);
     StarbytesStrPriv *privData = (StarbytesStrPriv *)str->privData;
-    privData->data = malloc(sizeof(char) * dataLen);
+    privData->data = malloc(sizeof(char) * (dataLen + 1));
     memcpy(privData->data,data,dataLen);
+    ((char *)privData->data)[dataLen] = '\0';
     return str;
 }
 
@@ -499,7 +524,12 @@ StarbytesDict StarbytesDictNew(){
 }
 
 StarbytesDict StarbytesDictCopy(StarbytesDict dict){
-    
+    StarbytesObject obj = StarbytesObjectNew(StarbytesDictType());
+    StarbytesNum dictL = StarbytesObjectGetProperty(dict,"length");
+    StarbytesObjectAddProperty(obj,"length",StarbytesNumCopy(dictL));
+    StarbytesObjectAddProperty(obj,"keys",StarbytesArrayCopy(StarbytesObjectGetProperty(dict,"keys")));
+    StarbytesObjectAddProperty(obj,"values",StarbytesArrayCopy(StarbytesObjectGetProperty(dict,"values")));
+    return obj;
 }
 
 void StarbytesDictSet(StarbytesDict dict,StarbytesObject key,StarbytesObject val){
@@ -619,9 +649,6 @@ StarbytesFuncTemplate * StarbytesFuncRefGetPtr(StarbytesFuncRef ref){
     StarbytesFuncRefPriv * privData = (StarbytesFuncRefPriv *)ref->privData;
     return privData->ref;
 };
-
-
-
 
 
 

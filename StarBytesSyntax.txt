@@ -1,51 +1,55 @@
-//DECLARATIONS
+//STARBYTES SYNTAX FORMAT
 //__________________
 //
 //Import Declaration
 import lib
 //Function Declaration
-[Usable]
+
 func hello (hello:String) String {
 	//Return Declaration
 	return "Greetings!"
 }
-//Scope Declaration / Namespace Declaration
+//Scope Declaration / Namespace Declaration (Cannot make functions calls from within a scope)
 scope Scope0 {
-	hello("Whatsup!")
+	//Class Declaration
+    class MyClass <T> {
+        decl data:String 
+        decl imut otherData:String
+        
+        // Constructor with initial values for params.
+        new(otherData:String) -> data(""),otherData(otherData);
+        // Same as above with constructor body.
+        new() ->  data(""), otherData(""){
+        
+        }
+
+        func doSomething(){
+            print(data)
+        }
+    }
 	
 }
 
-//Class Declaration
-class MyClass <T> {
-    decl data:String 
-    decl imut otherData:String
-    
-    new(otherData:String) -> data(""),otherData(otherData);
 
-    new() ->  data(""), otherData(""){
-       
-    }
-
-    func doSomething(){
-        print(data)
-    }
-}
 
 //Interface Declaration
 interface ClassInterface {
-
+    decl data:String 
+    decl imut otherData:String
 }
 //Type Declaration
-deftype IntOrString = { Integer || String }
-deftype Func = {<<[a:String]}
+deftype IntOrString = Integer || String
+// Function Type Declaration
+deftype Func = (a:String) -> Void
 
 //Structure Delcaration
 struct SomeStruct {
-
+    decl data:String 
+    decl imut otherData:String
 }
 //Variable Declaration
 decl hello:String = "Hello"
-//Constant Declaration
+//Constant Declaration (Types can be inferred)
 decl imut myConst = 4
 
 
@@ -58,9 +62,11 @@ enum Something {
 	THREE
 }
 
-deftype FUNCTYPE = [String a,Number] >> Number
+// Type Defintion
+deftype FUNCTYPE = [String a,Number] -> Number
 
-decl lambda hello:FUNCTYPE = [String a,Number b] >> Number {
+/// Inline Function
+decl lambda hello:FUNCTYPE = [String a,Number b] -> Number {
 
 }
 
@@ -70,7 +76,12 @@ decl lambda hello:FUNCTYPE = [String a,Number b] >> Number {
 secure(decl var = %/(?:word1|word2)/g%) catch (error:RegexParseExpection) {
 
 }
+// 
 decl someVar = await method() catch {
+
+}
+// Async Function - not creating another thread. 
+lazy func method(){
 
 }
 
@@ -82,13 +93,6 @@ secure(decl var = someOption()) catch {
 
 }
 
-lazy func method(){
-
-}
-
-//Error Throwing Function
-
-func someFunc (){
 
 }
 

@@ -39,8 +39,9 @@ namespace starbytes {
             if(StarbytesObjectTypecheck(object,StarbytesNumType())){
                     starbytes_float_t v;
             
-                    StarbytesNumConvertTo(object,NumTypeFloat);
-                    v = StarbytesNumGetFloatValue(object);
+                    auto floatObj = StarbytesNumConvertTo(object,NumTypeFloat);
+                    v = StarbytesNumGetFloatValue(floatObj);
+                    StarbytesObjectRelease(floatObj);
             
                     std::cout << "\x1b[33m" << std::flush;
                     double int_temp;

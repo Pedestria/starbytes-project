@@ -13,33 +13,35 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
         case VAR_DECL : {
             auto varDecl = (ASTVarDecl *)stmt;
             for(auto & spec : varDecl->specs){
-                if(spec.type != nullptr && (!spec.expr)){
-                    // Type Decl and Type Implication Comparsion
-                    if(!typeMatches(spec.type,spec.expr,symbolTableContext,scopeContext))
-                    {
+                if(spec.type != nullptr){
+                    if(spec.expr){
+                        // Type Decl and Type Implication Comparison
+                        if(!typeMatches(spec.type,spec.expr,symbolTableContext,scopeContext))
+                        {
+                            *hasErrored = true;
+                            return nullptr;
+                        }
+                    }
+                }
+                else {
+                    if(!spec.expr){
+                        /// No Type Implication nor any type decl
+                        auto id = spec.id;
+                        std::ostringstream ss;
+                        ss << "Variable `" << id->val << "` has no type assignment nor an initial value thus the variable's type cannot be deduced.";
+                        auto res = ss.str();
+                        errStream.push(SemanticADiagnostic::create(res,varDecl,Diagnostic::Error));
                         *hasErrored = true;
                         return nullptr;
                     }
-                }
-                else if((!spec.type) && (!spec.expr)) {
-                    /// No Type Implication nor any type decl
-                    auto id = spec.id;
-                    std::ostringstream ss;
-                    ss << "Variable `" << id->val << "` has no type assignment nor an initial value thus the variable's type cannot be deduced.";
-                    auto res = ss.str();
-                    errStream.push(SemanticADiagnostic::create(res,varDecl,Diagnostic::Error));
-                    *hasErrored = true;
-                    return nullptr;
-                }
-                else {
-                    /// Type Implication Only.
+                    /// Type implication only.
                     auto type = evalExprForTypeId(spec.expr,symbolTableContext,scopeContext);
                     if(!type){
                         *hasErrored = true;
                         return nullptr;
                     };
                     spec.type = type;
-                };
+                }
             };
             break;
         }
@@ -166,15 +168,14 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
                     return nullptr;
                 };
                 
-                if(node->type == IVKE_EXPR){
-                    if(t != VOID_TYPE){
-                        auto *funcNode = (ASTFuncDecl *)node;
+                if(node->type == IVKE_EXPR && t != VOID_TYPE){
+                    
+                        auto *ivk = (ASTType *)node;
                         std::ostringstream ss;
-                        ss << "Func `" << funcNode->funcId->val << "` returns a value but is not being stored by a variable.";
+                        ss <<  "Invocation returns a value but is not stored.";
                         auto out = ss.str();
                         errStream.push(SemanticADiagnostic::create(out,node,Diagnostic::Warning));
                         /// Warn of non void object not being stored after creation from function invocation.
-                    };
                 };
             };
         }

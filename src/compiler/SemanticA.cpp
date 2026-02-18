@@ -4,8 +4,116 @@
 #include "starbytes/compiler/ASTNodes.def"
 #include <iostream>
 #include <sstream>
+#include <algorithm>
 
 namespace starbytes {
+
+    static bool attributeArgIsString(const ASTAttributeArg &arg){
+        if(!arg.value){
+            return false;
+        }
+        auto *expr = (ASTExpr *)arg.value;
+        if(expr->type != STR_LITERAL){
+            return false;
+        }
+        auto *literal = (ASTLiteralExpr *)expr;
+        return literal->strValue.has_value();
+    }
+
+    static bool validateSystemAttribute(ASTDecl *decl,
+                                        const ASTAttribute &attr,
+                                        DiagnosticHandler &errStream){
+        auto pushAttrError = [&](const std::string &msg){
+            errStream.push(SemanticADiagnostic::create(msg,decl,Diagnostic::Error));
+        };
+
+        if(attr.name == "readonly"){
+            if(decl->type != VAR_DECL || decl->scope->type != ASTScope::Class){
+                pushAttrError("@readonly is only valid on class fields.");
+                return false;
+            }
+            if(!attr.args.empty()){
+                pushAttrError("@readonly does not accept arguments.");
+                return false;
+            }
+            return true;
+        }
+
+        if(attr.name == "deprecated"){
+            if(!(decl->type == VAR_DECL || decl->type == FUNC_DECL || decl->type == CLASS_DECL)){
+                pushAttrError("@deprecated is only valid on class/function/field declarations.");
+                return false;
+            }
+            if(attr.args.empty()){
+                return true;
+            }
+            if(attr.args.size() != 1 || !attributeArgIsString(attr.args[0])){
+                pushAttrError("@deprecated accepts at most one string argument.");
+                return false;
+            }
+            if(attr.args[0].key.has_value() && attr.args[0].key.value() != "message"){
+                pushAttrError("@deprecated only accepts named argument `message`.");
+                return false;
+            }
+            return true;
+        }
+
+        if(attr.name == "native"){
+            if(!(decl->type == FUNC_DECL || decl->type == CLASS_DECL)){
+                pushAttrError("@native is only valid on class/function declarations.");
+                return false;
+            }
+            if(attr.args.size() != 1 || !attributeArgIsString(attr.args[0])){
+                pushAttrError("@native requires one string argument.");
+                return false;
+            }
+            if(attr.args[0].key.has_value() && attr.args[0].key.value() != "name"){
+                pushAttrError("@native only accepts named argument `name`.");
+                return false;
+            }
+            return true;
+        }
+
+        return true;
+    }
+
+    static bool validateAttributesForDecl(ASTDecl *decl, DiagnosticHandler &errStream){
+        for(auto &attr : decl->attributes){
+            if(attr.name == "readonly" || attr.name == "deprecated" || attr.name == "native"){
+                if(!validateSystemAttribute(decl,attr,errStream)){
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    static std::vector<std::string> getNamespacePath(std::shared_ptr<ASTScope> scope){
+        std::vector<std::string> path;
+        for(auto s = scope; s != nullptr; s = s->parentScope){
+            if(s->type == ASTScope::Namespace){
+                path.push_back(s->name);
+            }
+        }
+        std::reverse(path.begin(),path.end());
+        return path;
+    }
+
+    static std::string buildEmittedName(std::shared_ptr<ASTScope> scope,const std::string &symbolName){
+        auto nsPath = getNamespacePath(scope);
+        if(nsPath.empty()){
+            return symbolName;
+        }
+        std::ostringstream out;
+        for(size_t i = 0;i < nsPath.size();++i){
+            if(i > 0){
+                out << "__";
+            }
+            out << nsPath[i];
+        }
+        out << "__" << symbolName;
+        return out.str();
+    }
 
     DiagnosticPtr SemanticADiagnostic::create(string_ref message, ASTStmt *stmt, Type ty){
         std::ostringstream new_message;
@@ -20,7 +128,6 @@ namespace starbytes {
     }
 
     void SemanticA::start(){
-        std::cout << "Starting SemanticA" << std::endl;
     }
 
     void SemanticA::finish(){
@@ -29,20 +136,27 @@ namespace starbytes {
      /// Only registers new symbols associated with top level decls!
     void SemanticA::addSTableEntryForDecl(ASTDecl *decl,Semantics::SymbolTable *tablePtr){
        
-        auto buildVarEntry = [&](ASTVarDecl::VarSpec &spec){
+        auto buildVarEntry = [&](ASTVarDecl::VarSpec &spec,std::shared_ptr<ASTScope> scope){
+            std::string sourceName = spec.id->val;
+            std::string emittedName = buildEmittedName(scope,sourceName);
             auto *e = new Semantics::SymbolTable::Entry();
             auto data = new Semantics::SymbolTable::Var();
+            data->name = sourceName;
             data->type = spec.type;
-            auto id = spec.id;
-            e->name = id->val;
+            e->name = sourceName;
+            e->emittedName = emittedName;
             e->data = data;
             e->type = Semantics::SymbolTable::Entry::Var;
+            spec.id->val = emittedName;
             return e;
         };
         
-        auto buildFuncEntry = [&](ASTFuncDecl *func){
+        auto buildFuncEntry = [&](ASTFuncDecl *func,std::shared_ptr<ASTScope> scope){
+            std::string sourceName = func->funcId->val;
+            std::string emittedName = buildEmittedName(scope,sourceName);
             auto *e = new Semantics::SymbolTable::Entry();
             auto data = new Semantics::SymbolTable::Function();
+            data->name = sourceName;
             data->returnType = func->returnType;
             data->funcType = func->funcType;
             
@@ -50,9 +164,11 @@ namespace starbytes {
                 data->paramMap.insert(std::make_pair(param_pair.first->val,param_pair.second));
             };
             
-            e->name = func->funcId->val;
+            e->name = sourceName;
+            e->emittedName = emittedName;
             e->data = data;
             e->type = Semantics::SymbolTable::Entry::Function;
+            func->funcId->val = emittedName;
             return e;
         };
         
@@ -60,34 +176,67 @@ namespace starbytes {
             case VAR_DECL : {
                 auto *varDecl = (ASTVarDecl *)decl;
                 for(auto & spec : varDecl->specs) {
-                    tablePtr->addSymbolInScope(buildVarEntry(spec),varDecl->scope);
+                    tablePtr->addSymbolInScope(buildVarEntry(spec,varDecl->scope),varDecl->scope);
                 }
                 break;
             }
             case FUNC_DECL : {
                 auto *funcDecl = (ASTFuncDecl *)decl;
-                tablePtr->addSymbolInScope(buildFuncEntry(funcDecl),decl->scope);
+                tablePtr->addSymbolInScope(buildFuncEntry(funcDecl,decl->scope),decl->scope);
                 break;
             }
              case CLASS_DECL : {
                  auto classDecl = (ASTClassDecl *)decl;
+                 std::string sourceName = classDecl->id->val;
+                 std::string emittedName = buildEmittedName(decl->scope,sourceName);
                  Semantics::SymbolTable::Entry *e = new Semantics::SymbolTable::Entry();
-                 e->name = classDecl->id->val;
+                 e->name = sourceName;
+                 e->emittedName = emittedName;
                  e->type = Semantics::SymbolTable::Entry::Class;
                  auto data = new Semantics::SymbolTable::Class();
                  e->data = data;
-                 data->classType = classDecl->classType;
+                 data->classType = ASTType::Create(emittedName.c_str(),classDecl,false,false);
+                 classDecl->classType = data->classType;
+                 classDecl->id->val = emittedName;
                  for(auto & f : classDecl->fields){
+                     bool readonlyField = false;
+                     for(auto &attr : f->attributes){
+                         if(attr.name == "readonly"){
+                             readonlyField = true;
+                             break;
+                         }
+                     }
                      for(auto & v_spec : f->specs){
-                         data->fields.push_back(new Semantics::SymbolTable::Var {v_spec.type});
+                         auto *field = new Semantics::SymbolTable::Var();
+                         field->name = v_spec.id->val;
+                         field->type = v_spec.type;
+                         field->isReadonly = readonlyField;
+                         data->fields.push_back(field);
                      }
                  }
                  for(auto & m : classDecl->methods){
-                     data->instMethods.push_back(new Semantics::SymbolTable::Function {m->returnType,m->funcType});
+                     auto *method = new Semantics::SymbolTable::Function();
+                     method->name = m->funcId->val;
+                     method->returnType = m->returnType;
+                     method->funcType = m->funcType;
+                     for(auto & param_pair : m->params){
+                         method->paramMap.insert(std::make_pair(param_pair.first->val,param_pair.second));
+                     }
+                     data->instMethods.push_back(method);
                  }
                  tablePtr->addSymbolInScope(e,decl->scope);
                  break;
              }
+            case SCOPE_DECL : {
+                auto *scopeDecl = (ASTScopeDecl *)decl;
+                auto *entry = new Semantics::SymbolTable::Entry();
+                entry->name = scopeDecl->scopeId->val;
+                entry->emittedName = entry->name;
+                entry->type = Semantics::SymbolTable::Entry::Scope;
+                entry->data = new std::shared_ptr<ASTScope>(scopeDecl->blockStmt->parentScope);
+                tablePtr->addSymbolInScope(entry,decl->scope);
+                break;
+            }
         default : {
             break;
         }
@@ -132,6 +281,9 @@ namespace starbytes {
         ASTScopeSemanticsContext scopeContext {scope};
         if(stmt->type & DECL){
             auto *decl = (ASTDecl *)stmt;
+            if(!validateAttributesForDecl(decl,errStream)){
+                return false;
+            }
             bool hasErrored;
             auto rc = evalGenericDecl(decl,symbolTableContext,scopeContext,&hasErrored);
             if(hasErrored && !rc)
@@ -201,6 +353,12 @@ namespace starbytes {
                         ASTScopeSemanticsContext scopeContext {classDecl->scope,nullptr};
                         for(auto & f : classDecl->fields){
                             auto rc = evalGenericDecl(f,symbolTableContext, scopeContext, &hasErrored);
+                            if(!validateAttributesForDecl(f,errStream)){
+                                return false;
+                            }
+                            if(hasErrored && !rc){
+                                return false;
+                            }
                         }
                         
                         for(auto & m : classDecl->methods){
@@ -213,6 +371,27 @@ namespace starbytes {
                         
                         return true;
                         break;
+                    }
+                    case SCOPE_DECL : {
+                        if(scope->type == ASTScope::Class || scope->type == ASTScope::Function){
+                            errStream.push(SemanticADiagnostic::create("Scope declaration is not allowed in class/function scope.",decl,Diagnostic::Error));
+                            return false;
+                        }
+                        auto *scopeDecl = (ASTScopeDecl *)decl;
+                        if(symbolTableContext.findEntryInExactScopeNoDiag(scopeDecl->scopeId->val,scope)){
+                            errStream.push(SemanticADiagnostic::create("Duplicate scope name in current scope.",decl,Diagnostic::Error));
+                            return false;
+                        }
+                        for(auto *innerStmt : scopeDecl->blockStmt->body){
+                            auto ok = checkSymbolsForStmtInScope(innerStmt,symbolTableContext,scopeDecl->blockStmt->parentScope);
+                            if(!ok){
+                                return false;
+                            }
+                            if(innerStmt->type & DECL){
+                                addSTableEntryForDecl((ASTDecl *)innerStmt,symbolTableContext.main.get());
+                            }
+                        }
+                        return true;
                     }
                     case RETURN_DECL : {
                         errStream.push(SemanticADiagnostic::create("Return can not be declared in a namespace scope",stmt,Diagnostic::Error));
@@ -247,14 +426,19 @@ namespace starbytes {
                         ss << "Func `" << expr->id->val << "` returns a value but is not being stored by a variable.";
                         auto res = ss.str();
                         errStream.push(SemanticADiagnostic::create(res,expr,Diagnostic::Warning));
-                        return false;
                         /// Warn of non void object not being stored after creation from function invocation.
                     };
                     
                     break;
                 }
                 default:
+                {
+                    ASTType *exprType = evalExprForTypeId(expr,symbolTableContext,scopeContext);
+                    if(!exprType){
+                        return false;
+                    }
                     break;
+                }
             }
         };
         return true;
@@ -266,4 +450,3 @@ namespace starbytes {
 
     
 }
-

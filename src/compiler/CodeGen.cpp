@@ -2,13 +2,15 @@
 #include "starbytes/compiler/ASTNodes.def"
 #include "starbytes/compiler/Gen.h"
 #include "starbytes/compiler/RTCode.h"
+#include <cstring>
+#include <sstream>
 
 namespace starbytes {
 
 using namespace Runtime;
 
 bool CodeGen::acceptsSymbolTableContext(){
-    return genContext->tableContext != nullptr;
+    return genContext != nullptr;
 }
 
 void CodeGen::consumeSTableContext(Semantics::STableContext *table){
@@ -54,6 +56,94 @@ inline void ASTIdentifier_to_RTID(ASTIdentifier *var,RTID &out){
     out.value = name.getBuffer();
 }
 
+static RTID makeOwnedRTID(const std::string &value){
+    RTID id;
+    id.len = value.size();
+    char *buf = new char[id.len];
+    std::memcpy(buf,value.data(),id.len);
+    id.value = buf;
+    return id;
+}
+
+static std::string mangleClassMethodName(const std::string &className,const std::string &methodName){
+    return "__" + className + "__" + methodName;
+}
+
+static bool getMemberName(ASTExpr *memberExpr,std::string &memberName){
+    if(!memberExpr || memberExpr->type != MEMBER_EXPR){
+        return false;
+    }
+    if(!memberExpr->rightExpr || memberExpr->rightExpr->type != ID_EXPR || !memberExpr->rightExpr->id){
+        return false;
+    }
+    memberName = memberExpr->rightExpr->id->val;
+    return true;
+}
+
+static std::string emittedNameForScopeMember(ModuleGenContext *context,ASTExpr *memberExpr){
+    if(!context || !context->tableContext || !memberExpr || !memberExpr->resolvedScope ||
+       !memberExpr->rightExpr || !memberExpr->rightExpr->id){
+        return {};
+    }
+    auto *entry = context->tableContext->findEntryInExactScopeNoDiag(memberExpr->rightExpr->id->val,memberExpr->resolvedScope);
+    if(!entry){
+        return {};
+    }
+    if(!entry->emittedName.empty()){
+        return entry->emittedName;
+    }
+    return entry->name;
+}
+
+static std::vector<RTAttribute> convertAttributes(const std::vector<ASTAttribute> &astAttrs){
+    std::vector<RTAttribute> out;
+    out.reserve(astAttrs.size());
+    for(const auto &astAttr : astAttrs){
+        RTAttribute rtAttr;
+        rtAttr.name = makeOwnedRTID(astAttr.name);
+        for(const auto &astArg : astAttr.args){
+            RTAttributeArg rtArg;
+            rtArg.hasName = astArg.key.has_value();
+            if(rtArg.hasName){
+                rtArg.name = makeOwnedRTID(astArg.key.value());
+            }
+
+            auto *expr = (ASTExpr *)astArg.value;
+            if(expr && expr->type == STR_LITERAL){
+                auto *literal = (ASTLiteralExpr *)expr;
+                rtArg.valueType = RTATTR_VALUE_STRING;
+                rtArg.value = makeOwnedRTID(literal->strValue.value_or(""));
+            }
+            else if(expr && expr->type == BOOL_LITERAL){
+                auto *literal = (ASTLiteralExpr *)expr;
+                rtArg.valueType = RTATTR_VALUE_BOOL;
+                rtArg.value = makeOwnedRTID(literal->boolValue.value_or(false) ? "true" : "false");
+            }
+            else if(expr && expr->type == NUM_LITERAL){
+                auto *literal = (ASTLiteralExpr *)expr;
+                rtArg.valueType = RTATTR_VALUE_NUMBER;
+                if(literal->intValue.has_value()){
+                    rtArg.value = makeOwnedRTID(std::to_string(literal->intValue.value()));
+                }
+                else {
+                    rtArg.value = makeOwnedRTID(std::to_string(literal->floatValue.value_or(0.0)));
+                }
+            }
+            else if(expr && expr->type == ID_EXPR && expr->id){
+                rtArg.valueType = RTATTR_VALUE_IDENTIFIER;
+                rtArg.value = makeOwnedRTID(expr->id->val);
+            }
+            else {
+                rtArg.valueType = RTATTR_VALUE_IDENTIFIER;
+                rtArg.value = makeOwnedRTID("");
+            }
+            rtAttr.args.push_back(std::move(rtArg));
+        }
+        out.push_back(std::move(rtAttr));
+    }
+    return out;
+}
+
 /*
  Generates runtime code. 
  (Breaks down complex/nested expressions to optimize runtime.)
@@ -68,6 +158,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             RTVar code_var;
             ASTIdentifier_to_RTID(var_id,code_var.id);
             code_var.hasInitValue = (spec.expr != nullptr);
+            code_var.attributes = convertAttributes(varDecl->attributes);
             genContext->out << &code_var;
             if(spec.expr) {
                 ASTExpr *initialVal = spec.expr;
@@ -80,6 +171,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         RTFuncTemplate funcTemplate;
         ASTIdentifier *func_id = func_node->funcId;
         ASTIdentifier_to_RTID(func_id,funcTemplate.name);
+        funcTemplate.attributes = convertAttributes(func_node->attributes);
         for(auto & param_pair : func_node->params){
             RTID param_id;
             ASTIdentifier_to_RTID(param_pair.first,param_id);
@@ -92,15 +184,52 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         auto class_decl = (ASTClassDecl *)stmt;
         RTClass cls;
         ASTIdentifier_to_RTID(class_decl->id,cls.name);
-        /// Initial class info write out.
-        genContext->out << &cls;
-        genContext->out << class_decl->fields.size(); 
-        for(auto & f : class_decl->fields){
-            consumeDecl(f);
+        cls.attributes = convertAttributes(class_decl->attributes);
+        std::string className = class_decl->id->val;
+        for(auto &fieldDecl : class_decl->fields){
+            for(auto &spec : fieldDecl->specs){
+                RTVar fieldVar;
+                ASTIdentifier_to_RTID(spec.id,fieldVar.id);
+                fieldVar.hasInitValue = false;
+                fieldVar.attributes = convertAttributes(fieldDecl->attributes);
+                cls.fields.push_back(std::move(fieldVar));
+            }
         }
-        genContext->out << class_decl->methods.size();
-        for(auto & m : class_decl->methods){
-            consumeDecl(m);
+        for(auto &methodDecl : class_decl->methods){
+            RTFuncTemplate methodTemplate;
+            ASTIdentifier_to_RTID(methodDecl->funcId,methodTemplate.name);
+            methodTemplate.attributes = convertAttributes(methodDecl->attributes);
+            for(auto &paramPair : methodDecl->params){
+                RTID paramId;
+                ASTIdentifier_to_RTID(paramPair.first,paramId);
+                methodTemplate.argsTemplate.push_back(paramId);
+            }
+            cls.methods.push_back(std::move(methodTemplate));
+        }
+        genContext->out << &cls;
+
+        for(auto &methodDecl : class_decl->methods){
+            RTFuncTemplate runtimeMethod;
+            runtimeMethod.name = makeOwnedRTID(mangleClassMethodName(className,methodDecl->funcId->val));
+            runtimeMethod.attributes = convertAttributes(methodDecl->attributes);
+            for(auto &paramPair : methodDecl->params){
+                RTID paramId;
+                ASTIdentifier_to_RTID(paramPair.first,paramId);
+                runtimeMethod.argsTemplate.push_back(paramId);
+            }
+            genContext->out << &runtimeMethod;
+            write_ASTBlockStmt_to_context(methodDecl->blockStmt,genContext,this,true);
+        }
+    }
+    else if(stmt->type == SCOPE_DECL){
+        auto *scopeDecl = (ASTScopeDecl *)stmt;
+        for(auto *innerStmt : scopeDecl->blockStmt->body){
+            if(innerStmt->type & DECL){
+                consumeDecl((ASTDecl *)innerStmt);
+            }
+            else {
+                consumeStmt(innerStmt);
+            }
         }
     }
     else if(stmt->type == COND_DECL){
@@ -165,14 +294,6 @@ StarbytesObject CodeGen::exprToRTInternalObject(ASTExpr *expr){
     return ob;
 }
 
-void flattenObjectExpression(ASTExpr * memberExpr,RTID & id){
-    std::ostringstream ss;
-    ss << memberExpr->leftExpr->id->val << "_" << memberExpr->rightExpr->id->val;
-    auto str_res = ss.str();
-    id.len = str_res.size();
-    str_res.copy(const_cast<char *>(id.value),str_res.size());
-}
-
 
 void CodeGen::consumeStmt(ASTStmt *stmt){
     ASTExpr *expr = (ASTExpr *)stmt;
@@ -183,8 +304,6 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         StarbytesObjectRelease(obj);
     }
     else if(stmt->type == ID_EXPR){
-        SemanticsContext ctxt {*errStream,stmt};
-        
         if(expr->id->type == ASTIdentifier::Var) {
             RTCode code = CODE_RTVAR_REF;
             genContext->out.write((const char *)&code,sizeof(RTCode));
@@ -197,35 +316,108 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
             genContext->out.write((const char *)&code,sizeof(RTCode));
             RTID id;
             ASTIdentifier_to_RTID(expr->id,id);
-            std::cout << "ID Func Len:" << id.len << std::endl;
             genContext->out << &id;
         }
     }
     else if(stmt->type == MEMBER_EXPR){
-        /// Member Expr
-        /// Break down expression.
-        /// Object property or instance function
-        if(expr->leftExpr->type == ID_EXPR){
-            RTID id;
-            flattenObjectExpression(expr,id);
+        if(expr->isScopeAccess){
+            auto emittedName = emittedNameForScopeMember(genContext,expr);
+            if(emittedName.empty()){
+                return;
+            }
+            RTID memberId = makeOwnedRTID(emittedName);
+            if(expr->rightExpr && expr->rightExpr->id && expr->rightExpr->id->type == ASTIdentifier::Function){
+                RTCode code = CODE_RTFUNC_REF;
+                genContext->out.write((const char *)&code,sizeof(RTCode));
+                genContext->out << &memberId;
+                return;
+            }
+            if(expr->rightExpr && expr->rightExpr->id && expr->rightExpr->id->type == ASTIdentifier::Var){
+                RTCode code = CODE_RTVAR_REF;
+                genContext->out.write((const char *)&code,sizeof(RTCode));
+                genContext->out << &memberId;
+                return;
+            }
+            return;
         }
-        else {
-
+        std::string memberName;
+        if(!getMemberName(expr,memberName)){
+            return;
         }
-        
+        RTCode code = CODE_RTMEMBER_GET;
+        genContext->out.write((const char *)&code,sizeof(RTCode));
+        consumeStmt(expr->leftExpr);
+        RTID memberId = makeOwnedRTID(memberName);
+        genContext->out << &memberId;
+    }
+    else if(stmt->type == ASSIGN_EXPR){
+        if(!expr->leftExpr || expr->leftExpr->type != MEMBER_EXPR){
+            return;
+        }
+        std::string memberName;
+        if(!getMemberName(expr->leftExpr,memberName)){
+            return;
+        }
+        RTCode code = CODE_RTMEMBER_SET;
+        genContext->out.write((const char *)&code,sizeof(RTCode));
+        consumeStmt(expr->leftExpr->leftExpr);
+        RTID memberId = makeOwnedRTID(memberName);
+        genContext->out << &memberId;
+        consumeStmt(expr->rightExpr);
     }
     else if(stmt->type == IVKE_EXPR){
-        /// Invoke Expr
-        std::cout << "Invoke Expr" << std::endl;
+        if(expr->isConstructorCall){
+            std::string className;
+            if(!expr->callee){
+                return;
+            }
+            if(expr->callee->type == ID_EXPR && expr->callee->id){
+                className = expr->callee->id->val;
+            }
+            else if(expr->callee->type == MEMBER_EXPR && expr->callee->isScopeAccess){
+                className = emittedNameForScopeMember(genContext,expr->callee);
+            }
+            if(className.empty()){
+                return;
+            }
+            RTCode code = CODE_RTNEWOBJ;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            RTID classId = makeOwnedRTID(className);
+            genContext->out << &classId;
+            unsigned argCount = expr->exprArrayData.size();
+            genContext->out.write((const char *)&argCount,sizeof(argCount));
+            for(auto *arg : expr->exprArrayData){
+                consumeStmt(arg);
+            }
+            return;
+        }
+
+        if(expr->callee && expr->callee->type == MEMBER_EXPR && !expr->callee->isScopeAccess){
+            std::string memberName;
+            if(!getMemberName(expr->callee,memberName)){
+                return;
+            }
+            RTCode code = CODE_RTMEMBER_IVK;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            consumeStmt(expr->callee->leftExpr);
+            RTID memberId = makeOwnedRTID(memberName);
+            genContext->out << &memberId;
+            unsigned argCount = expr->exprArrayData.size();
+            genContext->out.write((const char *)&argCount,sizeof(argCount));
+            for(auto *arg : expr->exprArrayData){
+                consumeStmt(arg);
+            }
+            return;
+        }
+
         RTCode code = CODE_RTIVKFUNC;
         genContext->out.write((const char *)&code,sizeof(RTCode));
-//        std::cout << "CALLEE TYPE:" << std::hex << expr->callee->type << std::dec << std::endl;
         consumeStmt(expr->callee);
         unsigned argCount = expr->exprArrayData.size();
         genContext->out.write((const char *)&argCount,sizeof(argCount));
-        for(auto arg : expr->exprArrayData){
+        for(auto *arg : expr->exprArrayData){
             consumeStmt(arg);
-        };
+        }
     }
     else {
         

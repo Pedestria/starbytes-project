@@ -25,7 +25,8 @@ struct SymTableID {
 };
 
 inline std::ostream &operator<<(std::ostream & out,SymTableID & id){
-    out.write((char *)id.id.size(),sizeof(id.id.size()));
+    auto size = id.id.size();
+    out.write((char *)&size,sizeof(size));
     out.write(id.id.data(),id.id.size());
     return out;
 };
@@ -93,6 +94,9 @@ void Semantics::SymbolTable::serializePublic(std::ostream & out){
     std::vector<std::shared_ptr<ASTScope>> exportedModuleScopes;
     
     auto exportScopeIfNeeded = [&](std::shared_ptr<ASTScope> & subject){
+        if(!subject || subject == ASTScopeGlobal){
+            return;
+        }
         auto scopeExported = std::find_if(exportedModuleScopes.begin(),exportedModuleScopes.end(),[&](std::shared_ptr<ASTScope> scope){
             return subject == scope;
         });
@@ -114,7 +118,7 @@ void Semantics::SymbolTable::serializePublic(std::ostream & out){
     out.write((char *)&c,sizeof(c));
     for(auto & sym : body){
         auto _scope = sym.second->parentScope;
-        for(;_scope != ASTScopeGlobal;_scope = _scope->parentScope){
+        for(;_scope != nullptr && _scope != ASTScopeGlobal;_scope = _scope->parentScope){
             exportScopeIfNeeded(_scope);
         }
         exportScopeIfNeeded(sym.second);
@@ -147,11 +151,11 @@ void Semantics::SymbolTable::addSymbolInScope(Entry *entry, std::shared_ptr<ASTS
 }
 
 bool Semantics::SymbolTable::symbolExists(string_ref symbolName,std::shared_ptr<ASTScope> scope){
-    for(auto & sym : body){
-        if(sym.first->name == symbolName && sym.second == scope){
-            return true;
-        };
-    };
+    for (auto s = scope; s != nullptr; s = s->parentScope) {
+        for (auto & sym : body) {
+            if (sym.first->name == symbolName && sym.second == s) return true;
+        }
+    }
     return false;
 }
 
@@ -164,41 +168,100 @@ auto Semantics::SymbolTable::indexOf(string_ref symbolName,std::shared_ptr<ASTSc
 }
 
 Semantics::SymbolTable::Entry * Semantics::STableContext::findEntry(string_ref symbolName,SemanticsContext & ctxt,std::shared_ptr<ASTScope> scope){
-    unsigned entryCount = 0;
-    Semantics::SymbolTable::Entry *ent = nullptr;
-    for(auto & pair : main->body){
-        // std::cout << "SCOPE PTR 1:" << pair.getSecond() << std::endl << "SCOPE PTR 2" << scope << std::endl;
-        if(pair.first->name == symbolName && pair.second == scope){
-            ent = pair.first;
-            ++entryCount;
-        };
-    };
-    
-    for(auto & table : otherTables){
-        for(auto & pair : table->body){
-            if(pair.first->name == symbolName && pair.second == scope){
-                ent = pair.first;
-                ++entryCount;
-            };
-        };
-    };
-    
-    if(entryCount > 1){
-        std::ostringstream out;
-        out <<"Multiple symbol defined with the same name (`" << symbolName << "`) in a scope.";
-        auto res = out.str();
-        ctxt.errStream.push(SemanticADiagnostic::create(res,ctxt.currentStmt,Diagnostic::Error));
-        return nullptr;
+    for(auto currentScope = scope; currentScope != nullptr; currentScope = currentScope->parentScope){
+        unsigned entryCount = 0;
+        Semantics::SymbolTable::Entry *ent = nullptr;
+
+        if(main){
+            for(auto &pair : main->body){
+                if(pair.first->name == symbolName && pair.second == currentScope){
+                    ent = pair.first;
+                    ++entryCount;
+                }
+            }
+        }
+        for(auto &table : otherTables){
+            for(auto &pair : table->body){
+                if(pair.first->name == symbolName && pair.second == currentScope){
+                    ent = pair.first;
+                    ++entryCount;
+                }
+            }
+        }
+
+        if(entryCount > 1){
+            std::ostringstream out;
+            out <<"Multiple symbol defined with the same name (`" << symbolName << "`) in a scope.";
+            auto res = out.str();
+            ctxt.errStream.push(SemanticADiagnostic::create(res,ctxt.currentStmt,Diagnostic::Error));
+            return nullptr;
+        }
+        if(entryCount == 1){
+            return ent;
+        }
     }
-    else if(entryCount == 0){
-         std::ostringstream out;
-        out <<"Undefined symbol `" << symbolName << "`";
-        auto res = out.str();
-        ctxt.errStream.push(SemanticADiagnostic::create(res,ctxt.currentStmt,Diagnostic::Error));
-        return nullptr;
-    };
-    
-    return ent;
+
+    std::ostringstream out;
+    out <<"Undefined symbol `" << symbolName << "`";
+    auto res = out.str();
+    ctxt.errStream.push(SemanticADiagnostic::create(res,ctxt.currentStmt,Diagnostic::Error));
+    return nullptr;
+}
+
+Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope){
+    for(auto currentScope = scope; currentScope != nullptr; currentScope = currentScope->parentScope){
+        if(main){
+            for(auto &pair : main->body){
+                if(pair.first->name == symbolName && pair.second == currentScope){
+                    return pair.first;
+                }
+            }
+        }
+        for(auto &table : otherTables){
+            for(auto &pair : table->body){
+                if(pair.first->name == symbolName && pair.second == currentScope){
+                    return pair.first;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryInExactScopeNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope){
+    if(main){
+        for(auto &pair : main->body){
+            if(pair.first->name == symbolName && pair.second == scope){
+                return pair.first;
+            }
+        }
+    }
+    for(auto &table : otherTables){
+        for(auto &pair : table->body){
+            if(pair.first->name == symbolName && pair.second == scope){
+                return pair.first;
+            }
+        }
+    }
+    return nullptr;
+}
+
+Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryByEmittedNoDiag(string_ref emittedName){
+    if(main){
+        for(auto &pair : main->body){
+            if(pair.first->emittedName == emittedName){
+                return pair.first;
+            }
+        }
+    }
+    for(auto &table : otherTables){
+        for(auto &pair : table->body){
+            if(pair.first->emittedName == emittedName){
+                return pair.first;
+            }
+        }
+    }
+    return nullptr;
 }
 
 Semantics::SymbolTable::~SymbolTable(){

@@ -1,5 +1,6 @@
 #include "starbytes/compiler/Lexer.h"
 #include <iostream>
+#include <cctype>
 
 namespace starbytes::Syntax {
 
@@ -9,7 +10,8 @@ bool isBooleanLiteral(string_ref str){
 
 bool isKeyword(string_ref str){
     return (str == KW_DECL) || (str == KW_IMUT) || (str == KW_IMPORT)
-    || (str == KW_FUNC) || (str == KW_IF) || (str == KW_ELIF) || (str == KW_ELSE) || (str == KW_RETURN);
+    || (str == KW_FUNC) || (str == KW_IF) || (str == KW_ELIF) || (str == KW_ELSE) || (str == KW_RETURN)
+    || (str == KW_CLASS) || (str == KW_INTERFACE) || (str == KW_FOR) || (str == KW_NEW) || (str == KW_SCOPE);
 }
 
 bool isNumber(string_ref str,bool * isFloating){
@@ -52,18 +54,11 @@ Lexer::Lexer(DiagnosticHandler & errStream):buffer(),errStream(errStream){
 
 void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamRef){
     auto getChar = [&](){
-        char rc = in.get();
-        // std::cout << "getChar:" << rc << std::endl;
-        // if(rc != -1)
-        //     src.code += rc;
-        return rc;
+        return in.get();
     };
     
     auto aheadChar = [&](){
-        char rc = in.get();
-        in.seekg(-1,std::ios::cur);
-        // std::cout << "peekChar:" << rc << std::endl;
-        return rc;
+        return in.peek();
     };
     
     SourcePos pos;
@@ -74,28 +69,29 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
     char *bufferStart = buffer;
     char *bufferEnd = bufferStart;
     
-#define PUSH_CHAR(ch) *bufferEnd = ch; ++bufferEnd; ++pos.endCol
-#define INCREMENT_TO_NEXT_CHAR in.seekg(1,std::ios::cur)
+#define PUSH_CHAR(ch) *bufferEnd = static_cast<char>(ch); ++bufferEnd; ++pos.endCol
+#define INCREMENT_TO_NEXT_CHAR (void)in.get()
     
     auto pushToken = [&](Tok::TokType type){
         size_t bufferLen = bufferEnd - bufferStart;
-        pos.startCol = pos.endCol - bufferLen;
+        pos.startCol = pos.endCol - (unsigned)bufferLen;
         Tok tok;
         tok.content = std::string(bufferStart,bufferLen);
-        
-        bool isFloatingN;
-        if(isKeyword(tok.content))
-            tok.type = Tok::Keyword;
-        else if(isNumber(tok.content,&isFloatingN)) {
-            if(isFloatingN)
-                tok.type = Tok::FloatingNumericLiteral;
-            else
-                tok.type = Tok::NumericLiteral;
+
+        tok.type = type;
+        if(type == Tok::Identifier){
+            bool isFloatingN;
+            if(isKeyword(tok.content))
+                tok.type = Tok::Keyword;
+            else if(isNumber(tok.content,&isFloatingN)) {
+                if(isFloatingN)
+                    tok.type = Tok::FloatingNumericLiteral;
+                else
+                    tok.type = Tok::NumericLiteral;
+            }
+            else if(isBooleanLiteral(tok.content))
+                tok.type = Tok::BooleanLiteral;
         }
-        else if(isBooleanLiteral(tok.content))
-            tok.type = Tok::BooleanLiteral;
-        else
-            tok.type = type;
         tok.srcPos = pos;
         tokStreamRef.push_back(tok);
         bufferEnd = bufferStart;
@@ -103,9 +99,9 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
     
     // src.code = "";
     
-    char c;
+    int c;
     // bool finish = false;
-    while((c = getChar()) != -1){
+    while((c = getChar()) != EOF){
         switch (c) {
             case '\n': {
                 ++pos.line;
@@ -114,10 +110,12 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
             }
             case '"': {
                 PUSH_CHAR(c);
-                while((c = getChar()) != '"'){
+                while((c = getChar()) != '"' && c != EOF){
                     PUSH_CHAR(c);
                 };
-                PUSH_CHAR(c);
+                if(c == '"'){
+                    PUSH_CHAR(c);
+                }
                 pushToken(Tok::StringLiteral);
                 break;
             }
@@ -130,7 +128,7 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                     INCREMENT_TO_NEXT_CHAR;
                 }
                 else {
-                    exit(1);
+                    pushToken(Tok::AtSign);
                 };
                 break;
             }
@@ -220,15 +218,17 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 break;
             }
             default: {
-                if(isalnum(c)){
+                if(std::isalnum(static_cast<unsigned char>(c))){
                     PUSH_CHAR(c);
                     c = aheadChar();
-                    if(!isalnum(c) && c != '.'){
+                    bool tokenStartsWithDigit = std::isdigit(static_cast<unsigned char>(*bufferStart));
+                    bool dotContinuesFloat = tokenStartsWithDigit && c == '.';
+                    if(c == EOF || (!std::isalnum(static_cast<unsigned char>(c)) && !dotContinuesFloat)){
                         pushToken(Tok::Identifier);
                     }
                    
                 }
-                else if(isspace(c)){
+                else if(std::isspace(static_cast<unsigned char>(c))){
                     
                 };
                 break;

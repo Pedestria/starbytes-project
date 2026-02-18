@@ -24,6 +24,7 @@ struct Tok {
         NumericLiteral,
         FloatingNumericLiteral,
         Keyword,
+        AtSign,
         TemplateBegin,
         OpenParen,
         CloseParen,

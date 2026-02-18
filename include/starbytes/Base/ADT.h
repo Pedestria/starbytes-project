@@ -10,7 +10,6 @@
 #ifndef STARBYTES_BASE_ADT_H
 #define STARBYTES_BASE_ADT_H
 
-
 namespace starbytes {
 
     template<typename T>
@@ -22,6 +21,9 @@ namespace starbytes {
         T* buffer;
 
         bool __equals(T * str,uint32_t len){
+            if(l != len){
+                return false;
+            }
             for(auto i = 0;i < len;i++){
                 auto & _ptr = str[i];
                 if(buffer[i] != _ptr)
@@ -54,7 +56,7 @@ namespace starbytes {
 
         };
 
-        string_ref_t(std::basic_string<T> str):buffer(str.data()),l(str.size()){
+        string_ref_t(const std::basic_string<T> &str):buffer(const_cast<T *>(str.data())),l(str.size()){
 
         };
 

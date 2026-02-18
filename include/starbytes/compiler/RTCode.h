@@ -36,6 +36,10 @@ typedef unsigned char RTCode;
 #define CODE_RTFUNC_REF 0x0E
 #define CODE_UNARY_OPERATOR 0x0F
 #define CODE_BINARY_OPERATOR 0x10
+#define CODE_RTNEWOBJ 0x11
+#define CODE_RTMEMBER_GET 0x12
+#define CODE_RTMEMBER_SET 0x13
+#define CODE_RTMEMBER_IVK 0x14
 
 /// Condtional Type
 #define COND_TYPE_IF 0x0 // if()
@@ -79,9 +83,32 @@ struct RTID {
 
 RTCODE_STREAM_OBJECT(RTID)
 
+typedef uint8_t RTAttrValueType;
+#define RTATTR_VALUE_STRING 0x01
+#define RTATTR_VALUE_NUMBER 0x02
+#define RTATTR_VALUE_BOOL 0x03
+#define RTATTR_VALUE_IDENTIFIER 0x04
+
+struct RTAttributeArg {
+    bool hasName = false;
+    RTID name;
+    RTID value;
+    RTAttrValueType valueType = RTATTR_VALUE_IDENTIFIER;
+};
+
+RTCODE_STREAM_OBJECT(RTAttributeArg)
+
+struct RTAttribute {
+    RTID name;
+    std::vector<RTAttributeArg> args;
+};
+
+RTCODE_STREAM_OBJECT(RTAttribute)
+
 struct RTVar {
     RTID id;
     bool hasInitValue;
+    std::vector<RTAttribute> attributes;
 };
 
 RTCODE_STREAM_OBJECT(RTVar)
@@ -91,6 +118,7 @@ struct RTFuncTemplate {
     RTID name;
     unsigned invocations = 0;
     std::vector<RTID> argsTemplate;
+    std::vector<RTAttribute> attributes;
     /// Position of CODE_RTBLOCK_BEGIN
     std::istream::pos_type block_start_pos;
 };
@@ -100,7 +128,8 @@ RTCODE_STREAM_OBJECT(RTFuncTemplate)
 
 struct RTClass {
     RTID name;
-    std::map<RTVar,StarbytesObject> properties;
+    std::vector<RTAttribute> attributes;
+    std::vector<RTVar> fields;
     std::vector<RTFuncTemplate> methods;
 };
 

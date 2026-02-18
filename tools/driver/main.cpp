@@ -1,11 +1,11 @@
 
 #include "starbytes/base/FileExt.def"
-#include "starbytes/base/CmdLine.h"
-
 #include "starbytes/compiler/Parser.h"
 #include "starbytes/compiler/Gen.h"
 #include "starbytes/runtime/RTEngine.h"
 #include <filesystem>
+#include <system_error>
+#include <iostream>
 #include <sstream>
 
 namespace starbytes {
@@ -44,62 +44,96 @@ namespace starbytes {
 
 
 int main(int argc,const char *argv[]){
-
-    std::string s;
-
-    starbytes::cl::Parser parser;
-
-    parser.flag("modulename",s,"main");
-
-    parser.command("compile");
-
-    auto run = parser.parse((char **)argv,argc);
-    
+    std::string moduleName;
     std::string script;
-    
-    if(run){
-        std::ifstream in(script,std::ios::in);
 
-
-        auto script_name = std::filesystem::path(script).filename().string();
-
-        auto compile_mod_path = std::filesystem::current_path() += std::filesystem::path("/.starbytes");
-
-        auto code = std::filesystem::create_directory(compile_mod_path);
-
-        starbytes::Gen gen;
-
-        std::ostringstream ss;
-        ss << script_name << '.' << STARBYTES_COMPILEDFILE_EXT;
-
-        auto compile_module = compile_mod_path += ss.str();
-
-        std::ofstream module_out(compile_module,std::ios::out | std::ios::binary);
-
-        auto moduleGenContext = starbytes::ModuleGenContext::Create(script_name,module_out,compile_mod_path);
-
-        auto parseContext = starbytes::ModuleParseContext::Create(script_name);
-        
-        gen.setContext(&moduleGenContext);
-
-        starbytes::Parser parser(gen);
-
-        parser.parseFromStream(in,parseContext);
-        if(!parser.finish()){
-            module_out.close();
-            std::filesystem::remove("./.starbytes/" + script_name + "." + STARBYTES_COMPILEDFILE_EXT);
-            return -1;
+    for(int i = 1; i < argc; ++i){
+        std::string arg = argv[i];
+        if(arg == "compile"){
+            continue;
         }
-        else {
-            gen.finish();
-            module_out.close();
+        if(arg == "--modulename" || arg == "-m"){
+            if(i + 1 >= argc){
+                std::cerr << "Missing value for " << arg << std::endl;
+                return 1;
+            }
+            moduleName = argv[++i];
+            continue;
+        }
+        const std::string moduleNamePrefix = "--modulename=";
+        if(arg.rfind(moduleNamePrefix,0) == 0){
+            moduleName = arg.substr(moduleNamePrefix.size());
+            continue;
+        }
+        if(!arg.empty() && arg[0] != '-'){
+            script = arg;
+            continue;
+        }
+        std::cerr << "Unknown option: " << arg << std::endl;
+        return 1;
+    }
 
-            std::ifstream rtcode_in("./.starbytes/" + script_name + "." + STARBYTES_COMPILEDFILE_EXT,std::ios::in | std::ios::binary);
+    if(script.empty()){
+        std::cerr << "Usage: starbytes <script." << STARBYTES_SRCFILE_EXT
+                  << "> [--modulename <name>]" << std::endl;
+        return 1;
+    }
 
-            auto interp = starbytes::Runtime::Interp::Create();
-            interp->exec(rtcode_in);
-        };
-    };
+    std::filesystem::path scriptPath(script);
+    if(!std::filesystem::exists(scriptPath)){
+        std::cerr << "Input file not found: " << script << std::endl;
+        return 1;
+    }
+
+    std::ifstream in(scriptPath,std::ios::in);
+    if(!in.is_open()){
+        std::cerr << "Failed to open script: " << script << std::endl;
+        return 1;
+    }
+
+    if(moduleName.empty()){
+        moduleName = scriptPath.stem().string();
+    }
+
+    std::filesystem::path compileModPath = std::filesystem::current_path() / ".starbytes";
+    std::filesystem::create_directories(compileModPath);
+
+    std::ostringstream ss;
+    ss << moduleName << '.' << STARBYTES_COMPILEDFILE_EXT;
+    std::filesystem::path compiledModulePath = compileModPath / ss.str();
+
+    std::ofstream moduleOut(compiledModulePath,std::ios::out | std::ios::binary);
+
+    starbytes::Gen gen;
+    auto moduleGenContext = starbytes::ModuleGenContext::Create(moduleName,moduleOut,compileModPath);
+    auto parseContext = starbytes::ModuleParseContext::Create(moduleName);
+    gen.setContext(&moduleGenContext);
+
+    starbytes::Parser parser(gen);
+    parser.parseFromStream(in,parseContext);
+    if(!parser.finish()){
+        moduleOut.close();
+        std::error_code removeErr;
+        std::filesystem::remove(compiledModulePath,removeErr);
+        if(removeErr){
+            std::cerr << "Warning: failed to remove '" << compiledModulePath
+                      << "': " << removeErr.message() << std::endl;
+        }
+        return 1;
+    }
+
+    gen.finish();
+    moduleOut.close();
+
+    std::ifstream rtcode_in(compiledModulePath,std::ios::in | std::ios::binary);
+    if(!rtcode_in.is_open()){
+        std::cerr << "Failed to open compiled module: " << compiledModulePath << std::endl;
+        return 1;
+    }
+
+    auto interp = starbytes::Runtime::Interp::Create();
+    interp->exec(rtcode_in);
+
     starbytes::stdDiagnosticHandler->logAll();
     
     return 0;

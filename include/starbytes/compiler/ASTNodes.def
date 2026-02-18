@@ -29,7 +29,7 @@ typedef long starbytes_int_t;
 #define CLASS_FUNC_DECL (0x007000 | DECL)
 #define CLASS_PROP_DECL (0x008000 | DECL)
 #define IMPORT_DECL (0x009000 | DECL)
-// #define SCOPE_DECL (0x00A000 | DECL)
+#define SCOPE_DECL (0x00A000 | DECL)
 
 #define EXPR 0x0F0000
 #define INDEX_EXPR (0x100000 | EXPR)

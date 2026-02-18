@@ -5,7 +5,7 @@ namespace starbytes {
 
 using namespace Runtime;
 
-ModuleGenContext::ModuleGenContext(string_ref strRef,std::ostream & out,std::filesystem::path & outputPath):name(strRef.getBuffer()),out(out),outputPath(outputPath){
+ModuleGenContext::ModuleGenContext(string_ref strRef,std::ostream & out,std::filesystem::path & outputPath):name(strRef.getBuffer()),out(out),outputPath(outputPath),tableContext(nullptr){
     
 };
 
@@ -25,6 +25,7 @@ void Gen::consumeSTableContext(Semantics::STableContext *ctxt){
 };
 
 void Gen::setContext(ModuleGenContext *context){
+    genContext = context;
     codeGen->setContext(context);
 };
 
@@ -42,13 +43,14 @@ void Gen::consumeStmt(ASTStmt *stmt){
 
 void Gen::finish(){
     codeGen->finish();
-    std::ofstream out(std::filesystem::path(genContext->outputPath).append(genContext->name).concat(".starbsymtb"));
-    genContext->tableContext->main->serializePublic(out);
-    out.close();
+    if(genContext && genContext->tableContext && genContext->tableContext->main){
+        std::ofstream out(std::filesystem::path(genContext->outputPath).append(genContext->name).concat(".starbsymtb"));
+        genContext->tableContext->main->serializePublic(out);
+        out.close();
+    }
 };
 
 
 
 
 };
-

@@ -1,6 +1,7 @@
 #include "ASTStmt.h"
 #include "Type.h"
 #include <vector>
+#include <optional>
 
 #ifndef STARBYTES_AST_ASTDECL_H
 #define STARBYTES_AST_ASTDECL_H
@@ -9,6 +10,16 @@ namespace starbytes {
 
     class ASTExpr;
 
+    struct ASTAttributeArg {
+        std::optional<std::string> key;
+        ASTExpr *value = nullptr;
+    };
+
+    struct ASTAttribute {
+        std::string name;
+        std::vector<ASTAttributeArg> args;
+    };
+
     /// Defines a new scope!!!
     struct ASTBlockStmt {
         std::shared_ptr<ASTScope> parentScope;
@@ -16,12 +27,19 @@ namespace starbytes {
     };
 
     class ASTDecl : public ASTStmt {
-        
+    public:
+        std::vector<ASTAttribute> attributes;
     };
 
     class ASTImportDecl : public ASTDecl {
     public:
         ASTIdentifier *moduleName;
+    };
+
+    class ASTScopeDecl : public ASTDecl {
+    public:
+        ASTIdentifier *scopeId;
+        ASTBlockStmt *blockStmt;
     };
 
     class ASTVarDecl : public ASTDecl {

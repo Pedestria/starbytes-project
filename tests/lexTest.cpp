@@ -11,7 +11,10 @@ int main(int argc,char * argv[]){
     auto & errStream = *starbytes::stdDiagnosticHandler;
     starbytes::Syntax::Lexer lex(errStream);
     std::vector<starbytes::Syntax::Tok> tokenStream;
-    std::ifstream in("./tests/test.stb");
+    std::ifstream in("./test.starb");
+    if(!in.is_open()){
+        in.open("./tests/test.starb");
+    }
     // starbytes::Document src;
     if(in.is_open()){
         lex.tokenizeFromIStream(in,tokenStream);
@@ -21,7 +24,7 @@ int main(int argc,char * argv[]){
         return 1;
     }
     in.close();
-        std::cout << "CODE:" << src.code << std::endl;
+        std::cout << "TOKENS:" << tokenStream.size() << std::endl;
         for(auto & t : tokenStream){
             std::cout << int(t.type) << std::endl;
             std::cout << t.content << std::endl;

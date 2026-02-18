@@ -14,7 +14,8 @@ namespace starbytes {
         typedef enum : int {
             Class,
             Function,
-            Var
+            Var,
+            Scope
         } SymbolType;
         SymbolType type;
         static bool classof(ASTStmt *stmt);
@@ -22,6 +23,9 @@ namespace starbytes {
     };
     class ASTExpr : public ASTStmt {
     public:
+        bool isConstructorCall = false;
+        bool isScopeAccess = false;
+        std::shared_ptr<ASTScope> resolvedScope = nullptr;
         /// Identifier associated with Expr
         ASTIdentifier *id = nullptr;
 

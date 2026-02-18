@@ -19,6 +19,14 @@ struct RTScope {
 
 RTScope *RTSCOPE_GLOBAL = new RTScope({"__GLOBAL__"});
 
+static std::string rtidToString(const RTID &id){
+    return std::string(id.value,id.len);
+}
+
+static std::string mangleClassMethodName(const std::string &className,const std::string &methodName){
+    return "__" + className + "__" + methodName;
+}
+
 
 
 class RTAllocator {
@@ -110,34 +118,87 @@ class InterpImpl final : public Interp {
     std::vector<RTClass> classes;
     
     std::vector<RTFuncTemplate> functions;
-    
+
+    map<StarbytesClassType,std::string> runtimeClassRegistry;
+    string_map<StarbytesClassType> classTypeByName;
+    map<StarbytesClassType,size_t> classIndexByType;
+
     void execNorm(RTCode &code,std::istream &in,bool * willReturn,StarbytesObject *return_val);
     
     StarbytesObject invokeFunc(std::istream &in,RTFuncTemplate *func_temp,unsigned argCount);
+    RTClass *findClassByName(string_ref className);
+    RTClass *findClassByType(StarbytesClassType classType);
+    RTFuncTemplate *findFunctionByName(string_ref functionName);
+    void discardExprArgs(std::istream &in,unsigned argCount);
     
     StarbytesObject evalExpr(std::istream &in);
     
 public:
     InterpImpl():allocator(std::make_unique<RTAllocator>()){
-#define STARBYTES_BUILTIN_ARG(name) {strlen(name),name}
-#define STARBYTES_BUILTIN(name,args) functions.push_back({{strlen(name),name},0,args,NULL})
-        STARBYTES_BUILTIN("print",{STARBYTES_BUILTIN_ARG("object")});
-        
+        RTFuncTemplate printTemplate;
+        printTemplate.name = {strlen("print"),"print"};
+        printTemplate.argsTemplate.push_back({strlen("object"),"object"});
+        functions.push_back(std::move(printTemplate));
     };
     ~InterpImpl() override = default;
     void exec(std::istream &in) override;
 };
 
+RTClass *InterpImpl::findClassByName(string_ref className){
+    auto foundType = classTypeByName.find(std::string(className));
+    if(foundType == classTypeByName.end()){
+        return nullptr;
+    }
+    auto foundClass = classIndexByType.find(foundType->second);
+    if(foundClass == classIndexByType.end()){
+        return nullptr;
+    }
+    return &classes[foundClass->second];
+}
+
+RTClass *InterpImpl::findClassByType(StarbytesClassType classType){
+    auto foundClass = classIndexByType.find(classType);
+    if(foundClass == classIndexByType.end()){
+        return nullptr;
+    }
+    return &classes[foundClass->second];
+}
+
+RTFuncTemplate *InterpImpl::findFunctionByName(string_ref functionName){
+    for(auto &funcTemplate : functions){
+        string_ref tempName(funcTemplate.name.value,(uint32_t)funcTemplate.name.len);
+        if(functionName == tempName){
+            return &funcTemplate;
+        }
+    }
+    return nullptr;
+}
+
+void InterpImpl::discardExprArgs(std::istream &in,unsigned argCount){
+    while(argCount > 0){
+        auto arg = evalExpr(in);
+        if(arg){
+            StarbytesObjectRelease(arg);
+        }
+        --argCount;
+    }
+}
+
 
 StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_temp,unsigned argCount){
+    if(!func_temp){
+        discardExprArgs(in,argCount);
+        return nullptr;
+    }
     string_ref parentScope = allocator->currentScope;
     string_ref func_name = {func_temp->name.value,(uint32_t)func_temp->name.len};
     
     if(func_name == "print"){
         auto object_to_print = evalExpr(in);
-        StarbytesObjectReference(object_to_print);
-        // stdlib::print(object_to_print,allocator->getObjectRegistryAtScope(allocator->currentScope));
-        StarbytesObjectRelease(object_to_print);
+        stdlib::print(object_to_print,runtimeClassRegistry);
+        if(object_to_print){
+            StarbytesObjectRelease(object_to_print);
+        }
         return nullptr;
     }
     else {
@@ -209,22 +270,154 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             RTID var_id;
             in >> &var_id;
             string_ref func_name (var_id.value,var_id.len);
-            for(auto & funcTemp : functions){
-                string_ref func_name_temp (funcTemp.name.value,funcTemp.name.len);
-
-                if(func_name == func_name_temp){
-                    return StarbytesFuncRefNew(&funcTemp);
-                };
-            };
-            
+            auto *funcTemplate = findFunctionByName(func_name);
+            if(funcTemplate){
+                return StarbytesFuncRefNew(funcTemplate);
+            }
             break;
         }
         case CODE_RTIVKFUNC : {
             auto funcRefObject = (StarbytesFuncRef)evalExpr(in);
             unsigned argCount;
             in.read((char *)&argCount,sizeof(argCount));
-            return invokeFunc(in,StarbytesFuncRefGetPtr(funcRefObject),argCount);
-            
+            if(!funcRefObject){
+                discardExprArgs(in,argCount);
+                return nullptr;
+            }
+            auto returnValue = invokeFunc(in,StarbytesFuncRefGetPtr(funcRefObject),argCount);
+            StarbytesObjectRelease(funcRefObject);
+            return returnValue;
+        }
+        case CODE_RTNEWOBJ : {
+            RTID classId;
+            in >> &classId;
+            std::string className = rtidToString(classId);
+
+            unsigned argCount = 0;
+            in.read((char *)&argCount,sizeof(argCount));
+            discardExprArgs(in,argCount);
+
+            auto foundClassType = classTypeByName.find(className);
+            StarbytesClassType classType;
+            if(foundClassType == classTypeByName.end()){
+                classType = StarbytesMakeClass(className.c_str());
+                classTypeByName.insert(std::make_pair(className,classType));
+                runtimeClassRegistry.insert(std::make_pair(classType,className));
+            }
+            else {
+                classType = foundClassType->second;
+            }
+
+            StarbytesObject instance = StarbytesClassObjectNew(classType);
+            auto *classMeta = findClassByType(classType);
+            if(classMeta){
+                for(auto &field : classMeta->fields){
+                    std::string fieldName = rtidToString(field.id);
+                    StarbytesObjectAddProperty(instance,const_cast<char *>(fieldName.c_str()),StarbytesBoolNew(StarbytesBoolFalse));
+                }
+            }
+            return instance;
+        }
+        case CODE_RTMEMBER_GET : {
+            auto object = evalExpr(in);
+            RTID memberId;
+            in >> &memberId;
+            std::string memberName = rtidToString(memberId);
+
+            StarbytesObject value = nullptr;
+            if(object){
+                value = StarbytesObjectGetProperty(object,memberName.c_str());
+                if(value){
+                    StarbytesObjectReference(value);
+                }
+                StarbytesObjectRelease(object);
+            }
+            if(value){
+                return value;
+            }
+            return StarbytesBoolNew(StarbytesBoolFalse);
+        }
+        case CODE_RTMEMBER_SET : {
+            auto object = evalExpr(in);
+            RTID memberId;
+            in >> &memberId;
+            auto value = evalExpr(in);
+            if(!value){
+                value = StarbytesBoolNew(StarbytesBoolFalse);
+            }
+            if(!object){
+                StarbytesObjectRelease(value);
+                return nullptr;
+            }
+
+            std::string memberName = rtidToString(memberId);
+            bool found = false;
+            unsigned propCount = StarbytesObjectGetPropertyCount(object);
+            for(unsigned i = 0;i < propCount;i++){
+                auto *prop = StarbytesObjectIndexProperty(object,i);
+                if(std::strcmp(prop->name,memberName.c_str()) == 0){
+                    if(prop->data){
+                        StarbytesObjectRelease(prop->data);
+                    }
+                    StarbytesObjectReference(value);
+                    prop->data = value;
+                    found = true;
+                    break;
+                }
+            }
+
+            if(!found){
+                StarbytesObjectReference(value);
+                StarbytesObjectAddProperty(object,const_cast<char *>(memberName.c_str()),value);
+            }
+            StarbytesObjectRelease(object);
+            return value;
+        }
+        case CODE_RTMEMBER_IVK : {
+            auto object = evalExpr(in);
+            RTID memberId;
+            in >> &memberId;
+            unsigned argCount = 0;
+            in.read((char *)&argCount,sizeof(argCount));
+            if(!object){
+                discardExprArgs(in,argCount);
+                return nullptr;
+            }
+
+            StarbytesClassType classType = StarbytesClassObjectGetClass(object);
+            auto *classMeta = findClassByType(classType);
+            if(!classMeta){
+                StarbytesObjectRelease(object);
+                discardExprArgs(in,argCount);
+                return nullptr;
+            }
+
+            std::string methodName = rtidToString(memberId);
+            bool methodExists = false;
+            for(auto &methodMeta : classMeta->methods){
+                if(rtidToString(methodMeta.name) == methodName){
+                    methodExists = true;
+                    break;
+                }
+            }
+            if(!methodExists){
+                StarbytesObjectRelease(object);
+                discardExprArgs(in,argCount);
+                return nullptr;
+            }
+
+            std::string className = rtidToString(classMeta->name);
+            std::string mangledName = mangleClassMethodName(className,methodName);
+            auto *runtimeMethod = findFunctionByName(string_ref(mangledName));
+            if(!runtimeMethod){
+                StarbytesObjectRelease(object);
+                discardExprArgs(in,argCount);
+                return nullptr;
+            }
+
+            auto result = invokeFunc(in,runtimeMethod,argCount);
+            StarbytesObjectRelease(object);
+            return result;
             break;
         }
         default:
@@ -310,15 +503,25 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
         in >> &funcTemp;
         functions.push_back(funcTemp);
     }
-    else if(code == CODE_RTIVKFUNC){
-        auto funcTempRef = (StarbytesFuncRef)evalExpr(in);
-        unsigned argCount;
-        in.read((char *)&argCount,sizeof(argCount));
-        invokeFunc(in,StarbytesFuncRefGetPtr(funcTempRef),argCount);
+    else if(code == CODE_RTIVKFUNC
+         || code == CODE_RTMEMBER_SET
+         || code == CODE_RTMEMBER_IVK
+         || code == CODE_RTMEMBER_GET
+         || code == CODE_RTNEWOBJ){
+        in.seekg(-static_cast<std::streamoff>(sizeof(RTCode)),std::ios_base::cur);
+        auto result = evalExpr(in);
+        if(result){
+            StarbytesObjectRelease(result);
+        }
     }
     else if(code == CODE_RTCLASS_DEF){
         RTClass _class;
         in >> &_class;
+        auto className = rtidToString(_class.name);
+        auto classType = StarbytesMakeClass(className.c_str());
+        classTypeByName[className] = classType;
+        runtimeClassRegistry[classType] = className;
+        classIndexByType[classType] = classes.size();
         classes.emplace_back(std::move(_class));
     }
 }
@@ -329,8 +532,8 @@ void InterpImpl::exec(std::istream & in){
     std::string g = "GLOBAL";
     allocator->setScope(g);
     in.read((char *)&code,sizeof(RTCode));
-    bool temp;
-    StarbytesObject temp2;
+    bool temp = false;
+    StarbytesObject temp2 = nullptr;
     while(code != CODE_MODULE_END){
         execNorm(code,in,&temp,&temp2);
         in.read((char *)&code,sizeof(RTCode));

@@ -63,6 +63,15 @@ namespace starbytes {
             formatIdentifier(os,data->moduleName,level+1);
             os << pad << "}" << std::endl;
         }
+        else if(decl->type == SCOPE_DECL){
+            auto *scopeDecl = (ASTScopeDecl *)decl;
+            os << "ScopeDecl : {\n" << pad <<
+                  "   id:" << std::flush;
+            formatIdentifier(os,scopeDecl->scopeId,level + 1);
+            os << pad << "   body:" << std::flush;
+            printBlockStmt(scopeDecl->blockStmt,level + 1);
+            os << pad << "}" << std::endl;
+        }
         else if(decl->type == VAR_DECL){
             os << 
             "VarDecl : {\n" << pad << 
