@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REQUEST_DIR="$REPO_ROOT/tools/starbpkg/.request"
+
+PROJECT_DIR="$PWD"
+STARBYTES_BIN="${STARBYTES_BIN:-$REPO_ROOT/build/bin/starbytes}"
+VERBOSE=0
+
+print_help() {
+  cat <<EOF_HELP
+Usage: starbpkg [options] <command> [args]
+
+Commands:
+  init                  Initialize .starbpkg state and generate .starbmodpath
+  add-path <dir>        Append a module search directory and regenerate .starbmodpath
+  sync                  Regenerate .starbmodpath from .starbpkg/modpaths.txt
+  status                Print tool status and current path configuration
+  help                  Show command summary
+
+Options:
+  -C, --project <dir>        Project root to manage (default: current directory)
+  -B, --starbytes-bin <bin>  Starbytes driver binary (default: build/bin/starbytes)
+  -V, --verbose              Print launcher debug output
+  -h, --help                 Show this help
+EOF_HELP
+}
+
+fail() {
+  echo "starbpkg: $*" >&2
+  exit 1
+}
+
+ensure_state_files() {
+  mkdir -p "$PROJECT_DIR/.starbpkg"
+  if [[ ! -f "$PROJECT_DIR/.starbpkg/modpaths.txt" ]]; then
+    printf './modules\n./stdlib\n' > "$PROJECT_DIR/.starbpkg/modpaths.txt"
+  fi
+}
+
+COMMAND=""
+ARG1=""
+CORE_SCRIPT=""
+INIT_SCRIPT="$REPO_ROOT/tools/starbpkg/init.starb"
+SYNC_SCRIPT="$REPO_ROOT/tools/starbpkg/sync.starb"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      print_help
+      exit 0
+      ;;
+    -C|--project)
+      shift
+      [[ $# -gt 0 ]] || fail "missing value for --project"
+      PROJECT_DIR="$1"
+      ;;
+    -B|--starbytes-bin)
+      shift
+      [[ $# -gt 0 ]] || fail "missing value for --starbytes-bin"
+      STARBYTES_BIN="$1"
+      ;;
+    -V|--verbose)
+      VERBOSE=1
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      fail "unknown option: $1"
+      ;;
+    *)
+      COMMAND="$1"
+      shift
+      break
+      ;;
+  esac
+  shift
+done
+
+if [[ -z "$COMMAND" ]]; then
+  print_help
+  exit 1
+fi
+
+case "$COMMAND" in
+  init)
+    [[ $# -eq 0 ]] || fail "command '$COMMAND' does not accept arguments"
+    CORE_SCRIPT="$REPO_ROOT/tools/starbpkg/init.starb"
+    ;;
+  add-path)
+    [[ $# -eq 1 ]] || fail "add-path requires exactly one argument: <dir>"
+    ARG1="$1"
+    CORE_SCRIPT="$SYNC_SCRIPT"
+    ;;
+  sync)
+    [[ $# -eq 0 ]] || fail "command '$COMMAND' does not accept arguments"
+    CORE_SCRIPT="$REPO_ROOT/tools/starbpkg/sync.starb"
+    ;;
+  status)
+    [[ $# -eq 0 ]] || fail "command '$COMMAND' does not accept arguments"
+    CORE_SCRIPT="$REPO_ROOT/tools/starbpkg/status.starb"
+    ;;
+  help)
+    [[ $# -eq 0 ]] || fail "command '$COMMAND' does not accept arguments"
+    print_help
+    exit 0
+    ;;
+  *)
+    fail "unknown command: $COMMAND"
+    ;;
+esac
+
+if [[ "$COMMAND" == "init" ]]; then
+  mkdir -p "$PROJECT_DIR"
+fi
+
+if [[ ! -d "$PROJECT_DIR" ]]; then
+  fail "project directory not found: $PROJECT_DIR"
+fi
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+
+if [[ ! -x "$STARBYTES_BIN" ]]; then
+  fail "starbytes binary is not executable: $STARBYTES_BIN"
+fi
+
+if [[ ! -f "$CORE_SCRIPT" ]]; then
+  fail "missing core script: $CORE_SCRIPT"
+fi
+
+mkdir -p "$REQUEST_DIR"
+printf '%s' "$PROJECT_DIR" > "$REQUEST_DIR/project.txt"
+printf '%s' "$ARG1" > "$REQUEST_DIR/arg1.txt"
+
+if [[ "$VERBOSE" -eq 1 ]]; then
+  echo "starbpkg: repo=$REPO_ROOT"
+  echo "starbpkg: project=$PROJECT_DIR"
+  echo "starbpkg: command=$COMMAND"
+  if [[ -n "$ARG1" ]]; then
+    echo "starbpkg: arg1=$ARG1"
+  fi
+fi
+
+if [[ "$COMMAND" == "add-path" ]]; then
+  ensure_state_files
+  (
+    cd "$REPO_ROOT"
+    "$STARBYTES_BIN" run "$INIT_SCRIPT"
+  )
+  printf '%s\n' "$ARG1" >> "$PROJECT_DIR/.starbpkg/modpaths.txt"
+  (
+    cd "$REPO_ROOT"
+    "$STARBYTES_BIN" run "$SYNC_SCRIPT"
+  )
+  exit 0
+fi
+
+ensure_state_files
+
+(
+  cd "$REPO_ROOT"
+  "$STARBYTES_BIN" run "$CORE_SCRIPT"
+)

@@ -6,6 +6,7 @@
 #define STARBYTES_AST_ASTEXPR_H
 
 namespace starbytes {
+    struct ASTBlockStmt;
     class ASTType;
 
     class ASTIdentifier : public ASTStmt  {
@@ -53,6 +54,12 @@ namespace starbytes {
 
         /// DictExpr Props
         std::map<ASTExpr *,ASTExpr *> dictExpr;
+
+        /// Inline Function Expr Props
+        std::map<ASTIdentifier *,ASTType *> inlineFuncParams;
+        ASTType *inlineFuncReturnType = nullptr;
+        ASTBlockStmt *inlineFuncBlock = nullptr;
+        std::string inlineFuncRuntimeName;
         static bool classof(ASTStmt *stmt);
     };
 

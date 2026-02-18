@@ -602,13 +602,128 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                 node->type = VAR_DECL;
                 node->scope = parentScope;
                 Tok tok0 = nextTok();
-                if(tok0.type == Tok::Keyword){
-                    if(tok0.content == KW_IMUT)
-                        varDecl->isConst = true;
-                    else; 
-                        /// Throw Error;
+                if(tok0.type == Tok::Keyword && tok0.content == KW_IMUT){
+                    varDecl->isConst = true;
+                    tok0 = nextTok();
                 }
-                Tok tok1 = (tok0.type == Tok::Keyword? nextTok() : tok0);
+
+                if(tok0.type == Tok::Keyword && tok0.content == KW_FUNC){
+                    Tok nameTok = nextTok();
+                    auto *id = buildIdentifier(nameTok,false);
+                    if(!id){
+                        return nullptr;
+                    }
+
+                    ASTVarDecl::VarSpec spec;
+                    spec.id = id;
+
+                    Tok tok1 = nextTok();
+                    if(tok1.type != Tok::Colon){
+                        return nullptr;
+                    }
+                    tok1 = nextTok();
+                    ASTTypeContext declTypeCtxt;
+                    declTypeCtxt.genericTypeParams = currentGenericTypeParams();
+                    declTypeCtxt.isPlaceholder = true;
+                    spec.type = buildTypeFromTokenStream(tok1,varDecl,declTypeCtxt);
+                    if(!spec.type){
+                        return nullptr;
+                    }
+
+                    tok1 = nextTok();
+                    if(tok1.type != Tok::Equal){
+                        return nullptr;
+                    }
+                    tok1 = nextTok();
+                    if(tok1.type != Tok::OpenParen){
+                        return nullptr;
+                    }
+
+                    auto *inlineExpr = new ASTExpr();
+                    inlineExpr->type = INLINE_FUNC_EXPR;
+
+                    tok1 = nextTok();
+                    while(tok1.type != Tok::CloseParen){
+                        if(tok1.type != Tok::Identifier){
+                            return nullptr;
+                        }
+                        ASTIdentifier *paramId = nullptr;
+                        ASTType *paramType = nullptr;
+                        Tok lookahead = aheadTok();
+                        ASTTypeContext inlineParamTypeCtxt;
+                        inlineParamTypeCtxt.genericTypeParams = currentGenericTypeParams();
+                        inlineParamTypeCtxt.isPlaceholder = true;
+                        if(lookahead.type == Tok::Colon){
+                            paramId = buildIdentifier(tok1,false);
+                            if(!paramId){
+                                return nullptr;
+                            }
+                            gotoNextTok();
+                            tok1 = nextTok();
+                            paramType = buildTypeFromTokenStream(tok1,inlineExpr,inlineParamTypeCtxt);
+                            if(!paramType){
+                                return nullptr;
+                            }
+                        }
+                        else {
+                            paramType = buildTypeFromTokenStream(tok1,inlineExpr,inlineParamTypeCtxt);
+                            if(!paramType){
+                                return nullptr;
+                            }
+                            tok1 = nextTok();
+                            if(tok1.type != Tok::Identifier){
+                                return nullptr;
+                            }
+                            paramId = buildIdentifier(tok1,false);
+                            if(!paramId){
+                                return nullptr;
+                            }
+                        }
+                        inlineExpr->inlineFuncParams.insert(std::make_pair(paramId,paramType));
+
+                        tok1 = nextTok();
+                        if(tok1.type == Tok::Comma){
+                            tok1 = nextTok();
+                            continue;
+                        }
+                        if(tok1.type == Tok::CloseParen){
+                            break;
+                        }
+                        return nullptr;
+                    }
+
+                    tok1 = nextTok();
+                    ASTTypeContext inlineRetTypeCtxt;
+                    inlineRetTypeCtxt.genericTypeParams = currentGenericTypeParams();
+                    inlineRetTypeCtxt.isPlaceholder = true;
+                    inlineExpr->inlineFuncReturnType = buildTypeFromTokenStream(tok1,inlineExpr,inlineRetTypeCtxt);
+                    if(!inlineExpr->inlineFuncReturnType){
+                        return nullptr;
+                    }
+
+                    tok1 = nextTok();
+                    if(tok1.type != Tok::OpenBrace){
+                        return nullptr;
+                    }
+                    std::shared_ptr<ASTScope> inlineScope(new ASTScope({id->val + "_inline",ASTScope::Function,parentScope}));
+                    inlineScope->generateHashID();
+                    inlineExpr->inlineFuncBlock = evalBlockStmt(tok1,inlineScope);
+                    if(!inlineExpr->inlineFuncBlock){
+                        return nullptr;
+                    }
+                    gotoNextTok();
+                    spec.expr = inlineExpr;
+                    varDecl->specs.push_back(spec);
+                    node->attributes = std::move(parsedAttributes);
+                    if(node->codeRegion.startLine == 0){
+                        node->codeRegion.startLine = node->codeRegion.endLine = first_token.srcPos.line;
+                        node->codeRegion.startCol = first_token.srcPos.startCol;
+                        node->codeRegion.endCol = first_token.srcPos.endCol;
+                    }
+                    return node;
+                }
+
+                Tok tok1 = tok0;
                 if(tok1.type == Tok::Identifier){
                     ASTIdentifier * id = buildIdentifier(tok1,false);
                     if(!id){
@@ -621,8 +736,21 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                     
 
                     tok1 = nextTok();
-                    
+
+                    bool inferredArrayType = false;
+                    if(tok1.type == Tok::OpenBracket){
+                        Tok closeBracketTok = nextTok();
+                        if(closeBracketTok.type != Tok::CloseBracket){
+                            return nullptr;
+                        }
+                        inferredArrayType = true;
+                        tok1 = nextTok();
+                    }
+
                     if(tok1.type == Tok::Colon){
+                        if(inferredArrayType){
+                            return nullptr;
+                        }
                         tok1 = nextTok();
                         ASTTypeContext type_ctxt;
                         type_ctxt.genericTypeParams = currentGenericTypeParams();
@@ -634,6 +762,10 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                         spec.type = type;
 
                         tok1 = nextTok();
+                    }
+
+                    if(inferredArrayType){
+                        spec.type = ASTType::Create("Array",varDecl,false,false);
                     }
 
 

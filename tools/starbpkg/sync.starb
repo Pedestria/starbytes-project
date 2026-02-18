@@ -1,0 +1,12 @@
+import IO
+
+decl requestProjectPath = "tools/starbpkg/.request/project.txt"
+secure(decl project = readText(requestProjectPath,"utf-8")) catch {}
+
+decl modpathsPath = project + "/.starbpkg/modpaths.txt"
+decl outputPath = project + "/.starbmodpath"
+
+secure(decl modpathsText = readText(modpathsPath,"utf-8")) catch {}
+secure(decl outputWrite = writeText(outputPath,modpathsText,"utf-8")) catch {}
+
+print("starbpkg: synced " + outputPath)

@@ -66,7 +66,12 @@ class A
 //Type Declaration
 def IntOrString = Int | String
 // Function Type Declaration
-def Func = (a:String) Void
+def FuncType = (a:String) Void
+
+/// Inline Function
+decl func hello:FuncType = (String a,Number b) Int {
+    return 4
+}
 
 //Structure Delcaration
 struct SomeStruct {
@@ -90,16 +95,6 @@ decl imut myConst = 4
 decl hello:MyClass<String>
 decl hello = new MyClass<String>();
 
-
-
-// Type Defintion
-def
-def FUNCTYPE = [String a,Number] -> Number
-
-/// Inline Function
-decl lambda hello:FUNCTYPE = [String a,Number b] -> Number {
-
-}
 
 //Secure Variables/Expressions
 // Regex.

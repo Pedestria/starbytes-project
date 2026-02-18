@@ -120,7 +120,7 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
                     
                 }
                /// 3. Eval Block
-                bool hasFailed;
+                bool hasFailed = false;
                 ASTType *blockReturnType = evalBlockStmtForASTType(condSpec.blockStmt, symbolTableContext,&hasFailed,scopeContext,scopeContext.args != nullptr);
                 if(hasFailed){
                     *hasErrored = hasFailed;
@@ -170,7 +170,7 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
                 return nullptr;
             }
 
-            bool hasFailed;
+            bool hasFailed = false;
             ASTType *blockReturnType = evalBlockStmtForASTType(loopBlock, symbolTableContext,&hasFailed,scopeContext,scopeContext.args != nullptr);
             if(hasFailed){
                 *hasErrored = true;
@@ -310,7 +310,7 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
                 }
                 else {;
                     
-                    bool _hasErrored;
+                    bool _hasErrored = false;
                     auto declReturn = evalGenericDecl((ASTDecl *)node,symbolTableContext,scopeContext,&_hasErrored);
                     if(_hasErrored)
                     {

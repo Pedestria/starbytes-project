@@ -1,0 +1,78 @@
+decl inferredOnly[]
+decl nums[] = [1,2,3]
+print(nums.length)
+print(nums.isEmpty())
+print(nums.push(4))
+secure(decl popped = nums.pop()) catch {
+    print("ARR-POP-CATCH")
+}
+print(popped)
+secure(decl at0 = nums.at(0)) catch {
+    print("ARR-AT-CATCH")
+}
+print(at0)
+print(nums.set(1,9))
+print(nums.insert(1,8))
+secure(decl removed = nums.removeAt(2)) catch {
+    print("ARR-REMOVE-CATCH")
+}
+print(removed)
+print(nums.contains(8))
+print(nums.indexOf(8))
+decl sliced = nums.slice(0,2)
+print(sliced.length)
+decl joined = nums.join("-")
+print(joined)
+decl copied = nums.copy()
+print(copied.length)
+decl reversed = nums.reverse()
+print(reversed.length)
+print(nums.clear())
+print(nums.length)
+
+decl text:String = "  StarBytes  "
+print(text.length)
+print(text.isEmpty())
+secure(decl ch = text.at(2)) catch {
+    print("STR-AT-CATCH")
+}
+print(ch)
+print(text.slice(2,7))
+print(text.contains("Star"))
+print(text.startsWith("  S"))
+print(text.endsWith("  "))
+print(text.indexOf("ar"))
+print(text.lastIndexOf("a"))
+print(text.lower())
+print(text.upper())
+print(text.trim())
+print(text.replace("Star","Byte"))
+decl pieces = text.trim().split("a")
+print(pieces.length)
+print("ha".repeat(3))
+
+decl dict:Dict = {"a":1,"b":2}
+print(dict.length)
+print(dict.isEmpty())
+print(dict.has("a"))
+secure(decl bVal = dict.get("b")) catch {
+    print("DICT-GET-CATCH")
+}
+print(bVal)
+print(dict.set("c",3))
+print(dict.length)
+decl keys = dict.keys()
+decl values = dict.values()
+print(keys.length)
+print(values.length)
+secure(decl removedB = dict.remove("b")) catch {
+    print("DICT-REMOVE-CATCH")
+}
+print(removedB)
+print(dict.length)
+decl copiedDict = dict.copy()
+print(copiedDict.length)
+print(dict.clear())
+print(dict.length)
+
+print("EXTREME-ADT-OK")

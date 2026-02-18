@@ -47,5 +47,6 @@ typedef long starbytes_int_t;
 #define UNARY_EXPR (0x800000 | EXPR)
 #define BINARY_EXPR (0x900000 | EXPR)
 #define LOGIC_EXPR (0xA00000 | EXPR)
+#define INLINE_FUNC_EXPR (0xB00000 | EXPR)
 
 #endif

@@ -1,0 +1,22 @@
+def FuncType = (a:Int,b:Int) Int
+
+def Unary = (value:Int) Int
+
+func inc(value:Int) Int {
+    return value + 1
+}
+
+decl f:Unary = inc
+print(f(4))
+
+decl func add:FuncType = (Int a, Int b) Int {
+    return a + b
+}
+print(add(3,5))
+
+decl func mul:FuncType = (left:Int,right:Int) Int {
+    return left * right
+}
+print(mul(3,5))
+
+print("FUNCTION-TYPES-INLINE-OK")

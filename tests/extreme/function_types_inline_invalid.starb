@@ -1,0 +1,5 @@
+def Unary = (value:Int) Int
+
+decl func bad:Unary = (Int value) Int {
+    return "x"
+}

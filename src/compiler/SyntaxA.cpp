@@ -108,86 +108,174 @@ void SyntaxA::consumeCurrentTok(){
     }
 
     ASTType *SyntaxA::buildTypeFromTokenStream(TokRef first_token,ASTStmt *parentStmt,ASTTypeContext & ctxt){
-        if(first_token.type != Tok::Identifier){
+        ASTType *baseType = nullptr;
+        bool isBuiltinType = false;
+        if(first_token.type == Tok::OpenParen){
+            std::vector<ASTType *> paramTypes;
+            Tok tok = nextTok();
+            if(tok.type != Tok::CloseParen){
+                while(true){
+                    ASTType *paramType = nullptr;
+                    if(tok.type != Tok::Identifier){
+                        return nullptr;
+                    }
+                    Tok lookahead = aheadTok();
+                    if(lookahead.type == Tok::Colon){
+                        gotoNextTok();
+                        tok = nextTok();
+                        paramType = buildTypeFromTokenStream(tok,parentStmt,ctxt);
+                    }
+                    else {
+                        paramType = buildTypeFromTokenStream(tok,parentStmt,ctxt);
+                        Tok maybeName = aheadTok();
+                        if(maybeName.type == Tok::Identifier && (privTokIndex + 2) < token_stream.size()){
+                            Tok afterName = token_stream[privTokIndex + 2];
+                            if(afterName.type == Tok::Comma || afterName.type == Tok::CloseParen){
+                                gotoNextTok();
+                            }
+                        }
+                    }
+                    if(!paramType){
+                        return nullptr;
+                    }
+                    paramTypes.push_back(paramType);
+
+                    Tok delimTok = aheadTok();
+                    if(delimTok.type == Tok::Comma){
+                        gotoNextTok();
+                        tok = nextTok();
+                        continue;
+                    }
+                    if(delimTok.type == Tok::CloseParen){
+                        gotoNextTok();
+                        break;
+                    }
+                    return nullptr;
+                }
+            }
+
+            Tok returnTok = nextTok();
+            auto *returnType = buildTypeFromTokenStream(returnTok,parentStmt,ctxt);
+            if(!returnType){
+                return nullptr;
+            }
+            baseType = ASTType::Create(FUNCTION_TYPE->getName(),parentStmt,false,false);
+            baseType->addTypeParam(returnType);
+            for(auto *paramType : paramTypes){
+                baseType->addTypeParam(paramType);
+            }
+        }
+        else if(first_token.type == Tok::Identifier){
+            string_ref tok_id (first_token.content);
+            if(tok_id == "Void"){
+                baseType = VOID_TYPE;
+                isBuiltinType = true;
+            }
+            else if(tok_id == "String"){
+                baseType = STRING_TYPE;
+                isBuiltinType = true;
+            }
+            else if(tok_id == "Bool"){
+                baseType = BOOL_TYPE;
+                isBuiltinType = true;
+            }
+            else if(tok_id == "Array"){
+                baseType = ARRAY_TYPE;
+                isBuiltinType = true;
+            }
+            else if(tok_id == "Dict"){
+                baseType = DICTIONARY_TYPE;
+                isBuiltinType = true;
+            }
+            else if(tok_id == "Int"){
+                baseType = INT_TYPE;
+                isBuiltinType = true;
+            }
+            else if(tok_id == "Float"){
+                baseType = FLOAT_TYPE;
+                isBuiltinType = true;
+            }
+            else if(tok_id == "Regex"){
+                baseType = REGEX_TYPE;
+                isBuiltinType = true;
+            }
+            else if(tok_id == "Any"){
+                baseType = ANY_TYPE;
+                isBuiltinType = true;
+            }
+            else if(tok_id == "Task"){
+                baseType = TASK_TYPE;
+                isBuiltinType = true;
+            }
+            else {
+                baseType = ASTType::Create(first_token.content.c_str(),parentStmt,ctxt.isPlaceholder,ctxt.isAlias);
+                if(ctxt.genericTypeParams && ctxt.genericTypeParams->find(first_token.content) != ctxt.genericTypeParams->end()){
+                    baseType->isGenericParam = true;
+                }
+            }
+        }
+        else {
             return nullptr;
         }
 
-        ASTType *baseType = nullptr;
-        bool isBuiltinType = false;
-        string_ref tok_id (first_token.content);
-        if(tok_id == "Void"){
-            baseType = VOID_TYPE;
-            isBuiltinType = true;
-        }
-        else if(tok_id == "String"){
-            baseType = STRING_TYPE;
-            isBuiltinType = true;
-        }
-        else if(tok_id == "Bool"){
-            baseType = BOOL_TYPE;
-            isBuiltinType = true;
-        }
-        else if(tok_id == "Array"){
-            baseType = ARRAY_TYPE;
-            isBuiltinType = true;
-        }
-        else if(tok_id == "Dict"){
-            baseType = DICTIONARY_TYPE;
-            isBuiltinType = true;
-        }
-        else if(tok_id == "Int"){
-            baseType = INT_TYPE;
-            isBuiltinType = true;
-        }
-        else if(tok_id == "Float"){
-            baseType = FLOAT_TYPE;
-            isBuiltinType = true;
-        }
-        else if(tok_id == "Regex"){
-            baseType = REGEX_TYPE;
-            isBuiltinType = true;
-        }
-        else if(tok_id == "Any"){
-            baseType = ANY_TYPE;
-            isBuiltinType = true;
-        }
-        else if(tok_id == "Task"){
-            baseType = TASK_TYPE;
-            isBuiltinType = true;
-        }
-        else {
-            baseType = ASTType::Create(first_token.content.c_str(),parentStmt,ctxt.isPlaceholder,ctxt.isAlias);
-            if(ctxt.genericTypeParams && ctxt.genericTypeParams->find(first_token.content) != ctxt.genericTypeParams->end()){
-                baseType->isGenericParam = true;
+        Tok tok = aheadTok();
+        if(first_token.type == Tok::Identifier){
+            if(isBuiltinType && tok.type == Tok::LessThan){
+                baseType = ASTType::Create(baseType->getName(),parentStmt,false,false);
+                isBuiltinType = false;
+            }
+            if(tok.type == Tok::LessThan){
+                gotoNextTok();
+                tok = nextTok();
+                while(true){
+                    ASTType *paramType = buildTypeFromTokenStream(tok,parentStmt,ctxt);
+                    if(!paramType){
+                        return nullptr;
+                    }
+                    baseType->addTypeParam(paramType);
+
+                    tok = aheadTok();
+                    if(tok.type == Tok::Comma){
+                        gotoNextTok();
+                        tok = nextTok();
+                        continue;
+                    }
+                    if(tok.type == Tok::GreaterThan){
+                        gotoNextTok();
+                        break;
+                    }
+                    return nullptr;
+                }
             }
         }
 
-        Tok tok = aheadTok();
-        if(isBuiltinType && tok.type == Tok::LessThan){
-            baseType = ASTType::Create(baseType->getName(),parentStmt,false,false);
-            isBuiltinType = false;
-        }
-        if(tok.type == Tok::LessThan){
+        unsigned arrayDepth = 0;
+        while(true){
+            tok = aheadTok();
+            if(tok.type != Tok::OpenBracket){
+                break;
+            }
             gotoNextTok();
             tok = nextTok();
-            while(true){
-                ASTType *paramType = buildTypeFromTokenStream(tok,parentStmt,ctxt);
-                if(!paramType){
-                    return nullptr;
-                }
-                baseType->addTypeParam(paramType);
-
-                tok = aheadTok();
-                if(tok.type == Tok::Comma){
-                    gotoNextTok();
-                    tok = nextTok();
-                    continue;
-                }
-                if(tok.type == Tok::GreaterThan){
-                    gotoNextTok();
-                    break;
-                }
+            if(tok.type != Tok::CloseBracket){
                 return nullptr;
+            }
+            ++arrayDepth;
+        }
+
+        if(arrayDepth > 0){
+            if(isBuiltinType){
+                auto *ownedBaseType = ASTType::Create(baseType->getName(),parentStmt,false,false);
+                ownedBaseType->isOptional = baseType->isOptional;
+                ownedBaseType->isThrowable = baseType->isThrowable;
+                ownedBaseType->isGenericParam = baseType->isGenericParam;
+                baseType = ownedBaseType;
+                isBuiltinType = false;
+            }
+            for(unsigned i = 0;i < arrayDepth;++i){
+                auto *wrapped = ASTType::Create(ARRAY_TYPE->getName(),parentStmt,false,false);
+                wrapped->addTypeParam(baseType);
+                baseType = wrapped;
             }
         }
 

@@ -13,6 +13,7 @@ namespace starbytes {
     ASTType * REGEX_TYPE = ASTType::Create("Regex",nullptr,false);
     ASTType * ANY_TYPE = ASTType::Create("Any",nullptr,false);
     ASTType * TASK_TYPE = ASTType::Create("Task",nullptr,false);
+    ASTType * FUNCTION_TYPE = ASTType::Create("__func__",nullptr,false);
 
     ASTType *ASTType::Create(string_ref name,ASTStmt *parentNode,bool isPlaceholder,bool isAlias){
         auto obj = new ASTType();
@@ -69,9 +70,15 @@ namespace starbytes {
         }
         
         if(typeParams.size() != other->typeParams.size()){
-            if(!typeParams.empty() || !other->typeParams.empty()){
+            bool isCollectionWildcard = (name == ARRAY_TYPE->getName().getBuffer() || name == DICTIONARY_TYPE->getName().getBuffer())
+                                        && typeParams.empty()
+                                        && !other->typeParams.empty();
+            if(!isCollectionWildcard && (!typeParams.empty() || !other->typeParams.empty())){
                 log(fmtString("Type parameter arity mismatch between `{0}` and `{1}`",*this,*other));
                 return false;
+            }
+            if(isCollectionWildcard){
+                return true;
             }
         }
 

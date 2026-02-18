@@ -8,6 +8,8 @@
 #include <cstring>
 #include <cassert>
 #include <cmath>
+#include <algorithm>
+#include <cctype>
 #include <sstream>
 #include <set>
 #include <unordered_map>
@@ -154,6 +156,51 @@ static std::string objectToString(StarbytesObject object){
         return "/" + p + "/" + f;
     }
     return "<object>";
+}
+
+static bool runtimeObjectEquals(StarbytesObject lhs,StarbytesObject rhs){
+    if(!lhs || !rhs){
+        return lhs == rhs;
+    }
+    if(StarbytesObjectTypecheck(lhs,StarbytesNumType()) && StarbytesObjectTypecheck(rhs,StarbytesNumType())){
+        return StarbytesNumCompare(lhs,rhs) == COMPARE_EQUAL;
+    }
+    if(StarbytesObjectTypecheck(lhs,StarbytesStrType()) && StarbytesObjectTypecheck(rhs,StarbytesStrType())){
+        return StarbytesStrCompare(lhs,rhs) == COMPARE_EQUAL;
+    }
+    if(StarbytesObjectTypecheck(lhs,StarbytesBoolType()) && StarbytesObjectTypecheck(rhs,StarbytesBoolType())){
+        return (bool)StarbytesBoolValue(lhs) == (bool)StarbytesBoolValue(rhs);
+    }
+    return lhs == rhs;
+}
+
+static bool isDictKeyObject(StarbytesObject key){
+    return key && (StarbytesObjectTypecheck(key,StarbytesStrType()) || StarbytesObjectTypecheck(key,StarbytesNumType()));
+}
+
+static int clampSliceBound(int bound,int len){
+    if(bound < 0){
+        bound = len + bound;
+    }
+    if(bound < 0){
+        return 0;
+    }
+    if(bound > len){
+        return len;
+    }
+    return bound;
+}
+
+static std::string stringTrim(const std::string &input){
+    size_t begin = 0;
+    while(begin < input.size() && std::isspace((unsigned char)input[begin])){
+        ++begin;
+    }
+    size_t end = input.size();
+    while(end > begin && std::isspace((unsigned char)input[end - 1])){
+        --end;
+    }
+    return input.substr(begin,end - begin);
 }
 
 
@@ -1160,6 +1207,9 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 else if(targetType == "Task"){
                     matches = StarbytesObjectTypecheck(object,StarbytesTaskType());
                 }
+                else if(targetType == "__func__"){
+                    matches = StarbytesObjectTypecheck(object,StarbytesFuncRefType());
+                }
                 else if(targetType == "Int"){
                     matches = StarbytesObjectTypecheck(object,StarbytesNumType())
                         && StarbytesNumGetType(object) == NumTypeInt;
@@ -1423,6 +1473,591 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 return nullptr;
             }
 
+            std::string methodName = rtidToString(memberId);
+            unsigned consumedArgs = 0;
+            auto collectArgs = [&](std::vector<StarbytesObject> &args) -> bool {
+                consumedArgs = 0;
+                args.clear();
+                args.reserve(argCount);
+                for(unsigned i = 0;i < argCount;++i){
+                    auto arg = evalExpr(in);
+                    ++consumedArgs;
+                    if(!arg){
+                        for(auto *existing : args){
+                            if(existing){
+                                StarbytesObjectRelease(existing);
+                            }
+                        }
+                        args.clear();
+                        return false;
+                    }
+                    args.push_back(arg);
+                }
+                return true;
+            };
+            auto releaseArgs = [&](std::vector<StarbytesObject> &args){
+                for(auto *arg : args){
+                    if(arg){
+                        StarbytesObjectRelease(arg);
+                    }
+                }
+                args.clear();
+            };
+            auto discardRemainingArgs = [&](){
+                if(consumedArgs < argCount){
+                    discardExprArgs(in,argCount - consumedArgs);
+                    consumedArgs = argCount;
+                }
+            };
+            auto expectIntArg = [&](StarbytesObject arg,int &value) -> bool {
+                if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt){
+                    return false;
+                }
+                value = StarbytesNumGetIntValue(arg);
+                return true;
+            };
+            auto expectStringArg = [&](StarbytesObject arg,std::string &value) -> bool {
+                if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())){
+                    return false;
+                }
+                value = StarbytesStrGetBuffer(arg);
+                return true;
+            };
+
+            if(StarbytesObjectTypecheck(object,StarbytesStrType()) ||
+               StarbytesObjectTypecheck(object,StarbytesArrayType()) ||
+               StarbytesObjectTypecheck(object,StarbytesDictType())){
+                std::vector<StarbytesObject> args;
+                auto failWithArgs = [&](const std::string &message) -> StarbytesObject {
+                    discardRemainingArgs();
+                    if(!message.empty()){
+                        lastRuntimeError = message;
+                    }
+                    releaseArgs(args);
+                    StarbytesObjectRelease(object);
+                    return nullptr;
+                };
+
+                if(StarbytesObjectTypecheck(object,StarbytesStrType())){
+                    auto source = std::string(StarbytesStrGetBuffer(object));
+                    auto length = (int)source.size();
+
+                    if(methodName == "isEmpty"){
+                        if(argCount != 0){
+                            return failWithArgs("String.isEmpty expects 0 arguments");
+                        }
+                        StarbytesObjectRelease(object);
+                        return StarbytesBoolNew((StarbytesBoolVal)source.empty());
+                    }
+                    if(methodName == "at"){
+                        if(argCount != 1 || !collectArgs(args)){
+                            return failWithArgs("String.at expects 1 argument");
+                        }
+                        int index = 0;
+                        if(!expectIntArg(args[0],index)){
+                            return failWithArgs("String.at expects Int index");
+                        }
+                        if(index < 0 || index >= length){
+                            return failWithArgs("String.at index out of range");
+                        }
+                        std::string ch(1,source[(size_t)index]);
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return StarbytesStrNewWithData(ch.c_str());
+                    }
+                    if(methodName == "slice"){
+                        if(argCount != 2 || !collectArgs(args)){
+                            return failWithArgs("String.slice expects 2 arguments");
+                        }
+                        int start = 0;
+                        int end = 0;
+                        if(!expectIntArg(args[0],start) || !expectIntArg(args[1],end)){
+                            return failWithArgs("String.slice expects Int arguments");
+                        }
+                        start = clampSliceBound(start,length);
+                        end = clampSliceBound(end,length);
+                        if(end < start){
+                            end = start;
+                        }
+                        auto out = source.substr((size_t)start,(size_t)(end - start));
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return StarbytesStrNewWithData(out.c_str());
+                    }
+                    if(methodName == "contains" || methodName == "startsWith" || methodName == "endsWith" ||
+                       methodName == "indexOf" || methodName == "lastIndexOf"){
+                        if(argCount != 1 || !collectArgs(args)){
+                            return failWithArgs("String method expects 1 argument");
+                        }
+                        std::string needle;
+                        if(!expectStringArg(args[0],needle)){
+                            return failWithArgs("String method expects String argument");
+                        }
+                        bool boolResult = false;
+                        int intResult = -1;
+                        if(methodName == "contains"){
+                            boolResult = source.find(needle) != std::string::npos;
+                        }
+                        else if(methodName == "startsWith"){
+                            boolResult = source.rfind(needle,0) == 0;
+                        }
+                        else if(methodName == "endsWith"){
+                            boolResult = needle.size() <= source.size() &&
+                                source.compare(source.size() - needle.size(),needle.size(),needle) == 0;
+                        }
+                        else if(methodName == "indexOf"){
+                            auto pos = source.find(needle);
+                            intResult = (pos == std::string::npos)? -1 : (int)pos;
+                        }
+                        else {
+                            auto pos = source.rfind(needle);
+                            intResult = (pos == std::string::npos)? -1 : (int)pos;
+                        }
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        if(methodName == "indexOf" || methodName == "lastIndexOf"){
+                            return StarbytesNumNew(NumTypeInt,intResult);
+                        }
+                        return StarbytesBoolNew((StarbytesBoolVal)boolResult);
+                    }
+                    if(methodName == "lower" || methodName == "upper" || methodName == "trim"){
+                        if(argCount != 0){
+                            return failWithArgs("String method expects 0 arguments");
+                        }
+                        std::string out = source;
+                        if(methodName == "lower"){
+                            std::transform(out.begin(),out.end(),out.begin(),[](unsigned char c){ return (char)std::tolower(c); });
+                        }
+                        else if(methodName == "upper"){
+                            std::transform(out.begin(),out.end(),out.begin(),[](unsigned char c){ return (char)std::toupper(c); });
+                        }
+                        else {
+                            out = stringTrim(source);
+                        }
+                        StarbytesObjectRelease(object);
+                        return StarbytesStrNewWithData(out.c_str());
+                    }
+                    if(methodName == "replace"){
+                        if(argCount != 2 || !collectArgs(args)){
+                            return failWithArgs("String.replace expects 2 arguments");
+                        }
+                        std::string oldValue;
+                        std::string newValue;
+                        if(!expectStringArg(args[0],oldValue) || !expectStringArg(args[1],newValue)){
+                            return failWithArgs("String.replace expects String arguments");
+                        }
+                        std::string out = source;
+                        if(!oldValue.empty()){
+                            size_t start = 0;
+                            while((start = out.find(oldValue,start)) != std::string::npos){
+                                out.replace(start,oldValue.size(),newValue);
+                                start += newValue.size();
+                            }
+                        }
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return StarbytesStrNewWithData(out.c_str());
+                    }
+                    if(methodName == "split"){
+                        if(argCount != 1 || !collectArgs(args)){
+                            return failWithArgs("String.split expects 1 argument");
+                        }
+                        std::string sep;
+                        if(!expectStringArg(args[0],sep)){
+                            return failWithArgs("String.split expects String separator");
+                        }
+                        auto out = StarbytesArrayNew();
+                        if(sep.empty()){
+                            for(char c : source){
+                                std::string part(1,c);
+                                auto strObj = StarbytesStrNewWithData(part.c_str());
+                                StarbytesArrayPush(out,strObj);
+                                StarbytesObjectRelease(strObj);
+                            }
+                        }
+                        else {
+                            size_t start = 0;
+                            while(true){
+                                auto pos = source.find(sep,start);
+                                std::string part;
+                                if(pos == std::string::npos){
+                                    part = source.substr(start);
+                                }
+                                else {
+                                    part = source.substr(start,pos - start);
+                                }
+                                auto strObj = StarbytesStrNewWithData(part.c_str());
+                                StarbytesArrayPush(out,strObj);
+                                StarbytesObjectRelease(strObj);
+                                if(pos == std::string::npos){
+                                    break;
+                                }
+                                start = pos + sep.size();
+                            }
+                        }
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return out;
+                    }
+                    if(methodName == "repeat"){
+                        if(argCount != 1 || !collectArgs(args)){
+                            return failWithArgs("String.repeat expects 1 argument");
+                        }
+                        int count = 0;
+                        if(!expectIntArg(args[0],count)){
+                            return failWithArgs("String.repeat expects Int count");
+                        }
+                        if(count < 0){
+                            count = 0;
+                        }
+                        std::string out;
+                        out.reserve(source.size() * (size_t)count);
+                        for(int i = 0;i < count;++i){
+                            out += source;
+                        }
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return StarbytesStrNewWithData(out.c_str());
+                    }
+                    discardExprArgs(in,argCount);
+                    StarbytesObjectRelease(object);
+                    return nullptr;
+                }
+
+                if(StarbytesObjectTypecheck(object,StarbytesArrayType())){
+                    auto arrayLen = StarbytesArrayGetLength(object);
+                    if(methodName == "isEmpty"){
+                        if(argCount != 0){
+                            return failWithArgs("Array.isEmpty expects 0 arguments");
+                        }
+                        StarbytesObjectRelease(object);
+                        return StarbytesBoolNew((StarbytesBoolVal)(arrayLen == 0));
+                    }
+                    if(methodName == "push"){
+                        if(argCount != 1 || !collectArgs(args)){
+                            return failWithArgs("Array.push expects 1 argument");
+                        }
+                        StarbytesArrayPush(object,args[0]);
+                        auto nextLen = (int)StarbytesArrayGetLength(object);
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return StarbytesNumNew(NumTypeInt,nextLen);
+                    }
+                    if(methodName == "pop"){
+                        if(argCount != 0){
+                            return failWithArgs("Array.pop expects 0 arguments");
+                        }
+                        if(arrayLen == 0){
+                            return failWithArgs("Array.pop on empty array");
+                        }
+                        auto value = StarbytesArrayIndex(object,arrayLen - 1);
+                        if(value){
+                            StarbytesObjectReference(value);
+                        }
+                        StarbytesArrayPop(object);
+                        StarbytesObjectRelease(object);
+                        return value;
+                    }
+                    if(methodName == "at"){
+                        if(argCount != 1 || !collectArgs(args)){
+                            return failWithArgs("Array.at expects 1 argument");
+                        }
+                        int index = 0;
+                        if(!expectIntArg(args[0],index)){
+                            return failWithArgs("Array.at expects Int index");
+                        }
+                        if(index < 0 || (unsigned)index >= arrayLen){
+                            return failWithArgs("Array.at index out of range");
+                        }
+                        auto value = StarbytesArrayIndex(object,(unsigned)index);
+                        if(value){
+                            StarbytesObjectReference(value);
+                        }
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return value;
+                    }
+                    if(methodName == "set"){
+                        if(argCount != 2 || !collectArgs(args)){
+                            return failWithArgs("Array.set expects 2 arguments");
+                        }
+                        int index = 0;
+                        if(!expectIntArg(args[0],index)){
+                            return failWithArgs("Array.set expects Int index");
+                        }
+                        bool ok = index >= 0 && (unsigned)index < arrayLen;
+                        if(ok){
+                            StarbytesArraySet(object,(unsigned)index,args[1]);
+                        }
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return StarbytesBoolNew((StarbytesBoolVal)ok);
+                    }
+                    if(methodName == "insert"){
+                        if(argCount != 2 || !collectArgs(args)){
+                            return failWithArgs("Array.insert expects 2 arguments");
+                        }
+                        int index = 0;
+                        if(!expectIntArg(args[0],index)){
+                            return failWithArgs("Array.insert expects Int index");
+                        }
+                        bool ok = index >= 0 && (unsigned)index <= arrayLen;
+                        if(ok){
+                            StarbytesArrayPush(object,args[1]);
+                            for(unsigned pos = arrayLen; pos > (unsigned)index; --pos){
+                                auto shifted = StarbytesArrayIndex(object,pos - 1);
+                                StarbytesArraySet(object,pos,shifted);
+                            }
+                            StarbytesArraySet(object,(unsigned)index,args[1]);
+                        }
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return StarbytesBoolNew((StarbytesBoolVal)ok);
+                    }
+                    if(methodName == "removeAt"){
+                        if(argCount != 1 || !collectArgs(args)){
+                            return failWithArgs("Array.removeAt expects 1 argument");
+                        }
+                        int index = 0;
+                        if(!expectIntArg(args[0],index)){
+                            return failWithArgs("Array.removeAt expects Int index");
+                        }
+                        if(index < 0 || (unsigned)index >= arrayLen){
+                            return failWithArgs("Array.removeAt index out of range");
+                        }
+                        auto removed = StarbytesArrayIndex(object,(unsigned)index);
+                        if(removed){
+                            StarbytesObjectReference(removed);
+                        }
+                        for(unsigned pos = (unsigned)index; pos + 1 < arrayLen; ++pos){
+                            auto shifted = StarbytesArrayIndex(object,pos + 1);
+                            StarbytesArraySet(object,pos,shifted);
+                        }
+                        StarbytesArrayPop(object);
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return removed;
+                    }
+                    if(methodName == "clear"){
+                        if(argCount != 0){
+                            return failWithArgs("Array.clear expects 0 arguments");
+                        }
+                        while(StarbytesArrayGetLength(object) > 0){
+                            StarbytesArrayPop(object);
+                        }
+                        StarbytesObjectRelease(object);
+                        return StarbytesBoolNew((StarbytesBoolVal)true);
+                    }
+                    if(methodName == "contains" || methodName == "indexOf"){
+                        if(argCount != 1 || !collectArgs(args)){
+                            return failWithArgs("Array method expects 1 argument");
+                        }
+                        int foundIndex = -1;
+                        auto len = StarbytesArrayGetLength(object);
+                        for(unsigned i = 0;i < len;++i){
+                            auto value = StarbytesArrayIndex(object,i);
+                            if(runtimeObjectEquals(value,args[0])){
+                                foundIndex = (int)i;
+                                break;
+                            }
+                        }
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        if(methodName == "indexOf"){
+                            return StarbytesNumNew(NumTypeInt,foundIndex);
+                        }
+                        return StarbytesBoolNew((StarbytesBoolVal)(foundIndex >= 0));
+                    }
+                    if(methodName == "slice"){
+                        if(argCount != 2 || !collectArgs(args)){
+                            return failWithArgs("Array.slice expects 2 arguments");
+                        }
+                        int start = 0;
+                        int end = 0;
+                        if(!expectIntArg(args[0],start) || !expectIntArg(args[1],end)){
+                            return failWithArgs("Array.slice expects Int arguments");
+                        }
+                        int lenInt = (int)arrayLen;
+                        start = clampSliceBound(start,lenInt);
+                        end = clampSliceBound(end,lenInt);
+                        if(end < start){
+                            end = start;
+                        }
+                        auto out = StarbytesArrayNew();
+                        for(int i = start;i < end;++i){
+                            auto value = StarbytesArrayIndex(object,(unsigned)i);
+                            StarbytesArrayPush(out,value);
+                        }
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return out;
+                    }
+                    if(methodName == "join"){
+                        if(argCount != 1 || !collectArgs(args)){
+                            return failWithArgs("Array.join expects 1 argument");
+                        }
+                        std::string sep;
+                        if(!expectStringArg(args[0],sep)){
+                            return failWithArgs("Array.join expects String separator");
+                        }
+                        std::string out;
+                        auto len = StarbytesArrayGetLength(object);
+                        for(unsigned i = 0;i < len;++i){
+                            if(i > 0){
+                                out += sep;
+                            }
+                            out += objectToString(StarbytesArrayIndex(object,i));
+                        }
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return StarbytesStrNewWithData(out.c_str());
+                    }
+                    if(methodName == "copy"){
+                        if(argCount != 0){
+                            return failWithArgs("Array.copy expects 0 arguments");
+                        }
+                        auto out = StarbytesArrayCopy(object);
+                        StarbytesObjectRelease(object);
+                        return out;
+                    }
+                    if(methodName == "reverse"){
+                        if(argCount != 0){
+                            return failWithArgs("Array.reverse expects 0 arguments");
+                        }
+                        auto out = StarbytesArrayNew();
+                        auto len = StarbytesArrayGetLength(object);
+                        for(unsigned i = len;i > 0;--i){
+                            StarbytesArrayPush(out,StarbytesArrayIndex(object,i - 1));
+                        }
+                        StarbytesObjectRelease(object);
+                        return out;
+                    }
+                    discardExprArgs(in,argCount);
+                    StarbytesObjectRelease(object);
+                    return nullptr;
+                }
+
+                if(StarbytesObjectTypecheck(object,StarbytesDictType())){
+                    auto dictLen = StarbytesObjectGetProperty(object,"length");
+                    auto keys = StarbytesObjectGetProperty(object,"keys");
+                    auto values = StarbytesObjectGetProperty(object,"values");
+                    if(methodName == "isEmpty"){
+                        if(argCount != 0){
+                            return failWithArgs("Dict.isEmpty expects 0 arguments");
+                        }
+                        bool isEmpty = !dictLen || StarbytesNumGetIntValue(dictLen) == 0;
+                        StarbytesObjectRelease(object);
+                        return StarbytesBoolNew((StarbytesBoolVal)isEmpty);
+                    }
+                    if(methodName == "has" || methodName == "get" || methodName == "remove"){
+                        if(argCount != 1 || !collectArgs(args)){
+                            return failWithArgs("Dict method expects 1 argument");
+                        }
+                        if(!isDictKeyObject(args[0])){
+                            return failWithArgs("Dict key must be String/Int/Float");
+                        }
+                        if(methodName == "has"){
+                            auto value = StarbytesDictGet(object,args[0]);
+                            releaseArgs(args);
+                            StarbytesObjectRelease(object);
+                            return StarbytesBoolNew((StarbytesBoolVal)(value != nullptr));
+                        }
+                        if(methodName == "get"){
+                            auto value = StarbytesDictGet(object,args[0]);
+                            if(value){
+                                StarbytesObjectReference(value);
+                            }
+                            releaseArgs(args);
+                            StarbytesObjectRelease(object);
+                            return value;
+                        }
+                        unsigned len = keys ? StarbytesArrayGetLength(keys) : 0;
+                        int found = -1;
+                        for(unsigned i = 0;i < len;++i){
+                            auto keyAt = StarbytesArrayIndex(keys,i);
+                            if(runtimeObjectEquals(keyAt,args[0])){
+                                found = (int)i;
+                                break;
+                            }
+                        }
+                        if(found < 0){
+                            return failWithArgs("Dict key not found");
+                        }
+                        auto removed = StarbytesArrayIndex(values,(unsigned)found);
+                        if(removed){
+                            StarbytesObjectReference(removed);
+                        }
+                        for(unsigned pos = (unsigned)found; pos + 1 < len; ++pos){
+                            StarbytesArraySet(keys,pos,StarbytesArrayIndex(keys,pos + 1));
+                            StarbytesArraySet(values,pos,StarbytesArrayIndex(values,pos + 1));
+                        }
+                        StarbytesArrayPop(keys);
+                        StarbytesArrayPop(values);
+                        if(dictLen){
+                            StarbytesNumAssign(dictLen,NumTypeInt,(int)(len - 1));
+                        }
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return removed;
+                    }
+                    if(methodName == "set"){
+                        if(argCount != 2 || !collectArgs(args)){
+                            return failWithArgs("Dict.set expects 2 arguments");
+                        }
+                        if(!isDictKeyObject(args[0])){
+                            return failWithArgs("Dict key must be String/Int/Float");
+                        }
+                        StarbytesDictSet(object,args[0],args[1]);
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        return StarbytesBoolNew((StarbytesBoolVal)true);
+                    }
+                    if(methodName == "keys"){
+                        if(argCount != 0){
+                            return failWithArgs("Dict.keys expects 0 arguments");
+                        }
+                        auto out = keys ? StarbytesArrayCopy(keys) : StarbytesArrayNew();
+                        StarbytesObjectRelease(object);
+                        return out;
+                    }
+                    if(methodName == "values"){
+                        if(argCount != 0){
+                            return failWithArgs("Dict.values expects 0 arguments");
+                        }
+                        auto out = values ? StarbytesArrayCopy(values) : StarbytesArrayNew();
+                        StarbytesObjectRelease(object);
+                        return out;
+                    }
+                    if(methodName == "clear"){
+                        if(argCount != 0){
+                            return failWithArgs("Dict.clear expects 0 arguments");
+                        }
+                        while(keys && StarbytesArrayGetLength(keys) > 0){
+                            StarbytesArrayPop(keys);
+                        }
+                        while(values && StarbytesArrayGetLength(values) > 0){
+                            StarbytesArrayPop(values);
+                        }
+                        if(dictLen){
+                            StarbytesNumAssign(dictLen,NumTypeInt,0);
+                        }
+                        StarbytesObjectRelease(object);
+                        return StarbytesBoolNew((StarbytesBoolVal)true);
+                    }
+                    if(methodName == "copy"){
+                        if(argCount != 0){
+                            return failWithArgs("Dict.copy expects 0 arguments");
+                        }
+                        auto out = StarbytesDictCopy(object);
+                        StarbytesObjectRelease(object);
+                        return out;
+                    }
+                    discardExprArgs(in,argCount);
+                    StarbytesObjectRelease(object);
+                    return nullptr;
+                }
+            }
+
             StarbytesClassType classType = StarbytesClassObjectGetClass(object);
             auto *classMeta = findClassByType(classType);
             if(!classMeta){
@@ -1431,7 +2066,6 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 return nullptr;
             }
 
-            std::string methodName = rtidToString(memberId);
             auto *methodOwner = findMethodOwnerInHierarchy(classMeta,methodName);
             if(!methodOwner){
                 StarbytesObjectRelease(object);

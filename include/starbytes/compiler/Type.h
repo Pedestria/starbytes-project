@@ -51,6 +51,7 @@ extern ASTType * FLOAT_TYPE;
 extern ASTType * REGEX_TYPE;
 extern ASTType * ANY_TYPE;
 extern ASTType * TASK_TYPE;
+extern ASTType * FUNCTION_TYPE;
 
     template<>
     struct FormatProvider<starbytes::ASTType> {

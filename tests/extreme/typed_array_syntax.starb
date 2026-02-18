@@ -1,0 +1,54 @@
+def IntList = Int[]
+
+decl ints:Int[] = [1,2,3]
+decl grid:Int[][] = [[1,2],[3,4]]
+
+decl first:Int = ints[0]
+decl row:Int[] = grid[1]
+decl cell:Int = row[0]
+
+print(first)
+print(cell)
+
+print(ints.push(4))
+print(ints.set(0,9))
+print(ints.insert(1,8))
+print(ints.contains(8))
+print(ints.indexOf(8))
+
+secure(decl popped:Int? = ints.pop()) catch {
+    print("POP-CATCH")
+}
+print(popped)
+
+secure(decl at0:Int? = ints.at(0)) catch {
+    print("AT-CATCH")
+}
+print(at0)
+
+secure(decl removed:Int? = ints.removeAt(1)) catch {
+    print("REMOVE-CATCH")
+}
+print(removed)
+
+decl sliced:Int[] = ints.slice(0,2)
+decl copied:Int[] = ints.copy()
+decl reversed:Int[] = ints.reverse()
+print(sliced.length)
+print(copied.length)
+print(reversed.length)
+
+decl words:String[] = "a,b,c".split(",")
+secure(decl w0:String? = words.at(0)) catch {
+    print("WORD-CATCH")
+}
+print(w0)
+
+func sum(values:IntList) Int {
+    return values[0] + values[1]
+}
+
+decl aliasList:IntList = [5,6]
+print(sum(aliasList))
+
+print("TYPED-ARRAY-SYNTAX-OK")

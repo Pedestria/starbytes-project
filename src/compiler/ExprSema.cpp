@@ -427,8 +427,48 @@ static bool isArrayType(ASTType *type){
     return type && type->nameMatches(ARRAY_TYPE);
 }
 
+static bool isDictKeyType(ASTType *type){
+    return type && (isStringType(type) || isNumericType(type));
+}
+
 static bool isTaskType(ASTType *type){
     return type && type->nameMatches(TASK_TYPE);
+}
+
+static bool isFunctionType(ASTType *type){
+    return type && type->nameMatches(FUNCTION_TYPE);
+}
+
+static ASTType *makeFunctionType(ASTType *returnType,
+                                 const std::vector<ASTType *> &paramTypes,
+                                 ASTStmt *node){
+    if(!returnType){
+        return nullptr;
+    }
+    auto *funcType = ASTType::Create(FUNCTION_TYPE->getName(),node,false,false);
+    funcType->addTypeParam(cloneTypeNode(returnType,node));
+    for(auto *paramType : paramTypes){
+        if(!paramType){
+            continue;
+        }
+        funcType->addTypeParam(cloneTypeNode(paramType,node));
+    }
+    return funcType;
+}
+
+static ASTType *functionReturnType(ASTType *funcType,ASTStmt *node){
+    if(!isFunctionType(funcType) || funcType->typeParams.empty() || !funcType->typeParams.front()){
+        return nullptr;
+    }
+    return cloneTypeNode(funcType->typeParams.front(),node);
+}
+
+static ASTType *functionParamType(ASTType *funcType,size_t index,ASTStmt *node){
+    size_t paramIndex = index + 1;
+    if(!isFunctionType(funcType) || paramIndex >= funcType->typeParams.size() || !funcType->typeParams[paramIndex]){
+        return nullptr;
+    }
+    return cloneTypeNode(funcType->typeParams[paramIndex],node);
 }
 
 static ASTType *makeTaskType(ASTType *innerType,ASTStmt *node){
@@ -438,6 +478,28 @@ static ASTType *makeTaskType(ASTType *innerType,ASTStmt *node){
     auto *taskType = ASTType::Create(TASK_TYPE->getName(),node,false,false);
     taskType->addTypeParam(cloneTypeNode(innerType,node));
     return taskType;
+}
+
+static ASTType *makeArrayType(ASTType *elementType,ASTStmt *node){
+    auto *arrayType = ASTType::Create(ARRAY_TYPE->getName(),node,false,false);
+    if(elementType){
+        arrayType->addTypeParam(cloneTypeNode(elementType,node));
+    }
+    return arrayType;
+}
+
+static ASTType *arrayElementType(ASTType *arrayType,ASTStmt *node,bool optional){
+    if(arrayType && arrayType->nameMatches(ARRAY_TYPE) && arrayType->typeParams.size() == 1 && arrayType->typeParams.front()){
+        auto *elementType = cloneTypeNode(arrayType->typeParams.front(),node);
+        if(!elementType){
+            return nullptr;
+        }
+        if(optional){
+            elementType->isOptional = true;
+        }
+        return elementType;
+    }
+    return cloneTypeWithQualifiers(ANY_TYPE,node,optional,false);
 }
 
 static ASTType *promoteNumericType(ASTType *lhs,ASTType *rhs,ASTStmt *node){
@@ -610,13 +672,24 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 break;
             }
             case ARRAY_EXPR : {
+                ASTType *inferredElementType = nullptr;
                 for(auto *elementExpr : expr_to_eval->exprArrayData){
                     auto *elementType = evalExprForTypeId(elementExpr,symbolTableContext,scopeContext);
                     if(!elementType){
                         return nullptr;
                     }
+                    elementType = normalizeType(elementType);
+                    if(!inferredElementType){
+                        inferredElementType = cloneTypeNode(elementType,expr_to_eval);
+                        continue;
+                    }
+                    if(!inferredElementType->match(elementType,[&](std::string){
+                        inferredElementType = cloneTypeWithQualifiers(ANY_TYPE,expr_to_eval,false,false);
+                    })){
+                        continue;
+                    }
                 }
-                type = ARRAY_TYPE;
+                type = inferredElementType? makeArrayType(inferredElementType,expr_to_eval) : ARRAY_TYPE;
                 break;
             }
             case DICT_EXPR : {
@@ -637,6 +710,50 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     valueType = normalizeType(valueType);
                 }
                 type = DICTIONARY_TYPE;
+                break;
+            }
+            case INLINE_FUNC_EXPR : {
+                if(!expr_to_eval->inlineFuncReturnType || !expr_to_eval->inlineFuncBlock){
+                    errStream.push(SemanticADiagnostic::create("Inline function is missing a return type or body.",expr_to_eval,Diagnostic::Error));
+                    return nullptr;
+                }
+
+                std::vector<ASTType *> inlineParamTypes;
+                std::map<ASTIdentifier *,ASTType *> inlineArgs;
+                for(auto &paramPair : expr_to_eval->inlineFuncParams){
+                    if(!paramPair.first || !paramPair.second){
+                        errStream.push(SemanticADiagnostic::create("Inline function parameter is invalid.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    if(!typeExists(paramPair.second,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams,expr_to_eval)){
+                        return nullptr;
+                    }
+                    auto *resolvedParamType = normalizeType(paramPair.second);
+                    inlineParamTypes.push_back(resolvedParamType);
+                    inlineArgs.insert(std::make_pair(paramPair.first,resolvedParamType));
+                }
+
+                if(!typeExists(expr_to_eval->inlineFuncReturnType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams,expr_to_eval)){
+                    return nullptr;
+                }
+                auto *resolvedReturnType = normalizeType(expr_to_eval->inlineFuncReturnType);
+
+                bool hasFailed = false;
+                ASTScopeSemanticsContext inlineScopeContext {expr_to_eval->inlineFuncBlock->parentScope,&inlineArgs,scopeContext.genericTypeParams};
+                ASTType *impliedReturnType = evalBlockStmtForASTType(expr_to_eval->inlineFuncBlock,symbolTableContext,&hasFailed,inlineScopeContext,true);
+                if(hasFailed || !impliedReturnType){
+                    return nullptr;
+                }
+                auto *resolvedImpliedReturn = normalizeType(impliedReturnType);
+                if(!resolvedReturnType->match(resolvedImpliedReturn,[&](std::string message){
+                    std::ostringstream ss;
+                    ss << message << "\nContext: Inline function declared return type does not match implied return type.";
+                    errStream.push(SemanticADiagnostic::create(ss.str(),expr_to_eval,Diagnostic::Error));
+                })){
+                    return nullptr;
+                }
+
+                type = makeFunctionType(resolvedReturnType,inlineParamTypes,expr_to_eval);
                 break;
             }
                 /// Literals
@@ -683,7 +800,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         errStream.push(SemanticADiagnostic::create("Array indexing requires Int index.",expr_to_eval,Diagnostic::Error));
                         return nullptr;
                     }
-                    type = ANY_TYPE;
+                    type = arrayElementType(baseType,expr_to_eval,false);
                     break;
                 }
                 if(isDictType(baseType)){
@@ -780,7 +897,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                            || resolved->nameMatches(DICTIONARY_TYPE) || resolved->nameMatches(BOOL_TYPE)
                            || resolved->nameMatches(INT_TYPE) || resolved->nameMatches(FLOAT_TYPE)
                            || resolved->nameMatches(REGEX_TYPE) || resolved->nameMatches(ANY_TYPE)
-                           || resolved->nameMatches(TASK_TYPE)){
+                           || resolved->nameMatches(TASK_TYPE) || resolved->nameMatches(FUNCTION_TYPE)){
                             return resolvedName;
                         }
 
@@ -822,7 +939,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                            || rawName == DICTIONARY_TYPE->getName().getBuffer() || rawName == BOOL_TYPE->getName().getBuffer()
                            || rawName == INT_TYPE->getName().getBuffer() || rawName == FLOAT_TYPE->getName().getBuffer()
                            || rawName == REGEX_TYPE->getName().getBuffer() || rawName == ANY_TYPE->getName().getBuffer()
-                           || rawName == TASK_TYPE->getName().getBuffer()){
+                           || rawName == TASK_TYPE->getName().getBuffer() || rawName == FUNCTION_TYPE->getName().getBuffer()){
                             runtimeTypeName = rawName;
                         }
                         else {
@@ -957,6 +1074,62 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         break;
                     }
                     errStream.push(SemanticADiagnostic::create("Unsupported scope member type.",expr_to_eval,Diagnostic::Error));
+                    return nullptr;
+                }
+
+                auto setBuiltinProperty = [&](ASTType *propertyType){
+                    expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
+                    type = propertyType;
+                };
+                auto setBuiltinMethod = [&](){
+                    expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
+                    type = ANY_TYPE;
+                };
+
+                if(isStringType(leftType)){
+                    if(memberName == "length"){
+                        setBuiltinProperty(INT_TYPE);
+                        break;
+                    }
+                    if(memberName == "isEmpty" || memberName == "at" || memberName == "slice" ||
+                       memberName == "contains" || memberName == "startsWith" || memberName == "endsWith" ||
+                       memberName == "indexOf" || memberName == "lastIndexOf" || memberName == "lower" ||
+                       memberName == "upper" || memberName == "trim" || memberName == "replace" ||
+                       memberName == "split" || memberName == "repeat"){
+                        setBuiltinMethod();
+                        break;
+                    }
+                    errStream.push(SemanticADiagnostic::create("Unknown String member.",expr_to_eval,Diagnostic::Error));
+                    return nullptr;
+                }
+                if(isArrayType(leftType)){
+                    if(memberName == "length"){
+                        setBuiltinProperty(INT_TYPE);
+                        break;
+                    }
+                    if(memberName == "isEmpty" || memberName == "push" || memberName == "pop" ||
+                       memberName == "at" || memberName == "set" || memberName == "insert" ||
+                       memberName == "removeAt" || memberName == "clear" || memberName == "contains" ||
+                       memberName == "indexOf" || memberName == "slice" || memberName == "join" ||
+                       memberName == "copy" || memberName == "reverse"){
+                        setBuiltinMethod();
+                        break;
+                    }
+                    errStream.push(SemanticADiagnostic::create("Unknown Array member.",expr_to_eval,Diagnostic::Error));
+                    return nullptr;
+                }
+                if(isDictType(leftType)){
+                    if(memberName == "length"){
+                        setBuiltinProperty(INT_TYPE);
+                        break;
+                    }
+                    if(memberName == "isEmpty" || memberName == "has" || memberName == "get" ||
+                       memberName == "set" || memberName == "remove" || memberName == "keys" ||
+                       memberName == "values" || memberName == "clear" || memberName == "copy"){
+                        setBuiltinMethod();
+                        break;
+                    }
+                    errStream.push(SemanticADiagnostic::create("Unknown Dict member.",expr_to_eval,Diagnostic::Error));
                     return nullptr;
                 }
 
@@ -1193,6 +1366,42 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 }
                 funcType = normalizeType(funcType);
 
+                if(!expr_to_eval->isConstructorCall && isFunctionType(funcType)){
+                    if(funcType->typeParams.empty()){
+                        errStream.push(SemanticADiagnostic::create("Malformed function type.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    size_t expectedArgCount = funcType->typeParams.size() - 1;
+                    if(expr_to_eval->exprArrayData.size() != expectedArgCount){
+                        errStream.push(SemanticADiagnostic::create("Incorrect number of function arguments.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    for(size_t i = 0;i < expectedArgCount;++i){
+                        auto *argType = evalExprForTypeId(expr_to_eval->exprArrayData[i],symbolTableContext,scopeContext);
+                        if(!argType){
+                            return nullptr;
+                        }
+                        argType = normalizeType(argType);
+                        auto *expectedType = normalizeType(functionParamType(funcType,i,expr_to_eval));
+                        if(!expectedType){
+                            errStream.push(SemanticADiagnostic::create("Malformed function parameter type.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                        if(!expectedType->match(argType,[&](std::string){
+                            errStream.push(SemanticADiagnostic::create("Function argument type mismatch.",expr_to_eval->exprArrayData[i],Diagnostic::Error));
+                        })){
+                            return nullptr;
+                        }
+                    }
+                    auto *retType = functionReturnType(funcType,expr_to_eval);
+                    if(!retType){
+                        errStream.push(SemanticADiagnostic::create("Malformed function return type.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    type = normalizeType(retType);
+                    break;
+                }
+
                 if(!expr_to_eval->isConstructorCall &&
                    expr_to_eval->callee->type == MEMBER_EXPR && expr_to_eval->callee->isScopeAccess){
                     auto *memberExpr = expr_to_eval->callee;
@@ -1236,6 +1445,245 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         return nullptr;
                     }
                     baseType = normalizeType(baseType);
+
+                    auto requireArgCount = [&](size_t expected) -> bool {
+                        if(expr_to_eval->exprArrayData.size() != expected){
+                            errStream.push(SemanticADiagnostic::create("Incorrect number of method arguments.",expr_to_eval,Diagnostic::Error));
+                            return false;
+                        }
+                        return true;
+                    };
+                    auto evalArgType = [&](size_t index) -> ASTType * {
+                        if(index >= expr_to_eval->exprArrayData.size()){
+                            return nullptr;
+                        }
+                        auto *argType = evalExprForTypeId(expr_to_eval->exprArrayData[index],symbolTableContext,scopeContext);
+                        if(!argType){
+                            return nullptr;
+                        }
+                        return normalizeType(argType);
+                    };
+                    auto requireIntArg = [&](size_t index) -> bool {
+                        auto *argType = evalArgType(index);
+                        if(!argType){
+                            return false;
+                        }
+                        if(!isIntType(argType)){
+                            errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",expr_to_eval->exprArrayData[index],Diagnostic::Error));
+                            return false;
+                        }
+                        return true;
+                    };
+                    auto requireStringArg = [&](size_t index) -> bool {
+                        auto *argType = evalArgType(index);
+                        if(!argType){
+                            return false;
+                        }
+                        if(!isStringType(argType)){
+                            errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",expr_to_eval->exprArrayData[index],Diagnostic::Error));
+                            return false;
+                        }
+                        return true;
+                    };
+                    auto requireDictKeyArg = [&](size_t index) -> bool {
+                        auto *argType = evalArgType(index);
+                        if(!argType){
+                            return false;
+                        }
+                        if(!isDictKeyType(argType)){
+                            errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",expr_to_eval->exprArrayData[index],Diagnostic::Error));
+                            return false;
+                        }
+                        return true;
+                    };
+                    auto requireAnyArg = [&](size_t index) -> bool {
+                        auto *argType = evalArgType(index);
+                        return argType != nullptr;
+                    };
+                    auto requireArrayElementArg = [&](size_t index) -> bool {
+                        auto *argType = evalArgType(index);
+                        if(!argType){
+                            return false;
+                        }
+                        auto *expectedElementType = arrayElementType(baseType,expr_to_eval,false);
+                        if(!expectedElementType){
+                            return false;
+                        }
+                        if(!expectedElementType->match(argType,[&](std::string){
+                            errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",expr_to_eval->exprArrayData[index],Diagnostic::Error));
+                        })){
+                            return false;
+                        }
+                        return true;
+                    };
+                    auto requireArraySliceArgs = [&]() -> bool {
+                        return requireArgCount(2) && requireIntArg(0) && requireIntArg(1);
+                    };
+
+                    auto memberName = memberExpr->rightExpr ? memberExpr->rightExpr->id->val : std::string();
+                    if(isStringType(baseType)){
+                        if(memberName == "isEmpty"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "at"){
+                            if(!requireArgCount(1) || !requireIntArg(0)) return nullptr;
+                            type = cloneTypeWithQualifiers(STRING_TYPE,expr_to_eval,true,false);
+                            break;
+                        }
+                        if(memberName == "slice"){
+                            if(!requireArraySliceArgs()) return nullptr;
+                            type = STRING_TYPE;
+                            break;
+                        }
+                        if(memberName == "contains" || memberName == "startsWith" || memberName == "endsWith"){
+                            if(!requireArgCount(1) || !requireStringArg(0)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "indexOf" || memberName == "lastIndexOf"){
+                            if(!requireArgCount(1) || !requireStringArg(0)) return nullptr;
+                            type = INT_TYPE;
+                            break;
+                        }
+                        if(memberName == "lower" || memberName == "upper" || memberName == "trim"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = STRING_TYPE;
+                            break;
+                        }
+                        if(memberName == "replace"){
+                            if(!requireArgCount(2) || !requireStringArg(0) || !requireStringArg(1)) return nullptr;
+                            type = STRING_TYPE;
+                            break;
+                        }
+                        if(memberName == "split"){
+                            if(!requireArgCount(1) || !requireStringArg(0)) return nullptr;
+                            type = makeArrayType(STRING_TYPE,expr_to_eval);
+                            break;
+                        }
+                        if(memberName == "repeat"){
+                            if(!requireArgCount(1) || !requireIntArg(0)) return nullptr;
+                            type = STRING_TYPE;
+                            break;
+                        }
+                        errStream.push(SemanticADiagnostic::create("Unknown String method.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    if(isArrayType(baseType)){
+                        if(memberName == "isEmpty"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "push"){
+                            if(!requireArgCount(1) || !requireArrayElementArg(0)) return nullptr;
+                            type = INT_TYPE;
+                            break;
+                        }
+                        if(memberName == "pop"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = arrayElementType(baseType,expr_to_eval,true);
+                            break;
+                        }
+                        if(memberName == "at"){
+                            if(!requireArgCount(1) || !requireIntArg(0)) return nullptr;
+                            type = arrayElementType(baseType,expr_to_eval,true);
+                            break;
+                        }
+                        if(memberName == "set"){
+                            if(!requireArgCount(2) || !requireIntArg(0) || !requireArrayElementArg(1)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "insert"){
+                            if(!requireArgCount(2) || !requireIntArg(0) || !requireArrayElementArg(1)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "removeAt"){
+                            if(!requireArgCount(1) || !requireIntArg(0)) return nullptr;
+                            type = arrayElementType(baseType,expr_to_eval,true);
+                            break;
+                        }
+                        if(memberName == "clear"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "contains"){
+                            if(!requireArgCount(1) || !requireArrayElementArg(0)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "indexOf"){
+                            if(!requireArgCount(1) || !requireArrayElementArg(0)) return nullptr;
+                            type = INT_TYPE;
+                            break;
+                        }
+                        if(memberName == "slice"){
+                            if(!requireArraySliceArgs()) return nullptr;
+                            type = cloneTypeNode(baseType,expr_to_eval);
+                            break;
+                        }
+                        if(memberName == "join"){
+                            if(!requireArgCount(1) || !requireStringArg(0)) return nullptr;
+                            type = STRING_TYPE;
+                            break;
+                        }
+                        if(memberName == "copy" || memberName == "reverse"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = cloneTypeNode(baseType,expr_to_eval);
+                            break;
+                        }
+                        errStream.push(SemanticADiagnostic::create("Unknown Array method.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    if(isDictType(baseType)){
+                        if(memberName == "isEmpty"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "has"){
+                            if(!requireArgCount(1) || !requireDictKeyArg(0)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "get"){
+                            if(!requireArgCount(1) || !requireDictKeyArg(0)) return nullptr;
+                            type = cloneTypeWithQualifiers(ANY_TYPE,expr_to_eval,true,false);
+                            break;
+                        }
+                        if(memberName == "set"){
+                            if(!requireArgCount(2) || !requireDictKeyArg(0) || !requireAnyArg(1)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "remove"){
+                            if(!requireArgCount(1) || !requireDictKeyArg(0)) return nullptr;
+                            type = cloneTypeWithQualifiers(ANY_TYPE,expr_to_eval,true,false);
+                            break;
+                        }
+                        if(memberName == "keys" || memberName == "values"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = ARRAY_TYPE;
+                            break;
+                        }
+                        if(memberName == "clear"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "copy"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = DICTIONARY_TYPE;
+                            break;
+                        }
+                        errStream.push(SemanticADiagnostic::create("Unknown Dict method.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+
                     auto classEntry = findClassEntry(symbolTableContext,baseType->getName(),scopeContext.scope);
                     if(classEntry){
                         auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;

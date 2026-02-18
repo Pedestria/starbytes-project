@@ -302,6 +302,21 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         ASTVarDecl *varDecl = (ASTVarDecl *)stmt;
         for(auto & spec : varDecl->specs){
             ASTIdentifier *var_id = spec.id;
+            if(spec.expr && spec.expr->type == INLINE_FUNC_EXPR){
+                auto *inlineExpr = (ASTExpr *)spec.expr;
+                if(inlineExpr->inlineFuncRuntimeName.empty()){
+                    inlineExpr->inlineFuncRuntimeName = "__inline__" + var_id->val + "_" + std::to_string(inlineFuncCounter++);
+                }
+                RTFuncTemplate inlineTemplate;
+                inlineTemplate.name = makeOwnedRTID(inlineExpr->inlineFuncRuntimeName);
+                for(auto &paramPair : inlineExpr->inlineFuncParams){
+                    RTID paramId;
+                    ASTIdentifier_to_RTID(paramPair.first,paramId);
+                    inlineTemplate.argsTemplate.push_back(paramId);
+                }
+                emitRuntimeFunction(inlineExpr->inlineFuncBlock,genContext,this,inlineTemplate);
+            }
+
             RTVar code_var;
             ASTIdentifier_to_RTID(var_id,code_var.id);
             code_var.hasInitValue = (spec.expr != nullptr);
@@ -309,7 +324,15 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             genContext->out << &code_var;
             if(spec.expr) {
                 ASTExpr *initialVal = spec.expr;
-                consumeStmt(initialVal);
+                if(initialVal->type == INLINE_FUNC_EXPR){
+                    RTCode code = CODE_RTFUNC_REF;
+                    genContext->out.write((const char *)&code,sizeof(RTCode));
+                    RTID funcId = makeOwnedRTID(initialVal->inlineFuncRuntimeName);
+                    genContext->out << &funcId;
+                }
+                else {
+                    consumeStmt(initialVal);
+                }
             }
         };
     }

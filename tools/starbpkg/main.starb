@@ -1,0 +1,2 @@
+print("starbpkg: use tools/starbpkg/starbpkg launcher")
+print("commands: init | add-path <dir> | sync | status | help")

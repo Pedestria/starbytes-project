@@ -1,0 +1,16 @@
+import IO
+
+decl requestProjectPath = "tools/starbpkg/.request/project.txt"
+secure(decl project = readText(requestProjectPath,"utf-8")) catch {}
+
+decl modpathsPath = project + "/.starbpkg/modpaths.txt"
+decl outputPath = project + "/.starbmodpath"
+
+print("STARBPKG-STATUS")
+print("project=" + project)
+print("modpaths=" + modpathsPath)
+print("output=" + outputPath)
+print(exists(outputPath))
+
+secure(decl modpathsText = readText(modpathsPath,"utf-8")) catch {}
+print(modpathsText)

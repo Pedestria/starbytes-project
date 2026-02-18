@@ -67,11 +67,46 @@ assert_log_contains() {
   fi
 }
 
+assert_file_contains() {
+  local name="$1"
+  local file="$2"
+  local pattern="$3"
+  if [[ ! -f "$file" ]]; then
+    echo "[FAIL] $name missing file $file"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+    return
+  fi
+  if rg -q -- "$pattern" "$file"; then
+    echo "[PASS] $name file contains '$pattern'"
+    PASS_COUNT=$((PASS_COUNT + 1))
+  else
+    echo "[FAIL] $name file missing '$pattern'"
+    echo "  file: $file"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+  fi
+}
+
 run_expect_success "core-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/core_extreme.starb"
 run_expect_success "core-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/core_extreme.starb"
 assert_log_contains "core-run" "EXTREME-CORE-OK"
 assert_log_contains "core-run" "OPS-BITWISE-OK"
 assert_log_contains "core-run" "OPS-SHORTCIRCUIT-OK"
+
+run_expect_success "adt-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/adt_extreme.starb"
+run_expect_success "adt-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/adt_extreme.starb"
+assert_log_contains "adt-run" "EXTREME-ADT-OK"
+run_expect_failure "adt-invalid-args-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/adt_invalid_args.starb"
+assert_log_contains "adt-invalid-args-check" "Incorrect number of method arguments"
+run_expect_success "typed-array-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/typed_array_syntax.starb"
+run_expect_success "typed-array-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/typed_array_syntax.starb"
+assert_log_contains "typed-array-run" "TYPED-ARRAY-SYNTAX-OK"
+run_expect_failure "typed-array-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/typed_array_invalid.starb"
+assert_log_contains "typed-array-invalid-check" "Method argument type mismatch"
+run_expect_success "function-types-inline-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/function_types_inline.starb"
+run_expect_success "function-types-inline-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/function_types_inline.starb"
+assert_log_contains "function-types-inline-run" "FUNCTION-TYPES-INLINE-OK"
+run_expect_failure "function-types-inline-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/function_types_inline_invalid.starb"
+assert_log_contains "function-types-inline-invalid-check" "Inline function declared return type does not match implied return type"
 
 run_expect_success "stdlib-smoke-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/stdlib_smoke.starb"
 run_expect_success "stdlib-smoke-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/stdlib_smoke.starb"
@@ -94,6 +129,26 @@ run_expect_failure "driver-unknown-option" "$STARBYTES_BIN" --unknown
 assert_log_contains "driver-unknown-option" "Unknown option"
 run_expect_failure "driver-invalid-check-run-combo" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/cli/simple.starb" --run
 assert_log_contains "driver-invalid-check-run-combo" "--run/--no-run are not valid with the check command"
+
+STARBPKG_BIN="$ROOT_DIR/tools/starbpkg/starbpkg"
+STARBPKG_PROJECT="$ROOT_DIR/.starbytes/extreme-starbpkg"
+rm -rf "$STARBPKG_PROJECT"
+mkdir -p "$STARBPKG_PROJECT"
+
+run_expect_success "starbpkg-help" "$STARBPKG_BIN" --help
+assert_log_contains "starbpkg-help" "Usage: starbpkg"
+
+run_expect_success "starbpkg-init" "$STARBPKG_BIN" -C "$STARBPKG_PROJECT" init
+assert_file_contains "starbpkg-init-modpaths" "$STARBPKG_PROJECT/.starbpkg/modpaths.txt" "\\./modules"
+assert_file_contains "starbpkg-init-output" "$STARBPKG_PROJECT/.starbmodpath" "\\./stdlib"
+
+run_expect_success "starbpkg-add-path" "$STARBPKG_BIN" -C "$STARBPKG_PROJECT" add-path "./vendor/lib"
+assert_file_contains "starbpkg-add-path-output" "$STARBPKG_PROJECT/.starbmodpath" "\\./vendor/lib"
+
+run_expect_success "starbpkg-status" "$STARBPKG_BIN" -C "$STARBPKG_PROJECT" status
+assert_log_contains "starbpkg-status" "STARBPKG-STATUS"
+
+run_expect_success "starbpkg-sync" "$STARBPKG_BIN" -C "$STARBPKG_PROJECT" sync
 
 run_expect_success "driver-compile-clean" "$STARBYTES_BIN" compile "$ROOT_DIR/tests/extreme/cli/simple.starb" --out-dir "$ROOT_DIR/.starbytes/extreme-cli" --print-module-path --clean
 assert_log_contains "driver-compile-clean" "simple.starbmod"

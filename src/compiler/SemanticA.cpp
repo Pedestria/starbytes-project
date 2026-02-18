@@ -431,6 +431,46 @@ namespace starbytes {
         return cloned;
     }
 
+    static Semantics::SymbolTable::Entry *findFunctionEntryNoDiag(Semantics::STableContext &symbolTableContext,
+                                                                   string_ref functionName,
+                                                                   std::shared_ptr<ASTScope> scope){
+        auto *entry = symbolTableContext.findEntryNoDiag(functionName,scope);
+        if(entry && entry->type == Semantics::SymbolTable::Entry::Function){
+            return entry;
+        }
+        entry = symbolTableContext.findEntryByEmittedNoDiag(functionName);
+        if(entry && entry->type == Semantics::SymbolTable::Entry::Function){
+            return entry;
+        }
+        return nullptr;
+    }
+
+    static ASTType *buildFunctionTypeFromFunctionData(Semantics::SymbolTable::Function *funcData,ASTStmt *parent){
+        if(!funcData){
+            return nullptr;
+        }
+        auto *funcType = ASTType::Create(FUNCTION_TYPE->getName(),parent,false,false);
+        auto *returnType = cloneTypeNode(funcData->returnType ? funcData->returnType : VOID_TYPE,parent);
+        if(!returnType){
+            return nullptr;
+        }
+        if(funcData->isLazy){
+            auto *taskReturnType = ASTType::Create(TASK_TYPE->getName(),parent,false,false);
+            taskReturnType->addTypeParam(returnType);
+            funcType->addTypeParam(taskReturnType);
+        }
+        else {
+            funcType->addTypeParam(returnType);
+        }
+        for(auto &param : funcData->paramMap){
+            if(!param.second){
+                continue;
+            }
+            funcType->addTypeParam(cloneTypeNode(param.second,parent));
+        }
+        return funcType;
+    }
+
     static ASTType *substituteTypeParams(ASTType *type,
                                          const std::map<std::string,ASTType *> &bindings,
                                          ASTStmt *parent){
@@ -813,6 +853,14 @@ namespace starbytes {
             return true;
         }
 
+        if(type->nameMatches(FUNCTION_TYPE)){
+            if(type->typeParams.empty()){
+                errStream.push(SemanticADiagnostic::create("Function type must include a return type.",diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
+                return false;
+            }
+            return true;
+        }
+
         if(type->nameMatches(VOID_TYPE) ||
            type->nameMatches(STRING_TYPE) ||
            type->nameMatches(ARRAY_TYPE) ||
@@ -874,6 +922,38 @@ namespace starbytes {
 
         auto *resolvedType = resolveAliasType(type,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
         auto *resolvedOtherType = resolveAliasType(other_type_id,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+        if((resolvedType->nameMatches(ARRAY_TYPE) || resolvedType->nameMatches(DICTIONARY_TYPE))
+           && resolvedType->typeParams.empty()
+           && resolvedType->nameMatches(resolvedOtherType)){
+            return true;
+        }
+
+        if(resolvedType->nameMatches(FUNCTION_TYPE) && expr_to_eval){
+            Semantics::SymbolTable::Entry *funcEntry = nullptr;
+            if(expr_to_eval->type == ID_EXPR && expr_to_eval->id){
+                funcEntry = findFunctionEntryNoDiag(symbolTableContext,expr_to_eval->id->val,scopeContext.scope);
+            }
+            else if(expr_to_eval->type == MEMBER_EXPR && expr_to_eval->rightExpr && expr_to_eval->rightExpr->id){
+                if(expr_to_eval->isScopeAccess && expr_to_eval->resolvedScope){
+                    auto *entry = symbolTableContext.findEntryInExactScopeNoDiag(expr_to_eval->rightExpr->id->val,expr_to_eval->resolvedScope);
+                    if(entry && entry->type == Semantics::SymbolTable::Entry::Function){
+                        funcEntry = entry;
+                    }
+                }
+            }
+
+            if(funcEntry){
+                auto *funcData = (Semantics::SymbolTable::Function *)funcEntry->data;
+                auto *funcExprType = buildFunctionTypeFromFunctionData(funcData,expr_to_eval);
+                if(funcExprType && resolvedType->match(funcExprType,[&](std::string message){
+                    std::ostringstream ss;
+                    ss << message << "\nContext: Type `" << resolvedOtherType->getName() << "` was implied from var initializer";
+                    errStream.push(SemanticADiagnostic::create(ss.str(),expr_to_eval,Diagnostic::Error));
+                })){
+                    return true;
+                }
+            }
+        }
         
         return resolvedType->match(resolvedOtherType,[&](std::string message){
             std::ostringstream ss;
@@ -892,7 +972,7 @@ namespace starbytes {
             if(!validateAttributesForDecl(decl,errStream)){
                 return false;
             }
-            bool hasErrored;
+            bool hasErrored = false;
             auto rc = evalGenericDecl(decl,symbolTableContext,scopeContext,&hasErrored);
             if(hasErrored && !rc)
                 switch (decl->type) {
@@ -943,7 +1023,7 @@ namespace starbytes {
                                 return false;
                             }
 
-                            bool hasFailed;
+                            bool hasFailed = false;
                             ASTScopeSemanticsContext funcScopeContext {funcNode->blockStmt->parentScope,&funcNode->params};
                             ASTType *return_type_implied = evalBlockStmtForASTType(funcNode->blockStmt,symbolTableContext,&hasFailed,funcScopeContext,true);
                             if(!return_type_implied && hasFailed){
@@ -1062,7 +1142,7 @@ namespace starbytes {
                             }
                         }
 
-                        bool hasErrored;
+                        bool hasErrored = false;
                         ASTScopeSemanticsContext classScopeContext {classDecl->scope,nullptr,&classGenericParams};
                         for(auto &f : classDecl->fields){
                             auto rcField = evalGenericDecl(f,symbolTableContext,classScopeContext,&hasErrored);

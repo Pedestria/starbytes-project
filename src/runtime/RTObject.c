@@ -460,6 +460,8 @@ void _StarbytesArrayFree(StarbytesObject array){
         StarbytesObjectRelease(*data_it);
         ++data_it;
     };
+    free(priv->data);
+    free(priv);
 }
 
 StarbytesArray StarbytesArrayNew(){
@@ -508,9 +510,18 @@ void StarbytesArrayPop(StarbytesArray array){
     StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
     StarbytesNum num = StarbytesObjectGetProperty(array,"length");
     int len = StarbytesNumGetIntValue(num);
+    if(len <= 0){
+        return;
+    }
     StarbytesObjectRelease(priv->data[len - 1]);
-    priv->data = (StarbytesObject *)realloc(priv->data,sizeof(StarbytesObject) * (len - 1));
-    --len;
+    if(len == 1){
+        free(priv->data);
+        priv->data = NULL;
+    }
+    else {
+        priv->data = (StarbytesObject *)realloc(priv->data,sizeof(StarbytesObject) * (len - 1));
+    }
+    StarbytesNumAssign(num,NumTypeInt,len - 1);
 };
 
 StarbytesObject StarbytesArrayIndex(StarbytesArray array,unsigned int index){
