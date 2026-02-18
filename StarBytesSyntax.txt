@@ -13,7 +13,7 @@ func hello (hello:String) String {
 scope Scope0 {
 	//Class Declaration
     
-    class MyClass <T> {
+    class MyClass {
         decl data:String 
         decl imut otherData:String
         
@@ -28,20 +28,41 @@ scope Scope0 {
             print(data)
         }
     }
+
+    // Generics
+     class AnotherClass <T> {
+        decl data:Int 
+         func doSomething(){
+            print(data)
+        }
+    }
+
+     // Class extending super class
+     class MyLittleClass : MyClass {
+        decl myLittleData:String 
+    }
 	
 }
 
 
 
 //Interface Declaration
-interface ClassInterface {
+interface MyInterface {
     decl data:String 
     decl imut otherData:String
+
+     func doSomething(){
+        print(data)
+    }
 }
+
+// Class implements interface
+class A 
+
 //Type Declaration
-def IntOrString = Integer | String
+def IntOrString = Int | String
 // Function Type Declaration
-deft Func = (a:String):Void
+def Func = (a:String) Void
 
 //Structure Delcaration
 struct SomeStruct {

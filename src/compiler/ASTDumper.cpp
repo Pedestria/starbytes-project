@@ -128,6 +128,91 @@ namespace starbytes {
             printBlockStmt(func_node->blockStmt,__level);
             os << pad << "}" << std::endl;
         }
+        else if(decl->type == CLASS_DECL){
+            auto *classNode = (ASTClassDecl *)decl;
+            os << "ClassDecl : {\n" << pad << "   id:" << std::flush;
+            formatIdentifier(os,classNode->id,level + 1);
+            if(!classNode->genericTypeParams.empty()){
+                os << pad << "   generics:[\n";
+                for(auto *param : classNode->genericTypeParams){
+                    if(param){
+                        os << pad << "      " << param->val << "\n";
+                    }
+                }
+                os << pad << "   ]\n";
+            }
+            if(classNode->superClass){
+                os << pad << "   super:" << classNode->superClass->getName() << "\n";
+            }
+            if(!classNode->interfaces.empty()){
+                os << pad << "   interfaces:[\n";
+                for(auto *iface : classNode->interfaces){
+                    if(iface){
+                        os << pad << "      " << iface->getName() << "\n";
+                    }
+                }
+                os << pad << "   ]\n";
+            }
+            os << pad << "   fields:[\n";
+            for(auto *fieldDecl : classNode->fields){
+                printDecl(fieldDecl,level + 1);
+            }
+            os << pad << "   ]\n";
+            os << pad << "   methods:[\n";
+            for(auto *methodDecl : classNode->methods){
+                printDecl(methodDecl,level + 1);
+            }
+            os << pad << "   ]\n";
+            os << pad << "   ctors:[\n";
+            for(auto *ctorDecl : classNode->constructors){
+                printDecl(ctorDecl,level + 1);
+            }
+            os << pad << "   ]\n";
+            os << pad << "}" << std::endl;
+        }
+        else if(decl->type == INTERFACE_DECL){
+            auto *interfaceNode = (ASTInterfaceDecl *)decl;
+            os << "InterfaceDecl : {\n" << pad << "   id:" << std::flush;
+            formatIdentifier(os,interfaceNode->id,level + 1);
+            if(!interfaceNode->genericTypeParams.empty()){
+                os << pad << "   generics:[\n";
+                for(auto *param : interfaceNode->genericTypeParams){
+                    if(param){
+                        os << pad << "      " << param->val << "\n";
+                    }
+                }
+                os << pad << "   ]\n";
+            }
+            os << pad << "   fields:[\n";
+            for(auto *fieldDecl : interfaceNode->fields){
+                printDecl(fieldDecl,level + 1);
+            }
+            os << pad << "   ]\n";
+            os << pad << "   methods:[\n";
+            for(auto *methodDecl : interfaceNode->methods){
+                printDecl(methodDecl,level + 1);
+            }
+            os << pad << "   ]\n";
+            os << pad << "}" << std::endl;
+        }
+        else if(decl->type == TYPE_ALIAS_DECL){
+            auto *aliasDecl = (ASTTypeAliasDecl *)decl;
+            os << "TypeAliasDecl : {\n" << pad << "   id:" << std::flush;
+            formatIdentifier(os,aliasDecl->id,level + 1);
+            if(!aliasDecl->genericTypeParams.empty()){
+                os << pad << "   generics:[\n";
+                for(auto *param : aliasDecl->genericTypeParams){
+                    if(param){
+                        os << pad << "      " << param->val << "\n";
+                    }
+                }
+                os << pad << "   ]\n";
+            }
+            if(aliasDecl->aliasedType){
+                os << pad << "   aliasedType:" << aliasDecl->aliasedType->getName() << "\n";
+            }
+            os << pad << "}" << std::endl;
+        }
         else if(decl->type == CLASS_CTOR_DECL){
             auto *ctorNode = (ASTConstructorDecl *)decl;
             os << "ConstructorDecl : {\n" << pad << "   params:[\n" << std::flush;

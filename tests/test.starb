@@ -45,8 +45,16 @@ scope Models {
     }
 }
 
+interface Named {
+    decl name:String
+
+    func getName() String {
+        return "named"
+    }
+}
+
 @deprecated("Legacy model")
-class Person {
+class Person : Named {
     @readonly
     decl id:String
     decl name:String
@@ -161,5 +169,88 @@ secure(decl badRegex = /(/g) catch (error:String) {
     print(error)
 }
 
+decl mathA:Int = 10
+decl mathB:Int = 4
+decl arithmetic = (mathA + mathB) * 2 - 3
+print(arithmetic)
+mathA += mathB
+print(mathA)
+mathA *= 2
+print(mathA)
+mathA /= 4
+print(mathA)
+mathA %= 4
+print(mathA)
 
+decl concat = "sum:" + arithmetic
+print(concat)
 
+if((arithmetic >= 25 && mathB < 10) || (mathA == 0)){
+    print("OP-COND-YES")
+}
+else {
+    print("OP-COND-NO")
+}
+
+decl bucket = {"name":"starbytes","score":42}
+print(bucket["name"])
+bucket["score"] = bucket["score"] + 1
+print(bucket["score"])
+bucket["enabled"] = true
+if(bucket["enabled"] == true){
+    print("DICT-COND-YES")
+}
+
+decl seq = [1,2,3]
+seq[1] = 9
+print(seq[1])
+
+def Score = Int
+
+interface Boxable<T> {
+    decl value:T
+
+    func ready() Bool {
+        return true
+    }
+}
+
+class Box<T> : Boxable<T> {
+    decl value:T
+
+    new(v:T){
+        self.value = v
+    }
+
+    func get() T {
+        return self.value
+    }
+
+    func ready() Bool {
+        return true
+    }
+}
+
+class Animal {
+    decl name:String = "animal"
+
+    func getName() String {
+        return self.name
+    }
+}
+
+class Dog : Animal {
+    new(){
+        self.name = "dog"
+    }
+}
+
+decl scoreValue:Score = 11
+print(scoreValue)
+
+decl boxed = new Box<String>("spark")
+print(boxed.get())
+
+decl dog = new Dog()
+print(dog.getName())
+print(dog.name)

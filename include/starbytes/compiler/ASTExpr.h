@@ -6,6 +6,7 @@
 #define STARBYTES_AST_ASTEXPR_H
 
 namespace starbytes {
+    class ASTType;
 
     class ASTIdentifier : public ASTStmt  {
     public:
@@ -47,6 +48,7 @@ namespace starbytes {
 
         /// ArrayExpr and InvokeExpr Props
         std::vector<ASTExpr *> exprArrayData;
+        std::vector<ASTType *> genericTypeArgs;
 
         /// DictExpr Props
         std::map<ASTExpr *,ASTExpr *> dictExpr;

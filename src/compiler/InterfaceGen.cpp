@@ -41,8 +41,8 @@ void InterfaceGen::consumeDecl(ASTDecl *stmt) {
         case CLASS_DECL : {
             auto node = (ASTClassDecl*)stmt;
             out << KW_CLASS << " " << node->id->val << " " << "{";
-            for(auto & func : node->fields){
-                consumeDecl(func);
+            for(auto & field : node->fields){
+                consumeDecl(field);
             }
             for(auto & func : node->methods){
                 consumeDecl(func);
@@ -51,8 +51,11 @@ void InterfaceGen::consumeDecl(ASTDecl *stmt) {
             break;
         }
         case INTERFACE_DECL : {
-             auto node = (ASTClassDecl*)stmt;
+            auto node = (ASTInterfaceDecl*)stmt;
             out << KW_INTERFACE << " " << node->id->val << " " << "{";
+            for(auto & field : node->fields){
+                consumeDecl(field);
+            }
             for(auto & func : node->methods){
                 consumeDecl(func);
             }

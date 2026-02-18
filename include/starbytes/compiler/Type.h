@@ -20,6 +20,8 @@ namespace starbytes {
         
         bool isAlias;
 
+        bool isGenericParam = false;
+
         bool isOptional = false;
 
         bool isThrowable = false;
@@ -47,6 +49,7 @@ extern ASTType * BOOL_TYPE;
 extern ASTType * INT_TYPE;
 extern ASTType * FLOAT_TYPE;
 extern ASTType * REGEX_TYPE;
+extern ASTType * ANY_TYPE;
 
     template<>
     struct FormatProvider<starbytes::ASTType> {
@@ -60,17 +63,15 @@ extern ASTType * REGEX_TYPE;
            }
            os.flush();
         if(!object.typeParams.empty()){
-                typedef decltype(object.typeParams)::iterator TypeParamIt;
             os << "<";
-                
-              TypeParamIt it = object.typeParams.begin();
-             while(it != object.typeParams.end()){
-                     if(it != object.typeParams.begin() && it != (object.typeParams.end() + 1))
-                         os << ",";
-                     starbytes::ASTType & typeid_ref = **it;
-                     format(os,typeid_ref);
-                 };
-                 os << ">";
+            for(size_t i = 0;i < object.typeParams.size();++i){
+                if(i > 0){
+                    os << ",";
+                }
+                starbytes::ASTType & typeRef = *object.typeParams[i];
+                format(os,typeRef);
+            }
+            os << ">";
         };
     };
 };

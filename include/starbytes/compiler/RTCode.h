@@ -42,6 +42,10 @@ typedef unsigned char RTCode;
 #define CODE_RTMEMBER_IVK 0x14
 #define CODE_RTSECURE_DECL 0x15
 #define CODE_RTREGEX_LITERAL 0x16
+#define CODE_RTVAR_SET 0x17
+#define CODE_RTINDEX_GET 0x18
+#define CODE_RTINDEX_SET 0x19
+#define CODE_RTDICT_LITERAL 0x1A
 
 /// Condtional Type
 #define COND_TYPE_IF 0x0 // if()
@@ -65,10 +69,17 @@ typedef unsigned char RTCode;
 
 #define BINARY_OP_PLUS 0x00 // +
 #define BINARY_OP_MINUS 0x01 // -
-#define BINARY_OP_PLUS_EQUAL 0x02 // +=
-#define BINARY_MINUS_EQUAL 0x03 // -=
-#define BINARY_EQUAL_EQUAL 0x04 // ==
-#define BINARY_NOT_EQUAL 0x05 // !=
+#define BINARY_OP_MUL 0x02 // *
+#define BINARY_OP_DIV 0x03 // /
+#define BINARY_OP_MOD 0x04 // %
+#define BINARY_EQUAL_EQUAL 0x05 // ==
+#define BINARY_NOT_EQUAL 0x06 // !=
+#define BINARY_LESS 0x07 // <
+#define BINARY_LESS_EQUAL 0x08 // <=
+#define BINARY_GREATER 0x09 // >
+#define BINARY_GREATER_EQUAL 0x0A // >=
+#define BINARY_LOGIC_AND 0x0B // &&
+#define BINARY_LOGIC_OR 0x0C // ||
 
 #define RTCODE_STREAM_OBJECT(object) \
 std::ostream & operator <<(std::ostream & os,object * obj); \
@@ -132,6 +143,8 @@ RTCODE_STREAM_OBJECT(RTFuncTemplate)
 struct RTClass {
     RTID name;
     std::vector<RTAttribute> attributes;
+    bool hasSuperClass = false;
+    RTID superClassName;
     std::vector<RTVar> fields;
     std::vector<RTFuncTemplate> methods;
     std::vector<RTFuncTemplate> constructors;

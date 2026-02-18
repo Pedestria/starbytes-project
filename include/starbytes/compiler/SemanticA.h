@@ -1,5 +1,6 @@
 #include "SyntaxA.h"
 #include "SymTable.h"
+#include <set>
 
 #ifndef STARBYTES_PARSER_SEMANTICA_H
 #define STARBYTES_PARSER_SEMANTICA_H
@@ -23,6 +24,7 @@ namespace starbytes {
     struct ASTScopeSemanticsContext {
         std::shared_ptr<ASTScope> scope;
         std::map<ASTIdentifier *,ASTType *> *args = nullptr;
+        const std::set<std::string> *genericTypeParams = nullptr;
     };
     /**
      * @brief The Semantics Analyzer
@@ -32,7 +34,9 @@ namespace starbytes {
         DiagnosticHandler & errStream;
         bool typeExists(ASTType *type,
                         Semantics::STableContext & symbolTableContext,
-                        std::shared_ptr<ASTScope> scope);
+                        std::shared_ptr<ASTScope> scope,
+                        const std::set<std::string> *genericTypeParams = nullptr,
+                        ASTStmt *diagNode = nullptr);
         ASTType *evalExprForTypeId(ASTExpr *expr_to_eval,
                                    Semantics::STableContext & symbolTableContext,
                                    ASTScopeSemanticsContext & scopeContext);

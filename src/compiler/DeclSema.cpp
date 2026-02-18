@@ -21,6 +21,10 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
                     return nullptr;
                 }
                 if(spec.type != nullptr){
+                    if(!typeExists(spec.type,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams,varDecl)){
+                        *hasErrored = true;
+                        return nullptr;
+                    }
                     if(spec.expr){
                         if(varDecl->isSecureWrapped){
                             auto *exprType = evalExprForTypeId(spec.expr,symbolTableContext,scopeContext);
@@ -212,7 +216,7 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
                 return nullptr;
             }
 
-            if(secureDecl->catchErrorType && !typeExists(secureDecl->catchErrorType,symbolTableContext,scopeContext.scope)){
+            if(secureDecl->catchErrorType && !typeExists(secureDecl->catchErrorType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams,secureDecl)){
                 errStream.push(SemanticADiagnostic::create("Unknown catch error type in secure declaration.",stmt,Diagnostic::Error));
                 *hasErrored = true;
                 return nullptr;

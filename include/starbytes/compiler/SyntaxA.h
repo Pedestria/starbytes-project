@@ -1,4 +1,5 @@
 #include "Lexer.h"
+#include <set>
 
 #ifndef STARBYTES_SYNTAX_SYNTAXA_H
 #define STARBYTES_SYNTAX_SYNTAXA_H
@@ -21,6 +22,7 @@ namespace starbytes {
         struct ASTTypeContext {
             bool isPlaceholder = false;
             bool isAlias = false;
+            const std::set<std::string> *genericTypeParams = nullptr;
         };
         
         typedef const Tok & TokRef;
@@ -43,6 +45,7 @@ namespace starbytes {
             ASTExpr * evalExpr(const Tok & first_token,std::shared_ptr<ASTScope> parentScope);
             ASTDecl * evalDecl(const Tok & first_token,std::shared_ptr<ASTScope> parentScope);
             ASTStmt * previousNode = nullptr;
+            std::vector<std::set<std::string>> genericTypeParamStack;
         public:
             void setTokenStream(array_ref<Tok> toks);
             size_t getTokenStreamWidth();

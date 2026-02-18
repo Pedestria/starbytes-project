@@ -121,6 +121,9 @@ namespace starbytes {
     }
 
     static Region deriveRegionFromExpr(ASTExpr *expr);
+    static Semantics::SymbolTable::Entry *findTypeEntryNoDiag(Semantics::STableContext &symbolTableContext,
+                                                               string_ref typeName,
+                                                               std::shared_ptr<ASTScope> scope);
 
     static Region deriveRegionFromDecl(ASTDecl *decl){
         if(!decl){
@@ -154,6 +157,18 @@ namespace starbytes {
             auto *classDecl = (ASTClassDecl *)decl;
             if(classDecl->id && regionHasLocation(classDecl->id->codeRegion)){
                 return classDecl->id->codeRegion;
+            }
+        }
+        else if(decl->type == INTERFACE_DECL){
+            auto *interfaceDecl = (ASTInterfaceDecl *)decl;
+            if(interfaceDecl->id && regionHasLocation(interfaceDecl->id->codeRegion)){
+                return interfaceDecl->id->codeRegion;
+            }
+        }
+        else if(decl->type == TYPE_ALIAS_DECL){
+            auto *aliasDecl = (ASTTypeAliasDecl *)decl;
+            if(aliasDecl->id && regionHasLocation(aliasDecl->id->codeRegion)){
+                return aliasDecl->id->codeRegion;
             }
         }
         else if(decl->type == RETURN_DECL){
@@ -257,6 +272,264 @@ namespace starbytes {
         return {};
     }
 
+    static ASTType *findFieldTypeByName(ASTClassDecl *classDecl,const std::string &fieldName){
+        for(auto *fieldDecl : classDecl->fields){
+            for(auto &spec : fieldDecl->specs){
+                if(spec.id && spec.id->val == fieldName){
+                    return spec.type;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    static ASTFuncDecl *findMethodByName(ASTClassDecl *classDecl,const std::string &methodName){
+        for(auto *methodDecl : classDecl->methods){
+            if(methodDecl->funcId && methodDecl->funcId->val == methodName){
+                return methodDecl;
+            }
+        }
+        return nullptr;
+    }
+
+    static Semantics::SymbolTable::Entry *findTypeEntryNoDiag(Semantics::STableContext &symbolTableContext,
+                                                               string_ref typeName,
+                                                               std::shared_ptr<ASTScope> scope);
+
+    static ASTClassDecl *resolveClassDeclFromType(ASTType *type,
+                                                  Semantics::STableContext &symbolTableContext,
+                                                  std::shared_ptr<ASTScope> scope){
+        if(!type){
+            return nullptr;
+        }
+        auto *entry = findTypeEntryNoDiag(symbolTableContext,type->getName(),scope);
+        if(!entry || entry->type != Semantics::SymbolTable::Entry::Class){
+            return nullptr;
+        }
+        auto *classData = (Semantics::SymbolTable::Class *)entry->data;
+        if(!classData || !classData->classType){
+            return nullptr;
+        }
+        auto *parent = classData->classType->getParentNode();
+        if(!parent || parent->type != CLASS_DECL){
+            return nullptr;
+        }
+        return (ASTClassDecl *)parent;
+    }
+
+    static ASTType *findFieldTypeByNameRecursive(ASTClassDecl *classDecl,
+                                                 Semantics::STableContext &symbolTableContext,
+                                                 std::shared_ptr<ASTScope> scope,
+                                                 const std::string &fieldName,
+                                                 std::set<std::string> &visited){
+        if(!classDecl){
+            return nullptr;
+        }
+        if(auto *fieldType = findFieldTypeByName(classDecl,fieldName)){
+            return fieldType;
+        }
+        if(!classDecl->superClass){
+            return nullptr;
+        }
+        auto superName = classDecl->superClass->getName().getBuffer();
+        if(visited.find(superName) != visited.end()){
+            return nullptr;
+        }
+        visited.insert(superName);
+        auto *superDecl = resolveClassDeclFromType(classDecl->superClass,symbolTableContext,scope);
+        return findFieldTypeByNameRecursive(superDecl,symbolTableContext,scope,fieldName,visited);
+    }
+
+    static ASTFuncDecl *findMethodByNameRecursive(ASTClassDecl *classDecl,
+                                                  Semantics::STableContext &symbolTableContext,
+                                                  std::shared_ptr<ASTScope> scope,
+                                                  const std::string &methodName,
+                                                  std::set<std::string> &visited){
+        if(!classDecl){
+            return nullptr;
+        }
+        if(auto *method = findMethodByName(classDecl,methodName)){
+            return method;
+        }
+        if(!classDecl->superClass){
+            return nullptr;
+        }
+        auto superName = classDecl->superClass->getName().getBuffer();
+        if(visited.find(superName) != visited.end()){
+            return nullptr;
+        }
+        visited.insert(superName);
+        auto *superDecl = resolveClassDeclFromType(classDecl->superClass,symbolTableContext,scope);
+        return findMethodByNameRecursive(superDecl,symbolTableContext,scope,methodName,visited);
+    }
+
+    static bool methodParamsMatch(const std::map<ASTIdentifier *,ASTType *> &classParams,
+                                  const string_map<ASTType *> &interfaceParams){
+        if(classParams.size() != interfaceParams.size()){
+            return false;
+        }
+        for(auto &classParam : classParams){
+            if(!classParam.first || !classParam.second){
+                return false;
+            }
+            auto it = interfaceParams.find(classParam.first->val);
+            if(it == interfaceParams.end()){
+                return false;
+            }
+            if(!it->second){
+                return false;
+            }
+            if(!classParam.second->match(it->second,[&](std::string){
+                return;
+            })){
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static std::set<std::string> genericParamSet(const std::vector<ASTIdentifier *> &params){
+        std::set<std::string> names;
+        for(auto *param : params){
+            if(param){
+                names.insert(param->val);
+            }
+        }
+        return names;
+    }
+
+    static bool isGenericParamName(const std::set<std::string> *genericTypeParams,string_ref name){
+        return genericTypeParams && genericTypeParams->find(name.getBuffer()) != genericTypeParams->end();
+    }
+
+    static ASTType *cloneTypeNode(ASTType *type,ASTStmt *parent){
+        if(!type){
+            return nullptr;
+        }
+        auto *cloned = ASTType::Create(type->getName(),parent,false,type->isAlias);
+        cloned->isOptional = type->isOptional;
+        cloned->isThrowable = type->isThrowable;
+        cloned->isGenericParam = type->isGenericParam;
+        for(auto *param : type->typeParams){
+            auto *clonedParam = cloneTypeNode(param,parent);
+            if(clonedParam){
+                cloned->addTypeParam(clonedParam);
+            }
+        }
+        return cloned;
+    }
+
+    static ASTType *substituteTypeParams(ASTType *type,
+                                         const std::map<std::string,ASTType *> &bindings,
+                                         ASTStmt *parent){
+        if(!type){
+            return nullptr;
+        }
+        auto bound = bindings.find(type->getName().getBuffer());
+        if(type->isGenericParam && bound != bindings.end()){
+            auto *replacement = cloneTypeNode(bound->second,parent);
+            if(!replacement){
+                return nullptr;
+            }
+            replacement->isOptional = replacement->isOptional || type->isOptional;
+            replacement->isThrowable = replacement->isThrowable || type->isThrowable;
+            return replacement;
+        }
+        auto *result = ASTType::Create(type->getName(),parent,false,type->isAlias);
+        result->isOptional = type->isOptional;
+        result->isThrowable = type->isThrowable;
+        result->isGenericParam = type->isGenericParam;
+        for(auto *param : type->typeParams){
+            auto *subParam = substituteTypeParams(param,bindings,parent);
+            if(subParam){
+                result->addTypeParam(subParam);
+            }
+        }
+        return result;
+    }
+
+    static Semantics::SymbolTable::Entry *findTypeEntryNoDiag(Semantics::STableContext &symbolTableContext,
+                                                               string_ref typeName,
+                                                               std::shared_ptr<ASTScope> scope){
+        auto *entry = symbolTableContext.findEntryNoDiag(typeName,scope);
+        if(entry && (entry->type == Semantics::SymbolTable::Entry::Class
+                     || entry->type == Semantics::SymbolTable::Entry::Interface
+                     || entry->type == Semantics::SymbolTable::Entry::TypeAlias)){
+            return entry;
+        }
+        entry = symbolTableContext.findEntryByEmittedNoDiag(typeName);
+        if(entry && (entry->type == Semantics::SymbolTable::Entry::Class
+                     || entry->type == Semantics::SymbolTable::Entry::Interface
+                     || entry->type == Semantics::SymbolTable::Entry::TypeAlias)){
+            return entry;
+        }
+        return nullptr;
+    }
+
+    static ASTType *resolveAliasType(ASTType *type,
+                                     Semantics::STableContext &symbolTableContext,
+                                     std::shared_ptr<ASTScope> scope,
+                                     const std::set<std::string> *genericTypeParams,
+                                     std::set<std::string> &visiting){
+        if(!type){
+            return nullptr;
+        }
+
+        auto *resolved = ASTType::Create(type->getName(),type->getParentNode(),false,type->isAlias);
+        resolved->isOptional = type->isOptional;
+        resolved->isThrowable = type->isThrowable;
+        resolved->isGenericParam = type->isGenericParam;
+        for(auto *param : type->typeParams){
+            auto *resolvedParam = resolveAliasType(param,symbolTableContext,scope,genericTypeParams,visiting);
+            if(resolvedParam){
+                resolved->addTypeParam(resolvedParam);
+            }
+        }
+
+        if(isGenericParamName(genericTypeParams,resolved->getName()) || resolved->isGenericParam){
+            resolved->isGenericParam = true;
+            return resolved;
+        }
+
+        auto *entry = findTypeEntryNoDiag(symbolTableContext,resolved->getName(),scope);
+        if(!entry || entry->type != Semantics::SymbolTable::Entry::TypeAlias){
+            return resolved;
+        }
+        auto key = entry->emittedName.empty()? entry->name : entry->emittedName;
+        if(visiting.find(key) != visiting.end()){
+            return resolved;
+        }
+        auto *aliasData = (Semantics::SymbolTable::TypeAlias *)entry->data;
+        if(!aliasData || !aliasData->aliasType){
+            return resolved;
+        }
+        if(aliasData->genericParams.size() != resolved->typeParams.size()){
+            return resolved;
+        }
+
+        std::map<std::string,ASTType *> bindings;
+        for(size_t i = 0;i < aliasData->genericParams.size();++i){
+            bindings.insert(std::make_pair(aliasData->genericParams[i],resolved->typeParams[i]));
+        }
+        visiting.insert(key);
+        auto *substituted = substituteTypeParams(aliasData->aliasType,bindings,type->getParentNode());
+        if(substituted){
+            substituted->isOptional = substituted->isOptional || resolved->isOptional;
+            substituted->isThrowable = substituted->isThrowable || resolved->isThrowable;
+        }
+        auto *finalType = resolveAliasType(substituted,symbolTableContext,scope,genericTypeParams,visiting);
+        visiting.erase(key);
+        return finalType? finalType : resolved;
+    }
+
+    static ASTType *resolveAliasType(ASTType *type,
+                                     Semantics::STableContext &symbolTableContext,
+                                     std::shared_ptr<ASTScope> scope,
+                                     const std::set<std::string> *genericTypeParams){
+        std::set<std::string> visiting;
+        return resolveAliasType(type,symbolTableContext,scope,genericTypeParams,visiting);
+    }
+
     DiagnosticPtr SemanticADiagnostic::create(string_ref message, ASTStmt *stmt, Type ty){
         auto region = deriveRegionFromStmt(stmt);
         if(ty == Diagnostic::Warning){
@@ -345,6 +618,17 @@ namespace starbytes {
                  auto data = new Semantics::SymbolTable::Class();
                  e->data = data;
                  data->classType = ASTType::Create(emittedName.c_str(),classDecl,false,false);
+                 for(auto *genericParam : classDecl->genericTypeParams){
+                     if(!genericParam){
+                         continue;
+                     }
+                     data->genericParams.push_back(genericParam->val);
+                     auto *paramType = ASTType::Create(genericParam->val,classDecl,true,false);
+                     paramType->isGenericParam = true;
+                     data->classType->addTypeParam(paramType);
+                 }
+                 data->superClassType = classDecl->superClass;
+                 data->interfaces = classDecl->interfaces;
                  classDecl->classType = data->classType;
                  classDecl->id->val = emittedName;
                  for(auto & f : classDecl->fields){
@@ -386,6 +670,72 @@ namespace starbytes {
                  tablePtr->addSymbolInScope(e,decl->scope);
                  break;
              }
+            case INTERFACE_DECL : {
+                auto *interfaceDecl = (ASTInterfaceDecl *)decl;
+                std::string sourceName = interfaceDecl->id->val;
+                std::string emittedName = buildEmittedName(decl->scope,sourceName);
+                auto *e = new Semantics::SymbolTable::Entry();
+                e->name = sourceName;
+                e->emittedName = emittedName;
+                e->type = Semantics::SymbolTable::Entry::Interface;
+                auto *data = new Semantics::SymbolTable::Interface();
+                e->data = data;
+                data->interfaceType = ASTType::Create(emittedName.c_str(),interfaceDecl,false,false);
+                for(auto *genericParam : interfaceDecl->genericTypeParams){
+                    if(!genericParam){
+                        continue;
+                    }
+                    data->genericParams.push_back(genericParam->val);
+                    auto *paramType = ASTType::Create(genericParam->val,interfaceDecl,true,false);
+                    paramType->isGenericParam = true;
+                    data->interfaceType->addTypeParam(paramType);
+                }
+                interfaceDecl->interfaceType = data->interfaceType;
+                interfaceDecl->id->val = emittedName;
+
+                for(auto *fieldDecl : interfaceDecl->fields){
+                    for(auto &spec : fieldDecl->specs){
+                        auto *field = new Semantics::SymbolTable::Var();
+                        field->name = spec.id->val;
+                        field->type = spec.type;
+                        field->isReadonly = fieldDecl->isConst;
+                        data->fields.push_back(field);
+                    }
+                }
+
+                for(auto *methodDecl : interfaceDecl->methods){
+                    auto *method = new Semantics::SymbolTable::Function();
+                    method->name = methodDecl->funcId->val;
+                    method->returnType = methodDecl->returnType;
+                    method->funcType = methodDecl->funcType;
+                    for(auto &paramPair : methodDecl->params){
+                        method->paramMap.insert(std::make_pair(paramPair.first->val,paramPair.second));
+                    }
+                    data->methods.push_back(method);
+                }
+                tablePtr->addSymbolInScope(e,decl->scope);
+                break;
+            }
+            case TYPE_ALIAS_DECL : {
+                auto *aliasDecl = (ASTTypeAliasDecl *)decl;
+                auto sourceName = aliasDecl->id->val;
+                auto emittedName = buildEmittedName(decl->scope,sourceName);
+                auto *entry = new Semantics::SymbolTable::Entry();
+                auto *data = new Semantics::SymbolTable::TypeAlias();
+                entry->name = sourceName;
+                entry->emittedName = emittedName;
+                entry->type = Semantics::SymbolTable::Entry::TypeAlias;
+                entry->data = data;
+                data->aliasType = aliasDecl->aliasedType;
+                for(auto *genericParam : aliasDecl->genericTypeParams){
+                    if(genericParam){
+                        data->genericParams.push_back(genericParam->val);
+                    }
+                }
+                aliasDecl->id->val = emittedName;
+                tablePtr->addSymbolInScope(entry,decl->scope);
+                break;
+            }
             case SCOPE_DECL : {
                 auto *scopeDecl = (ASTScopeDecl *)decl;
                 auto *entry = new Semantics::SymbolTable::Entry();
@@ -410,11 +760,29 @@ namespace starbytes {
     }
 
 
-    bool SemanticA::typeExists(ASTType *type,Semantics::STableContext &contextTableContext,std::shared_ptr<ASTScope> scope){
-        /// First check to see if ASTType is one of the built in types
+    bool SemanticA::typeExists(ASTType *type,
+                               Semantics::STableContext &contextTableContext,
+                               std::shared_ptr<ASTScope> scope,
+                               const std::set<std::string> *genericTypeParams,
+                               ASTStmt *diagNode){
         if(!type){
             return false;
         }
+
+        for(auto *param : type->typeParams){
+            if(!typeExists(param,contextTableContext,scope,genericTypeParams,diagNode ? diagNode : (ASTStmt *)type->getParentNode())){
+                return false;
+            }
+        }
+
+        if(isGenericParamName(genericTypeParams,type->getName()) || type->isGenericParam){
+            if(!type->typeParams.empty()){
+                errStream.push(SemanticADiagnostic::create("Generic type parameters cannot have nested type arguments.",diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
+                return false;
+            }
+            return true;
+        }
+
         if(type->nameMatches(VOID_TYPE) ||
            type->nameMatches(STRING_TYPE) ||
            type->nameMatches(ARRAY_TYPE) ||
@@ -422,14 +790,47 @@ namespace starbytes {
            type->nameMatches(BOOL_TYPE) ||
            type->nameMatches(INT_TYPE) ||
            type->nameMatches(FLOAT_TYPE) ||
+           type->nameMatches(ANY_TYPE) ||
            type->nameMatches(REGEX_TYPE)){
             return true;
         }
-        auto *entry = contextTableContext.findEntryNoDiag(type->getName(),scope);
-        if(entry && entry->type == Semantics::SymbolTable::Entry::Class){
-            return true;
+
+        auto *entry = findTypeEntryNoDiag(contextTableContext,type->getName(),scope);
+        if(!entry){
+            std::ostringstream ss;
+            ss << "Unknown type `" << type->getName() << "`.";
+            errStream.push(SemanticADiagnostic::create(ss.str(),diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
+            return false;
         }
-        return false;
+
+        size_t expectedArity = 0;
+        if(entry->type == Semantics::SymbolTable::Entry::Class){
+            auto *classData = (Semantics::SymbolTable::Class *)entry->data;
+            if(classData){
+                expectedArity = classData->genericParams.size();
+            }
+        }
+        else if(entry->type == Semantics::SymbolTable::Entry::Interface){
+            auto *interfaceData = (Semantics::SymbolTable::Interface *)entry->data;
+            if(interfaceData){
+                expectedArity = interfaceData->genericParams.size();
+            }
+        }
+        else if(entry->type == Semantics::SymbolTable::Entry::TypeAlias){
+            auto *aliasData = (Semantics::SymbolTable::TypeAlias *)entry->data;
+            if(aliasData){
+                expectedArity = aliasData->genericParams.size();
+            }
+        }
+
+        if(type->typeParams.size() != expectedArity){
+            std::ostringstream ss;
+            ss << "Type `" << type->getName() << "` expects " << expectedArity
+               << " type argument(s), but got " << type->typeParams.size() << ".";
+            errStream.push(SemanticADiagnostic::create(ss.str(),diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
+            return false;
+        }
+        return true;
     }
 
 
@@ -440,13 +841,13 @@ namespace starbytes {
         if(!other_type_id){
             return false;
         };
+
+        auto *resolvedType = resolveAliasType(type,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+        auto *resolvedOtherType = resolveAliasType(other_type_id,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
         
-        /// For Now only Matches Type by Name
-        /// TODO: Eventually Match by Type Args, Scope, etc..
-        ///
-        return type->match(other_type_id,[&](std::string message){
+        return resolvedType->match(resolvedOtherType,[&](std::string message){
             std::ostringstream ss;
-            ss << message << "\nContext: Type `" << other_type_id->getName() << "`was implied from var initializer";
+            ss << message << "\nContext: Type `" << resolvedOtherType->getName() << "` was implied from var initializer";
             auto res = ss.str();
             errStream.push(SemanticADiagnostic::create(res,expr_to_eval,Diagnostic::Error));
         });
@@ -482,10 +883,17 @@ namespace starbytes {
     //                    std::cout << "Func is Unique" << std::endl;
 
                         for(auto & paramPair : funcNode->params){
-                            if(!typeExists(paramPair.second,symbolTableContext,scope)){
+                            if(!typeExists(paramPair.second,symbolTableContext,scope,nullptr,funcNode)){
                                 return false;
                                 break;
                             };
+                            paramPair.second = resolveAliasType(paramPair.second,symbolTableContext,scope,nullptr);
+                        };
+                        if(funcNode->returnType != nullptr){
+                            if(!typeExists(funcNode->returnType,symbolTableContext,scope,nullptr,funcNode)){
+                                return false;
+                            }
+                            funcNode->returnType = resolveAliasType(funcNode->returnType,symbolTableContext,scope,nullptr);
                         };
 
                         bool hasFailed;
@@ -498,7 +906,8 @@ namespace starbytes {
                         };
                         /// Implied Type and Declared Type Comparison.
                         if(funcNode->returnType != nullptr){
-                            if(!funcNode->returnType->match(return_type_implied,[&](std::string message){
+                            auto *resolvedImplied = resolveAliasType(return_type_implied,symbolTableContext,scope,nullptr);
+                            if(!funcNode->returnType->match(resolvedImplied,[&](std::string message){
                                 std::ostringstream ss;
                                 ss << message << "\nContext: Declared return type of func `" << func_id->val << "` does not match implied return type.";
                                 auto out = ss.str();
@@ -525,43 +934,132 @@ namespace starbytes {
                         if(symEntry){
                             return false;
                         }
-                        
+
+                        auto classGenericParams = genericParamSet(classDecl->genericTypeParams);
+                        ASTType *resolvedSuperClass = nullptr;
+                        std::vector<ASTType *> resolvedInterfaces;
+                        for(auto *baseType : classDecl->interfaces){
+                            if(!baseType){
+                                errStream.push(SemanticADiagnostic::create("Invalid type in class inheritance list.",classDecl,Diagnostic::Error));
+                                return false;
+                            }
+                            if(!typeExists(baseType,symbolTableContext,scope,&classGenericParams,classDecl)){
+                                return false;
+                            }
+                            auto *resolvedBaseType = resolveAliasType(baseType,symbolTableContext,scope,&classGenericParams);
+                            auto *baseEntry = findTypeEntryNoDiag(symbolTableContext,resolvedBaseType->getName(),scope);
+                            if(!baseEntry){
+                                errStream.push(SemanticADiagnostic::create("Unknown type in class inheritance list.",classDecl,Diagnostic::Error));
+                                return false;
+                            }
+                            if(baseEntry->type == Semantics::SymbolTable::Entry::Class){
+                                if(resolvedSuperClass){
+                                    errStream.push(SemanticADiagnostic::create("Class can only extend one superclass.",classDecl,Diagnostic::Error));
+                                    return false;
+                                }
+                                auto *baseClassData = (Semantics::SymbolTable::Class *)baseEntry->data;
+                                if(!baseClassData || !baseClassData->classType){
+                                    errStream.push(SemanticADiagnostic::create("Superclass symbol is missing metadata.",classDecl,Diagnostic::Error));
+                                    return false;
+                                }
+                                resolvedSuperClass = cloneTypeNode(baseClassData->classType,classDecl);
+                                if(!resolvedBaseType->typeParams.empty()){
+                                    resolvedSuperClass->typeParams.clear();
+                                    for(auto *baseParam : resolvedBaseType->typeParams){
+                                        resolvedSuperClass->addTypeParam(cloneTypeNode(baseParam,classDecl));
+                                    }
+                                }
+                                continue;
+                            }
+                            if(baseEntry->type == Semantics::SymbolTable::Entry::Interface){
+                                auto *baseInterfaceData = (Semantics::SymbolTable::Interface *)baseEntry->data;
+                                if(!baseInterfaceData || !baseInterfaceData->interfaceType){
+                                    errStream.push(SemanticADiagnostic::create("Interface symbol is missing metadata.",classDecl,Diagnostic::Error));
+                                    return false;
+                                }
+                                auto *resolvedInterfaceType = cloneTypeNode(baseInterfaceData->interfaceType,classDecl);
+                                if(!resolvedBaseType->typeParams.empty()){
+                                    resolvedInterfaceType->typeParams.clear();
+                                    for(auto *baseParam : resolvedBaseType->typeParams){
+                                        resolvedInterfaceType->addTypeParam(cloneTypeNode(baseParam,classDecl));
+                                    }
+                                }
+                                resolvedInterfaces.push_back(resolvedInterfaceType);
+                                continue;
+                            }
+                            errStream.push(SemanticADiagnostic::create("Only class or interface types are allowed in class inheritance list.",classDecl,Diagnostic::Error));
+                            return false;
+                        }
+                        classDecl->superClass = resolvedSuperClass;
+                        classDecl->interfaces = resolvedInterfaces;
+
+                        if(classDecl->superClass){
+                            std::set<std::string> seenTypes;
+                            seenTypes.insert(classDecl->id->val);
+                            auto *cursorType = classDecl->superClass;
+                            while(cursorType){
+                                auto cursorName = cursorType->getName().getBuffer();
+                                if(seenTypes.find(cursorName) != seenTypes.end()){
+                                    errStream.push(SemanticADiagnostic::create("Circular class inheritance detected.",classDecl,Diagnostic::Error));
+                                    return false;
+                                }
+                                seenTypes.insert(cursorName);
+                                auto *cursorEntry = findTypeEntryNoDiag(symbolTableContext,cursorType->getName(),scope);
+                                if(!cursorEntry || cursorEntry->type != Semantics::SymbolTable::Entry::Class){
+                                    break;
+                                }
+                                auto *cursorData = (Semantics::SymbolTable::Class *)cursorEntry->data;
+                                if(!cursorData){
+                                    break;
+                                }
+                                cursorType = cursorData->superClassType;
+                            }
+                        }
+
                         bool hasErrored;
-                        ASTScopeSemanticsContext scopeContext {classDecl->scope,nullptr};
-                        for(auto & f : classDecl->fields){
-                            auto rc = evalGenericDecl(f,symbolTableContext, scopeContext, &hasErrored);
+                        ASTScopeSemanticsContext classScopeContext {classDecl->scope,nullptr,&classGenericParams};
+                        for(auto &f : classDecl->fields){
+                            auto rcField = evalGenericDecl(f,symbolTableContext,classScopeContext,&hasErrored);
                             if(!validateAttributesForDecl(f,errStream)){
                                 return false;
                             }
-                            if(hasErrored && !rc){
+                            if(hasErrored && !rcField){
                                 return false;
                             }
                         }
-                        
+
                         std::set<std::string> methodNames;
-                        for(auto & m : classDecl->methods){
+                        for(auto &m : classDecl->methods){
                             if(methodNames.find(m->funcId->val) != methodNames.end()){
                                 errStream.push(SemanticADiagnostic::create("Duplicate class method name.",m,Diagnostic::Error));
                                 return false;
                             }
                             methodNames.insert(m->funcId->val);
                             for(auto &paramPair : m->params){
-                                if(!typeExists(paramPair.second,symbolTableContext,scope)){
+                                if(!typeExists(paramPair.second,symbolTableContext,scope,&classGenericParams,m)){
                                     return false;
                                 }
+                                paramPair.second = resolveAliasType(paramPair.second,symbolTableContext,scope,&classGenericParams);
+                            }
+                            if(m->returnType){
+                                if(!typeExists(m->returnType,symbolTableContext,scope,&classGenericParams,m)){
+                                    return false;
+                                }
+                                m->returnType = resolveAliasType(m->returnType,symbolTableContext,scope,&classGenericParams);
                             }
                             std::map<ASTIdentifier *,ASTType *> methodParams = m->params;
                             auto *selfId = new ASTIdentifier();
                             selfId->val = "self";
                             methodParams.insert(std::make_pair(selfId,classDecl->classType));
                             bool methodHasFailed = false;
-                            ASTScopeSemanticsContext methodScopeContext {m->blockStmt->parentScope,&methodParams};
+                            ASTScopeSemanticsContext methodScopeContext {m->blockStmt->parentScope,&methodParams,&classGenericParams};
                             ASTType *returnTypeImplied = evalBlockStmtForASTType(m->blockStmt,symbolTableContext,&methodHasFailed,methodScopeContext,true);
                             if(methodHasFailed || !returnTypeImplied){
                                 return false;
                             }
                             if(m->returnType != nullptr){
-                                if(!m->returnType->match(returnTypeImplied,[&](std::string message){
+                                auto *resolvedImplied = resolveAliasType(returnTypeImplied,symbolTableContext,scope,&classGenericParams);
+                                if(!m->returnType->match(resolvedImplied,[&](std::string message){
                                     std::ostringstream ss;
                                     ss << message << "\nContext: Declared return type of class method `" << m->funcId->val << "` does not match implied return type.";
                                     errStream.push(SemanticADiagnostic::create(ss.str(),m,Diagnostic::Error));
@@ -575,7 +1073,7 @@ namespace starbytes {
                         }
 
                         std::set<size_t> ctorArities;
-                        for(auto & c : classDecl->constructors){
+                        for(auto &c : classDecl->constructors){
                             size_t arity = c->params.size();
                             if(ctorArities.find(arity) != ctorArities.end()){
                                 errStream.push(SemanticADiagnostic::create("Duplicate constructor arity.",c,Diagnostic::Error));
@@ -583,16 +1081,17 @@ namespace starbytes {
                             }
                             ctorArities.insert(arity);
                             for(auto &paramPair : c->params){
-                                if(!typeExists(paramPair.second,symbolTableContext,scope)){
+                                if(!typeExists(paramPair.second,symbolTableContext,scope,&classGenericParams,c)){
                                     return false;
                                 }
+                                paramPair.second = resolveAliasType(paramPair.second,symbolTableContext,scope,&classGenericParams);
                             }
                             std::map<ASTIdentifier *,ASTType *> ctorParams = c->params;
                             auto *selfId = new ASTIdentifier();
                             selfId->val = "self";
                             ctorParams.insert(std::make_pair(selfId,classDecl->classType));
                             bool ctorHasFailed = false;
-                            ASTScopeSemanticsContext ctorScopeContext {c->blockStmt->parentScope,&ctorParams};
+                            ASTScopeSemanticsContext ctorScopeContext {c->blockStmt->parentScope,&ctorParams,&classGenericParams};
                             ASTType *ctorReturnType = evalBlockStmtForASTType(c->blockStmt,symbolTableContext,&ctorHasFailed,ctorScopeContext,true);
                             if(ctorHasFailed || !ctorReturnType){
                                 return false;
@@ -602,10 +1101,203 @@ namespace starbytes {
                                 return false;
                             }
                         }
+
+                        for(auto *implementedInterfaceType : classDecl->interfaces){
+                            if(!implementedInterfaceType){
+                                errStream.push(SemanticADiagnostic::create("Invalid interface in class implements list.",classDecl,Diagnostic::Error));
+                                return false;
+                            }
+                            auto *interfaceEntry = findTypeEntryNoDiag(symbolTableContext,implementedInterfaceType->getName(),scope);
+                            if(!interfaceEntry){
+                                std::ostringstream ss;
+                                ss << "Unknown interface `" << implementedInterfaceType->getName() << "` in class implements list.";
+                                errStream.push(SemanticADiagnostic::create(ss.str(),classDecl,Diagnostic::Error));
+                                return false;
+                            }
+                            if(interfaceEntry->type != Semantics::SymbolTable::Entry::Interface){
+                                std::ostringstream ss;
+                                ss << "`" << implementedInterfaceType->getName() << "` is not an interface.";
+                                errStream.push(SemanticADiagnostic::create(ss.str(),classDecl,Diagnostic::Error));
+                                return false;
+                            }
+                            auto *interfaceData = (Semantics::SymbolTable::Interface *)interfaceEntry->data;
+                            if(!interfaceData){
+                                errStream.push(SemanticADiagnostic::create("Interface symbol is missing metadata.",classDecl,Diagnostic::Error));
+                                return false;
+                            }
+
+                            std::map<std::string,ASTType *> interfaceBindings;
+                            for(size_t i = 0;i < interfaceData->genericParams.size() && i < implementedInterfaceType->typeParams.size();++i){
+                                interfaceBindings.insert(std::make_pair(interfaceData->genericParams[i],implementedInterfaceType->typeParams[i]));
+                            }
+
+                            for(auto *requiredField : interfaceData->fields){
+                                if(!requiredField || !requiredField->type){
+                                    continue;
+                                }
+                                std::set<std::string> visited;
+                                auto *classFieldType = findFieldTypeByNameRecursive(classDecl,symbolTableContext,scope,requiredField->name,visited);
+                                if(!classFieldType){
+                                    std::ostringstream ss;
+                                    ss << "Class `" << classDecl->id->val << "` does not implement interface field `" << requiredField->name << "`.";
+                                    errStream.push(SemanticADiagnostic::create(ss.str(),classDecl,Diagnostic::Error));
+                                    return false;
+                                }
+                                auto *requiredFieldType = substituteTypeParams(requiredField->type,interfaceBindings,classDecl);
+                                requiredFieldType = resolveAliasType(requiredFieldType,symbolTableContext,scope,&classGenericParams);
+                                auto *resolvedClassFieldType = resolveAliasType(classFieldType,symbolTableContext,scope,&classGenericParams);
+                                if(!requiredFieldType->match(resolvedClassFieldType,[&](std::string message){
+                                    std::ostringstream ss;
+                                    ss << message << "\nContext: Interface field `" << requiredField->name << "` does not match class field type.";
+                                    errStream.push(SemanticADiagnostic::create(ss.str(),classDecl,Diagnostic::Error));
+                                })){
+                                    return false;
+                                }
+                            }
+
+                            for(auto *requiredMethod : interfaceData->methods){
+                                if(!requiredMethod){
+                                    continue;
+                                }
+                                std::set<std::string> visited;
+                                auto *classMethod = findMethodByNameRecursive(classDecl,symbolTableContext,scope,requiredMethod->name,visited);
+                                if(!classMethod){
+                                    std::ostringstream ss;
+                                    ss << "Class `" << classDecl->id->val << "` does not implement interface method `" << requiredMethod->name << "`.";
+                                    errStream.push(SemanticADiagnostic::create(ss.str(),classDecl,Diagnostic::Error));
+                                    return false;
+                                }
+                                if(!classMethod->returnType || !requiredMethod->returnType){
+                                    errStream.push(SemanticADiagnostic::create("Interface method return type could not be resolved.",classMethod,Diagnostic::Error));
+                                    return false;
+                                }
+                                auto *requiredReturnType = substituteTypeParams(requiredMethod->returnType,interfaceBindings,classDecl);
+                                requiredReturnType = resolveAliasType(requiredReturnType,symbolTableContext,scope,&classGenericParams);
+                                auto *classReturnType = resolveAliasType(classMethod->returnType,symbolTableContext,scope,&classGenericParams);
+                                if(!requiredReturnType->match(classReturnType,[&](std::string message){
+                                    std::ostringstream ss;
+                                    ss << message << "\nContext: Interface method `" << requiredMethod->name << "` return type mismatch.";
+                                    errStream.push(SemanticADiagnostic::create(ss.str(),classMethod,Diagnostic::Error));
+                                })){
+                                    return false;
+                                }
+                                string_map<ASTType *> requiredParamMap = requiredMethod->paramMap;
+                                for(auto &requiredParam : requiredParamMap){
+                                    auto *substituted = substituteTypeParams(requiredParam.second,interfaceBindings,classDecl);
+                                    requiredParam.second = resolveAliasType(substituted,symbolTableContext,scope,&classGenericParams);
+                                }
+                                if(!methodParamsMatch(classMethod->params,requiredParamMap)){
+                                    std::ostringstream ss;
+                                    ss << "Method `" << requiredMethod->name << "` does not match interface parameter signature.";
+                                    errStream.push(SemanticADiagnostic::create(ss.str(),classMethod,Diagnostic::Error));
+                                    return false;
+                                }
+                            }
+                        }
                         
                         
                         return true;
                         break;
+                    }
+                    case INTERFACE_DECL : {
+                        if(scope->type != ASTScope::Namespace && scope->type != ASTScope::Neutral){
+                            errStream.push(SemanticADiagnostic::create("Interface declaration is not allowed in class/function scope.",decl,Diagnostic::Error));
+                            return false;
+                        }
+                        auto *interfaceDecl = (ASTInterfaceDecl *)decl;
+                        if(symbolTableContext.main->symbolExists(interfaceDecl->id->val,scope)){
+                            errStream.push(SemanticADiagnostic::create("Duplicate interface name in current scope.",decl,Diagnostic::Error));
+                            return false;
+                        }
+
+                        auto interfaceGenericParams = genericParamSet(interfaceDecl->genericTypeParams);
+                        bool hasInterfaceError = false;
+                        ASTScopeSemanticsContext interfaceScopeContext {interfaceDecl->scope,nullptr,&interfaceGenericParams};
+                        for(auto *fieldDecl : interfaceDecl->fields){
+                            auto rc = evalGenericDecl(fieldDecl,symbolTableContext,interfaceScopeContext,&hasInterfaceError);
+                            if(!validateAttributesForDecl(fieldDecl,errStream)){
+                                return false;
+                            }
+                            if(hasInterfaceError && !rc){
+                                return false;
+                            }
+                        }
+
+                        std::set<std::string> methodNames;
+                        for(auto *methodDecl : interfaceDecl->methods){
+                            if(!methodDecl->funcId){
+                                errStream.push(SemanticADiagnostic::create("Interface method is missing an identifier.",methodDecl,Diagnostic::Error));
+                                return false;
+                            }
+                            if(methodNames.find(methodDecl->funcId->val) != methodNames.end()){
+                                errStream.push(SemanticADiagnostic::create("Duplicate interface method name.",methodDecl,Diagnostic::Error));
+                                return false;
+                            }
+                            methodNames.insert(methodDecl->funcId->val);
+
+                            for(auto &paramPair : methodDecl->params){
+                                if(!typeExists(paramPair.second,symbolTableContext,scope,&interfaceGenericParams,methodDecl)){
+                                    return false;
+                                }
+                                paramPair.second = resolveAliasType(paramPair.second,symbolTableContext,scope,&interfaceGenericParams);
+                            }
+                            if(methodDecl->returnType){
+                                if(!typeExists(methodDecl->returnType,symbolTableContext,scope,&interfaceGenericParams,methodDecl)){
+                                    return false;
+                                }
+                                methodDecl->returnType = resolveAliasType(methodDecl->returnType,symbolTableContext,scope,&interfaceGenericParams);
+                            }
+
+                            std::map<ASTIdentifier *,ASTType *> methodParams = methodDecl->params;
+                            auto *selfId = new ASTIdentifier();
+                            selfId->val = "self";
+                            auto *selfType = interfaceDecl->interfaceType ? interfaceDecl->interfaceType
+                                                                          : ASTType::Create(interfaceDecl->id->val,interfaceDecl,false,false);
+                            methodParams.insert(std::make_pair(selfId,selfType));
+
+                            bool methodHasFailed = false;
+                            ASTScopeSemanticsContext methodScopeContext {methodDecl->blockStmt->parentScope,&methodParams,&interfaceGenericParams};
+                            ASTType *returnTypeImplied = evalBlockStmtForASTType(methodDecl->blockStmt,symbolTableContext,&methodHasFailed,methodScopeContext,true);
+                            if(methodHasFailed || !returnTypeImplied){
+                                return false;
+                            }
+                            if(methodDecl->returnType != nullptr){
+                                auto *resolvedImplied = resolveAliasType(returnTypeImplied,symbolTableContext,scope,&interfaceGenericParams);
+                                if(!methodDecl->returnType->match(resolvedImplied,[&](std::string message){
+                                    std::ostringstream ss;
+                                    ss << message << "\nContext: Declared return type of interface method `" << methodDecl->funcId->val << "` does not match implied return type.";
+                                    errStream.push(SemanticADiagnostic::create(ss.str(),methodDecl,Diagnostic::Error));
+                                })){
+                                    return false;
+                                }
+                            }
+                            else {
+                                methodDecl->returnType = returnTypeImplied;
+                            }
+                        }
+                        return true;
+                        break;
+                    }
+                    case TYPE_ALIAS_DECL : {
+                        auto *aliasDecl = (ASTTypeAliasDecl *)decl;
+                        if(scope->type != ASTScope::Namespace && scope->type != ASTScope::Neutral){
+                            errStream.push(SemanticADiagnostic::create("Type alias declaration is not allowed in class/function scope.",decl,Diagnostic::Error));
+                            return false;
+                        }
+                        if(symbolTableContext.main->symbolExists(aliasDecl->id->val,scope)){
+                            errStream.push(SemanticADiagnostic::create("Duplicate type alias name in current scope.",decl,Diagnostic::Error));
+                            return false;
+                        }
+                        auto aliasGenericParams = genericParamSet(aliasDecl->genericTypeParams);
+                        if(!aliasDecl->aliasedType){
+                            errStream.push(SemanticADiagnostic::create("Type alias is missing target type.",decl,Diagnostic::Error));
+                            return false;
+                        }
+                        if(!typeExists(aliasDecl->aliasedType,symbolTableContext,scope,&aliasGenericParams,aliasDecl)){
+                            return false;
+                        }
+                        aliasDecl->aliasedType = resolveAliasType(aliasDecl->aliasedType,symbolTableContext,scope,&aliasGenericParams);
+                        return true;
                     }
                     case SCOPE_DECL : {
                         if(scope->type == ASTScope::Class || scope->type == ASTScope::Function){
@@ -658,7 +1350,16 @@ namespace starbytes {
                     
                     if(return_type != VOID_TYPE){
                         std::ostringstream ss;
-                        ss << "Func `" << expr->id->val << "` returns a value but is not being stored by a variable.";
+                        std::string calleeName = "<invoke>";
+                        if(expr->callee){
+                            if(expr->callee->id){
+                                calleeName = expr->callee->id->val;
+                            }
+                            else if(expr->callee->type == MEMBER_EXPR && expr->callee->rightExpr && expr->callee->rightExpr->id){
+                                calleeName = expr->callee->rightExpr->id->val;
+                            }
+                        }
+                        ss << "Func `" << calleeName << "` returns a value but is not being stored by a variable.";
                         auto res = ss.str();
                         errStream.push(SemanticADiagnostic::create(res,expr,Diagnostic::Warning));
                         /// Warn of non void object not being stored after creation from function invocation.

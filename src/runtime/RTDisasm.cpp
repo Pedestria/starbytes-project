@@ -111,10 +111,10 @@ class Disassembler {
             }
         }
         else if(code == CODE_RTIVKFUNC){
-            RTID func_id;
-            in >> &func_id;
-            out << "CODE_RTIVKFUNC " << func_id.len << " ";
-            out.write(func_id.value,sizeof(char) * func_id.len);
+            out << "CODE_RTIVKFUNC ";
+            RTCode calleeCode = CODE_MODULE_END;
+            in.read((char *)&calleeCode,sizeof(calleeCode));
+            _disasm_expr(calleeCode);
             unsigned arg_count;
             in.read((char *)&arg_count,sizeof(arg_count));
             out << " " << arg_count << " ";
@@ -123,6 +123,23 @@ class Disassembler {
                 _disasm_expr(code);
                 out << " ";
             };
+        }
+        else if(code == CODE_UNARY_OPERATOR){
+            RTCode unaryCode = UNARY_OP_NOT;
+            in.read((char *)&unaryCode,sizeof(unaryCode));
+            out << "CODE_UNARY_OPERATOR " << (unsigned)unaryCode << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
+        else if(code == CODE_BINARY_OPERATOR){
+            RTCode binaryCode = BINARY_OP_PLUS;
+            in.read((char *)&binaryCode,sizeof(binaryCode));
+            out << "CODE_BINARY_OPERATOR " << (unsigned)binaryCode << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            out << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
         }
         else if(code == CODE_RTOBJCREATE){
             
@@ -142,6 +159,48 @@ class Disassembler {
             in >> &id;
             out << "CODE_RTVAR_REF " << id.len << " ";
             out.write(id.value,sizeof(char) * id.len);
+        }
+        else if(code == CODE_RTVAR_SET){
+            RTID id;
+            in >> &id;
+            out << "CODE_RTVAR_SET " << id.len << " ";
+            out.write(id.value,sizeof(char) * id.len);
+            out << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
+        else if(code == CODE_RTINDEX_GET){
+            out << "CODE_RTINDEX_GET ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            out << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
+        else if(code == CODE_RTINDEX_SET){
+            out << "CODE_RTINDEX_SET ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            out << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            out << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
+        else if(code == CODE_RTDICT_LITERAL){
+            unsigned pairCount = 0;
+            in.read((char *)&pairCount,sizeof(pairCount));
+            out << "CODE_RTDICT_LITERAL " << pairCount << " ";
+            while(pairCount > 0){
+                in.read((char *)&code,sizeof(RTCode));
+                _disasm_expr(code);
+                out << " ";
+                in.read((char *)&code,sizeof(RTCode));
+                _disasm_expr(code);
+                out << " ";
+                --pairCount;
+            }
         }
         else if(code == CODE_CONDITIONAL){
             unsigned count;
@@ -184,7 +243,10 @@ public:
         RTCode code;
         in.read((char *)&code,sizeof(RTCode));
         while (code != CODE_MODULE_END) {
-            if(code == CODE_RTIVKFUNC || code == CODE_CONDITIONAL || code == CODE_RTREGEX_LITERAL){
+            if(code == CODE_RTIVKFUNC || code == CODE_CONDITIONAL || code == CODE_RTREGEX_LITERAL
+               || code == CODE_UNARY_OPERATOR || code == CODE_BINARY_OPERATOR
+               || code == CODE_RTVAR_SET || code == CODE_RTINDEX_GET || code == CODE_RTINDEX_SET
+               || code == CODE_RTDICT_LITERAL){
                 _disasm_expr(code);
             }
             else {

@@ -7,6 +7,9 @@
 #include <iomanip>
 #include <cstring>
 #include <cassert>
+#include <cmath>
+#include <sstream>
+#include <set>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
@@ -51,6 +54,57 @@ static uint32_t regexCompileOptionsFromFlags(const std::string &flags){
         }
     }
     return options;
+}
+
+static bool objectToNumber(StarbytesObject object,double &value,bool &isFloat){
+    if(!object || !StarbytesObjectTypecheck(object,StarbytesNumType())){
+        return false;
+    }
+    auto numType = StarbytesNumGetType(object);
+    isFloat = (numType == NumTypeFloat);
+    if(numType == NumTypeFloat){
+        value = StarbytesNumGetFloatValue(object);
+    }
+    else {
+        value = StarbytesNumGetIntValue(object);
+    }
+    return true;
+}
+
+static StarbytesObject makeNumber(double value,bool isFloat){
+    if(isFloat){
+        return StarbytesNumNew(NumTypeFloat,value);
+    }
+    return StarbytesNumNew(NumTypeInt,(int)value);
+}
+
+static std::string objectToString(StarbytesObject object){
+    if(!object){
+        return "null";
+    }
+    if(StarbytesObjectTypecheck(object,StarbytesStrType())){
+        return StarbytesStrGetBuffer(object);
+    }
+    if(StarbytesObjectTypecheck(object,StarbytesBoolType())){
+        return ((bool)StarbytesBoolValue(object))? "true" : "false";
+    }
+    if(StarbytesObjectTypecheck(object,StarbytesNumType())){
+        auto numType = StarbytesNumGetType(object);
+        if(numType == NumTypeFloat){
+            std::ostringstream out;
+            out << StarbytesNumGetFloatValue(object);
+            return out.str();
+        }
+        return std::to_string(StarbytesNumGetIntValue(object));
+    }
+    if(StarbytesObjectTypecheck(object,StarbytesRegexType())){
+        auto pattern = StarbytesObjectGetProperty(object,"pattern");
+        auto flags = StarbytesObjectGetProperty(object,"flags");
+        std::string p = pattern? std::string(StarbytesStrGetBuffer(pattern)) : "";
+        std::string f = flags? std::string(StarbytesStrGetBuffer(flags)) : "";
+        return "/" + p + "/" + f;
+    }
+    return "<object>";
 }
 
 
@@ -173,6 +227,8 @@ class InterpImpl final : public Interp {
     StarbytesObject invokeFunc(std::istream &in,RTFuncTemplate *func_temp,unsigned argCount,StarbytesObject boundSelf = nullptr);
     RTClass *findClassByName(string_ref className);
     RTClass *findClassByType(StarbytesClassType classType);
+    bool buildClassHierarchy(RTClass *classMeta,std::vector<RTClass *> &hierarchy);
+    RTClass *findMethodOwnerInHierarchy(RTClass *classMeta,const std::string &methodName);
     RTFuncTemplate *findFunctionByName(string_ref functionName);
     void discardExprArgs(std::istream &in,unsigned argCount);
     void skipExpr(std::istream &in);
@@ -212,6 +268,52 @@ RTClass *InterpImpl::findClassByType(StarbytesClassType classType){
         return nullptr;
     }
     return &classes[foundClass->second];
+}
+
+bool InterpImpl::buildClassHierarchy(RTClass *classMeta,std::vector<RTClass *> &hierarchy){
+    hierarchy.clear();
+    if(!classMeta){
+        return false;
+    }
+    std::set<std::string> visited;
+    std::vector<RTClass *> reverseChain;
+    for(auto *cursor = classMeta; cursor != nullptr;){
+        auto cursorName = rtidToString(cursor->name);
+        if(visited.find(cursorName) != visited.end()){
+            return false;
+        }
+        visited.insert(cursorName);
+        reverseChain.push_back(cursor);
+        if(!cursor->hasSuperClass){
+            break;
+        }
+        auto superName = rtidToString(cursor->superClassName);
+        cursor = findClassByName(string_ref(superName));
+    }
+    hierarchy.assign(reverseChain.rbegin(),reverseChain.rend());
+    return true;
+}
+
+RTClass *InterpImpl::findMethodOwnerInHierarchy(RTClass *classMeta,const std::string &methodName){
+    std::set<std::string> visited;
+    for(auto *cursor = classMeta; cursor != nullptr;){
+        auto cursorName = rtidToString(cursor->name);
+        if(visited.find(cursorName) != visited.end()){
+            return nullptr;
+        }
+        visited.insert(cursorName);
+        for(auto &method : cursor->methods){
+            if(rtidToString(method.name) == methodName){
+                return cursor;
+            }
+        }
+        if(!cursor->hasSuperClass){
+            break;
+        }
+        auto superName = rtidToString(cursor->superClassName);
+        cursor = findClassByName(string_ref(superName));
+    }
+    return nullptr;
 }
 
 RTFuncTemplate *InterpImpl::findFunctionByName(string_ref functionName){
@@ -362,6 +464,283 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             StarbytesObjectRelease(funcRefObject);
             return returnValue;
         }
+        case CODE_UNARY_OPERATOR: {
+            RTCode unaryCode = UNARY_OP_NOT;
+            in.read((char *)&unaryCode,sizeof(unaryCode));
+            auto operand = evalExpr(in);
+            if(!operand){
+                return nullptr;
+            }
+            if(unaryCode == UNARY_OP_MINUS){
+                if(!StarbytesObjectTypecheck(operand,StarbytesNumType())){
+                    StarbytesObjectRelease(operand);
+                    return nullptr;
+                }
+                auto operandType = StarbytesNumGetType(operand);
+                StarbytesObject result = nullptr;
+                if(operandType == NumTypeFloat){
+                    result = StarbytesNumNew(NumTypeFloat,-StarbytesNumGetFloatValue(operand));
+                }
+                else {
+                    result = StarbytesNumNew(NumTypeInt,-StarbytesNumGetIntValue(operand));
+                }
+                StarbytesObjectRelease(operand);
+                return result;
+            }
+            if(unaryCode == UNARY_OP_NOT){
+                if(!StarbytesObjectTypecheck(operand,StarbytesBoolType())){
+                    StarbytesObjectRelease(operand);
+                    return nullptr;
+                }
+                bool current = (bool)StarbytesBoolValue(operand);
+                StarbytesObjectRelease(operand);
+                return StarbytesBoolNew((StarbytesBoolVal)!current);
+            }
+            StarbytesObjectRelease(operand);
+            return nullptr;
+        }
+        case CODE_BINARY_OPERATOR: {
+            RTCode binaryCode = BINARY_OP_PLUS;
+            in.read((char *)&binaryCode,sizeof(binaryCode));
+            auto lhs = evalExpr(in);
+            auto rhs = evalExpr(in);
+            if(!lhs || !rhs){
+                if(lhs){
+                    StarbytesObjectRelease(lhs);
+                }
+                if(rhs){
+                    StarbytesObjectRelease(rhs);
+                }
+                return nullptr;
+            }
+
+            auto finish = [&](StarbytesObject result){
+                StarbytesObjectRelease(lhs);
+                StarbytesObjectRelease(rhs);
+                return result;
+            };
+
+            if(binaryCode == BINARY_OP_PLUS){
+                if(StarbytesObjectTypecheck(lhs,StarbytesNumType()) && StarbytesObjectTypecheck(rhs,StarbytesNumType())){
+                    return finish(StarbytesNumAdd(lhs,rhs));
+                }
+                if(StarbytesObjectTypecheck(lhs,StarbytesStrType()) || StarbytesObjectTypecheck(rhs,StarbytesStrType())){
+                    auto leftStr = objectToString(lhs);
+                    auto rightStr = objectToString(rhs);
+                    return finish(StarbytesStrNewWithData((leftStr + rightStr).c_str()));
+                }
+                return finish(nullptr);
+            }
+            if(binaryCode == BINARY_OP_MINUS){
+                if(StarbytesObjectTypecheck(lhs,StarbytesNumType()) && StarbytesObjectTypecheck(rhs,StarbytesNumType())){
+                    return finish(StarbytesNumSub(lhs,rhs));
+                }
+                return finish(nullptr);
+            }
+            if(binaryCode == BINARY_OP_MUL || binaryCode == BINARY_OP_DIV || binaryCode == BINARY_OP_MOD){
+                if(!(StarbytesObjectTypecheck(lhs,StarbytesNumType()) && StarbytesObjectTypecheck(rhs,StarbytesNumType()))){
+                    return finish(nullptr);
+                }
+                bool lhsFloat = false;
+                bool rhsFloat = false;
+                double lhsVal = 0.0;
+                double rhsVal = 0.0;
+                if(!objectToNumber(lhs,lhsVal,lhsFloat) || !objectToNumber(rhs,rhsVal,rhsFloat)){
+                    return finish(nullptr);
+                }
+                if((binaryCode == BINARY_OP_DIV || binaryCode == BINARY_OP_MOD) && rhsVal == 0.0){
+                    return finish(nullptr);
+                }
+                if(binaryCode == BINARY_OP_MUL){
+                    bool useFloat = lhsFloat || rhsFloat;
+                    return finish(makeNumber(lhsVal * rhsVal,useFloat));
+                }
+                if(binaryCode == BINARY_OP_DIV){
+                    bool useFloat = lhsFloat || rhsFloat;
+                    if(useFloat){
+                        return finish(makeNumber(lhsVal / rhsVal,true));
+                    }
+                    return finish(makeNumber((double)((int)lhsVal / (int)rhsVal),false));
+                }
+                bool useFloat = lhsFloat || rhsFloat;
+                if(useFloat){
+                    return finish(makeNumber(std::fmod(lhsVal,rhsVal),true));
+                }
+                return finish(makeNumber((double)((int)lhsVal % (int)rhsVal),false));
+            }
+            if(binaryCode == BINARY_EQUAL_EQUAL || binaryCode == BINARY_NOT_EQUAL){
+                bool equals = false;
+                if(StarbytesObjectTypecheck(lhs,StarbytesNumType()) && StarbytesObjectTypecheck(rhs,StarbytesNumType())){
+                    equals = (StarbytesNumCompare(lhs,rhs) == COMPARE_EQUAL);
+                }
+                else if(StarbytesObjectTypecheck(lhs,StarbytesStrType()) && StarbytesObjectTypecheck(rhs,StarbytesStrType())){
+                    equals = (StarbytesStrCompare(lhs,rhs) == COMPARE_EQUAL);
+                }
+                else if(StarbytesObjectTypecheck(lhs,StarbytesBoolType()) && StarbytesObjectTypecheck(rhs,StarbytesBoolType())){
+                    equals = ((bool)StarbytesBoolValue(lhs) == (bool)StarbytesBoolValue(rhs));
+                }
+                else {
+                    equals = (lhs == rhs);
+                }
+                if(binaryCode == BINARY_NOT_EQUAL){
+                    equals = !equals;
+                }
+                return finish(StarbytesBoolNew((StarbytesBoolVal)equals));
+            }
+            if(binaryCode == BINARY_LESS || binaryCode == BINARY_LESS_EQUAL ||
+               binaryCode == BINARY_GREATER || binaryCode == BINARY_GREATER_EQUAL){
+                bool result = false;
+                if(StarbytesObjectTypecheck(lhs,StarbytesNumType()) && StarbytesObjectTypecheck(rhs,StarbytesNumType())){
+                    int cmp = StarbytesNumCompare(lhs,rhs);
+                    if(binaryCode == BINARY_LESS){
+                        result = (cmp == COMPARE_LESS);
+                    }
+                    else if(binaryCode == BINARY_LESS_EQUAL){
+                        result = (cmp == COMPARE_LESS || cmp == COMPARE_EQUAL);
+                    }
+                    else if(binaryCode == BINARY_GREATER){
+                        result = (cmp == COMPARE_GREATER);
+                    }
+                    else {
+                        result = (cmp == COMPARE_GREATER || cmp == COMPARE_EQUAL);
+                    }
+                    return finish(StarbytesBoolNew((StarbytesBoolVal)result));
+                }
+                if(StarbytesObjectTypecheck(lhs,StarbytesStrType()) && StarbytesObjectTypecheck(rhs,StarbytesStrType())){
+                    int cmp = StarbytesStrCompare(lhs,rhs);
+                    if(binaryCode == BINARY_LESS){
+                        result = (cmp == COMPARE_LESS);
+                    }
+                    else if(binaryCode == BINARY_LESS_EQUAL){
+                        result = (cmp == COMPARE_LESS || cmp == COMPARE_EQUAL);
+                    }
+                    else if(binaryCode == BINARY_GREATER){
+                        result = (cmp == COMPARE_GREATER);
+                    }
+                    else {
+                        result = (cmp == COMPARE_GREATER || cmp == COMPARE_EQUAL);
+                    }
+                    return finish(StarbytesBoolNew((StarbytesBoolVal)result));
+                }
+                return finish(nullptr);
+            }
+            if(binaryCode == BINARY_LOGIC_AND || binaryCode == BINARY_LOGIC_OR){
+                if(!(StarbytesObjectTypecheck(lhs,StarbytesBoolType()) && StarbytesObjectTypecheck(rhs,StarbytesBoolType()))){
+                    return finish(nullptr);
+                }
+                bool l = (bool)StarbytesBoolValue(lhs);
+                bool r = (bool)StarbytesBoolValue(rhs);
+                bool result = (binaryCode == BINARY_LOGIC_AND)? (l && r) : (l || r);
+                return finish(StarbytesBoolNew((StarbytesBoolVal)result));
+            }
+            return finish(nullptr);
+        }
+        case CODE_RTVAR_SET: {
+            RTID varId;
+            in >> &varId;
+            auto value = evalExpr(in);
+            if(!value){
+                value = StarbytesBoolNew((StarbytesBoolVal)false);
+            }
+            allocator->allocVariable(string_ref(varId.value,varId.len),value);
+            StarbytesObjectReference(value);
+            return value;
+        }
+        case CODE_RTDICT_LITERAL: {
+            unsigned pairCount = 0;
+            in.read((char *)&pairCount,sizeof(pairCount));
+            auto dict = StarbytesDictNew();
+            while(pairCount > 0){
+                auto key = evalExpr(in);
+                auto val = evalExpr(in);
+                if(key && val){
+                    StarbytesDictSet(dict,key,val);
+                }
+                if(key){
+                    StarbytesObjectRelease(key);
+                }
+                if(val){
+                    StarbytesObjectRelease(val);
+                }
+                --pairCount;
+            }
+            return dict;
+        }
+        case CODE_RTINDEX_GET: {
+            auto collection = evalExpr(in);
+            auto index = evalExpr(in);
+            if(!collection || !index){
+                if(collection){
+                    StarbytesObjectRelease(collection);
+                }
+                if(index){
+                    StarbytesObjectRelease(index);
+                }
+                return nullptr;
+            }
+            StarbytesObject result = nullptr;
+            if(StarbytesObjectTypecheck(collection,StarbytesArrayType()) &&
+               StarbytesObjectTypecheck(index,StarbytesNumType()) &&
+               StarbytesNumGetType(index) == NumTypeInt){
+                int idx = StarbytesNumGetIntValue(index);
+                if(idx >= 0 && (unsigned)idx < StarbytesArrayGetLength(collection)){
+                    result = StarbytesArrayIndex(collection,(unsigned)idx);
+                }
+            }
+            else if(StarbytesObjectTypecheck(collection,StarbytesDictType()) &&
+                    (StarbytesObjectTypecheck(index,StarbytesStrType()) || StarbytesObjectTypecheck(index,StarbytesNumType()))){
+                result = StarbytesDictGet(collection,index);
+            }
+            if(result){
+                StarbytesObjectReference(result);
+            }
+            StarbytesObjectRelease(collection);
+            StarbytesObjectRelease(index);
+            return result;
+        }
+        case CODE_RTINDEX_SET: {
+            auto collection = evalExpr(in);
+            auto index = evalExpr(in);
+            auto value = evalExpr(in);
+            if(!collection || !index){
+                if(collection){
+                    StarbytesObjectRelease(collection);
+                }
+                if(index){
+                    StarbytesObjectRelease(index);
+                }
+                if(value){
+                    StarbytesObjectRelease(value);
+                }
+                return nullptr;
+            }
+            if(!value){
+                value = StarbytesBoolNew((StarbytesBoolVal)false);
+            }
+            bool success = false;
+            if(StarbytesObjectTypecheck(collection,StarbytesArrayType()) &&
+               StarbytesObjectTypecheck(index,StarbytesNumType()) &&
+               StarbytesNumGetType(index) == NumTypeInt){
+                int idx = StarbytesNumGetIntValue(index);
+                if(idx >= 0 && (unsigned)idx < StarbytesArrayGetLength(collection)){
+                    StarbytesArraySet(collection,(unsigned)idx,value);
+                    success = true;
+                }
+            }
+            else if(StarbytesObjectTypecheck(collection,StarbytesDictType()) &&
+                    (StarbytesObjectTypecheck(index,StarbytesStrType()) || StarbytesObjectTypecheck(index,StarbytesNumType()))){
+                StarbytesDictSet(collection,index,value);
+                success = true;
+            }
+            StarbytesObjectRelease(collection);
+            StarbytesObjectRelease(index);
+            if(!success){
+                StarbytesObjectRelease(value);
+                return nullptr;
+            }
+            StarbytesObjectReference(value);
+            return value;
+        }
         case CODE_RTNEWOBJ : {
             RTID classId;
             in >> &classId;
@@ -384,18 +763,31 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             StarbytesObject instance = StarbytesClassObjectNew(classType);
             auto *classMeta = findClassByType(classType);
             if(classMeta){
-                for(auto &field : classMeta->fields){
-                    std::string fieldName = rtidToString(field.id);
-                    StarbytesObjectAddProperty(instance,const_cast<char *>(fieldName.c_str()),StarbytesBoolNew(StarbytesBoolFalse));
+                std::vector<RTClass *> hierarchy;
+                if(!buildClassHierarchy(classMeta,hierarchy)){
+                    hierarchy.push_back(classMeta);
                 }
 
-                if(classMeta->hasFieldInitFunc){
-                    std::string fieldInitName = rtidToString(classMeta->fieldInitFuncName);
-                    auto *fieldInitFunc = findFunctionByName(string_ref(fieldInitName));
-                    if(fieldInitFunc){
-                        auto initResult = invokeFunc(in,fieldInitFunc,0,instance);
-                        if(initResult){
-                            StarbytesObjectRelease(initResult);
+                for(auto *classInChain : hierarchy){
+                    for(auto &field : classInChain->fields){
+                        std::string fieldName = rtidToString(field.id);
+                        auto existingProperty = StarbytesObjectGetProperty(instance,fieldName.c_str());
+                        if(existingProperty){
+                            continue;
+                        }
+                        StarbytesObjectAddProperty(instance,const_cast<char *>(fieldName.c_str()),StarbytesBoolNew(StarbytesBoolFalse));
+                    }
+                }
+
+                for(auto *classInChain : hierarchy){
+                    if(classInChain->hasFieldInitFunc){
+                        std::string fieldInitName = rtidToString(classInChain->fieldInitFuncName);
+                        auto *fieldInitFunc = findFunctionByName(string_ref(fieldInitName));
+                        if(fieldInitFunc){
+                            auto initResult = invokeFunc(in,fieldInitFunc,0,instance);
+                            if(initResult){
+                                StarbytesObjectRelease(initResult);
+                            }
                         }
                     }
                 }
@@ -511,20 +903,14 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             }
 
             std::string methodName = rtidToString(memberId);
-            bool methodExists = false;
-            for(auto &methodMeta : classMeta->methods){
-                if(rtidToString(methodMeta.name) == methodName){
-                    methodExists = true;
-                    break;
-                }
-            }
-            if(!methodExists){
+            auto *methodOwner = findMethodOwnerInHierarchy(classMeta,methodName);
+            if(!methodOwner){
                 StarbytesObjectRelease(object);
                 discardExprArgs(in,argCount);
                 return nullptr;
             }
 
-            std::string className = rtidToString(classMeta->name);
+            std::string className = rtidToString(methodOwner->name);
             std::string mangledName = mangleClassMethodName(className,methodName);
             auto *runtimeMethod = findFunctionByName(string_ref(mangledName));
             if(!runtimeMethod){
@@ -616,6 +1002,21 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             }
             break;
         }
+        case CODE_UNARY_OPERATOR: {
+            RTCode unaryCode = UNARY_OP_NOT;
+            in.read((char *)&unaryCode,sizeof(unaryCode));
+            (void)unaryCode;
+            skipExpr(in);
+            break;
+        }
+        case CODE_BINARY_OPERATOR: {
+            RTCode binaryCode = BINARY_OP_PLUS;
+            in.read((char *)&binaryCode,sizeof(binaryCode));
+            (void)binaryCode;
+            skipExpr(in);
+            skipExpr(in);
+            break;
+        }
         case CODE_RTNEWOBJ: {
             RTID classId;
             in >> &classId;
@@ -657,6 +1058,33 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             RTID flagsId;
             in >> &patternId;
             in >> &flagsId;
+            break;
+        }
+        case CODE_RTVAR_SET: {
+            RTID id;
+            in >> &id;
+            skipExpr(in);
+            break;
+        }
+        case CODE_RTINDEX_GET: {
+            skipExpr(in);
+            skipExpr(in);
+            break;
+        }
+        case CODE_RTINDEX_SET: {
+            skipExpr(in);
+            skipExpr(in);
+            skipExpr(in);
+            break;
+        }
+        case CODE_RTDICT_LITERAL: {
+            unsigned pairCount = 0;
+            in.read((char *)&pairCount,sizeof(pairCount));
+            while(pairCount > 0){
+                skipExpr(in);
+                skipExpr(in);
+                --pairCount;
+            }
             break;
         }
         default:
@@ -944,11 +1372,17 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
         functions.push_back(funcTemp);
     }
     else if(code == CODE_RTIVKFUNC
+         || code == CODE_UNARY_OPERATOR
+         || code == CODE_BINARY_OPERATOR
          || code == CODE_RTMEMBER_SET
          || code == CODE_RTMEMBER_IVK
          || code == CODE_RTMEMBER_GET
          || code == CODE_RTNEWOBJ
-         || code == CODE_RTREGEX_LITERAL){
+         || code == CODE_RTREGEX_LITERAL
+         || code == CODE_RTVAR_SET
+         || code == CODE_RTINDEX_GET
+         || code == CODE_RTINDEX_SET
+         || code == CODE_RTDICT_LITERAL){
         in.seekg(-static_cast<std::streamoff>(sizeof(RTCode)),std::ios_base::cur);
         auto result = evalExpr(in);
         if(result){

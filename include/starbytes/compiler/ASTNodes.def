@@ -20,6 +20,7 @@ typedef long starbytes_int_t;
 #define FOR_DECL (0x00B000 | DECL)
 #define WHILE_DECL (0x00D000 | DECL)
 #define SECURE_DECL (0x00E000 | DECL)
+#define TYPE_ALIAS_DECL (0x00F000 | DECL)
 
 /// Scope Specific Decls
 /// - Global Scope Only -->

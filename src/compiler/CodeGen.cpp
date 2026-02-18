@@ -139,6 +139,74 @@ static std::string emittedNameForScopeMember(ModuleGenContext *context,ASTExpr *
     return entry->name;
 }
 
+static bool unaryOpCodeFromSymbol(const std::string &op,RTCode &out){
+    if(op == "-"){
+        out = UNARY_OP_MINUS;
+        return true;
+    }
+    if(op == "!"){
+        out = UNARY_OP_NOT;
+        return true;
+    }
+    return false;
+}
+
+static bool binaryOpCodeFromSymbol(const std::string &op,RTCode &out){
+    if(op == "+"){
+        out = BINARY_OP_PLUS;
+        return true;
+    }
+    if(op == "-"){
+        out = BINARY_OP_MINUS;
+        return true;
+    }
+    if(op == "*"){
+        out = BINARY_OP_MUL;
+        return true;
+    }
+    if(op == "/"){
+        out = BINARY_OP_DIV;
+        return true;
+    }
+    if(op == "%"){
+        out = BINARY_OP_MOD;
+        return true;
+    }
+    if(op == "=="){
+        out = BINARY_EQUAL_EQUAL;
+        return true;
+    }
+    if(op == "!="){
+        out = BINARY_NOT_EQUAL;
+        return true;
+    }
+    if(op == "<"){
+        out = BINARY_LESS;
+        return true;
+    }
+    if(op == "<="){
+        out = BINARY_LESS_EQUAL;
+        return true;
+    }
+    if(op == ">"){
+        out = BINARY_GREATER;
+        return true;
+    }
+    if(op == ">="){
+        out = BINARY_GREATER_EQUAL;
+        return true;
+    }
+    if(op == "&&"){
+        out = BINARY_LOGIC_AND;
+        return true;
+    }
+    if(op == "||"){
+        out = BINARY_LOGIC_OR;
+        return true;
+    }
+    return false;
+}
+
 static std::vector<RTAttribute> convertAttributes(const std::vector<ASTAttribute> &astAttrs){
     std::vector<RTAttribute> out;
     out.reserve(astAttrs.size());
@@ -262,6 +330,10 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         RTClass cls;
         ASTIdentifier_to_RTID(class_decl->id,cls.name);
         cls.attributes = convertAttributes(class_decl->attributes);
+        if(class_decl->superClass){
+            cls.hasSuperClass = true;
+            cls.superClassName = makeOwnedRTID(std::string(class_decl->superClass->getName()));
+        }
         std::string className = class_decl->id->val;
         struct FieldInitSpec {
             std::string fieldName;
@@ -431,7 +503,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
 }
 
 bool stmtCanBeConvertedToRTInternalObject(ASTStmt *stmt){
-    return (stmt->type == ARRAY_EXPR) || (stmt->type == DICT_EXPR) || (stmt->type & LITERAL);
+    return (stmt->type == ARRAY_EXPR) || (stmt->type & LITERAL);
 }
 
 StarbytesObject CodeGen::exprToRTInternalObject(ASTExpr *expr){
@@ -475,6 +547,17 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         RTID flagsId = makeOwnedRTID(literalExpr->regexFlags.value_or(""));
         genContext->out << &patternId;
         genContext->out << &flagsId;
+        return;
+    }
+    if(stmt->type == DICT_EXPR){
+        RTCode code = CODE_RTDICT_LITERAL;
+        genContext->out.write((const char *)&code,sizeof(RTCode));
+        unsigned pairCount = expr->dictExpr.size();
+        genContext->out.write((const char *)&pairCount,sizeof(pairCount));
+        for(auto &pair : expr->dictExpr){
+            consumeStmt(pair.first);
+            consumeStmt(pair.second);
+        }
         return;
     }
     /// Literals
@@ -530,20 +613,111 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         RTID memberId = makeOwnedRTID(memberName);
         genContext->out << &memberId;
     }
-    else if(stmt->type == ASSIGN_EXPR){
-        if(!expr->leftExpr || expr->leftExpr->type != MEMBER_EXPR){
-            return;
-        }
-        std::string memberName;
-        if(!getMemberName(expr->leftExpr,memberName)){
-            return;
-        }
-        RTCode code = CODE_RTMEMBER_SET;
+    else if(stmt->type == INDEX_EXPR){
+        RTCode code = CODE_RTINDEX_GET;
         genContext->out.write((const char *)&code,sizeof(RTCode));
-        consumeStmt(expr->leftExpr->leftExpr);
-        RTID memberId = makeOwnedRTID(memberName);
-        genContext->out << &memberId;
+        consumeStmt(expr->leftExpr);
         consumeStmt(expr->rightExpr);
+    }
+    else if(stmt->type == UNARY_EXPR){
+        auto op = expr->oprtr_str.value_or("");
+        RTCode unaryCode = UNARY_OP_NOT;
+        if(!unaryOpCodeFromSymbol(op,unaryCode)){
+            return;
+        }
+        RTCode code = CODE_UNARY_OPERATOR;
+        genContext->out.write((const char *)&code,sizeof(RTCode));
+        genContext->out.write((const char *)&unaryCode,sizeof(unaryCode));
+        consumeStmt(expr->leftExpr);
+    }
+    else if(stmt->type == BINARY_EXPR){
+        auto op = expr->oprtr_str.value_or("");
+        RTCode binaryCode = BINARY_OP_PLUS;
+        if(!binaryOpCodeFromSymbol(op,binaryCode)){
+            return;
+        }
+        RTCode code = CODE_BINARY_OPERATOR;
+        genContext->out.write((const char *)&code,sizeof(RTCode));
+        genContext->out.write((const char *)&binaryCode,sizeof(binaryCode));
+        consumeStmt(expr->leftExpr);
+        consumeStmt(expr->rightExpr);
+    }
+    else if(stmt->type == ASSIGN_EXPR){
+        if(!expr->leftExpr || !expr->rightExpr){
+            return;
+        }
+        auto assignOp = expr->oprtr_str.value_or("=");
+        bool isCompound = assignOp != "=";
+        RTCode compoundBinaryCode = BINARY_OP_PLUS;
+        if(isCompound){
+            std::string binaryOp;
+            if(assignOp == "+="){
+                binaryOp = "+";
+            }
+            else if(assignOp == "-="){
+                binaryOp = "-";
+            }
+            else if(assignOp == "*="){
+                binaryOp = "*";
+            }
+            else if(assignOp == "/="){
+                binaryOp = "/";
+            }
+            else if(assignOp == "%="){
+                binaryOp = "%";
+            }
+            else {
+                return;
+            }
+            if(!binaryOpCodeFromSymbol(binaryOp,compoundBinaryCode)){
+                return;
+            }
+        }
+
+        auto emitAssignedValueExpr = [&](){
+            if(!isCompound){
+                consumeStmt(expr->rightExpr);
+                return;
+            }
+            RTCode code = CODE_BINARY_OPERATOR;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            genContext->out.write((const char *)&compoundBinaryCode,sizeof(compoundBinaryCode));
+            consumeStmt(expr->leftExpr);
+            consumeStmt(expr->rightExpr);
+        };
+
+        if(expr->leftExpr->type == ID_EXPR && expr->leftExpr->id && expr->leftExpr->id->type == ASTIdentifier::Var){
+            RTCode code = CODE_RTVAR_SET;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            RTID varId;
+            ASTIdentifier_to_RTID(expr->leftExpr->id,varId);
+            genContext->out << &varId;
+            emitAssignedValueExpr();
+            return;
+        }
+
+        if(expr->leftExpr->type == MEMBER_EXPR){
+            std::string memberName;
+            if(!getMemberName(expr->leftExpr,memberName)){
+                return;
+            }
+            RTCode code = CODE_RTMEMBER_SET;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            consumeStmt(expr->leftExpr->leftExpr);
+            RTID memberId = makeOwnedRTID(memberName);
+            genContext->out << &memberId;
+            emitAssignedValueExpr();
+            return;
+        }
+
+        if(expr->leftExpr->type == INDEX_EXPR){
+            RTCode code = CODE_RTINDEX_SET;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            consumeStmt(expr->leftExpr->leftExpr);
+            consumeStmt(expr->leftExpr->rightExpr);
+            emitAssignedValueExpr();
+            return;
+        }
     }
     else if(stmt->type == IVKE_EXPR){
         if(expr->isConstructorCall){

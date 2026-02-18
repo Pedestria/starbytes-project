@@ -139,6 +139,21 @@ namespace Runtime {
                 }
                 break;
             }
+            case CODE_UNARY_OPERATOR: {
+                RTCode unaryCode = UNARY_OP_NOT;
+                is.read((char *)&unaryCode,sizeof(unaryCode));
+                (void)unaryCode;
+                skipExpr(is);
+                break;
+            }
+            case CODE_BINARY_OPERATOR: {
+                RTCode binaryCode = BINARY_OP_PLUS;
+                is.read((char *)&binaryCode,sizeof(binaryCode));
+                (void)binaryCode;
+                skipExpr(is);
+                skipExpr(is);
+                break;
+            }
             case CODE_RTNEWOBJ: {
                 skipRTIDPayload(is);
                 unsigned argCount = 0;
@@ -173,6 +188,29 @@ namespace Runtime {
                 skipRTIDPayload(is);
                 skipRTIDPayload(is);
                 break;
+            case CODE_RTVAR_SET:
+                skipRTIDPayload(is);
+                skipExpr(is);
+                break;
+            case CODE_RTINDEX_GET:
+                skipExpr(is);
+                skipExpr(is);
+                break;
+            case CODE_RTINDEX_SET:
+                skipExpr(is);
+                skipExpr(is);
+                skipExpr(is);
+                break;
+            case CODE_RTDICT_LITERAL: {
+                unsigned pairCount = 0;
+                is.read((char *)&pairCount,sizeof(pairCount));
+                while(pairCount > 0){
+                    skipExpr(is);
+                    skipExpr(is);
+                    --pairCount;
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -216,6 +254,11 @@ namespace Runtime {
     static void skipClassPayload(std::istream &is){
         skipRTIDPayload(is);
         skipAttributeListPayload(is);
+        bool hasSuperClass = false;
+        is.read((char *)&hasSuperClass,sizeof(hasSuperClass));
+        if(hasSuperClass){
+            skipRTIDPayload(is);
+        }
 
         unsigned fieldCount = 0;
         is.read((char *)&fieldCount,sizeof(fieldCount));
@@ -443,6 +486,10 @@ namespace Runtime {
     RTCODE_STREAM_OBJECT_IN_IMPL(RTClass){
         is >> &obj->name;
         readAttributeList(is,obj->attributes);
+        is.read((char *)&obj->hasSuperClass,sizeof(obj->hasSuperClass));
+        if(obj->hasSuperClass){
+            is >> &obj->superClassName;
+        }
         unsigned fieldCount = 0;
         is.read((char *)&fieldCount,sizeof(fieldCount));
         while(fieldCount > 0){
@@ -494,6 +541,10 @@ namespace Runtime {
         os.write((char *)&code,sizeof(RTCode));
         os << &obj->name;
         writeAttributeList(os,obj->attributes);
+        os.write((char *)&obj->hasSuperClass,sizeof(obj->hasSuperClass));
+        if(obj->hasSuperClass){
+            os << &obj->superClassName;
+        }
 
         unsigned fieldCount = obj->fields.size();
         os.write((char *)&fieldCount,sizeof(fieldCount));

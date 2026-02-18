@@ -30,9 +30,24 @@ namespace starbytes {
             
             struct Class {
                 ASTType *classType;
+                ASTType *superClassType = nullptr;
+                std::vector<std::string> genericParams;
+                std::vector<ASTType *> interfaces;
                 std::vector<Function *> instMethods;
                 std::vector<Function *> constructors;
                 std::vector<Var *> fields;
+            };
+
+            struct Interface {
+                ASTType *interfaceType;
+                std::vector<std::string> genericParams;
+                std::vector<Function *> methods;
+                std::vector<Var *> fields;
+            };
+
+            struct TypeAlias {
+                ASTType *aliasType = nullptr;
+                std::vector<std::string> genericParams;
             };
             
             struct Entry {
@@ -46,7 +61,8 @@ namespace starbytes {
                     Class,
                     Interface,
                     Scope,
-                    Function
+                    Function,
+                    TypeAlias
                 } Ty;
                 Ty type;
             };

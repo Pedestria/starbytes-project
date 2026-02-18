@@ -248,33 +248,17 @@ StarbytesNum StarbytesNumConvertTo(StarbytesNum num,StarbytesNumT type){
 int StarbytesNumCompare(StarbytesNum lhs,StarbytesNum rhs){
     StarbytesNumPriv *privLhs = (StarbytesNumPriv *)lhs->privData;
     StarbytesNumPriv *privRhs = (StarbytesNumPriv *)rhs->privData;
-    
-    StarbytesNum temp_lhs,temp_rhs;
-   
-    if(privLhs->type != NumTypeFloat){
-        temp_lhs = StarbytesNumConvertTo(lhs,NumTypeFloat);
+
+    float lhsVal = (privLhs->type == NumTypeFloat)? privLhs->f : (float)privLhs->i;
+    float rhsVal = (privRhs->type == NumTypeFloat)? privRhs->f : (float)privRhs->i;
+
+    if(lhsVal == rhsVal){
+        return COMPARE_EQUAL;
     }
-    
-    if(privRhs->type != NumTypeFloat){
-        temp_rhs = StarbytesNumConvertTo(rhs,NumTypeFloat);
+    if(lhsVal > rhsVal){
+        return COMPARE_GREATER;
     }
-    
-    int res;
-    
-    if(privLhs->f == privRhs->f){
-        res = COMPARE_EQUAL;
-    }
-    else if(privLhs->f > privRhs->f){
-        res = COMPARE_GREATER;
-    }
-    else {
-        res = COMPARE_LESS;
-    }
-    
-    StarbytesObjectRelease(temp_lhs);
-    StarbytesObjectRelease(temp_rhs);
-    
-    return res;
+    return COMPARE_LESS;
 }
 
 void StarbytesNumAssign(StarbytesNum num,StarbytesNumT type,...){
@@ -296,20 +280,32 @@ void StarbytesNumAssign(StarbytesNum num,StarbytesNumT type,...){
 StarbytesNum StarbytesNumAdd(StarbytesNum a,StarbytesNum b){
     StarbytesNumPriv *a_priv = (StarbytesNumPriv *)a->privData;
     StarbytesNumPriv *b_priv = (StarbytesNumPriv *)b->privData;
-    
-    StarbytesNum res;
-    
-    if(a_priv->type == b_priv->type){
-        if(a_priv->type == NumTypeInt){
-            int r = a_priv->i + b_priv->i;
-            res = StarbytesNumNew(NumTypeInt,r);
-        }
-        else {
-            float r = a_priv->f + b_priv->f;
-            res = StarbytesNumNew(NumTypeFloat,r);
-        }
+
+    if(a_priv->type == NumTypeInt && b_priv->type == NumTypeInt){
+        int r = a_priv->i + b_priv->i;
+        return StarbytesNumNew(NumTypeInt,r);
     }
-    return res;
+    float af = (a_priv->type == NumTypeFloat)? a_priv->f : (float)a_priv->i;
+    float bf = (b_priv->type == NumTypeFloat)? b_priv->f : (float)b_priv->i;
+    return StarbytesNumNew(NumTypeFloat,af + bf);
+}
+
+StarbytesNum StarbytesNumSub(StarbytesNum a,StarbytesNum b){
+    StarbytesNumPriv *a_priv = (StarbytesNumPriv *)a->privData;
+    StarbytesNumPriv *b_priv = (StarbytesNumPriv *)b->privData;
+
+    if(a_priv->type == NumTypeInt && b_priv->type == NumTypeInt){
+        int r = a_priv->i - b_priv->i;
+        return StarbytesNumNew(NumTypeInt,r);
+    }
+    float af = (a_priv->type == NumTypeFloat)? a_priv->f : (float)a_priv->i;
+    float bf = (b_priv->type == NumTypeFloat)? b_priv->f : (float)b_priv->i;
+    return StarbytesNumNew(NumTypeFloat,af - bf);
+}
+
+StarbytesNumT StarbytesNumGetType(StarbytesNum num){
+    StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
+    return priv->type;
 }
 
 int StarbytesNumGetIntValue(StarbytesNum num){
@@ -519,6 +515,16 @@ StarbytesObject StarbytesArrayIndex(StarbytesArray array,unsigned int index){
     return priv->data[index];
 }
 
+void StarbytesArraySet(StarbytesArray array,unsigned int index,StarbytesObject obj){
+    StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
+    unsigned int len = StarbytesArrayGetLength(array);
+    assert(index < len && "Cannot index object outside of bounds");
+    StarbytesObject old = priv->data[index];
+    StarbytesObjectRelease(old);
+    StarbytesObjectReference(obj);
+    priv->data[index] = obj;
+}
+
 
 StarbytesDict StarbytesDictNew(){
     StarbytesObject obj = StarbytesObjectNew(StarbytesDictType());
@@ -554,7 +560,8 @@ void StarbytesDictSet(StarbytesDict dict,StarbytesObject key,StarbytesObject val
                 StarbytesObject old_val = priv->data[i];
                 StarbytesObjectRelease(old_val);
                 StarbytesObjectReference(val);
-                memcpy(priv->data + i,&key,sizeof(StarbytesObject));
+                memcpy(priv->data + i,&val,sizeof(StarbytesObject));
+                break;
             }
         }
         else if(_key->type == StarbytesStrType()){
@@ -563,7 +570,8 @@ void StarbytesDictSet(StarbytesDict dict,StarbytesObject key,StarbytesObject val
                 StarbytesObject old_val = priv->data[i];
                 StarbytesObjectRelease(old_val);
                 StarbytesObjectReference(val);
-                memcpy(priv->data + i,&key,sizeof(StarbytesObject));
+                memcpy(priv->data + i,&val,sizeof(StarbytesObject));
+                break;
             }
         }
     }
@@ -654,5 +662,3 @@ StarbytesFuncTemplate * StarbytesFuncRefGetPtr(StarbytesFuncRef ref){
     StarbytesFuncRefPriv * privData = (StarbytesFuncRefPriv *)ref->privData;
     return privData->ref;
 };
-
-

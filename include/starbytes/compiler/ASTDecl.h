@@ -75,11 +75,30 @@ namespace starbytes {
 
         ASTIdentifier *id;
         
-        ASTType * classType;
+        ASTType * classType = nullptr;
+        ASTType * superClass = nullptr;
+        std::vector<ASTIdentifier *> genericTypeParams;
+        std::vector<ASTType *> interfaces;
 
         std::vector<ASTVarDecl *> fields;
         std::vector<ASTFuncDecl *> methods;
         std::vector<ASTConstructorDecl *> constructors;
+    };
+
+    class ASTInterfaceDecl : public ASTDecl {
+    public:
+        ASTIdentifier *id;
+        ASTType *interfaceType = nullptr;
+        std::vector<ASTIdentifier *> genericTypeParams;
+        std::vector<ASTVarDecl *> fields;
+        std::vector<ASTFuncDecl *> methods;
+    };
+
+    class ASTTypeAliasDecl : public ASTDecl {
+    public:
+        ASTIdentifier *id = nullptr;
+        ASTType *aliasedType = nullptr;
+        std::vector<ASTIdentifier *> genericTypeParams;
     };
 
     class ASTReturnDecl : public ASTDecl {

@@ -118,6 +118,7 @@ void StarbytesArrayPush(StarbytesArray array,StarbytesObject obj);
 void StarbytesArrayPop(StarbytesArray array);
 unsigned int StarbytesArrayGetLength(StarbytesArray array);
 StarbytesObject StarbytesArrayIndex(StarbytesArray array,unsigned int index);
+void StarbytesArraySet(StarbytesArray array,unsigned int index,StarbytesObject obj);
 /// @}
 
 /// @name Starbytes Number Methods
@@ -132,6 +133,7 @@ StarbytesNum StarbytesNumCopy(StarbytesNum);
 int StarbytesNumCompare(StarbytesNum lhs,StarbytesNum rhs);
 void StarbytesNumAssign(StarbytesNum obj,StarbytesNumT type,...);
 StarbytesNum StarbytesNumConvertTo(StarbytesNum num,StarbytesNumT type);
+StarbytesNumT StarbytesNumGetType(StarbytesNum obj);
 int StarbytesNumGetIntValue(StarbytesNum obj);
 float StarbytesNumGetFloatValue(StarbytesNum obj);
 StarbytesNum StarbytesNumAdd(StarbytesNum a,StarbytesNum b);

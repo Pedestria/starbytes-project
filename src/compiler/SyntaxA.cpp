@@ -126,8 +126,44 @@ size_t SyntaxA::getTokenStreamWidth(){
             baseType = REGEX_TYPE;
             isBuiltinType = true;
         }
+        else if(tok_id == "Any"){
+            baseType = ANY_TYPE;
+            isBuiltinType = true;
+        }
         else {
             baseType = ASTType::Create(first_token.content.c_str(),parentStmt,ctxt.isPlaceholder,ctxt.isAlias);
+            if(ctxt.genericTypeParams && ctxt.genericTypeParams->find(first_token.content) != ctxt.genericTypeParams->end()){
+                baseType->isGenericParam = true;
+            }
+        }
+
+        Tok tok = aheadTok();
+        if(isBuiltinType && tok.type == Tok::LessThan){
+            baseType = ASTType::Create(baseType->getName(),parentStmt,false,false);
+            isBuiltinType = false;
+        }
+        if(tok.type == Tok::LessThan){
+            gotoNextTok();
+            tok = nextTok();
+            while(true){
+                ASTType *paramType = buildTypeFromTokenStream(tok,parentStmt,ctxt);
+                if(!paramType){
+                    return nullptr;
+                }
+                baseType->addTypeParam(paramType);
+
+                tok = aheadTok();
+                if(tok.type == Tok::Comma){
+                    gotoNextTok();
+                    tok = nextTok();
+                    continue;
+                }
+                if(tok.type == Tok::GreaterThan){
+                    gotoNextTok();
+                    break;
+                }
+                return nullptr;
+            }
         }
 
         bool sawOptional = false;

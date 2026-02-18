@@ -13,7 +13,8 @@ bool isKeyword(string_ref str){
     || (str == KW_FUNC) || (str == KW_IF) || (str == KW_ELIF) || (str == KW_ELSE) || (str == KW_RETURN)
     || (str == KW_CLASS) || (str == KW_INTERFACE) || (str == KW_FOR) || (str == KW_WHILE)
     || (str == KW_SECURE) || (str == KW_CATCH)
-    || (str == KW_NEW) || (str == KW_SCOPE);
+    || (str == KW_NEW) || (str == KW_SCOPE)
+    || (str == KW_DEF);
 }
 
 bool isNumber(string_ref str,bool * isFloating){
@@ -97,6 +98,27 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
         tok.srcPos = pos;
         tokStreamRef.push_back(tok);
         bufferEnd = bufferStart;
+    };
+
+    auto canStartRegexLiteral = [&]() -> bool {
+        if(tokStreamRef.empty()){
+            return true;
+        }
+        Tok::TokType prev = tokStreamRef.back().type;
+        switch(prev){
+            case Tok::Identifier:
+            case Tok::BooleanLiteral:
+            case Tok::StringLiteral:
+            case Tok::RegexLiteral:
+            case Tok::NumericLiteral:
+            case Tok::FloatingNumericLiteral:
+            case Tok::CloseParen:
+            case Tok::CloseBracket:
+            case Tok::CloseBrace:
+                return false;
+            default:
+                return true;
+        }
     };
     
     // src.code = "";
@@ -217,6 +239,19 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                     break;
                 }
 
+                if(!canStartRegexLiteral()){
+                    PUSH_CHAR(c);
+                    if(ahead == '='){
+                        PUSH_CHAR(ahead);
+                        pushToken(Tok::FSlashEqual);
+                        INCREMENT_TO_NEXT_CHAR;
+                    }
+                    else {
+                        pushToken(Tok::FSlash);
+                    }
+                    break;
+                }
+
                 PUSH_CHAR(c);
                 bool escaped = false;
                 bool terminated = false;
@@ -254,6 +289,84 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 }
                 break;
             }
+            case '*': {
+                PUSH_CHAR(c);
+                c = aheadChar();
+                if(c == '='){
+                    PUSH_CHAR(c);
+                    pushToken(Tok::AsteriskEqual);
+                    INCREMENT_TO_NEXT_CHAR;
+                }
+                else {
+                    pushToken(Tok::Asterisk);
+                }
+                break;
+            }
+            case '%': {
+                PUSH_CHAR(c);
+                c = aheadChar();
+                if(c == '='){
+                    PUSH_CHAR(c);
+                    pushToken(Tok::PercentEqual);
+                    INCREMENT_TO_NEXT_CHAR;
+                }
+                else {
+                    pushToken(Tok::Percent);
+                }
+                break;
+            }
+            case '<': {
+                PUSH_CHAR(c);
+                c = aheadChar();
+                if(c == '='){
+                    PUSH_CHAR(c);
+                    pushToken(Tok::LessEqual);
+                    INCREMENT_TO_NEXT_CHAR;
+                }
+                else {
+                    pushToken(Tok::LessThan);
+                }
+                break;
+            }
+            case '>': {
+                PUSH_CHAR(c);
+                c = aheadChar();
+                if(c == '='){
+                    PUSH_CHAR(c);
+                    pushToken(Tok::GreaterEqual);
+                    INCREMENT_TO_NEXT_CHAR;
+                }
+                else {
+                    pushToken(Tok::GreaterThan);
+                }
+                break;
+            }
+            case '&': {
+                PUSH_CHAR(c);
+                c = aheadChar();
+                if(c == '&'){
+                    PUSH_CHAR(c);
+                    pushToken(Tok::LogicAND);
+                    INCREMENT_TO_NEXT_CHAR;
+                }
+                else {
+                    pushToken(Tok::BitwiseAND);
+                }
+                break;
+            }
+            case '|': {
+                PUSH_CHAR(c);
+                c = aheadChar();
+                if(c == '|'){
+                    PUSH_CHAR(c);
+                    pushToken(Tok::LogicOR);
+                    INCREMENT_TO_NEXT_CHAR;
+                }
+                else {
+                    pushToken(Tok::BitwiseOR);
+                }
+                break;
+            }
             case '?': {
                 PUSH_CHAR(c);
                 pushToken(Tok::QuestionMark);
@@ -261,7 +374,15 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
             }
             case '!': {
                 PUSH_CHAR(c);
-                pushToken(Tok::Exclamation);
+                c = aheadChar();
+                if(c == '='){
+                    PUSH_CHAR(c);
+                    pushToken(Tok::NotEqual);
+                    INCREMENT_TO_NEXT_CHAR;
+                }
+                else {
+                    pushToken(Tok::Exclamation);
+                }
                 break;
             }
             case '=' : {
@@ -301,12 +422,13 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 break;
             }
             default: {
-                if(std::isalnum(static_cast<unsigned char>(c))){
+                if(std::isalnum(static_cast<unsigned char>(c)) || c == '_'){
                     PUSH_CHAR(c);
                     c = aheadChar();
                     bool tokenStartsWithDigit = std::isdigit(static_cast<unsigned char>(*bufferStart));
                     bool dotContinuesFloat = tokenStartsWithDigit && c == '.';
-                    if(c == EOF || (!std::isalnum(static_cast<unsigned char>(c)) && !dotContinuesFloat)){
+                    bool identifierContinues = std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+                    if(c == EOF || (!identifierContinues && !dotContinuesFloat)){
                         pushToken(Tok::Identifier);
                     }
                    

@@ -31,6 +31,11 @@
 
 #define OP_ASSIGN OP("=")
 #define OP_EQUAL OP("==")
+#define OP_NOT_EQUAL OP("!=")
+#define OP_LESS OP("<")
+#define OP_LESS_EQUAL OP("<=")
+#define OP_GREATER OP(">")
+#define OP_GREATER_EQUAL OP(">=")
 #define OP_PLUS OP("+")
 #define OP_PLUSEQUAL OP("+=")
 #define OP_MINUS OP("-")
@@ -39,6 +44,10 @@
 #define OP_MULEQUAL OP("*=")
 #define OP_DIV OP("/")
 #define OP_DIVEQUAL OP("/=")
+#define OP_MOD OP("%")
+#define OP_MODEQUAL OP("%=")
+#define OP_LOGIC_AND OP("&&")
+#define OP_LOGIC_OR OP("||")
 
 #define TOK_OP_MAX_LENGTH 2
 
@@ -58,6 +67,7 @@
 #define KW_CATCH KW("catch")
 #define KW_NEW KW("new")
 #define KW_SCOPE KW("scope")
+#define KW_DEF KW("def")
 
 #define TOK_TRUE TOK("true")
 #define TOK_FALSE TOK("false")

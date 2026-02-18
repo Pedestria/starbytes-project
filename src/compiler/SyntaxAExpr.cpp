@@ -3,6 +3,7 @@
 #include "starbytes/compiler/AST.h"
 #include <iostream>
 #include <string>
+#include <cstdlib>
 
 namespace starbytes::Syntax {
 
@@ -41,12 +42,24 @@ namespace starbytes::Syntax {
         return true;
     }
 
-    /**
-     Its important to note that there are three kinds of AST expression nodes that get evaluated.
-     1. DataExpr - any identifier, or literal that represents data.
-     2. ArgExpr - any invocation, member access, or index of another expr.
-     3. CompoundExpr - an operation on one or more exprs (binary, unary, logical,etc.)
-     */
+    static ASTExpr *makeUnaryExpr(const Tok &tok,ASTExpr *operand){
+        auto *node = new ASTExpr();
+        node->type = UNARY_EXPR;
+        node->oprtr_str = tok.content;
+        node->leftExpr = operand;
+        node->codeRegion = regionFromToken(tok);
+        return node;
+    }
+
+    static ASTExpr *makeBinaryExpr(const Tok &tok,ASTExpr *lhs,ASTExpr *rhs){
+        auto *node = new ASTExpr();
+        node->type = BINARY_EXPR;
+        node->oprtr_str = tok.content;
+        node->leftExpr = lhs;
+        node->rightExpr = rhs;
+        node->codeRegion = lhs? lhs->codeRegion : regionFromToken(tok);
+        return node;
+    }
 
     ASTExpr *SyntaxA::evalDataExpr(TokRef first_token,std::shared_ptr<ASTScope> parentScope){
         Tok tokRef = first_token;
@@ -118,27 +131,62 @@ namespace starbytes::Syntax {
                 node->type = ARRAY_EXPR;
                 node->codeRegion = regionFromToken(tokRef);
                 tokRef = nextTok();
-                auto firstExpr = evalExpr(tokRef,parentScope);
-                if(!firstExpr){
-                    /// ERROR
-                };
-
-                node->exprArrayData.push_back(firstExpr);
-                tokRef = token_stream[privTokIndex];
-                /// Last Tok from recent ast expr evaluation.
-                while(tokRef.type == Tok::Comma){
-                    tokRef = nextTok();
-                    auto expr = evalExpr(tokRef,parentScope);
-                    if(!expr){
-                        /// ERROR
-                    };
-                    node->exprArrayData.push_back(expr);
-                    tokRef = token_stream[privTokIndex];
-                };
-
                 if(tokRef.type != Tok::CloseBracket){
-                    /// ERROR
-                };
+                    auto firstExpr = evalExpr(tokRef,parentScope);
+                    if(!firstExpr){
+                        return nullptr;
+                    }
+                    node->exprArrayData.push_back(firstExpr);
+                    tokRef = token_stream[privTokIndex];
+                    while(tokRef.type == Tok::Comma){
+                        tokRef = nextTok();
+                        auto elementExpr = evalExpr(tokRef,parentScope);
+                        if(!elementExpr){
+                            return nullptr;
+                        }
+                        node->exprArrayData.push_back(elementExpr);
+                        tokRef = token_stream[privTokIndex];
+                    }
+                    if(tokRef.type != Tok::CloseBracket){
+                        return nullptr;
+                    }
+                }
+                tokRef = nextTok();
+            }
+            else if(tokRef.type == Tok::OpenBrace){
+                auto *node = new ASTExpr();
+                expr = node;
+                node->type = DICT_EXPR;
+                node->codeRegion = regionFromToken(tokRef);
+                tokRef = nextTok();
+
+                if(tokRef.type != Tok::CloseBrace){
+                    while(true){
+                        auto *keyExpr = evalExpr(tokRef,parentScope);
+                        if(!keyExpr){
+                            return nullptr;
+                        }
+                        tokRef = token_stream[privTokIndex];
+                        if(tokRef.type != Tok::Colon){
+                            return nullptr;
+                        }
+                        tokRef = nextTok();
+                        auto *valueExpr = evalExpr(tokRef,parentScope);
+                        if(!valueExpr){
+                            return nullptr;
+                        }
+                        node->dictExpr.insert(std::make_pair(keyExpr,valueExpr));
+                        tokRef = token_stream[privTokIndex];
+                        if(tokRef.type == Tok::Comma){
+                            tokRef = nextTok();
+                            continue;
+                        }
+                        if(tokRef.type == Tok::CloseBrace){
+                            break;
+                        }
+                        return nullptr;
+                    }
+                }
                 tokRef = nextTok();
             }
             else if(tokRef.type == Tok::Identifier){
@@ -187,6 +235,31 @@ namespace starbytes::Syntax {
                     classExpr = memberExpr;
                     tokRef = nextTok();
                 }
+                std::vector<ASTType *> explicitTypeArgs;
+                if(tokRef.type == Tok::LessThan){
+                    tokRef = nextTok();
+                    ASTTypeContext typeCtxt;
+                    typeCtxt.isPlaceholder = true;
+                    while(true){
+                        auto *typeArg = buildTypeFromTokenStream(tokRef,classExpr,typeCtxt);
+                        if(!typeArg){
+                            return nullptr;
+                        }
+                        explicitTypeArgs.push_back(typeArg);
+                        tokRef = aheadTok();
+                        if(tokRef.type == Tok::Comma){
+                            gotoNextTok();
+                            tokRef = nextTok();
+                            continue;
+                        }
+                        if(tokRef.type == Tok::GreaterThan){
+                            gotoNextTok();
+                            break;
+                        }
+                        return nullptr;
+                    }
+                    tokRef = nextTok();
+                }
                 if(tokRef.type != Tok::OpenParen){
                     return nullptr;
                 }
@@ -195,6 +268,7 @@ namespace starbytes::Syntax {
                 ctorInvoke->type = IVKE_EXPR;
                 ctorInvoke->isConstructorCall = true;
                 ctorInvoke->callee = classExpr;
+                ctorInvoke->genericTypeArgs = std::move(explicitTypeArgs);
                 ctorInvoke->codeRegion = classExpr->codeRegion;
 
                 tokRef = nextTok();
@@ -270,72 +344,191 @@ namespace starbytes::Syntax {
                 expr = node;
                 continue;
             }
+            /// IndexExpr
+            if(tokRef.type == Tok::OpenBracket){
+                auto *node = new ASTExpr();
+                node->type = INDEX_EXPR;
+                node->leftExpr = expr;
+                node->codeRegion = expr->codeRegion;
+                tokRef = nextTok();
+                auto *indexExpr = evalExpr(tokRef,parentScope);
+                if(!indexExpr){
+                    return nullptr;
+                }
+                node->rightExpr = indexExpr;
+                tokRef = token_stream[privTokIndex];
+                if(tokRef.type != Tok::CloseBracket){
+                    return nullptr;
+                }
+                tokRef = nextTok();
+                expr = node;
+                continue;
+            }
             break;
         }
         return expr;
     };
 
     ASTExpr *SyntaxA::evalExpr(TokRef first_token,std::shared_ptr<ASTScope> parentScope){
-        
-        ASTExpr *expr = evalArgExpr(first_token,parentScope);
-        if(!expr){
-            return nullptr;
-        }
-        Tok tokRef = token_stream[privTokIndex];
-
-        if(tokRef.type == Tok::Equal){
-            auto node = new ASTExpr();
-            node->type = ASSIGN_EXPR;
-            node->leftExpr = expr;
-            node->codeRegion = expr->codeRegion;
-            tokRef = nextTok();
-            auto *rhsExpr = evalExpr(tokRef,parentScope);
-            if(!rhsExpr){
-                return nullptr;
+        auto parseUnary = [&](auto &&self,Tok tok) -> ASTExpr * {
+            if(tok.type == Tok::Minus || tok.type == Tok::Exclamation){
+                Tok opTok = tok;
+                tok = nextTok();
+                auto *operand = self(self,tok);
+                if(!operand){
+                    return nullptr;
+                }
+                return makeUnaryExpr(opTok,operand);
             }
-            node->rightExpr = rhsExpr;
-            expr = node;
-            return expr;
-        }
-        
-        /// Eval CompoundExpr
-
-        while(true){
-            /// BinaryExpr
-            if(tokRef.type == Tok::Plus){
-                auto node = new ASTExpr();
-                node->type = BINARY_EXPR;
-                node->leftExpr = expr;
-                node->codeRegion = expr->codeRegion;
-                tokRef = nextTok();
-                
-                ASTExpr *rexpr = evalArgExpr(tokRef,parentScope);
-                node->rightExpr = rexpr;
-                
-                expr = node;
-                tokRef = token_stream[privTokIndex];
-            }
-            else if(tokRef.type == Tok::Minus){
-                auto node = new ASTExpr();
-                node->type = BINARY_EXPR;
-                node->leftExpr = expr;
-                node->codeRegion = expr->codeRegion;
-                tokRef = nextTok();
-                
-                ASTExpr *rexpr = evalArgExpr(tokRef,parentScope);
-                node->rightExpr = rexpr;
-              
-                 
-                expr = node;
-                tokRef = token_stream[privTokIndex];
-            }
-            else {
-                break;
-            }
+            return evalArgExpr(tok,parentScope);
         };
 
+        auto parseMultiplicative = [&](auto &&self,Tok tok) -> ASTExpr * {
+            auto *expr = parseUnary(parseUnary,tok);
+            if(!expr){
+                return nullptr;
+            }
+            tok = token_stream[privTokIndex];
+            while(tok.type == Tok::Asterisk || tok.type == Tok::FSlash || tok.type == Tok::Percent){
+                Tok opTok = tok;
+                tok = nextTok();
+                auto *rhs = parseUnary(parseUnary,tok);
+                if(!rhs){
+                    return nullptr;
+                }
+                expr = makeBinaryExpr(opTok,expr,rhs);
+                tok = token_stream[privTokIndex];
+            }
+            return expr;
+        };
 
-        return expr;
+        auto parseAdditive = [&](auto &&self,Tok tok) -> ASTExpr * {
+            auto *expr = parseMultiplicative(parseMultiplicative,tok);
+            if(!expr){
+                return nullptr;
+            }
+            tok = token_stream[privTokIndex];
+            while(tok.type == Tok::Plus || tok.type == Tok::Minus){
+                Tok opTok = tok;
+                tok = nextTok();
+                auto *rhs = parseMultiplicative(parseMultiplicative,tok);
+                if(!rhs){
+                    return nullptr;
+                }
+                expr = makeBinaryExpr(opTok,expr,rhs);
+                tok = token_stream[privTokIndex];
+            }
+            return expr;
+        };
+
+        auto parseRelational = [&](auto &&self,Tok tok) -> ASTExpr * {
+            auto *expr = parseAdditive(parseAdditive,tok);
+            if(!expr){
+                return nullptr;
+            }
+            tok = token_stream[privTokIndex];
+            while(tok.type == Tok::LessThan || tok.type == Tok::LessEqual
+                  || tok.type == Tok::GreaterThan || tok.type == Tok::GreaterEqual){
+                Tok opTok = tok;
+                tok = nextTok();
+                auto *rhs = parseAdditive(parseAdditive,tok);
+                if(!rhs){
+                    return nullptr;
+                }
+                expr = makeBinaryExpr(opTok,expr,rhs);
+                tok = token_stream[privTokIndex];
+            }
+            return expr;
+        };
+
+        auto parseEquality = [&](auto &&self,Tok tok) -> ASTExpr * {
+            auto *expr = parseRelational(parseRelational,tok);
+            if(!expr){
+                return nullptr;
+            }
+            tok = token_stream[privTokIndex];
+            while(tok.type == Tok::EqualEqual || tok.type == Tok::NotEqual){
+                Tok opTok = tok;
+                tok = nextTok();
+                auto *rhs = parseRelational(parseRelational,tok);
+                if(!rhs){
+                    return nullptr;
+                }
+                expr = makeBinaryExpr(opTok,expr,rhs);
+                tok = token_stream[privTokIndex];
+            }
+            return expr;
+        };
+
+        auto parseLogicAnd = [&](auto &&self,Tok tok) -> ASTExpr * {
+            auto *expr = parseEquality(parseEquality,tok);
+            if(!expr){
+                return nullptr;
+            }
+            tok = token_stream[privTokIndex];
+            while(tok.type == Tok::LogicAND){
+                Tok opTok = tok;
+                tok = nextTok();
+                auto *rhs = parseEquality(parseEquality,tok);
+                if(!rhs){
+                    return nullptr;
+                }
+                expr = makeBinaryExpr(opTok,expr,rhs);
+                tok = token_stream[privTokIndex];
+            }
+            return expr;
+        };
+
+        auto parseLogicOr = [&](auto &&self,Tok tok) -> ASTExpr * {
+            auto *expr = parseLogicAnd(parseLogicAnd,tok);
+            if(!expr){
+                return nullptr;
+            }
+            tok = token_stream[privTokIndex];
+            while(tok.type == Tok::LogicOR){
+                Tok opTok = tok;
+                tok = nextTok();
+                auto *rhs = parseLogicAnd(parseLogicAnd,tok);
+                if(!rhs){
+                    return nullptr;
+                }
+                expr = makeBinaryExpr(opTok,expr,rhs);
+                tok = token_stream[privTokIndex];
+            }
+            return expr;
+        };
+
+        auto parseAssignment = [&](auto &&self,Tok tok) -> ASTExpr * {
+            auto *lhs = parseLogicOr(parseLogicOr,tok);
+            if(!lhs){
+                return nullptr;
+            }
+            tok = token_stream[privTokIndex];
+            bool isAssignment = tok.type == Tok::Equal
+                || tok.type == Tok::PlusEqual
+                || tok.type == Tok::MinusEqual
+                || tok.type == Tok::AsteriskEqual
+                || tok.type == Tok::FSlashEqual
+                || tok.type == Tok::PercentEqual;
+            if(!isAssignment){
+                return lhs;
+            }
+            Tok opTok = tok;
+            tok = nextTok();
+            auto *rhs = self(self,tok);
+            if(!rhs){
+                return nullptr;
+            }
+            auto *assignNode = new ASTExpr();
+            assignNode->type = ASSIGN_EXPR;
+            assignNode->leftExpr = lhs;
+            assignNode->rightExpr = rhs;
+            assignNode->oprtr_str = opTok.content;
+            assignNode->codeRegion = lhs->codeRegion;
+            return assignNode;
+        };
+
+        return parseAssignment(parseAssignment,first_token);
     }
 
 
