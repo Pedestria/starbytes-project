@@ -681,8 +681,8 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                         gotoNextTok();
                     }
                     else {
-                        /// Throw Error
-                        return nullptr;
+                        func_node->declarationOnly = true;
+                        func_node->blockStmt = nullptr;
                     };
                     
                 }

@@ -193,7 +193,11 @@ void StarbytesNativeModuleAddDesc(StarbytesNativeModule *module,StarbytesFuncDes
 
 #define __STARBYTES_NATIVE_MODULE_MAIN_FUNC starbytesModuleMain
 #define STR_WRAP(n) #n
+#ifdef __cplusplus
+#define STARBYTES_NATIVE_MOD_MAIN() extern "C" StarbytesNativeModule * __STARBYTES_NATIVE_MODULE_MAIN_FUNC()
+#else
 #define STARBYTES_NATIVE_MOD_MAIN() StarbytesNativeModule * __STARBYTES_NATIVE_MODULE_MAIN_FUNC()
+#endif
 
 
 

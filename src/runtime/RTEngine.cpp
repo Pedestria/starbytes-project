@@ -10,6 +10,8 @@
 #include <cmath>
 #include <sstream>
 #include <set>
+#include <unordered_map>
+#include <vector>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
@@ -23,10 +25,56 @@ struct RTScope {
     RTScope *parent = nullptr;
 };
 
+struct _StarbytesFuncArgs {
+    unsigned argc = 0;
+    unsigned index = 0;
+    StarbytesObject *argv = nullptr;
+};
+
 RTScope *RTSCOPE_GLOBAL = new RTScope({"__GLOBAL__"});
 
 static std::string rtidToString(const RTID &id){
     return std::string(id.value,id.len);
+}
+
+static std::string attributeArgValueToString(const RTAttributeArg &arg){
+    return std::string(arg.value.value,arg.value.len);
+}
+
+static const RTAttribute *findAttribute(const RTFuncTemplate *func,const std::string &attrName){
+    if(!func){
+        return nullptr;
+    }
+    for(const auto &attr : func->attributes){
+        if(rtidToString(attr.name) == attrName){
+            return &attr;
+        }
+    }
+    return nullptr;
+}
+
+static std::string resolveNativeCallbackName(const RTFuncTemplate *func){
+    if(!func){
+        return {};
+    }
+    auto defaultName = rtidToString(func->name);
+    auto *nativeAttr = findAttribute(func,"native");
+    if(!nativeAttr){
+        return {};
+    }
+    if(nativeAttr->args.empty()){
+        return defaultName;
+    }
+    for(const auto &arg : nativeAttr->args){
+        if(arg.hasName && rtidToString(arg.name) != "name"){
+            continue;
+        }
+        auto value = attributeArgValueToString(arg);
+        if(!value.empty()){
+            return value;
+        }
+    }
+    return defaultName;
 }
 
 static std::string mangleClassMethodName(const std::string &className,const std::string &methodName){
@@ -208,14 +256,13 @@ StarbytesFuncCallback starbytes_native_mod_load_function(StarbytesNativeModule *
 void starbytes_native_mod_close(StarbytesNativeModule * mod);
 
 class InterpImpl final : public Interp {
-
-   void addExtension(string_ref path);
-
     std::unique_ptr<RTAllocator> allocator;
     
     std::vector<RTClass> classes;
     
     std::vector<RTFuncTemplate> functions;
+    std::vector<StarbytesNativeModule *> nativeModules;
+    std::unordered_map<std::string,StarbytesFuncCallback> nativeCallbackCache;
 
     map<StarbytesClassType,std::string> runtimeClassRegistry;
     string_map<StarbytesClassType> classTypeByName;
@@ -236,6 +283,8 @@ class InterpImpl final : public Interp {
     void skipRuntimeStmt(std::istream &in,RTCode code);
     void skipRuntimeBlock(std::istream &in,RTCode endCode);
     void executeRuntimeBlock(std::istream &in,RTCode endCode,bool *willReturn,StarbytesObject *return_val);
+    StarbytesFuncCallback findNativeCallback(string_ref callbackName);
+    StarbytesObject invokeNativeFunc(std::istream &in,StarbytesFuncCallback callback,unsigned argCount,StarbytesObject boundSelf);
     
     StarbytesObject evalExpr(std::istream &in);
     
@@ -246,8 +295,9 @@ public:
         printTemplate.argsTemplate.push_back({strlen("object"),"object"});
         functions.push_back(std::move(printTemplate));
     };
-    ~InterpImpl() override = default;
+    ~InterpImpl() override;
     void exec(std::istream &in) override;
+    bool addExtension(const std::string &path) override;
 };
 
 RTClass *InterpImpl::findClassByName(string_ref className){
@@ -336,6 +386,54 @@ void InterpImpl::discardExprArgs(std::istream &in,unsigned argCount){
     }
 }
 
+StarbytesFuncCallback InterpImpl::findNativeCallback(string_ref callbackName){
+    std::string key(callbackName.getBuffer(),callbackName.size());
+    auto cached = nativeCallbackCache.find(key);
+    if(cached != nativeCallbackCache.end()){
+        return cached->second;
+    }
+    for(auto *module : nativeModules){
+        auto callback = starbytes_native_mod_load_function(module,callbackName);
+        if(callback){
+            nativeCallbackCache.insert(std::make_pair(key,callback));
+            return callback;
+        }
+    }
+    nativeCallbackCache.insert(std::make_pair(key,nullptr));
+    return nullptr;
+}
+
+StarbytesObject InterpImpl::invokeNativeFunc(std::istream &in,
+                                             StarbytesFuncCallback callback,
+                                             unsigned argCount,
+                                             StarbytesObject boundSelf){
+    std::vector<StarbytesObject> args;
+    args.reserve(argCount + (boundSelf ? 1u : 0u));
+    if(boundSelf){
+        StarbytesObjectReference(boundSelf);
+        args.push_back(boundSelf);
+    }
+    while(argCount > 0){
+        auto arg = evalExpr(in);
+        args.push_back(arg);
+        --argCount;
+    }
+
+    _StarbytesFuncArgs nativeArgs;
+    nativeArgs.argc = (unsigned)args.size();
+    nativeArgs.index = 0;
+    nativeArgs.argv = args.empty()? nullptr : args.data();
+
+    auto result = callback((StarbytesFuncArgs)&nativeArgs);
+
+    for(auto *arg : args){
+        if(arg){
+            StarbytesObjectRelease(arg);
+        }
+    }
+    return result;
+}
+
 
 StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_temp,unsigned argCount,StarbytesObject boundSelf){
     if(!func_temp){
@@ -359,62 +457,70 @@ StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_te
         }
         return nullptr;
     }
-    else {
-    
-        std::string funcScope = std::string(func_name) + std::to_string(func_temp->invocations);
-
-        if(boundSelf){
-            StarbytesObjectReference(boundSelf);
-            allocator->allocVariable(string_ref("self"),boundSelf,funcScope);
+    auto nativeCallbackName = resolveNativeCallbackName(func_temp);
+    if(!nativeCallbackName.empty()){
+        auto callback = findNativeCallback(string_ref(nativeCallbackName));
+        if(callback){
+            return invokeNativeFunc(in,callback,argCount,boundSelf);
         }
-                
-        auto callSitePos = in.tellg();
-        auto func_param_it = func_temp->argsTemplate.begin();
-        while(argCount > 0){
-            StarbytesObject obj = evalExpr(in);
-            if(func_param_it != func_temp->argsTemplate.end()){
-                allocator->allocVariable(string_ref(func_param_it->value,func_param_it->len),obj,funcScope);
-                ++func_param_it;
-            }
-            else if(obj){
-                StarbytesObjectRelease(obj);
-            }
-            --argCount;
-        };
-        auto resumePos = in.tellg();
-        allocator->setScope(funcScope);
-        auto current_pos = func_temp->block_start_pos;
-        /// Invoke
-        in.seekg(current_pos);
-        
-        func_temp->invocations += 1;
-                
-        RTCode code = CODE_MODULE_END;
-        if(!in.read((char *)&code,sizeof(RTCode))){
-            in.clear();
-            in.seekg(callSitePos);
-            allocator->clearScope();
-            allocator->setScope(parentScope);
+        if(func_temp->blockByteSize == 0){
+            discardExprArgs(in,argCount);
+            lastRuntimeError = "native callback `" + nativeCallbackName + "` is not loaded";
             return nullptr;
         }
-        bool willReturn = false;
-        StarbytesObject return_val = nullptr;
-        while(in.good() && code != CODE_RTFUNCBLOCK_END){
-            if(!willReturn){
-                execNorm(code,in,&willReturn,&return_val);
-            }
-            if(!in.read((char *)&code,sizeof(RTCode))){
-                break;
-            }
-        };
-        in.seekg(resumePos);
-        
+    }
+    std::string funcScope = std::string(func_name) + std::to_string(func_temp->invocations);
+
+    if(boundSelf){
+        StarbytesObjectReference(boundSelf);
+        allocator->allocVariable(string_ref("self"),boundSelf,funcScope);
+    }
+                
+    auto callSitePos = in.tellg();
+    auto func_param_it = func_temp->argsTemplate.begin();
+    while(argCount > 0){
+        StarbytesObject obj = evalExpr(in);
+        if(func_param_it != func_temp->argsTemplate.end()){
+            allocator->allocVariable(string_ref(func_param_it->value,func_param_it->len),obj,funcScope);
+            ++func_param_it;
+        }
+        else if(obj){
+            StarbytesObjectRelease(obj);
+        }
+        --argCount;
+    };
+    auto resumePos = in.tellg();
+    allocator->setScope(funcScope);
+    auto current_pos = func_temp->block_start_pos;
+    /// Invoke
+    in.seekg(current_pos);
+    
+    func_temp->invocations += 1;
+                
+    RTCode code = CODE_MODULE_END;
+    if(!in.read((char *)&code,sizeof(RTCode))){
+        in.clear();
+        in.seekg(callSitePos);
         allocator->clearScope();
         allocator->setScope(parentScope);
-        
-        return return_val;
-        
+        return nullptr;
     }
+    bool willReturn = false;
+    StarbytesObject return_val = nullptr;
+    while(in.good() && code != CODE_RTFUNCBLOCK_END){
+        if(!willReturn){
+            execNorm(code,in,&willReturn,&return_val);
+        }
+        if(!in.read((char *)&code,sizeof(RTCode))){
+            break;
+        }
+    };
+    in.seekg(resumePos);
+    
+    allocator->clearScope();
+    allocator->setScope(parentScope);
+    
+    return return_val;
     
 }
 
@@ -1420,9 +1526,25 @@ void InterpImpl::exec(std::istream & in){
     allocator->clearScope();
 }
 
+InterpImpl::~InterpImpl(){
+    for(auto *module : nativeModules){
+        starbytes_native_mod_close(module);
+    }
+    nativeModules.clear();
+}
 
-void InterpImpl::addExtension(string_ref path) {
-
+bool InterpImpl::addExtension(const std::string &path) {
+    if(path.empty()){
+        return false;
+    }
+    auto *module = starbytes_native_mod_load(string_ref(path));
+    if(!module){
+        lastRuntimeError = "failed to load native module `" + path + "`";
+        return false;
+    }
+    nativeModules.push_back(module);
+    nativeCallbackCache.clear();
+    return true;
 }
 
 std::shared_ptr<Interp> Interp::Create(){

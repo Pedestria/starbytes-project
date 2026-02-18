@@ -1,0 +1,200 @@
+// StdLib IO Module (Python3-inspired layering + Swift-style semantics)
+
+def Bytes = Array<Int>
+
+decl imut SEEK_START:Int = 0
+decl imut SEEK_CURRENT:Int = 1
+decl imut SEEK_END:Int = 2
+
+interface Closable {
+    func close() Bool!
+    func isClosed() Bool
+}
+
+interface ReadableText {
+    func read(upTo:Int) String!
+    func readToEnd() String!
+    func readLine() String?
+}
+
+interface WritableText {
+    func write(text:String) Int!
+}
+
+interface ReadableBytes {
+    func readBytes(upTo:Int) Bytes!
+    func readAllBytes() Bytes!
+}
+
+interface WritableBytes {
+    func writeBytes(data:Bytes) Int!
+}
+
+interface Seekable {
+    func seek(offset:Int,origin:Int) Int!
+    func position() Int!
+    func truncate(size:Int) Int!
+}
+
+interface IOBase {
+    func flush() Bool!
+    func readable() Bool
+    func writable() Bool
+    func seekable() Bool
+}
+
+interface TextIOBase {
+    func close() Bool!
+    func isClosed() Bool
+    func read(upTo:Int) String!
+    func readToEnd() String!
+    func readLine() String?
+    func write(text:String) Int!
+    func seek(offset:Int,origin:Int) Int!
+    func position() Int!
+    func truncate(size:Int) Int!
+    func flush() Bool!
+    func readable() Bool
+    func writable() Bool
+    func seekable() Bool
+    func encoding() String
+    func newline() String
+}
+
+interface BufferedIOBase {
+    func close() Bool!
+    func isClosed() Bool
+    func readBytes(upTo:Int) Bytes!
+    func readAllBytes() Bytes!
+    func writeBytes(data:Bytes) Int!
+    func seek(offset:Int,origin:Int) Int!
+    func position() Int!
+    func truncate(size:Int) Int!
+    func flush() Bool!
+    func readable() Bool
+    func writable() Bool
+    func seekable() Bool
+}
+
+class TextFile : TextIOBase {
+    @native(name="TextFile_close")
+    func close() Bool!
+
+    @native(name="TextFile_isClosed")
+    func isClosed() Bool
+
+    @native(name="TextFile_read")
+    func read(upTo:Int) String!
+
+    @native(name="TextFile_readToEnd")
+    func readToEnd() String!
+
+    @native(name="TextFile_readLine")
+    func readLine() String?
+
+    @native(name="TextFile_write")
+    func write(text:String) Int!
+
+    @native(name="TextFile_seek")
+    func seek(offset:Int,origin:Int) Int!
+
+    @native(name="TextFile_position")
+    func position() Int!
+
+    @native(name="TextFile_truncate")
+    func truncate(size:Int) Int!
+
+    @native(name="TextFile_flush")
+    func flush() Bool!
+
+    @native(name="TextFile_readable")
+    func readable() Bool
+
+    @native(name="TextFile_writable")
+    func writable() Bool
+
+    @native(name="TextFile_seekable")
+    func seekable() Bool
+
+    @native(name="TextFile_encoding")
+    func encoding() String
+
+    @native(name="TextFile_newline")
+    func newline() String
+}
+
+class BinaryFile : BufferedIOBase {
+    @native(name="BinaryFile_close")
+    func close() Bool!
+
+    @native(name="BinaryFile_isClosed")
+    func isClosed() Bool
+
+    @native(name="BinaryFile_readBytes")
+    func readBytes(upTo:Int) Bytes!
+
+    @native(name="BinaryFile_readAllBytes")
+    func readAllBytes() Bytes!
+
+    @native(name="BinaryFile_writeBytes")
+    func writeBytes(data:Bytes) Int!
+
+    @native(name="BinaryFile_seek")
+    func seek(offset:Int,origin:Int) Int!
+
+    @native(name="BinaryFile_position")
+    func position() Int!
+
+    @native(name="BinaryFile_truncate")
+    func truncate(size:Int) Int!
+
+    @native(name="BinaryFile_flush")
+    func flush() Bool!
+
+    @native(name="BinaryFile_readable")
+    func readable() Bool
+
+    @native(name="BinaryFile_writable")
+    func writable() Bool
+
+    @native(name="BinaryFile_seekable")
+    func seekable() Bool
+}
+
+class Stream : TextFile {}
+
+@native(name="openText")
+func openText(path:String,mode:String,encoding:String,newline:String,buffering:Int) TextFile!
+
+@native(name="openBinary")
+func openBinary(path:String,mode:String,buffering:Int) BinaryFile!
+
+@native(name="openFile")
+func openFile(file:String,mode:String) Stream!
+
+@native(name="io_exists")
+func exists(path:String) Bool
+
+@native(name="io_remove")
+func remove(path:String) Bool!
+
+@native(name="io_rename")
+func rename(src:String,dst:String) Bool!
+
+@native(name="io_mkdir")
+func createDirectory(path:String,recursive:Bool) Bool!
+
+@native(name="io_listdir")
+func listDirectory(path:String) Array<String>!
+
+@native(name="io_readText")
+func readText(path:String,encoding:String) String!
+
+@native(name="io_writeText")
+func writeText(path:String,text:String,encoding:String) Bool!
+
+@native(name="io_readBytes")
+func readBytes(path:String) Bytes!
+
+@native(name="io_writeBytes")
+func writeBytes(path:String,data:Bytes) Bool!

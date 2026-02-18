@@ -1,9 +1,0 @@
-// IO Module
-
-interface Stream {
-    func close() Void
-}
-
-native func openFile(file:String,mode:String) Stream 
-
-native func openStream()

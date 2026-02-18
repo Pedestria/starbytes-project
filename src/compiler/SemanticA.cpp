@@ -21,6 +21,15 @@ namespace starbytes {
         return literal->strValue.has_value();
     }
 
+    static bool hasAttributeNamed(const std::vector<ASTAttribute> &attrs,const std::string &name){
+        for(const auto &attr : attrs){
+            if(attr.name == name){
+                return true;
+            }
+        }
+        return false;
+    }
+
     static bool validateSystemAttribute(ASTDecl *decl,
                                         const ASTAttribute &attr,
                                         DiagnosticHandler &errStream){
@@ -64,8 +73,11 @@ namespace starbytes {
                 pushAttrError("@native is only valid on class/function declarations.");
                 return false;
             }
+            if(attr.args.empty()){
+                return true;
+            }
             if(attr.args.size() != 1 || !attributeArgIsString(attr.args[0])){
-                pushAttrError("@native requires one string argument.");
+                pushAttrError("@native accepts at most one string argument.");
                 return false;
             }
             if(attr.args[0].key.has_value() && attr.args[0].key.value() != "name"){
@@ -736,6 +748,13 @@ namespace starbytes {
                 tablePtr->addSymbolInScope(entry,decl->scope);
                 break;
             }
+            case IMPORT_DECL : {
+                auto *importDecl = (ASTImportDecl *)decl;
+                if(importDecl->moduleName && !importDecl->moduleName->val.empty()){
+                    tablePtr->importModule(importDecl->moduleName->val);
+                }
+                break;
+            }
             case SCOPE_DECL : {
                 auto *scopeDecl = (ASTScopeDecl *)decl;
                 auto *entry = new Semantics::SymbolTable::Entry();
@@ -896,29 +915,45 @@ namespace starbytes {
                             funcNode->returnType = resolveAliasType(funcNode->returnType,symbolTableContext,scope,nullptr);
                         };
 
-                        bool hasFailed;
-
-                        ASTScopeSemanticsContext funcScopeContext {funcNode->blockStmt->parentScope,&funcNode->params};
-
-                        ASTType *return_type_implied = evalBlockStmtForASTType(funcNode->blockStmt,symbolTableContext,&hasFailed,funcScopeContext,true);
-                        if(!return_type_implied && hasFailed){
-                            return false;
-                        };
-                        /// Implied Type and Declared Type Comparison.
-                        if(funcNode->returnType != nullptr){
-                            auto *resolvedImplied = resolveAliasType(return_type_implied,symbolTableContext,scope,nullptr);
-                            if(!funcNode->returnType->match(resolvedImplied,[&](std::string message){
-                                std::ostringstream ss;
-                                ss << message << "\nContext: Declared return type of func `" << func_id->val << "` does not match implied return type.";
-                                auto out = ss.str();
-                                errStream.push(SemanticADiagnostic::create(out,funcNode,Diagnostic::Error));
-                            }))
+                        bool isNativeFunc = hasAttributeNamed(funcNode->attributes,"native");
+                        if(funcNode->declarationOnly){
+                            if(!isNativeFunc){
+                                errStream.push(SemanticADiagnostic::create("Function declaration without a body must be marked @native.",funcNode,Diagnostic::Error));
                                 return false;
+                            }
+                            if(funcNode->returnType == nullptr){
+                                errStream.push(SemanticADiagnostic::create("Native function declaration without a body must declare a return type.",funcNode,Diagnostic::Error));
+                                return false;
+                            }
                         }
-                        /// Assume return type is implied type.
                         else {
-                            funcNode->returnType = return_type_implied;
-                        };
+                            if(!funcNode->blockStmt){
+                                errStream.push(SemanticADiagnostic::create("Function declaration is missing a body.",funcNode,Diagnostic::Error));
+                                return false;
+                            }
+
+                            bool hasFailed;
+                            ASTScopeSemanticsContext funcScopeContext {funcNode->blockStmt->parentScope,&funcNode->params};
+                            ASTType *return_type_implied = evalBlockStmtForASTType(funcNode->blockStmt,symbolTableContext,&hasFailed,funcScopeContext,true);
+                            if(!return_type_implied && hasFailed){
+                                return false;
+                            };
+                            /// Implied Type and Declared Type Comparison.
+                            if(funcNode->returnType != nullptr){
+                                auto *resolvedImplied = resolveAliasType(return_type_implied,symbolTableContext,scope,nullptr);
+                                if(!funcNode->returnType->match(resolvedImplied,[&](std::string message){
+                                    std::ostringstream ss;
+                                    ss << message << "\nContext: Declared return type of func `" << func_id->val << "` does not match implied return type.";
+                                    auto out = ss.str();
+                                    errStream.push(SemanticADiagnostic::create(out,funcNode,Diagnostic::Error));
+                                }))
+                                    return false;
+                            }
+                            /// Assume return type is implied type.
+                            else {
+                                funcNode->returnType = return_type_implied;
+                            };
+                        }
 
                         break;
                     }
@@ -1046,6 +1081,22 @@ namespace starbytes {
                                     return false;
                                 }
                                 m->returnType = resolveAliasType(m->returnType,symbolTableContext,scope,&classGenericParams);
+                            }
+                            bool methodIsNative = hasAttributeNamed(m->attributes,"native");
+                            if(m->declarationOnly){
+                                if(!methodIsNative){
+                                    errStream.push(SemanticADiagnostic::create("Class method declaration without a body must be marked @native.",m,Diagnostic::Error));
+                                    return false;
+                                }
+                                if(!m->returnType){
+                                    errStream.push(SemanticADiagnostic::create("Native class method declaration without a body must declare a return type.",m,Diagnostic::Error));
+                                    return false;
+                                }
+                                continue;
+                            }
+                            if(!m->blockStmt){
+                                errStream.push(SemanticADiagnostic::create("Class method declaration is missing a body.",m,Diagnostic::Error));
+                                return false;
                             }
                             std::map<ASTIdentifier *,ASTType *> methodParams = m->params;
                             auto *selfId = new ASTIdentifier();
@@ -1248,6 +1299,14 @@ namespace starbytes {
                                 methodDecl->returnType = resolveAliasType(methodDecl->returnType,symbolTableContext,scope,&interfaceGenericParams);
                             }
 
+                            if(methodDecl->declarationOnly || !methodDecl->blockStmt){
+                                if(!methodDecl->returnType){
+                                    errStream.push(SemanticADiagnostic::create("Interface method declaration without a body must declare a return type.",methodDecl,Diagnostic::Error));
+                                    return false;
+                                }
+                                continue;
+                            }
+
                             std::map<ASTIdentifier *,ASTType *> methodParams = methodDecl->params;
                             auto *selfId = new ASTIdentifier();
                             selfId->val = "self";
@@ -1297,6 +1356,18 @@ namespace starbytes {
                             return false;
                         }
                         aliasDecl->aliasedType = resolveAliasType(aliasDecl->aliasedType,symbolTableContext,scope,&aliasGenericParams);
+                        return true;
+                    }
+                    case IMPORT_DECL : {
+                        if(scope->type == ASTScope::Class || scope->type == ASTScope::Function){
+                            errStream.push(SemanticADiagnostic::create("Import declaration is not allowed in class/function scope.",decl,Diagnostic::Error));
+                            return false;
+                        }
+                        auto *importDecl = (ASTImportDecl *)decl;
+                        if(!importDecl->moduleName || importDecl->moduleName->val.empty()){
+                            errStream.push(SemanticADiagnostic::create("Import declaration is missing a module name.",decl,Diagnostic::Error));
+                            return false;
+                        }
                         return true;
                     }
                     case SCOPE_DECL : {

@@ -1,0 +1,109 @@
+// Unicode module: ICU-backed normalization, casing, segmentation, collation.
+
+decl imut NFC:Int = 0
+decl imut NFD:Int = 1
+decl imut NFKC:Int = 2
+decl imut NFKD:Int = 3
+
+decl imut WORD:Int = 0
+decl imut SENTENCE:Int = 1
+decl imut LINE:Int = 2
+decl imut GRAPHEME:Int = 3
+
+class Locale {
+    @native(name="Unicode_Locale_id")
+    func id() String
+}
+
+class Collator {
+    @native(name="Unicode_Collator_compare")
+    func compare(lhs:String,rhs:String) Int!
+
+    @native(name="Unicode_Collator_sortKey")
+    func sortKey(text:String) Array<Int>!
+}
+
+class BreakIterator {
+    @native(name="Unicode_BreakIterator_boundaries")
+    func boundaries() Array<Int>!
+}
+
+class UnicodeScalarInfo {
+    @native(name="Unicode_ScalarInfo_codepoint")
+    func codepoint() Int
+
+    @native(name="Unicode_ScalarInfo_name")
+    func name() String
+
+    @native(name="Unicode_ScalarInfo_category")
+    func category() String
+
+    @native(name="Unicode_ScalarInfo_script")
+    func script() String
+}
+
+@native(name="Unicode_normalize")
+func normalize(text:String,form:Int) String!
+
+@native(name="Unicode_isNormalized")
+func isNormalized(text:String,form:Int) Bool!
+
+@native(name="Unicode_caseFold")
+func caseFold(text:String) String!
+
+@native(name="Unicode_Locale_current")
+func localeCurrent() Locale!
+
+@native(name="Unicode_Locale_root")
+func localeRoot() Locale!
+
+@native(name="Unicode_Locale_from")
+func localeFrom(identifier:String) Locale!
+
+@native(name="Unicode_Collator_create")
+func collatorCreate(locale:Locale) Collator!
+
+@native(name="Unicode_BreakIterator_create")
+func breakIteratorCreate(kind:Int,locale:Locale,text:String) BreakIterator!
+
+@native(name="Unicode_toUpper")
+func toUpper(text:String,locale:Locale) String!
+
+@native(name="Unicode_toLower")
+func toLower(text:String,locale:Locale) String!
+
+@native(name="Unicode_toTitle")
+func toTitle(text:String,locale:Locale) String!
+
+@native(name="Unicode_graphemes")
+func graphemes(text:String,locale:Locale) Array<String>!
+
+@native(name="Unicode_words")
+func words(text:String,locale:Locale) Array<String>!
+
+@native(name="Unicode_sentences")
+func sentences(text:String,locale:Locale) Array<String>!
+
+@native(name="Unicode_lines")
+func lines(text:String,locale:Locale) Array<String>!
+
+@native(name="Unicode_codepoints")
+func codepoints(text:String) Array<Int>!
+
+@native(name="Unicode_fromCodepoints")
+func fromCodepoints(values:Array<Int>) String!
+
+@native(name="Unicode_scalarInfo")
+func scalarInfo(codepoint:Int) UnicodeScalarInfo!
+
+@native(name="Unicode_containsFolded")
+func containsFolded(haystack:String,needle:String,locale:Locale) Bool!
+
+@native(name="Unicode_startsWithFolded")
+func startsWithFolded(text:String,prefix:String,locale:Locale) Bool!
+
+@native(name="Unicode_endsWithFolded")
+func endsWithFolded(text:String,suffix:String,locale:Locale) Bool!
+
+@native(name="Unicode_displayWidth")
+func displayWidth(text:String,locale:Locale) Int!

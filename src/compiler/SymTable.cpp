@@ -1,5 +1,6 @@
 #include "starbytes/compiler/SymTable.h"
 #include "starbytes/compiler/SemanticA.h"
+#include <algorithm>
 #include <sstream>
 
 typedef uint8_t SymbolTableCode;
@@ -143,7 +144,10 @@ void Semantics::SymbolTable::serializePublic(std::ostream & out){
 }
 
 void Semantics::SymbolTable::importModule(string_ref moduleName){
-    deps.push_back(moduleName.getBuffer());
+    auto moduleNameStr = moduleName.getBuffer();
+    if(std::find(deps.begin(),deps.end(),moduleNameStr) == deps.end()){
+        deps.push_back(std::move(moduleNameStr));
+    }
 }
 
 void Semantics::SymbolTable::addSymbolInScope(Entry *entry, std::shared_ptr<ASTScope> scope){

@@ -44,6 +44,9 @@ inline void write_ASTBlockStmt_to_context(ASTBlockStmt *blockStmt,ModuleGenConte
 }
 
 static std::string emitBlockBodyToBuffer(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,CodeGen *astConsumer){
+    if(!blockStmt){
+        return {};
+    }
     std::ostringstream bodyBuffer(std::ios::out | std::ios::binary);
     auto tempOutputPath = ctxt->outputPath;
     ModuleGenContext tempContext(ctxt->name,bodyBuffer,tempOutputPath);

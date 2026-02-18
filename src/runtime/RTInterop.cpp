@@ -2,6 +2,9 @@
 #include "starbytes/compiler/RTCode.h"
 #include "starbytes/base/ADT.h"
 #include <new>
+#include <algorithm>
+#include <cstring>
+#include <string>
 
 #if defined(__ELF__) | defined(__MACH__)
 #define UNIX_DLFCN
@@ -14,8 +17,9 @@ typedef struct __StarbytesNativeModule StarbytesNativeModule;
 
 CString CStringMake(const char *buf){
     auto len = std::strlen(buf);
-    auto new_buf = new char[len];
+    auto new_buf = new char[len + 1];
     std::copy(buf,buf + len,new_buf);
+    new_buf[len] = '\0';
     return new_buf;
 }
 
@@ -63,22 +67,48 @@ namespace starbytes::Runtime {
 typedef StarbytesNativeModule *(*NativeModuleEntryPoint)();
 
 StarbytesNativeModule * starbytes_native_mod_load(string_ref path){
-    StarbytesNativeModule *m;
+    StarbytesNativeModule *m = nullptr;
+    auto pathStr = std::string(path.getBuffer(),path.size());
     #ifdef UNIX_DLFCN
-        auto handle = dlopen(path.getBuffer(),RTLD_NOW);
-        NativeModuleEntryPoint entry = (NativeModuleEntryPoint)dlsym(handle,STR_WRAP(starbytesModuleMain));
+        auto handle = dlopen(pathStr.c_str(),RTLD_NOW);
+        if(!handle){
+            return nullptr;
+        }
+        auto entry = (NativeModuleEntryPoint)dlsym(handle,STR_WRAP(starbytesModuleMain));
+        if(!entry){
+            dlclose(handle);
+            return nullptr;
+        }
         m = entry();
+        if(!m){
+            dlclose(handle);
+            return nullptr;
+        }
         m->dl_handle = handle;
     #else
-        auto handle = LoadLibraryA(path.data());
+        auto handle = LoadLibraryA(pathStr.c_str());
+        if(!handle){
+            return nullptr;
+        }
         auto entry = (NativeModuleEntryPoint) GetProcAddress(handle,STR_WRAP(starbytesModuleMain));
+        if(!entry){
+            FreeLibrary(handle);
+            return nullptr;
+        }
         m = entry();
+        if(!m){
+            FreeLibrary(handle);
+            return nullptr;
+        }
         m->mod = handle;
     #endif
     return m;
 }
 
 StarbytesFuncCallback starbytes_native_mod_load_function(StarbytesNativeModule * mod,string_ref name){
+    if(!mod){
+        return nullptr;
+    }
     for(auto & d : mod->desc){
         if(name == d.name){
             return d.callback;
@@ -88,11 +118,15 @@ StarbytesFuncCallback starbytes_native_mod_load_function(StarbytesNativeModule *
 }
 
 void starbytes_native_mod_close(StarbytesNativeModule * mod){
+if(!mod){
+    return;
+}
 #ifdef UNIX_DLFCN
     dlclose(mod->dl_handle);
 #else
     FreeLibrary(mod->mod);
 #endif
+    delete mod;
 }
 
 }
@@ -107,8 +141,5 @@ StarbytesClassType StarbytesMakeClass(const char *name){
     }
     return t;
 }
-
-
-
 
 

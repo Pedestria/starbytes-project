@@ -3,6 +3,10 @@
 //
 //Import Declaration
 import lib
+
+import IO
+import Threading
+
 //Function Declaration
 
 func hello (hello:String) String {
@@ -100,18 +104,22 @@ secure(decl var = /(?:word1|word2)/gm) catch (error:RegexParseExpection) {
 
 }
 // 
-decl someVar = await method() catch {
+
+
+
+// Async Function - not creating another thread.
+lazy method(){
 
 }
-// Async Function - not creating another thread. 
-lazy func method(){
+// Catch
+decl someVar = await method() catch {
 
 }
 
 //Possible new feature
 //Secure Declaration
 // This funciton has an optional therefore if it returns no value it must be dealt with
-// func someOption() -> Integer?
+// func someOption() -> Int?
 secure(decl var = someOption()) catch {
 
 }

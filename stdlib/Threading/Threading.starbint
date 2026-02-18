@@ -1,0 +1,74 @@
+// Threading module: Phase-1 primitives (no background Starbytes function execution yet).
+
+decl imut WAIT_FOREVER:Int = -1
+
+class Mutex {
+    @native(name="Threading_Mutex_lock")
+    func lock() Bool!
+
+    @native(name="Threading_Mutex_tryLock")
+    func tryLock() Bool
+
+    @native(name="Threading_Mutex_unlock")
+    func unlock() Bool!
+}
+
+class Condition {
+    @native(name="Threading_Condition_wait")
+    func wait(mutex:Mutex,timeoutMillis:Int) Bool!
+
+    @native(name="Threading_Condition_notifyOne")
+    func notifyOne() Bool!
+
+    @native(name="Threading_Condition_notifyAll")
+    func notifyAll() Bool!
+}
+
+class Semaphore {
+    @native(name="Threading_Semaphore_acquire")
+    func acquire(timeoutMillis:Int) Bool!
+
+    @native(name="Threading_Semaphore_release")
+    func release(count:Int) Bool!
+
+    @native(name="Threading_Semaphore_currentCount")
+    func currentCount() Int
+}
+
+class Event {
+    @native(name="Threading_Event_wait")
+    func wait(timeoutMillis:Int) Bool!
+
+    @native(name="Threading_Event_set")
+    func set() Bool!
+
+    @native(name="Threading_Event_reset")
+    func reset() Bool!
+
+    @native(name="Threading_Event_isSet")
+    func isSet() Bool
+}
+
+@native(name="Threading_mutexCreate")
+func mutexCreate() Mutex!
+
+@native(name="Threading_conditionCreate")
+func conditionCreate() Condition!
+
+@native(name="Threading_semaphoreCreate")
+func semaphoreCreate(initial:Int,max:Int) Semaphore!
+
+@native(name="Threading_eventCreate")
+func eventCreate(initial:Bool,manualReset:Bool) Event!
+
+@native(name="Threading_currentThreadId")
+func currentThreadId() String
+
+@native(name="Threading_hardwareConcurrency")
+func hardwareConcurrency() Int
+
+@native(name="Threading_yieldNow")
+func yieldNow() Bool!
+
+@native(name="Threading_sleepMillis")
+func sleepMillis(ms:Int) Bool!

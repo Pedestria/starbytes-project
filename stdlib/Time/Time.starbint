@@ -1,0 +1,117 @@
+// Time module: Python-style practicality + Swift-style value semantics.
+
+class Duration {
+    @native(name="Time_Duration_nanoseconds")
+    func nanoseconds() Int
+
+    @native(name="Time_Duration_milliseconds")
+    func milliseconds() Int
+
+    @native(name="Time_Duration_secondsFloat")
+    func secondsFloat() Float
+}
+
+class Instant {
+    @native(name="Time_Instant_ticks")
+    func ticks() Int
+}
+
+class TimeZone {
+    @native(name="Time_TimeZone_id")
+    func id() String
+
+    @native(name="Time_TimeZone_offsetMinutes")
+    func offsetMinutes() Int
+}
+
+class DateTime {
+    @native(name="Time_DateTime_unixSeconds")
+    func unixSeconds() Int
+
+    @native(name="Time_DateTime_nanosecond")
+    func nanosecond() Int
+
+    @native(name="Time_DateTime_year")
+    func year() Int
+
+    @native(name="Time_DateTime_month")
+    func month() Int
+
+    @native(name="Time_DateTime_day")
+    func day() Int
+
+    @native(name="Time_DateTime_hour")
+    func hour() Int
+
+    @native(name="Time_DateTime_minute")
+    func minute() Int
+
+    @native(name="Time_DateTime_second")
+    func second() Int
+
+    @native(name="Time_DateTime_timezone")
+    func timezone() TimeZone!
+}
+
+@native(name="Time_durationZero")
+func durationZero() Duration
+
+@native(name="Time_durationFromNanos")
+func durationFromNanos(nanos:Int) Duration!
+
+@native(name="Time_durationFromMillis")
+func durationFromMillis(millis:Int) Duration!
+
+@native(name="Time_durationFromSeconds")
+func durationFromSeconds(seconds:Float) Duration!
+
+@native(name="Time_durationAdd")
+func durationAdd(lhs:Duration,rhs:Duration) Duration!
+
+@native(name="Time_durationSub")
+func durationSub(lhs:Duration,rhs:Duration) Duration!
+
+@native(name="Time_durationMul")
+func durationMul(duration:Duration,factor:Float) Duration!
+
+@native(name="Time_durationDiv")
+func durationDiv(duration:Duration,divisor:Float) Duration!
+
+@native(name="Time_durationCompare")
+func durationCompare(lhs:Duration,rhs:Duration) Int
+
+@native(name="Time_sleep")
+func sleep(duration:Duration) Bool!
+
+@native(name="Time_monotonicNow")
+func monotonicNow() Instant!
+
+@native(name="Time_elapsedSince")
+func elapsedSince(start:Instant) Duration!
+
+@native(name="Time_utcNow")
+func utcNow() DateTime!
+
+@native(name="Time_localNow")
+func localNow() DateTime!
+
+@native(name="Time_timezoneUTC")
+func timezoneUTC() TimeZone!
+
+@native(name="Time_timezoneLocal")
+func timezoneLocal() TimeZone!
+
+@native(name="Time_timezoneFromID")
+func timezoneFromID(id:String) TimeZone!
+
+@native(name="Time_parseISO8601")
+func parseISO8601(text:String) DateTime!
+
+@native(name="Time_formatISO8601")
+func formatISO8601(dt:DateTime,tz:TimeZone) String!
+
+@native(name="Time_fromUnix")
+func fromUnix(seconds:Int,nanos:Int,tz:TimeZone) DateTime!
+
+@native(name="Time_convertTimeZone")
+func convertTimeZone(dt:DateTime,tz:TimeZone) DateTime!

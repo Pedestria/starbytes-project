@@ -61,7 +61,8 @@ namespace starbytes {
         ASTType *funcType;
         ASTType *returnType;
         std::map<ASTIdentifier *,ASTType *> params;
-        ASTBlockStmt *blockStmt;
+        ASTBlockStmt *blockStmt = nullptr;
+        bool declarationOnly = false;
     };
 
     class ASTConstructorDecl : public ASTDecl {

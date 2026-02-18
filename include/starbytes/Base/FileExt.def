@@ -6,5 +6,6 @@
 #define STARBYTES_SRCFILE_EXT "starb"
 #define STARBYTES_COMPILEDFILE_EXT "starbmod"
 #define STARBYTES_INTERFACEFILE_EXT "starbint"
+#define STARBYTES_NATIVE_MODULE_EXT "ntstarbmod"
 
 #endif
