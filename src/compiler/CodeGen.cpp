@@ -28,11 +28,8 @@ void CodeGen::finish(){
 }
 
 inline void write_ASTBlockStmt_to_context(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,CodeGen *astConsumer,bool isFunc = false){
-    RTCode code;
-    if(isFunc)
-        code = CODE_RTFUNCBLOCK_BEGIN;
-    else 
-        code = CODE_RTBLOCK_BEGIN;
+    (void)isFunc;
+    RTCode code = CODE_RTBLOCK_BEGIN;
     ctxt->out.write((char *)&code,sizeof(RTCode));
     for(auto & stmt : blockStmt->body){
         if(stmt->type & DECL){
@@ -42,10 +39,38 @@ inline void write_ASTBlockStmt_to_context(ASTBlockStmt *blockStmt,ModuleGenConte
             astConsumer->consumeStmt(stmt);
         };
     };
-    if(isFunc)
-        code = CODE_RTFUNCBLOCK_END;
-    else 
-        code = CODE_RTBLOCK_END;
+    code = CODE_RTBLOCK_END;
+    ctxt->out.write((char *)&code,sizeof(RTCode));
+}
+
+static std::string emitBlockBodyToBuffer(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,CodeGen *astConsumer){
+    std::ostringstream bodyBuffer(std::ios::out | std::ios::binary);
+    auto tempOutputPath = ctxt->outputPath;
+    ModuleGenContext tempContext(ctxt->name,bodyBuffer,tempOutputPath);
+    tempContext.tableContext = ctxt->tableContext;
+    astConsumer->setContext(&tempContext);
+    for(auto *stmt : blockStmt->body){
+        if(stmt->type & DECL){
+            astConsumer->consumeDecl((ASTDecl *)stmt);
+        }
+        else {
+            astConsumer->consumeStmt(stmt);
+        }
+    }
+    astConsumer->setContext(ctxt);
+    return bodyBuffer.str();
+}
+
+static void emitRuntimeFunction(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,CodeGen *astConsumer,RTFuncTemplate &templ){
+    auto bodyBytes = emitBlockBodyToBuffer(blockStmt,ctxt,astConsumer);
+    templ.blockByteSize = bodyBytes.size();
+    ctxt->out << &templ;
+    RTCode code = CODE_RTFUNCBLOCK_BEGIN;
+    ctxt->out.write((char *)&code,sizeof(RTCode));
+    if(!bodyBytes.empty()){
+        ctxt->out.write(bodyBytes.data(),(std::streamsize)bodyBytes.size());
+    }
+    code = CODE_RTFUNCBLOCK_END;
     ctxt->out.write((char *)&code,sizeof(RTCode));
 }
 
@@ -67,6 +92,25 @@ static RTID makeOwnedRTID(const std::string &value){
 
 static std::string mangleClassMethodName(const std::string &className,const std::string &methodName){
     return "__" + className + "__" + methodName;
+}
+
+static std::string classCtorTemplateName(size_t arity){
+    return "__ctor__" + std::to_string(arity);
+}
+
+static std::string mangleClassCtorName(const std::string &className,size_t arity){
+    return mangleClassMethodName(className,classCtorTemplateName(arity));
+}
+
+static std::string mangleClassFieldInitName(const std::string &className){
+    return "__" + className + "__field_init";
+}
+
+static void writeNamedVarRef(std::ostream &out,const std::string &name){
+    RTCode code = CODE_RTVAR_REF;
+    out.write((const char *)&code,sizeof(RTCode));
+    RTID id = makeOwnedRTID(name);
+    out << &id;
 }
 
 static bool getMemberName(ASTExpr *memberExpr,std::string &memberName){
@@ -177,8 +221,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             ASTIdentifier_to_RTID(param_pair.first,param_id);
             funcTemplate.argsTemplate.push_back(param_id);
         };
-        genContext->out << &funcTemplate;
-        write_ASTBlockStmt_to_context(func_node->blockStmt,genContext,this,true);
+        emitRuntimeFunction(func_node->blockStmt,genContext,this,funcTemplate);
     }
     else if(stmt->type == CLASS_DECL){
         auto class_decl = (ASTClassDecl *)stmt;
@@ -186,13 +229,24 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         ASTIdentifier_to_RTID(class_decl->id,cls.name);
         cls.attributes = convertAttributes(class_decl->attributes);
         std::string className = class_decl->id->val;
+        struct FieldInitSpec {
+            std::string fieldName;
+            ASTExpr *expr = nullptr;
+        };
+        std::vector<FieldInitSpec> fieldInitializers;
         for(auto &fieldDecl : class_decl->fields){
             for(auto &spec : fieldDecl->specs){
                 RTVar fieldVar;
                 ASTIdentifier_to_RTID(spec.id,fieldVar.id);
-                fieldVar.hasInitValue = false;
+                fieldVar.hasInitValue = (spec.expr != nullptr);
                 fieldVar.attributes = convertAttributes(fieldDecl->attributes);
                 cls.fields.push_back(std::move(fieldVar));
+                if(spec.expr){
+                    FieldInitSpec fieldInit;
+                    fieldInit.fieldName = spec.id->val;
+                    fieldInit.expr = spec.expr;
+                    fieldInitializers.push_back(std::move(fieldInit));
+                }
             }
         }
         for(auto &methodDecl : class_decl->methods){
@@ -206,6 +260,21 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             }
             cls.methods.push_back(std::move(methodTemplate));
         }
+        for(auto &ctorDecl : class_decl->constructors){
+            RTFuncTemplate ctorTemplate;
+            ctorTemplate.name = makeOwnedRTID(classCtorTemplateName(ctorDecl->params.size()));
+            ctorTemplate.attributes = convertAttributes(ctorDecl->attributes);
+            for(auto &paramPair : ctorDecl->params){
+                RTID paramId;
+                ASTIdentifier_to_RTID(paramPair.first,paramId);
+                ctorTemplate.argsTemplate.push_back(paramId);
+            }
+            cls.constructors.push_back(std::move(ctorTemplate));
+        }
+        if(!fieldInitializers.empty()){
+            cls.hasFieldInitFunc = true;
+            cls.fieldInitFuncName = makeOwnedRTID(mangleClassFieldInitName(className));
+        }
         genContext->out << &cls;
 
         for(auto &methodDecl : class_decl->methods){
@@ -217,8 +286,47 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
                 ASTIdentifier_to_RTID(paramPair.first,paramId);
                 runtimeMethod.argsTemplate.push_back(paramId);
             }
-            genContext->out << &runtimeMethod;
-            write_ASTBlockStmt_to_context(methodDecl->blockStmt,genContext,this,true);
+            emitRuntimeFunction(methodDecl->blockStmt,genContext,this,runtimeMethod);
+        }
+        for(auto &ctorDecl : class_decl->constructors){
+            RTFuncTemplate runtimeCtor;
+            runtimeCtor.name = makeOwnedRTID(mangleClassCtorName(className,ctorDecl->params.size()));
+            runtimeCtor.attributes = convertAttributes(ctorDecl->attributes);
+            for(auto &paramPair : ctorDecl->params){
+                RTID paramId;
+                ASTIdentifier_to_RTID(paramPair.first,paramId);
+                runtimeCtor.argsTemplate.push_back(paramId);
+            }
+            emitRuntimeFunction(ctorDecl->blockStmt,genContext,this,runtimeCtor);
+        }
+        if(!fieldInitializers.empty()){
+            RTFuncTemplate runtimeFieldInit;
+            runtimeFieldInit.name = makeOwnedRTID(mangleClassFieldInitName(className));
+            std::ostringstream bodyBuffer(std::ios::out | std::ios::binary);
+            auto tempOutputPath = genContext->outputPath;
+            ModuleGenContext tempContext(genContext->name,bodyBuffer,tempOutputPath);
+            tempContext.tableContext = genContext->tableContext;
+            auto *savedContext = genContext;
+            setContext(&tempContext);
+            RTCode code = CODE_RTMEMBER_SET;
+            for(auto &fieldInit : fieldInitializers){
+                tempContext.out.write((char *)&code,sizeof(RTCode));
+                writeNamedVarRef(tempContext.out,"self");
+                RTID memberId = makeOwnedRTID(fieldInit.fieldName);
+                tempContext.out << &memberId;
+                consumeStmt(fieldInit.expr);
+            }
+            setContext(savedContext);
+            auto bodyBytes = bodyBuffer.str();
+            runtimeFieldInit.blockByteSize = bodyBytes.size();
+            genContext->out << &runtimeFieldInit;
+            code = CODE_RTFUNCBLOCK_BEGIN;
+            genContext->out.write((char *)&code,sizeof(RTCode));
+            if(!bodyBytes.empty()){
+                genContext->out.write(bodyBytes.data(),(std::streamsize)bodyBytes.size());
+            }
+            code = CODE_RTFUNCBLOCK_END;
+            genContext->out.write((char *)&code,sizeof(RTCode));
         }
     }
     else if(stmt->type == SCOPE_DECL){

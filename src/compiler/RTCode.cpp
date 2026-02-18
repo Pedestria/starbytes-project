@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <cmath>
+#include <cstring>
 
 namespace starbytes {
 namespace Runtime {
@@ -45,6 +46,271 @@ namespace Runtime {
             attributes.push_back(std::move(attr));
             --attrCount;
         }
+    }
+
+    static void skipRTIDPayload(std::istream &is){
+        size_t len = 0;
+        is.read((char *)&len,sizeof(size_t));
+        if(len > 0){
+            is.seekg((std::streamoff)len,std::ios_base::cur);
+        }
+    }
+
+    static void skipAttributeListPayload(std::istream &is){
+        unsigned attrCount = 0;
+        is.read((char *)&attrCount,sizeof(attrCount));
+        while(attrCount > 0){
+            skipRTIDPayload(is);
+            unsigned argCount = 0;
+            is.read((char *)&argCount,sizeof(argCount));
+            while(argCount > 0){
+                bool hasName = false;
+                is.read((char *)&hasName,sizeof(hasName));
+                if(hasName){
+                    skipRTIDPayload(is);
+                }
+                RTAttrValueType valueType = RTATTR_VALUE_IDENTIFIER;
+                is.read((char *)&valueType,sizeof(valueType));
+                (void)valueType;
+                skipRTIDPayload(is);
+                --argCount;
+            }
+            --attrCount;
+        }
+    }
+
+    static void skipExpr(std::istream &is);
+    static void skipRuntimeStmt(std::istream &is,RTCode code);
+    static void skipRuntimeBlock(std::istream &is,RTCode endCode);
+    static void skipFuncTemplatePayload(std::istream &is);
+    static void skipClassPayload(std::istream &is);
+
+    static void skipRuntimeObjectPayload(std::istream &is){
+        RTCode internalCode = CODE_MODULE_END;
+        is.read((char *)&internalCode,sizeof(RTCode));
+        switch(internalCode){
+            case RTINTOBJ_STR:
+                skipRTIDPayload(is);
+                break;
+            case RTINTOBJ_BOOL:
+                is.seekg((std::streamoff)sizeof(bool),std::ios_base::cur);
+                break;
+            case RTINTOBJ_ARRAY: {
+                unsigned arrayLen = 0;
+                is.read((char *)&arrayLen,sizeof(arrayLen));
+                while(arrayLen > 0){
+                    RTCode elementCode = CODE_MODULE_END;
+                    is.read((char *)&elementCode,sizeof(RTCode));
+                    if(elementCode == CODE_RTINTOBJCREATE || elementCode == CODE_RTOBJCREATE){
+                        skipRuntimeObjectPayload(is);
+                    }
+                    --arrayLen;
+                }
+                break;
+            }
+            case RTINTOBJ_NUM:
+                is.seekg((std::streamoff)sizeof(starbytes_float_t),std::ios_base::cur);
+                break;
+            case RTINTOBJ_DICTIONARY:
+                break;
+            default:
+                is.seekg((std::streamoff)sizeof(StarbytesClassType),std::ios_base::cur);
+                break;
+        }
+    }
+
+    static void skipExprFromCode(std::istream &is,RTCode code){
+        switch(code){
+            case CODE_RTINTOBJCREATE:
+            case CODE_RTOBJCREATE:
+                skipRuntimeObjectPayload(is);
+                break;
+            case CODE_RTVAR_REF:
+            case CODE_RTFUNC_REF:
+                skipRTIDPayload(is);
+                break;
+            case CODE_RTIVKFUNC: {
+                skipExpr(is);
+                unsigned argCount = 0;
+                is.read((char *)&argCount,sizeof(argCount));
+                while(argCount > 0){
+                    skipExpr(is);
+                    --argCount;
+                }
+                break;
+            }
+            case CODE_RTNEWOBJ: {
+                skipRTIDPayload(is);
+                unsigned argCount = 0;
+                is.read((char *)&argCount,sizeof(argCount));
+                while(argCount > 0){
+                    skipExpr(is);
+                    --argCount;
+                }
+                break;
+            }
+            case CODE_RTMEMBER_GET:
+                skipExpr(is);
+                skipRTIDPayload(is);
+                break;
+            case CODE_RTMEMBER_SET:
+                skipExpr(is);
+                skipRTIDPayload(is);
+                skipExpr(is);
+                break;
+            case CODE_RTMEMBER_IVK: {
+                skipExpr(is);
+                skipRTIDPayload(is);
+                unsigned argCount = 0;
+                is.read((char *)&argCount,sizeof(argCount));
+                while(argCount > 0){
+                    skipExpr(is);
+                    --argCount;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    static void skipExpr(std::istream &is){
+        RTCode code = CODE_MODULE_END;
+        is.read((char *)&code,sizeof(RTCode));
+        skipExprFromCode(is,code);
+    }
+
+    static void skipRuntimeBlock(std::istream &is,RTCode endCode){
+        RTCode code = CODE_MODULE_END;
+        is.read((char *)&code,sizeof(RTCode));
+        while(is.good() && code != endCode){
+            skipRuntimeStmt(is,code);
+            is.read((char *)&code,sizeof(RTCode));
+        }
+    }
+
+    static void skipFuncTemplatePayload(std::istream &is){
+        skipRTIDPayload(is);
+        skipAttributeListPayload(is);
+        unsigned argCount = 0;
+        is.read((char *)&argCount,sizeof(argCount));
+        while(argCount > 0){
+            skipRTIDPayload(is);
+            --argCount;
+        }
+        auto checkpoint = is.tellg();
+        RTCode code = CODE_MODULE_END;
+        is.read((char *)&code,sizeof(RTCode));
+        if(code == CODE_RTFUNCBLOCK_BEGIN){
+            skipRuntimeBlock(is,CODE_RTFUNCBLOCK_END);
+        }
+        else {
+            is.seekg(checkpoint);
+        }
+    }
+
+    static void skipClassPayload(std::istream &is){
+        skipRTIDPayload(is);
+        skipAttributeListPayload(is);
+
+        unsigned fieldCount = 0;
+        is.read((char *)&fieldCount,sizeof(fieldCount));
+        while(fieldCount > 0){
+            RTCode code = CODE_MODULE_END;
+            is.read((char *)&code,sizeof(code));
+            if(code != CODE_RTVAR){
+                break;
+            }
+            skipRTIDPayload(is);
+            bool hasInitValue = false;
+            is.read((char *)&hasInitValue,sizeof(hasInitValue));
+            skipAttributeListPayload(is);
+            --fieldCount;
+        }
+
+        unsigned methodCount = 0;
+        is.read((char *)&methodCount,sizeof(methodCount));
+        while(methodCount > 0){
+            RTCode code = CODE_MODULE_END;
+            is.read((char *)&code,sizeof(code));
+            if(code != CODE_RTFUNC){
+                break;
+            }
+            skipFuncTemplatePayload(is);
+            --methodCount;
+        }
+
+        unsigned ctorCount = 0;
+        is.read((char *)&ctorCount,sizeof(ctorCount));
+        while(ctorCount > 0){
+            RTCode code = CODE_MODULE_END;
+            is.read((char *)&code,sizeof(code));
+            if(code != CODE_RTFUNC){
+                break;
+            }
+            skipFuncTemplatePayload(is);
+            --ctorCount;
+        }
+
+        bool hasFieldInitFunc = false;
+        is.read((char *)&hasFieldInitFunc,sizeof(hasFieldInitFunc));
+        if(hasFieldInitFunc){
+            skipRTIDPayload(is);
+        }
+    }
+
+    static void skipRuntimeStmt(std::istream &is,RTCode code){
+        if(code == CODE_RTVAR){
+            skipRTIDPayload(is);
+            bool hasInitValue = false;
+            is.read((char *)&hasInitValue,sizeof(hasInitValue));
+            skipAttributeListPayload(is);
+            if(hasInitValue){
+                skipExpr(is);
+            }
+            return;
+        }
+        if(code == CODE_RTRETURN){
+            bool hasValue = false;
+            is.read((char *)&hasValue,sizeof(hasValue));
+            if(hasValue){
+                skipExpr(is);
+            }
+            return;
+        }
+        if(code == CODE_CONDITIONAL){
+            unsigned condSpecCount = 0;
+            is.read((char *)&condSpecCount,sizeof(condSpecCount));
+            while(condSpecCount > 0){
+                RTCode specType = COND_TYPE_IF;
+                is.read((char *)&specType,sizeof(specType));
+                if(specType != COND_TYPE_ELSE){
+                    skipExpr(is);
+                }
+                RTCode blockBegin = CODE_MODULE_END;
+                is.read((char *)&blockBegin,sizeof(blockBegin));
+                if(blockBegin == CODE_RTBLOCK_BEGIN){
+                    skipRuntimeBlock(is,CODE_RTBLOCK_END);
+                }
+                else if(blockBegin == CODE_RTFUNCBLOCK_BEGIN){
+                    skipRuntimeBlock(is,CODE_RTFUNCBLOCK_END);
+                }
+                --condSpecCount;
+            }
+            RTCode conditionalEnd = CODE_MODULE_END;
+            is.read((char *)&conditionalEnd,sizeof(conditionalEnd));
+            (void)conditionalEnd;
+            return;
+        }
+        if(code == CODE_RTFUNC){
+            skipFuncTemplatePayload(is);
+            return;
+        }
+        if(code == CODE_RTCLASS_DEF){
+            skipClassPayload(is);
+            return;
+        }
+        skipExprFromCode(is,code);
     }
 
     RTCODE_STREAM_OBJECT_IN_IMPL(RTAttributeArg){
@@ -117,13 +383,17 @@ namespace Runtime {
             obj->argsTemplate.push_back(std::move(id));
             --argCount;
         };
+        is.read((char *)&obj->blockByteSize,sizeof(obj->blockByteSize));
         auto checkpoint = is.tellg();
         RTCode code = CODE_MODULE_END;
         is.read((char *)&code,sizeof(RTCode));
         if(code == CODE_RTFUNCBLOCK_BEGIN){
             obj->block_start_pos = is.tellg();
-            while(code != CODE_RTFUNCBLOCK_END)
-                is.read((char *)&code,sizeof(RTCode));
+            if(obj->blockByteSize > 0){
+                is.seekg((std::streamoff)obj->blockByteSize,std::ios_base::cur);
+            }
+            RTCode endCode = CODE_MODULE_END;
+            is.read((char *)&endCode,sizeof(RTCode));
         }
         else {
             is.seekg(checkpoint);
@@ -142,6 +412,7 @@ namespace Runtime {
         for(auto & arg : obj->argsTemplate){
             os << &arg;
         };
+        os.write((char *)&obj->blockByteSize,sizeof(obj->blockByteSize));
         return os;
     }
 
@@ -174,6 +445,23 @@ namespace Runtime {
             obj->methods.push_back(std::move(method));
             --methodCount;
         }
+        unsigned ctorCount = 0;
+        is.read((char *)&ctorCount,sizeof(ctorCount));
+        while(ctorCount > 0){
+            RTCode code = CODE_MODULE_END;
+            is.read((char *)&code,sizeof(code));
+            if(code != CODE_RTFUNC){
+                break;
+            }
+            RTFuncTemplate ctorTemplate;
+            is >> &ctorTemplate;
+            obj->constructors.push_back(std::move(ctorTemplate));
+            --ctorCount;
+        }
+        is.read((char *)&obj->hasFieldInitFunc,sizeof(obj->hasFieldInitFunc));
+        if(obj->hasFieldInitFunc){
+            is >> &obj->fieldInitFuncName;
+        }
         return is;
     }
 
@@ -194,6 +482,16 @@ namespace Runtime {
         for(auto &method : obj->methods){
             os << &method;
         }
+
+        unsigned ctorCount = obj->constructors.size();
+        os.write((char *)&ctorCount,sizeof(ctorCount));
+        for(auto &ctorTemplate : obj->constructors){
+            os << &ctorTemplate;
+        }
+        os.write((char *)&obj->hasFieldInitFunc,sizeof(obj->hasFieldInitFunc));
+        if(obj->hasFieldInitFunc){
+            os << &obj->fieldInitFuncName;
+        }
         return os;
     }
 
@@ -206,7 +504,11 @@ namespace Runtime {
             
             RTID strVal;
             is >> &strVal;
-            *obj = StarbytesStrNewWithData(strVal.value);
+            auto *buf = new char[strVal.len + 1];
+            std::memcpy(buf,strVal.value,strVal.len);
+            buf[strVal.len] = '\0';
+            *obj = StarbytesStrNewWithData(buf);
+            delete[] buf;
         }
         else if(code2 == RTINTOBJ_BOOL){
             bool val;

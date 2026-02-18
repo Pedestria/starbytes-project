@@ -31,6 +31,7 @@ namespace starbytes {
             struct Class {
                 ASTType *classType;
                 std::vector<Function *> instMethods;
+                std::vector<Function *> constructors;
                 std::vector<Var *> fields;
             };
             

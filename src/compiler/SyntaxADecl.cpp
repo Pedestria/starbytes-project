@@ -472,6 +472,57 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                 };
                 
             }
+            else if(currentTok.content == KW_NEW && parentScope && parentScope->type == ASTScope::Class){
+                auto *ctorNode = new ASTConstructorDecl();
+                node = ctorNode;
+                node->type = CLASS_CTOR_DECL;
+                node->scope = parentScope;
+
+                Tok tok0 = nextTok();
+                if(tok0.type != Tok::OpenParen){
+                    return nullptr;
+                }
+                tok0 = nextTok();
+                while(tok0.type != Tok::CloseParen){
+                    ASTIdentifier *param_id = buildIdentifier(tok0,false);
+                    if(!param_id){
+                        return nullptr;
+                    }
+                    tok0 = nextTok();
+                    if(tok0.type != Tok::Colon){
+                        return nullptr;
+                    }
+                    tok0 = nextTok();
+                    ASTTypeContext type_ctxt;
+                    type_ctxt.isPlaceholder = true;
+                    ASTType *param_type = buildTypeFromTokenStream(tok0,ctorNode,type_ctxt);
+                    if(!param_type){
+                        return nullptr;
+                    }
+                    ctorNode->params.insert(std::make_pair(param_id,param_type));
+                    tok0 = nextTok();
+                    if(tok0.type == Tok::Comma){
+                        tok0 = nextTok();
+                        continue;
+                    }
+                    if(tok0.type != Tok::CloseParen){
+                        return nullptr;
+                    }
+                }
+
+                tok0 = nextTok();
+                if(tok0.type != Tok::OpenBrace){
+                    return nullptr;
+                }
+                std::shared_ptr<ASTScope> ctor_scope(new ASTScope({"new",ASTScope::Function,parentScope}));
+                ctor_scope->generateHashID();
+                auto block = evalBlockStmt(tok0,ctor_scope);
+                if(!block){
+                    return nullptr;
+                }
+                ctorNode->blockStmt = block;
+                gotoNextTok();
+            }
             // else {
             //     node = nullptr;
             // }
@@ -512,8 +563,12 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                     else if(decl->type == FUNC_DECL){
                         n->methods.push_back((ASTFuncDecl *)decl);
                     }
+                    else if(decl->type == CLASS_CTOR_DECL){
+                        n->constructors.push_back((ASTConstructorDecl *)decl);
+                    }
                     else {
-                        std::cout << std::hex << decl->type << " type not allowed in class scope. Only " << VAR_DECL << " and " << FUNC_DECL << " allowed." << std::endl;
+                        std::cout << std::hex << decl->type << " type not allowed in class scope. Only "
+                                  << VAR_DECL << ", " << FUNC_DECL << ", and " << CLASS_CTOR_DECL << " allowed." << std::endl;
                         return nullptr;
                     }
                     tok0 = token_stream[privTokIndex];

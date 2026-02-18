@@ -50,6 +50,54 @@ static Semantics::SymbolTable::Var *findClassField(Semantics::SymbolTable::Class
     return nullptr;
 }
 
+static ASTType *findClassFieldTypeFromDecl(ASTClassDecl *classDecl,string_ref fieldName,bool *isReadonly){
+    for(auto *fieldDecl : classDecl->fields){
+        bool readonlyField = false;
+        for(auto &attr : fieldDecl->attributes){
+            if(attr.name == "readonly"){
+                readonlyField = true;
+                break;
+            }
+        }
+        for(auto &spec : fieldDecl->specs){
+            if(spec.id && spec.id->val == fieldName){
+                if(isReadonly){
+                    *isReadonly = readonlyField;
+                }
+                return spec.type;
+            }
+        }
+    }
+    return nullptr;
+}
+
+static ASTFuncDecl *findClassMethodFromDecl(ASTClassDecl *classDecl,string_ref methodName){
+    for(auto *methodDecl : classDecl->methods){
+        if(methodDecl->funcId && methodDecl->funcId->val == methodName){
+            return methodDecl;
+        }
+    }
+    return nullptr;
+}
+
+static ASTConstructorDecl *findConstructorByArityFromDecl(ASTClassDecl *classDecl,size_t argCount){
+    for(auto *ctorDecl : classDecl->constructors){
+        if(ctorDecl->params.size() == argCount){
+            return ctorDecl;
+        }
+    }
+    return nullptr;
+}
+
+static Semantics::SymbolTable::Function *findConstructorByArity(Semantics::SymbolTable::Class *classData,size_t argCount){
+    for(auto *ctor : classData->constructors){
+        if(ctor->paramMap.size() == argCount){
+            return ctor;
+        }
+    }
+    return nullptr;
+}
+
 static std::shared_ptr<ASTScope> scopeFromEntry(Semantics::SymbolTable::Entry *entry){
     if(!entry || entry->type != Semantics::SymbolTable::Entry::Scope || !entry->data){
         return nullptr;
@@ -79,6 +127,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 if(scopeContext.scope->type == ASTScope::Function && scopeContext.args != nullptr){
                     for(auto & __arg : *scopeContext.args){
                         if(__arg.first->match(id_)){
+                            id_->type = ASTIdentifier::Var;
                             return __arg.second;
                             break;
                         };
@@ -218,20 +267,35 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 }
 
                 auto classEntry = findClassEntry(symbolTableContext,leftType->getName(),scopeContext.scope);
-                if(!classEntry){
-                    errStream.push(SemanticADiagnostic::create("Member access requires class instance type.",expr_to_eval,Diagnostic::Error));
-                    return nullptr;
+                if(classEntry){
+                    auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
+                    if(auto *field = findClassField(classData,memberName)){
+                        expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
+                        type = field->type;
+                        break;
+                    }
+                    if(auto *method = findClassMethod(classData,memberName)){
+                        expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
+                        type = method->funcType;
+                        break;
+                    }
                 }
-                auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
-                if(auto *field = findClassField(classData,memberName)){
-                    expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
-                    type = field->type;
-                    break;
-                }
-                if(auto *method = findClassMethod(classData,memberName)){
-                    expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
-                    type = method->funcType;
-                    break;
+
+                ASTStmt *classNode = leftType->getParentNode();
+                if(classNode && classNode->type == CLASS_DECL){
+                    auto *classDecl = (ASTClassDecl *)classNode;
+                    bool readonly = false;
+                    if(auto *fieldType = findClassFieldTypeFromDecl(classDecl,memberName,&readonly)){
+                        (void)readonly;
+                        expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
+                        type = fieldType;
+                        break;
+                    }
+                    if(auto *methodDecl = findClassMethodFromDecl(classDecl,memberName)){
+                        expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
+                        type = methodDecl->funcType;
+                        break;
+                    }
                 }
                 errStream.push(SemanticADiagnostic::create("Unknown class member.",expr_to_eval,Diagnostic::Error));
                 return nullptr;
@@ -269,6 +333,18 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         if(field && field->isReadonly){
                             errStream.push(SemanticADiagnostic::create("Cannot assign to @readonly field.",expr_to_eval,Diagnostic::Error));
                             return nullptr;
+                        }
+                    }
+                    else {
+                        ASTStmt *classNode = baseType->getParentNode();
+                        if(classNode && classNode->type == CLASS_DECL){
+                            bool readonly = false;
+                            auto *fieldType = findClassFieldTypeFromDecl((ASTClassDecl *)classNode,memberExpr->rightExpr->id->val,&readonly);
+                            (void)fieldType;
+                            if(readonly){
+                                errStream.push(SemanticADiagnostic::create("Cannot assign to @readonly field.",expr_to_eval,Diagnostic::Error));
+                                return nullptr;
+                            }
                         }
                     }
                 }
@@ -325,34 +401,108 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         return nullptr;
                     }
                     auto classEntry = findClassEntry(symbolTableContext,baseType->getName(),scopeContext.scope);
-                    if(!classEntry){
-                        return nullptr;
+                    if(classEntry){
+                        auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
+                        auto *method = findClassMethod(classData,memberExpr->rightExpr->id->val);
+                        if(!method){
+                            errStream.push(SemanticADiagnostic::create("Unknown method.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                        if(expr_to_eval->exprArrayData.size() != method->paramMap.size()){
+                            errStream.push(SemanticADiagnostic::create("Incorrect number of method arguments.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                        auto paramIt = method->paramMap.begin();
+                        for(auto *arg : expr_to_eval->exprArrayData){
+                            auto *argType = evalExprForTypeId(arg,symbolTableContext,scopeContext);
+                            if(!argType){
+                                return nullptr;
+                            }
+                            if(!paramIt->second->match(argType,[&](std::string){
+                                errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",arg,Diagnostic::Error));
+                            })){
+                                return nullptr;
+                            }
+                            ++paramIt;
+                        }
+                        type = method->returnType ? method->returnType : VOID_TYPE;
+                        break;
                     }
-                    auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
-                    auto *method = findClassMethod(classData,memberExpr->rightExpr->id->val);
-                    if(!method){
-                        errStream.push(SemanticADiagnostic::create("Unknown method.",expr_to_eval,Diagnostic::Error));
-                        return nullptr;
+                    ASTStmt *classNode = baseType->getParentNode();
+                    if(classNode && classNode->type == CLASS_DECL){
+                        auto *classDecl = (ASTClassDecl *)classNode;
+                        auto *methodDecl = findClassMethodFromDecl(classDecl,memberExpr->rightExpr->id->val);
+                        if(!methodDecl){
+                            errStream.push(SemanticADiagnostic::create("Unknown method.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                        if(expr_to_eval->exprArrayData.size() != methodDecl->params.size()){
+                            errStream.push(SemanticADiagnostic::create("Incorrect number of method arguments.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                        for(auto *arg : expr_to_eval->exprArrayData){
+                            auto *argType = evalExprForTypeId(arg,symbolTableContext,scopeContext);
+                            if(!argType){
+                                return nullptr;
+                            }
+                        }
+                        type = methodDecl->returnType ? methodDecl->returnType : VOID_TYPE;
+                        break;
                     }
-                    if(expr_to_eval->exprArrayData.size() != method->paramMap.size()){
-                        errStream.push(SemanticADiagnostic::create("Incorrect number of method arguments.",expr_to_eval,Diagnostic::Error));
-                        return nullptr;
+                    return nullptr;
+                }
+
+                if(expr_to_eval->isConstructorCall){
+                    Semantics::SymbolTable::Class *classData = nullptr;
+                    auto *classEntry = findClassEntry(symbolTableContext,funcType->getName(),scopeContext.scope);
+                    if(classEntry){
+                        classData = (Semantics::SymbolTable::Class *)classEntry->data;
                     }
-                    auto paramIt = method->paramMap.begin();
+                    ASTClassDecl *classDecl = nullptr;
+                    ASTStmt *classNode = funcType->getParentNode();
+                    if(classNode && classNode->type == CLASS_DECL){
+                        classDecl = (ASTClassDecl *)classNode;
+                    }
+
+                    size_t argCount = expr_to_eval->exprArrayData.size();
                     for(auto *arg : expr_to_eval->exprArrayData){
-                        auto *argType = evalExprForTypeId(arg,symbolTableContext,scopeContext);
-                        if(!argType){
+                        if(!evalExprForTypeId(arg,symbolTableContext,scopeContext)){
                             return nullptr;
                         }
-                        if(!paramIt->second->match(argType,[&](std::string){
-                            errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",arg,Diagnostic::Error));
-                        })){
-                            return nullptr;
-                        }
-                        ++paramIt;
                     }
-                    type = method->returnType ? method->returnType : VOID_TYPE;
-                    break;
+
+                    if(classData){
+                        if(classData->constructors.empty()){
+                            if(argCount != 0){
+                                errStream.push(SemanticADiagnostic::create("No constructor matches argument count.",expr_to_eval,Diagnostic::Error));
+                                return nullptr;
+                            }
+                        }
+                        else if(!findConstructorByArity(classData,argCount)){
+                            errStream.push(SemanticADiagnostic::create("No constructor matches argument count.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                        type = classData->classType;
+                        break;
+                    }
+
+                    if(classDecl){
+                        if(classDecl->constructors.empty()){
+                            if(argCount != 0){
+                                errStream.push(SemanticADiagnostic::create("No constructor matches argument count.",expr_to_eval,Diagnostic::Error));
+                                return nullptr;
+                            }
+                        }
+                        else if(!findConstructorByArityFromDecl(classDecl,argCount)){
+                            errStream.push(SemanticADiagnostic::create("No constructor matches argument count.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                        type = classDecl->classType;
+                        break;
+                    }
+
+                    errStream.push(SemanticADiagnostic::create("Constructor call requires a class type.",expr_to_eval,Diagnostic::Error));
+                    return nullptr;
                 }
 
                 if(expr_to_eval->callee->type == ID_EXPR && expr_to_eval->callee->id &&

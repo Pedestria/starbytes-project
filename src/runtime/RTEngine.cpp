@@ -34,7 +34,7 @@ class RTAllocator {
    string_map<string_map<StarbytesObject>> all_var_objects;
     
 public:
-    string_ref currentScope;
+    std::string currentScope;
 
     RTAllocator():all_var_objects(),currentScope(RTSCOPE_GLOBAL->name){
         
@@ -45,6 +45,9 @@ public:
     };
 
     void setScope(string_ref scope_name){
+        currentScope.assign(scope_name.getBuffer(),scope_name.size());
+    };
+    void setScope(const std::string &scope_name){
         currentScope = scope_name;
     };
     void allocVariable(string_ref name,StarbytesObject obj){
@@ -81,7 +84,8 @@ public:
         else {
             auto & var_map = found->second;
             for(auto & var : var_map){
-                if(var.first == name.getBuffer()){
+                if(var.first.size() == name.size() &&
+                   std::memcmp(var.first.data(),name.getBuffer(),name.size()) == 0){
                     /// Increase Reference count upon variable reference.
                     StarbytesObjectReference(var.second);
 //                     std::cout << "Found Var:" << name.data() << std::endl;
@@ -125,7 +129,7 @@ class InterpImpl final : public Interp {
 
     void execNorm(RTCode &code,std::istream &in,bool * willReturn,StarbytesObject *return_val);
     
-    StarbytesObject invokeFunc(std::istream &in,RTFuncTemplate *func_temp,unsigned argCount);
+    StarbytesObject invokeFunc(std::istream &in,RTFuncTemplate *func_temp,unsigned argCount,StarbytesObject boundSelf = nullptr);
     RTClass *findClassByName(string_ref className);
     RTClass *findClassByType(StarbytesClassType classType);
     RTFuncTemplate *findFunctionByName(string_ref functionName);
@@ -185,53 +189,77 @@ void InterpImpl::discardExprArgs(std::istream &in,unsigned argCount){
 }
 
 
-StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_temp,unsigned argCount){
+StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_temp,unsigned argCount,StarbytesObject boundSelf){
     if(!func_temp){
         discardExprArgs(in,argCount);
         return nullptr;
     }
-    string_ref parentScope = allocator->currentScope;
+    std::string parentScope = allocator->currentScope;
     string_ref func_name = {func_temp->name.value,(uint32_t)func_temp->name.len};
     
     if(func_name == "print"){
-        auto object_to_print = evalExpr(in);
-        stdlib::print(object_to_print,runtimeClassRegistry);
-        if(object_to_print){
-            StarbytesObjectRelease(object_to_print);
+        if(argCount > 0){
+            auto object_to_print = evalExpr(in);
+            stdlib::print(object_to_print,runtimeClassRegistry);
+            if(object_to_print){
+                StarbytesObjectRelease(object_to_print);
+            }
+            --argCount;
+        }
+        if(argCount > 0){
+            discardExprArgs(in,argCount);
         }
         return nullptr;
     }
     else {
     
         std::string funcScope = std::string(func_name) + std::to_string(func_temp->invocations);
+
+        if(boundSelf){
+            StarbytesObjectReference(boundSelf);
+            allocator->allocVariable(string_ref("self"),boundSelf,funcScope);
+        }
                 
+        auto callSitePos = in.tellg();
         auto func_param_it = func_temp->argsTemplate.begin();
         while(argCount > 0){
             StarbytesObject obj = evalExpr(in);
-            allocator->allocVariable(string_ref(func_param_it->value,func_param_it->len),obj,funcScope);
-            ++func_param_it;
+            if(func_param_it != func_temp->argsTemplate.end()){
+                allocator->allocVariable(string_ref(func_param_it->value,func_param_it->len),obj,funcScope);
+                ++func_param_it;
+            }
+            else if(obj){
+                StarbytesObjectRelease(obj);
+            }
             --argCount;
         };
+        auto resumePos = in.tellg();
         allocator->setScope(funcScope);
-        auto prev_pos = in.tellg();
         auto current_pos = func_temp->block_start_pos;
         /// Invoke
         in.seekg(current_pos);
         
         func_temp->invocations += 1;
                 
-        RTCode code;
-        in.read((char *)&code,sizeof(RTCode));
+        RTCode code = CODE_MODULE_END;
+        if(!in.read((char *)&code,sizeof(RTCode))){
+            in.clear();
+            in.seekg(callSitePos);
+            allocator->clearScope();
+            allocator->setScope(parentScope);
+            return nullptr;
+        }
         bool willReturn = false;
         StarbytesObject return_val = nullptr;
-        while(code != CODE_RTFUNCBLOCK_END){
-            if(!willReturn)
+        while(in.good() && code != CODE_RTFUNCBLOCK_END){
+            if(!willReturn){
                 execNorm(code,in,&willReturn,&return_val);
-            in.read((char *)&code,sizeof(RTCode));
+            }
+            if(!in.read((char *)&code,sizeof(RTCode))){
+                break;
+            }
         };
-
-     
-        in.seekg(prev_pos);
+        in.seekg(resumePos);
         
         allocator->clearScope();
         allocator->setScope(parentScope);
@@ -295,7 +323,6 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
 
             unsigned argCount = 0;
             in.read((char *)&argCount,sizeof(argCount));
-            discardExprArgs(in,argCount);
 
             auto foundClassType = classTypeByName.find(className);
             StarbytesClassType classType;
@@ -315,7 +342,52 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                     std::string fieldName = rtidToString(field.id);
                     StarbytesObjectAddProperty(instance,const_cast<char *>(fieldName.c_str()),StarbytesBoolNew(StarbytesBoolFalse));
                 }
+
+                if(classMeta->hasFieldInitFunc){
+                    std::string fieldInitName = rtidToString(classMeta->fieldInitFuncName);
+                    auto *fieldInitFunc = findFunctionByName(string_ref(fieldInitName));
+                    if(fieldInitFunc){
+                        auto initResult = invokeFunc(in,fieldInitFunc,0,instance);
+                        if(initResult){
+                            StarbytesObjectRelease(initResult);
+                        }
+                    }
+                }
+
+                if(classMeta->constructors.empty()){
+                    if(argCount > 0){
+                        discardExprArgs(in,argCount);
+                    }
+                    return instance;
+                }
+
+                RTFuncTemplate *ctorMeta = nullptr;
+                for(auto &ctorTemplate : classMeta->constructors){
+                    if(ctorTemplate.argsTemplate.size() == argCount){
+                        ctorMeta = &ctorTemplate;
+                        break;
+                    }
+                }
+                if(!ctorMeta){
+                    discardExprArgs(in,argCount);
+                    return instance;
+                }
+
+                std::string ctorName = rtidToString(ctorMeta->name);
+                std::string mangledCtorName = mangleClassMethodName(className,ctorName);
+                auto *runtimeCtor = findFunctionByName(string_ref(mangledCtorName));
+                if(!runtimeCtor){
+                    discardExprArgs(in,argCount);
+                    return instance;
+                }
+
+                auto ctorResult = invokeFunc(in,runtimeCtor,argCount,instance);
+                if(ctorResult){
+                    StarbytesObjectRelease(ctorResult);
+                }
+                return instance;
             }
+            discardExprArgs(in,argCount);
             return instance;
         }
         case CODE_RTMEMBER_GET : {
@@ -415,7 +487,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 return nullptr;
             }
 
-            auto result = invokeFunc(in,runtimeMethod,argCount);
+            auto result = invokeFunc(in,runtimeMethod,argCount,object);
             StarbytesObjectRelease(object);
             return result;
             break;
@@ -528,15 +600,19 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
 
 void InterpImpl::exec(std::istream & in){
     std::cout << "Interp Starting" << std::endl;
-    RTCode code;
+    RTCode code = CODE_MODULE_END;
     std::string g = "GLOBAL";
     allocator->setScope(g);
-    in.read((char *)&code,sizeof(RTCode));
+    if(!in.read((char *)&code,sizeof(RTCode))){
+        return;
+    }
     bool temp = false;
     StarbytesObject temp2 = nullptr;
-    while(code != CODE_MODULE_END){
+    while(in.good() && code != CODE_MODULE_END){
         execNorm(code,in,&temp,&temp2);
-        in.read((char *)&code,sizeof(RTCode));
+        if(!in.read((char *)&code,sizeof(RTCode))){
+            break;
+        }
     };
     allocator->clearScope();
 }

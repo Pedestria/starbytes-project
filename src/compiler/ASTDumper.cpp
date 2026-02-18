@@ -128,6 +128,25 @@ namespace starbytes {
             printBlockStmt(func_node->blockStmt,__level);
             os << pad << "}" << std::endl;
         }
+        else if(decl->type == CLASS_CTOR_DECL){
+            auto *ctorNode = (ASTConstructorDecl *)decl;
+            os << "ConstructorDecl : {\n" << pad << "   params:[\n" << std::flush;
+            auto __level = level + 1;
+            auto _pad = padString(__level);
+            for(auto &param : ctorNode->params){
+                os << _pad <<
+                "ParamDecl : {\n" << _pad <<
+                "   id:" << std::flush;
+                formatIdentifier(os,param.first,__level + 1);
+                os << _pad <<
+                "   type:" << param.second->getName() << std::endl;
+                os << _pad << "}" << std::endl;
+            }
+            os << pad << "  ]\n";
+            os << pad << "   body:" << std::flush;
+            printBlockStmt(ctorNode->blockStmt,__level);
+            os << pad << "}" << std::endl;
+        }
         else if(decl->type == COND_DECL){
             ASTConditionalDecl *cond_decl = (ASTConditionalDecl *)decl;
 

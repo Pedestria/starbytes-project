@@ -63,6 +63,12 @@ namespace starbytes {
         ASTBlockStmt *blockStmt;
     };
 
+    class ASTConstructorDecl : public ASTDecl {
+    public:
+        std::map<ASTIdentifier *,ASTType *> params;
+        ASTBlockStmt *blockStmt;
+    };
+
     class ASTClassDecl : public ASTDecl {
     public:
 
@@ -72,6 +78,7 @@ namespace starbytes {
 
         std::vector<ASTVarDecl *> fields;
         std::vector<ASTFuncDecl *> methods;
+        std::vector<ASTConstructorDecl *> constructors;
     };
 
     class ASTReturnDecl : public ASTDecl {

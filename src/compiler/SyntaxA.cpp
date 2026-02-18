@@ -102,6 +102,15 @@ size_t SyntaxA::getTokenStreamWidth(){
             else if(tok_id == "Array"){
                 return ARRAY_TYPE;
             }
+            else if(tok_id == "Dict"){
+                return DICTIONARY_TYPE;
+            }
+            else if(tok_id == "Int"){
+                return INT_TYPE;
+            }
+            else if(tok_id == "Float"){
+                return FLOAT_TYPE;
+            }
             else {
                 return ASTType::Create(first_token.content.c_str(),parentStmt,ctxt.isPlaceholder,ctxt.isAlias);
             };

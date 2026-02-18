@@ -119,6 +119,7 @@ struct RTFuncTemplate {
     unsigned invocations = 0;
     std::vector<RTID> argsTemplate;
     std::vector<RTAttribute> attributes;
+    size_t blockByteSize = 0;
     /// Position of CODE_RTBLOCK_BEGIN
     std::istream::pos_type block_start_pos;
 };
@@ -131,6 +132,9 @@ struct RTClass {
     std::vector<RTAttribute> attributes;
     std::vector<RTVar> fields;
     std::vector<RTFuncTemplate> methods;
+    std::vector<RTFuncTemplate> constructors;
+    bool hasFieldInitFunc = false;
+    RTID fieldInitFuncName;
 };
 
 

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <set>
 
 namespace starbytes {
 
@@ -224,6 +225,16 @@ namespace starbytes {
                      }
                      data->instMethods.push_back(method);
                  }
+                 for(auto & c : classDecl->constructors){
+                     auto *ctor = new Semantics::SymbolTable::Function();
+                     ctor->name = "__ctor__" + std::to_string(c->params.size());
+                     ctor->returnType = VOID_TYPE;
+                     ctor->funcType = data->classType;
+                     for(auto &param_pair : c->params){
+                         ctor->paramMap.insert(std::make_pair(param_pair.first->val,param_pair.second));
+                     }
+                     data->constructors.push_back(ctor);
+                 }
                  tablePtr->addSymbolInScope(e,decl->scope);
                  break;
              }
@@ -246,13 +257,23 @@ namespace starbytes {
 
     bool SemanticA::typeExists(ASTType *type,Semantics::STableContext &contextTableContext,std::shared_ptr<ASTScope> scope){
         /// First check to see if ASTType is one of the built in types
-        if(type == VOID_TYPE || type == STRING_TYPE || type == ARRAY_TYPE || 
-        type == DICTIONARY_TYPE || type == BOOL_TYPE || type == INT_TYPE){
-            return true;
-        }
-        else {
+        if(!type){
             return false;
         }
+        if(type->nameMatches(VOID_TYPE) ||
+           type->nameMatches(STRING_TYPE) ||
+           type->nameMatches(ARRAY_TYPE) ||
+           type->nameMatches(DICTIONARY_TYPE) ||
+           type->nameMatches(BOOL_TYPE) ||
+           type->nameMatches(INT_TYPE) ||
+           type->nameMatches(FLOAT_TYPE)){
+            return true;
+        }
+        auto *entry = contextTableContext.findEntryNoDiag(type->getName(),scope);
+        if(entry && entry->type == Semantics::SymbolTable::Entry::Class){
+            return true;
+        }
+        return false;
     }
 
 
@@ -361,9 +382,67 @@ namespace starbytes {
                             }
                         }
                         
+                        std::set<std::string> methodNames;
                         for(auto & m : classDecl->methods){
-                            auto rc = checkSymbolsForStmtInScope(m, symbolTableContext,classDecl->scope);
-                            if(!rc){
+                            if(methodNames.find(m->funcId->val) != methodNames.end()){
+                                errStream.push(SemanticADiagnostic::create("Duplicate class method name.",m,Diagnostic::Error));
+                                return false;
+                            }
+                            methodNames.insert(m->funcId->val);
+                            for(auto &paramPair : m->params){
+                                if(!typeExists(paramPair.second,symbolTableContext,scope)){
+                                    return false;
+                                }
+                            }
+                            std::map<ASTIdentifier *,ASTType *> methodParams = m->params;
+                            auto *selfId = new ASTIdentifier();
+                            selfId->val = "self";
+                            methodParams.insert(std::make_pair(selfId,classDecl->classType));
+                            bool methodHasFailed = false;
+                            ASTScopeSemanticsContext methodScopeContext {m->blockStmt->parentScope,&methodParams};
+                            ASTType *returnTypeImplied = evalBlockStmtForASTType(m->blockStmt,symbolTableContext,&methodHasFailed,methodScopeContext,true);
+                            if(methodHasFailed || !returnTypeImplied){
+                                return false;
+                            }
+                            if(m->returnType != nullptr){
+                                if(!m->returnType->match(returnTypeImplied,[&](std::string message){
+                                    std::ostringstream ss;
+                                    ss << message << "\nContext: Declared return type of class method `" << m->funcId->val << "` does not match implied return type.";
+                                    errStream.push(SemanticADiagnostic::create(ss.str(),m,Diagnostic::Error));
+                                })){
+                                    return false;
+                                }
+                            }
+                            else {
+                                m->returnType = returnTypeImplied;
+                            }
+                        }
+
+                        std::set<size_t> ctorArities;
+                        for(auto & c : classDecl->constructors){
+                            size_t arity = c->params.size();
+                            if(ctorArities.find(arity) != ctorArities.end()){
+                                errStream.push(SemanticADiagnostic::create("Duplicate constructor arity.",c,Diagnostic::Error));
+                                return false;
+                            }
+                            ctorArities.insert(arity);
+                            for(auto &paramPair : c->params){
+                                if(!typeExists(paramPair.second,symbolTableContext,scope)){
+                                    return false;
+                                }
+                            }
+                            std::map<ASTIdentifier *,ASTType *> ctorParams = c->params;
+                            auto *selfId = new ASTIdentifier();
+                            selfId->val = "self";
+                            ctorParams.insert(std::make_pair(selfId,classDecl->classType));
+                            bool ctorHasFailed = false;
+                            ASTScopeSemanticsContext ctorScopeContext {c->blockStmt->parentScope,&ctorParams};
+                            ASTType *ctorReturnType = evalBlockStmtForASTType(c->blockStmt,symbolTableContext,&ctorHasFailed,ctorScopeContext,true);
+                            if(ctorHasFailed || !ctorReturnType){
+                                return false;
+                            }
+                            if(ctorReturnType != VOID_TYPE){
+                                errStream.push(SemanticADiagnostic::create("Constructor cannot return a value.",c,Diagnostic::Error));
                                 return false;
                             }
                         }

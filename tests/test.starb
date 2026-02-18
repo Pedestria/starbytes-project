@@ -21,6 +21,28 @@ scope Models {
             return "pet"
         }
     }
+
+    class Ticket {
+        decl code:String = "unset"
+        decl owner:String = "n/a"
+
+        new(owner:String){
+            self.owner = owner
+            self.code = "issued"
+        }
+
+        func summary() String {
+            return self.code
+        }
+    }
+
+    class Counter {
+        decl value:Int = 10
+
+        new(start:Int){
+            self.value = start
+        }
+    }
 }
 
 @deprecated("Legacy model")
@@ -44,6 +66,12 @@ decl scopedPet = new Models.Pet()
 scopedPet.name = "milo"
 print(scopedPet.name)
 print(scopedPet.getKind())
+decl ticket = new Models.Ticket("alex")
+print(ticket.owner)
+print(ticket.code)
+print(ticket.summary())
+decl counter = new Models.Counter(21)
+print(counter.value)
 print(Core.greeting)
 print(Core.makeWord())
 print(Core.Math.answer())
@@ -70,7 +98,6 @@ if(bar){
 else {
     print("NO")
 }
-
 
 
 
