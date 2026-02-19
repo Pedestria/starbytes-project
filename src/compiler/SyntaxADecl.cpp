@@ -635,83 +635,12 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                         return nullptr;
                     }
                     tok1 = nextTok();
-                    if(tok1.type != Tok::OpenParen){
+                    bool inlineExprMatched = false;
+                    auto *inlineExpr = tryParseInlineFunctionExpr(tok1,parentScope,true,&inlineExprMatched);
+                    if(!inlineExprMatched || !inlineExpr){
                         return nullptr;
                     }
 
-                    auto *inlineExpr = new ASTExpr();
-                    inlineExpr->type = INLINE_FUNC_EXPR;
-
-                    tok1 = nextTok();
-                    while(tok1.type != Tok::CloseParen){
-                        if(tok1.type != Tok::Identifier){
-                            return nullptr;
-                        }
-                        ASTIdentifier *paramId = nullptr;
-                        ASTType *paramType = nullptr;
-                        Tok lookahead = aheadTok();
-                        ASTTypeContext inlineParamTypeCtxt;
-                        inlineParamTypeCtxt.genericTypeParams = currentGenericTypeParams();
-                        inlineParamTypeCtxt.isPlaceholder = true;
-                        if(lookahead.type == Tok::Colon){
-                            paramId = buildIdentifier(tok1,false);
-                            if(!paramId){
-                                return nullptr;
-                            }
-                            gotoNextTok();
-                            tok1 = nextTok();
-                            paramType = buildTypeFromTokenStream(tok1,inlineExpr,inlineParamTypeCtxt);
-                            if(!paramType){
-                                return nullptr;
-                            }
-                        }
-                        else {
-                            paramType = buildTypeFromTokenStream(tok1,inlineExpr,inlineParamTypeCtxt);
-                            if(!paramType){
-                                return nullptr;
-                            }
-                            tok1 = nextTok();
-                            if(tok1.type != Tok::Identifier){
-                                return nullptr;
-                            }
-                            paramId = buildIdentifier(tok1,false);
-                            if(!paramId){
-                                return nullptr;
-                            }
-                        }
-                        inlineExpr->inlineFuncParams.insert(std::make_pair(paramId,paramType));
-
-                        tok1 = nextTok();
-                        if(tok1.type == Tok::Comma){
-                            tok1 = nextTok();
-                            continue;
-                        }
-                        if(tok1.type == Tok::CloseParen){
-                            break;
-                        }
-                        return nullptr;
-                    }
-
-                    tok1 = nextTok();
-                    ASTTypeContext inlineRetTypeCtxt;
-                    inlineRetTypeCtxt.genericTypeParams = currentGenericTypeParams();
-                    inlineRetTypeCtxt.isPlaceholder = true;
-                    inlineExpr->inlineFuncReturnType = buildTypeFromTokenStream(tok1,inlineExpr,inlineRetTypeCtxt);
-                    if(!inlineExpr->inlineFuncReturnType){
-                        return nullptr;
-                    }
-
-                    tok1 = nextTok();
-                    if(tok1.type != Tok::OpenBrace){
-                        return nullptr;
-                    }
-                    std::shared_ptr<ASTScope> inlineScope(new ASTScope({id->val + "_inline",ASTScope::Function,parentScope}));
-                    inlineScope->generateHashID();
-                    inlineExpr->inlineFuncBlock = evalBlockStmt(tok1,inlineScope);
-                    if(!inlineExpr->inlineFuncBlock){
-                        return nullptr;
-                    }
-                    gotoNextTok();
                     spec.expr = inlineExpr;
                     varDecl->specs.push_back(spec);
                     node->attributes = std::move(parsedAttributes);

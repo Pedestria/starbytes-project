@@ -1,41 +1,75 @@
 {
-    "name": "topperalex.starbytes",
+    "name": "starbytes",
+    "publisher": "topperalex",
     "displayName": "Starbytes Extension For VSCode",
     "version": "0.5.0",
     "activationEvents": [
         "onLanguage:starbytes",
-        "onLanguage:starbytes-project"
+        "onLanguage:starbytes-project",
+        "onCommand:starbytes.restartLanguageServer"
     ],
     "categories": [
         "Programming Languages"
     ],
+    "license": "MIT",
     "author": "Alex Topper",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Pedestria/starbytes-project.git"
+    },
     "engines": {
-        "vscode": "^1.22.0"
+        "vscode": "^1.48.0"
     },
     "files": [
-        "dist/"
+        "dist/**",
+        "syntaxes/**",
+        "language-configuration.json",
+        "LICENSE",
+        "README.md",
+        "node_modules/**"
     ],
     "main": "./dist/index.js",
     "scripts": {
         "grammar": "node ./dist/grammar.js",
         "types": "tsc -p ./tsconfig.json",
-        "tmbundle":"node ./dist/tmbundle.js"
+        "build": "npm run types",
+        "watch": "tsc -w -p ./tsconfig.json",
+        "tmbundle":"node ./dist/tmbundle.js",
+        "package": "vsce package --no-yarn -o starbytes-lsp.vsix"
     },
     "contributes": {
+        "commands": [
+            {
+                "command": "starbytes.restartLanguageServer",
+                "title": "Starbytes: Restart Language Server"
+            }
+        ],
         "configuration": {
             "type": "object",
-            "title": "Starbytes LSP Config",
+            "title": "Starbytes LSP",
             "properties": {
-                "starbytesLSP.maxNumberOfProblems": {
+                "starbytes.lsp.maxNumberOfProblems": {
                     "scope": "resource",
                     "type": "number",
                     "default": 100,
                     "description": "Controls the maximum number of problems produced by the server."
                 },
-                "starbytesLSP.trace.server": {
+                "starbytes.lsp.serverPath": {
                     "type": "string",
-                    "default": "verbose",
+                    "default": "",
+                    "description": "Absolute or relative path to the starbytes-lsp executable. If empty, the extension auto-discovers workspace build/bin or uses PATH."
+                },
+                "starbytes.lsp.serverArgs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "description": "Additional command line args passed to starbytes-lsp."
+                },
+                "starbytes.lsp.trace.server": {
+                    "type": "string",
+                    "default": "off",
                     "enum": [
                         "off",
                         "messages",
@@ -57,6 +91,15 @@
                     ".starb"
                 ],
                 "configuration": "./language-configuration.json"
+            },
+            {
+                "id": "starbytes-project",
+                "aliases": [
+                    "Starbytes Project"
+                ],
+                "extensions": [
+                    ".stbproject"
+                ]
             }
         ],
         "grammars": [
@@ -68,6 +111,7 @@
         ]
     },
     "devDependencies": {
+        "@vscode/vsce": "^3.7.1",
         "@types/js-yaml": "^3.12.5",
         "@types/node": "^14.6.2",
         "@types/plist": "^3.0.2",

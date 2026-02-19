@@ -26,6 +26,7 @@ namespace starbytes {
                 ASTType *funcType;
                 ASTType *returnType;
                 string_map<ASTType *> paramMap;
+                std::vector<std::pair<std::string,ASTType *>> orderedParams;
                 bool isLazy = false;
             };
             

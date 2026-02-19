@@ -215,6 +215,11 @@ namespace Runtime {
                 skipExpr(is);
                 skipRTIDPayload(is);
                 break;
+            case CODE_RTTERNARY:
+                skipExpr(is);
+                skipExpr(is);
+                skipExpr(is);
+                break;
             default:
                 break;
         }

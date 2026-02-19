@@ -1,5 +1,6 @@
 #include "starbytes/compiler/ASTNodes.def"
 #include "starbytes/compiler/SemanticA.h"
+#include <algorithm>
 #include <set>
 #include <map>
 
@@ -141,6 +142,37 @@ static ASTType *resolveAliasType(ASTType *type,
     auto *finalType = resolveAliasType(substituted,symbolTableContext,scope,genericTypeParams,visiting);
     visiting.erase(key);
     return finalType? finalType : resolved;
+}
+
+static bool paramComesBefore(ASTIdentifier *lhs,ASTIdentifier *rhs){
+    if(lhs == rhs){
+        return false;
+    }
+    if(!lhs){
+        return false;
+    }
+    if(!rhs){
+        return true;
+    }
+    if(lhs->codeRegion.startLine != rhs->codeRegion.startLine){
+        return lhs->codeRegion.startLine < rhs->codeRegion.startLine;
+    }
+    if(lhs->codeRegion.startCol != rhs->codeRegion.startCol){
+        return lhs->codeRegion.startCol < rhs->codeRegion.startCol;
+    }
+    return lhs->val < rhs->val;
+}
+
+static std::vector<std::pair<ASTIdentifier *,ASTType *>> orderedParamPairs(const std::map<ASTIdentifier *,ASTType *> &paramMap){
+    std::vector<std::pair<ASTIdentifier *,ASTType *>> ordered;
+    ordered.reserve(paramMap.size());
+    for(auto &entry : paramMap){
+        ordered.push_back(entry);
+    }
+    std::sort(ordered.begin(),ordered.end(),[](const auto &lhs,const auto &rhs){
+        return paramComesBefore(lhs.first,rhs.first);
+    });
+    return ordered;
 }
 
 static ASTType *resolveAliasType(ASTType *type,
@@ -456,6 +488,112 @@ static ASTType *makeFunctionType(ASTType *returnType,
     return funcType;
 }
 
+static std::vector<ASTType *> orderedFunctionParamTypes(const Semantics::SymbolTable::Function *funcData){
+    std::vector<ASTType *> ordered;
+    if(!funcData){
+        return ordered;
+    }
+    if(!funcData->orderedParams.empty()){
+        ordered.reserve(funcData->orderedParams.size());
+        for(auto &param : funcData->orderedParams){
+            if(param.second){
+                ordered.push_back(param.second);
+            }
+        }
+        return ordered;
+    }
+    ordered.reserve(funcData->paramMap.size());
+    for(auto &param : funcData->paramMap){
+        if(param.second){
+            ordered.push_back(param.second);
+        }
+    }
+    return ordered;
+}
+
+static ASTType *buildFunctionTypeFromFunctionData(Semantics::SymbolTable::Function *funcData,ASTStmt *node){
+    if(!funcData){
+        return nullptr;
+    }
+    if(funcData->funcType && funcData->funcType->nameMatches(FUNCTION_TYPE)){
+        auto *funcType = cloneTypeNode(funcData->funcType,node);
+        if(!funcType){
+            return nullptr;
+        }
+        if(funcData->isLazy &&
+           !funcType->typeParams.empty() &&
+           funcType->typeParams.front() &&
+           !funcType->typeParams.front()->nameMatches(TASK_TYPE)){
+            auto *lazyReturn = ASTType::Create(TASK_TYPE->getName(),node,false,false);
+            lazyReturn->addTypeParam(cloneTypeNode(funcType->typeParams.front(),node));
+            funcType->typeParams[0] = lazyReturn;
+        }
+        return funcType;
+    }
+
+    auto *funcType = ASTType::Create(FUNCTION_TYPE->getName(),node,false,false);
+    auto *returnType = cloneTypeNode(funcData->returnType ? funcData->returnType : VOID_TYPE,node);
+    if(!returnType){
+        return nullptr;
+    }
+    if(funcData->isLazy){
+        auto *taskReturnType = ASTType::Create(TASK_TYPE->getName(),node,false,false);
+        taskReturnType->addTypeParam(returnType);
+        funcType->addTypeParam(taskReturnType);
+    }
+    else {
+        funcType->addTypeParam(returnType);
+    }
+    auto orderedParams = orderedFunctionParamTypes(funcData);
+    for(auto *paramType : orderedParams){
+        if(paramType){
+            funcType->addTypeParam(cloneTypeNode(paramType,node));
+        }
+    }
+    return funcType;
+}
+
+static ASTType *buildFunctionTypeFromDecl(ASTFuncDecl *funcDecl,ASTStmt *node){
+    if(!funcDecl){
+        return nullptr;
+    }
+    if(funcDecl->funcType && funcDecl->funcType->nameMatches(FUNCTION_TYPE)){
+        auto *funcType = cloneTypeNode(funcDecl->funcType,node);
+        if(!funcType){
+            return nullptr;
+        }
+        if(funcDecl->isLazy &&
+           !funcType->typeParams.empty() &&
+           funcType->typeParams.front() &&
+           !funcType->typeParams.front()->nameMatches(TASK_TYPE)){
+            auto *lazyReturn = ASTType::Create(TASK_TYPE->getName(),node,false,false);
+            lazyReturn->addTypeParam(cloneTypeNode(funcType->typeParams.front(),node));
+            funcType->typeParams[0] = lazyReturn;
+        }
+        return funcType;
+    }
+    auto *funcType = ASTType::Create(FUNCTION_TYPE->getName(),node,false,false);
+    auto *returnType = cloneTypeNode(funcDecl->returnType ? funcDecl->returnType : VOID_TYPE,node);
+    if(!returnType){
+        return nullptr;
+    }
+    if(funcDecl->isLazy){
+        auto *taskReturnType = ASTType::Create(TASK_TYPE->getName(),node,false,false);
+        taskReturnType->addTypeParam(returnType);
+        funcType->addTypeParam(taskReturnType);
+    }
+    else {
+        funcType->addTypeParam(returnType);
+    }
+    auto orderedParams = orderedParamPairs(funcDecl->params);
+    for(auto &paramPair : orderedParams){
+        if(paramPair.second){
+            funcType->addTypeParam(cloneTypeNode(paramPair.second,node));
+        }
+    }
+    return funcType;
+}
+
 static ASTType *functionReturnType(ASTType *funcType,ASTStmt *node){
     if(!isFunctionType(funcType) || funcType->typeParams.empty() || !funcType->typeParams.front()){
         return nullptr;
@@ -640,7 +778,10 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     if(!symbol_->emittedName.empty()){
                         id_->val = symbol_->emittedName;
                     }
-                    type = funcData->funcType;
+                    type = buildFunctionTypeFromFunctionData(funcData,expr_to_eval);
+                    if(!type){
+                        type = funcData->funcType;
+                    }
                 }
                 else if(symbol_->type == Semantics::SymbolTable::Entry::Class){
                     auto classData = (Semantics::SymbolTable::Class *)symbol_->data;
@@ -720,7 +861,8 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
 
                 std::vector<ASTType *> inlineParamTypes;
                 std::map<ASTIdentifier *,ASTType *> inlineArgs;
-                for(auto &paramPair : expr_to_eval->inlineFuncParams){
+                auto orderedInlineParams = orderedParamPairs(expr_to_eval->inlineFuncParams);
+                for(auto &paramPair : orderedInlineParams){
                     if(!paramPair.first || !paramPair.second){
                         errStream.push(SemanticADiagnostic::create("Inline function parameter is invalid.",expr_to_eval,Diagnostic::Error));
                         return nullptr;
@@ -1016,6 +1158,42 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 }
                 break;
             }
+            case TERNARY_EXPR : {
+                if(!expr_to_eval->leftExpr || !expr_to_eval->middleExpr || !expr_to_eval->rightExpr){
+                    errStream.push(SemanticADiagnostic::create("Malformed ternary expression.",expr_to_eval,Diagnostic::Error));
+                    return nullptr;
+                }
+
+                auto *conditionType = evalExprForTypeId(expr_to_eval->leftExpr,symbolTableContext,scopeContext);
+                if(!conditionType){
+                    return nullptr;
+                }
+                conditionType = normalizeType(conditionType);
+                if(!isBoolType(conditionType)){
+                    errStream.push(SemanticADiagnostic::create("Ternary condition must be Bool.",expr_to_eval->leftExpr,Diagnostic::Error));
+                    return nullptr;
+                }
+
+                auto *trueType = evalExprForTypeId(expr_to_eval->middleExpr,symbolTableContext,scopeContext);
+                auto *falseType = evalExprForTypeId(expr_to_eval->rightExpr,symbolTableContext,scopeContext);
+                if(!trueType || !falseType){
+                    return nullptr;
+                }
+                trueType = normalizeType(trueType);
+                falseType = normalizeType(falseType);
+
+                if(trueType->match(falseType,[&](std::string){})){
+                    type = trueType;
+                    break;
+                }
+                if(falseType->match(trueType,[&](std::string){})){
+                    type = falseType;
+                    break;
+                }
+
+                errStream.push(SemanticADiagnostic::create("Ternary branch type mismatch.",expr_to_eval,Diagnostic::Error));
+                return nullptr;
+            }
             case MEMBER_EXPR : {
                 if(!expr_to_eval->leftExpr || !expr_to_eval->rightExpr || !expr_to_eval->rightExpr->id){
                     errStream.push(SemanticADiagnostic::create("Malformed member expression.",expr_to_eval,Diagnostic::Error));
@@ -1064,7 +1242,8 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     if(scopeMemberEntry->type == Semantics::SymbolTable::Entry::Function){
                         auto *funcData = (Semantics::SymbolTable::Function *)scopeMemberEntry->data;
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
-                        type = normalizeType(funcData->funcType);
+                        auto *memberFuncType = buildFunctionTypeFromFunctionData(funcData,expr_to_eval);
+                        type = normalizeType(memberFuncType ? memberFuncType : funcData->funcType);
                         break;
                     }
                     if(scopeMemberEntry->type == Semantics::SymbolTable::Entry::Class){
@@ -1148,7 +1327,11 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     auto methodLookup = findClassMethodRecursive(symbolTableContext,classData,memberName,scopeContext.scope,visited);
                     if(methodLookup.method){
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
-                        auto *boundMethodType = substituteTypeParams(methodLookup.method->funcType,classBindings,expr_to_eval);
+                        auto *methodType = buildFunctionTypeFromFunctionData(methodLookup.method,expr_to_eval);
+                        if(!methodType){
+                            methodType = methodLookup.method->funcType;
+                        }
+                        auto *boundMethodType = substituteTypeParams(methodType,classBindings,expr_to_eval);
                         type = normalizeType(boundMethodType);
                         break;
                     }
@@ -1174,7 +1357,11 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     for(auto *method : interfaceData->methods){
                         if(method && method->name == memberName){
                             expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
-                            auto *boundMethodType = substituteTypeParams(method->funcType,interfaceBindings,expr_to_eval);
+                            auto *methodType = buildFunctionTypeFromFunctionData(method,expr_to_eval);
+                            if(!methodType){
+                                methodType = method->funcType;
+                            }
+                            auto *boundMethodType = substituteTypeParams(methodType,interfaceBindings,expr_to_eval);
                             type = normalizeType(boundMethodType);
                             resolvedMember = true;
                             break;
@@ -1199,7 +1386,8 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     visited.clear();
                     if(auto *methodDecl = findClassMethodFromDeclRecursive(classDecl,symbolTableContext,scopeContext.scope,memberName,visited)){
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
-                        type = normalizeType(methodDecl->funcType);
+                        auto *methodType = buildFunctionTypeFromDecl(methodDecl,expr_to_eval);
+                        type = normalizeType(methodType ? methodType : methodDecl->funcType);
                         break;
                     }
                 }
@@ -1414,24 +1602,24 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         return nullptr;
                     }
                     auto *funcData = (Semantics::SymbolTable::Function *)entry->data;
-                    if(expr_to_eval->exprArrayData.size() != funcData->paramMap.size()){
+                    auto expectedParams = orderedFunctionParamTypes(funcData);
+                    if(expr_to_eval->exprArrayData.size() != expectedParams.size()){
                         errStream.push(SemanticADiagnostic::create("Incorrect number of function arguments.",expr_to_eval,Diagnostic::Error));
                         return nullptr;
                     }
-                    auto paramIt = funcData->paramMap.begin();
-                    for(auto *arg : expr_to_eval->exprArrayData){
+                    for(size_t i = 0;i < expr_to_eval->exprArrayData.size();++i){
+                        auto *arg = expr_to_eval->exprArrayData[i];
                         auto *argType = evalExprForTypeId(arg,symbolTableContext,scopeContext);
                         if(!argType){
                             return nullptr;
                         }
                         argType = normalizeType(argType);
-                        auto *expectedParamType = normalizeType(paramIt->second);
+                        auto *expectedParamType = normalizeType(expectedParams[i]);
                         if(!expectedParamType->match(argType,[&](std::string){
                             errStream.push(SemanticADiagnostic::create("Function argument type mismatch.",arg,Diagnostic::Error));
                         })){
                             return nullptr;
                         }
-                        ++paramIt;
                     }
                     auto *resolvedReturnType = normalizeType(funcData->returnType ? funcData->returnType : VOID_TYPE);
                     type = funcData->isLazy ? normalizeType(makeTaskType(resolvedReturnType,expr_to_eval)) : resolvedReturnType;
@@ -1694,25 +1882,25 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             errStream.push(SemanticADiagnostic::create("Unknown method.",expr_to_eval,Diagnostic::Error));
                             return nullptr;
                         }
-                        if(expr_to_eval->exprArrayData.size() != lookup.method->paramMap.size()){
+                        auto expectedParams = orderedFunctionParamTypes(lookup.method);
+                        if(expr_to_eval->exprArrayData.size() != expectedParams.size()){
                             errStream.push(SemanticADiagnostic::create("Incorrect number of method arguments.",expr_to_eval,Diagnostic::Error));
                             return nullptr;
                         }
-                        auto paramIt = lookup.method->paramMap.begin();
-                        for(auto *arg : expr_to_eval->exprArrayData){
+                        for(size_t i = 0;i < expr_to_eval->exprArrayData.size();++i){
+                            auto *arg = expr_to_eval->exprArrayData[i];
                             auto *argType = evalExprForTypeId(arg,symbolTableContext,scopeContext);
                             if(!argType){
                                 return nullptr;
                             }
                             argType = normalizeType(argType);
-                            auto *boundExpected = substituteTypeParams(paramIt->second,classBindings,expr_to_eval);
+                            auto *boundExpected = substituteTypeParams(expectedParams[i],classBindings,expr_to_eval);
                             boundExpected = normalizeType(boundExpected);
                             if(!boundExpected->match(argType,[&](std::string){
                                 errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",arg,Diagnostic::Error));
                             })){
                                 return nullptr;
                             }
-                            ++paramIt;
                         }
                         auto *boundReturn = substituteTypeParams(lookup.method->returnType ? lookup.method->returnType : VOID_TYPE,classBindings,expr_to_eval);
                         auto *resolvedReturnType = normalizeType(boundReturn);
@@ -1734,25 +1922,25 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             errStream.push(SemanticADiagnostic::create("Unknown method.",expr_to_eval,Diagnostic::Error));
                             return nullptr;
                         }
-                        if(expr_to_eval->exprArrayData.size() != method->paramMap.size()){
+                        auto expectedParams = orderedFunctionParamTypes(method);
+                        if(expr_to_eval->exprArrayData.size() != expectedParams.size()){
                             errStream.push(SemanticADiagnostic::create("Incorrect number of method arguments.",expr_to_eval,Diagnostic::Error));
                             return nullptr;
                         }
-                        auto paramIt = method->paramMap.begin();
-                        for(auto *arg : expr_to_eval->exprArrayData){
+                        for(size_t i = 0;i < expr_to_eval->exprArrayData.size();++i){
+                            auto *arg = expr_to_eval->exprArrayData[i];
                             auto *argType = evalExprForTypeId(arg,symbolTableContext,scopeContext);
                             if(!argType){
                                 return nullptr;
                             }
                             argType = normalizeType(argType);
-                            auto *boundExpected = substituteTypeParams(paramIt->second,interfaceBindings,expr_to_eval);
+                            auto *boundExpected = substituteTypeParams(expectedParams[i],interfaceBindings,expr_to_eval);
                             boundExpected = normalizeType(boundExpected);
                             if(!boundExpected->match(argType,[&](std::string){
                                 errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",arg,Diagnostic::Error));
                             })){
                                 return nullptr;
                             }
-                            ++paramIt;
                         }
                         auto *boundReturn = substituteTypeParams(method->returnType ? method->returnType : VOID_TYPE,interfaceBindings,expr_to_eval);
                         auto *resolvedReturnType = normalizeType(boundReturn);
@@ -1932,14 +2120,14 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     };
 
                     auto funcData = (Semantics::SymbolTable::Function *)entry->data;
-                    
-                    if(expr_to_eval->exprArrayData.size() != funcData->paramMap.size()){
+
+                    auto expectedParams = orderedFunctionParamTypes(funcData);
+                    if(expr_to_eval->exprArrayData.size() != expectedParams.size()){
                         //errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("Incorrect number of arguments. Expected {0} args, but got {1}\nContext: Invocation of func `{2}`",funcData->paramMap.size(),expr_to_eval->exprArrayData.size(),funcType->getName()),expr_to_eval);
                         return nullptr;
                         break;
                     }
                     
-                    auto param_decls_it = funcData->paramMap.begin();
                     for(unsigned i = 0;i < expr_to_eval->exprArrayData.size();i++){
                         auto expr_arg = expr_to_eval->exprArrayData[i];
                         ASTType *_id = evalExprForTypeId(expr_arg,symbolTableContext,scopeContext);
@@ -1948,15 +2136,13 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             break;
                         };
                         _id = normalizeType(_id);
-                        auto & param_decl_pair = *param_decls_it;
-                        auto *expectedType = normalizeType(param_decl_pair.second);
+                        auto *expectedType = normalizeType(expectedParams[i]);
                         if(!expectedType->match(_id,[&](std::string message){
                             /// errStream << new SemanticADiagnostic(SemanticADiagnostic::Error,llvm::formatv("{0}\nContext: Param in invocation of func `{1}`",message,funcType->getName()),expr_arg);
                         })){
                             return nullptr;
                             break;
                         };
-                        ++param_decls_it;
                     };
                     /// return return-type
                     auto *resolvedReturnType = normalizeType(funcData->returnType ? funcData->returnType : VOID_TYPE);

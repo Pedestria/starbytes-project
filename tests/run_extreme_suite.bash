@@ -107,6 +107,14 @@ run_expect_success "function-types-inline-run" "$STARBYTES_BIN" run "$ROOT_DIR/t
 assert_log_contains "function-types-inline-run" "FUNCTION-TYPES-INLINE-OK"
 run_expect_failure "function-types-inline-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/function_types_inline_invalid.starb"
 assert_log_contains "function-types-inline-invalid-check" "Inline function declared return type does not match implied return type"
+run_expect_success "inline-function-literals-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/inline_function_literals.starb"
+run_expect_success "inline-function-literals-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/inline_function_literals.starb"
+assert_log_contains "inline-function-literals-run" "INLINE-FUNCTION-LITERALS-OK"
+run_expect_failure "inline-function-literals-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/inline_function_literals_invalid.starb"
+assert_log_contains "inline-function-literals-invalid-check" "Inline function declared return type does not match implied return type"
+run_expect_success "function-hof-params-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/function_hof_params.starb"
+run_expect_success "function-hof-params-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/function_hof_params.starb"
+assert_log_contains "function-hof-params-run" "HOF-PARAMS-OK"
 
 run_expect_success "stdlib-smoke-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/stdlib_smoke.starb"
 run_expect_success "stdlib-smoke-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/stdlib_smoke.starb"
@@ -174,11 +182,19 @@ assert_log_contains "rttc-unknown-type" "Unknown type"
 run_expect_failure "rttc-interface" "$STARBYTES_BIN" check "$ROOT_DIR/tests/rttc_interface_type.starb"
 assert_log_contains "rttc-interface" "does not support interface types"
 
+run_expect_success "ternary-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/ternary_support.starb"
+run_expect_success "ternary-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/ternary_support.starb"
+assert_log_contains "ternary-run" "TERNARY-OK"
+run_expect_failure "ternary-invalid-condition" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/ternary_invalid_condition.starb"
+assert_log_contains "ternary-invalid-condition" "Ternary condition must be Bool"
+run_expect_failure "ternary-invalid-branches" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/ternary_invalid_branches.starb"
+assert_log_contains "ternary-invalid-branches" "Ternary branch type mismatch"
+
 run_expect_failure "operators-invalid-bitwise" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/operators_invalid.starb"
 assert_log_contains "operators-invalid-bitwise" "Bitwise and shift operators require Int operands"
 
-run_expect_failure "expected-io-stream-crash" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/expected_fail/io_stream_methods.starb"
-run_expect_failure "expected-unicode-advanced-crash" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/expected_fail/unicode_advanced.starb"
+run_expect_success "expected-io-stream-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/expected_fail/io_stream_methods.starb"
+run_expect_success "expected-unicode-advanced-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/expected_fail/unicode_advanced.starb"
 
 echo
 echo "Extreme suite finished: pass=$PASS_COUNT fail=$FAIL_COUNT"

@@ -1,0 +1,19 @@
+def Unary = (value:Int) Int
+
+func applyUnary(value:Int, op:Unary) Int {
+    return op(value)
+}
+
+func inc(value:Int) Int {
+    return value + 1
+}
+
+decl a = applyUnary(7, inc)
+print(a)
+
+decl b = applyUnary(9, func (Int x) Int {
+    return x * 2
+})
+print(b)
+
+print("HOF-PARAMS-OK")

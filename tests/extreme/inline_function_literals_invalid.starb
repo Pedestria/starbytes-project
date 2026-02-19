@@ -1,0 +1,5 @@
+def Unary = (value:Int) Int
+
+decl bad:Unary = func (Int value) Int {
+    return "not-int"
+}

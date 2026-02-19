@@ -47,6 +47,7 @@ typedef unsigned char RTCode;
 #define CODE_RTINDEX_SET 0x19
 #define CODE_RTDICT_LITERAL 0x1A
 #define CODE_RTTYPECHECK 0x1B
+#define CODE_RTTERNARY 0x1C
 
 /// Condtional Type
 #define COND_TYPE_IF 0x0 // if()

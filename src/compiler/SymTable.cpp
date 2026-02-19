@@ -84,9 +84,8 @@ void exportType(ASTType *type,std::ostream & out){
 
 
 std::shared_ptr<Semantics::SymbolTable> Semantics::SymbolTable::importPublic(std::istream & input){
-    
-    std::vector<ASTScope *> importedModuleScopes;
-    
+    (void)input;
+    return std::make_shared<Semantics::SymbolTable>();
 }
 
 void Semantics::SymbolTable::serializePublic(std::ostream & out){

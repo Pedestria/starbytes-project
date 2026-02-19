@@ -132,5 +132,5 @@ function(add_starbytes_test)
     message(${STARBYTES_TEST_NAME} "Dependencies - " ${STARBYTES_TEST_DEPENDENCIES})
     target_link_libraries(${STARBYTES_TEST_NAME} PRIVATE ${STARBYTES_TEST_DEPENDENCIES} ${llvm_libs})
 
-    # add_test(NAME "Test-${STARBYTES_TEST_NAME}" COMMAND ${STARBYTES_TEST_NAME})
+    add_test(NAME "Test-${STARBYTES_TEST_NAME}" COMMAND $<TARGET_FILE:${STARBYTES_TEST_NAME}>)
 endfunction()

@@ -2,6 +2,7 @@
 #include "starbytes/compiler/ASTNodes.def"
 #include "starbytes/compiler/Gen.h"
 #include "starbytes/compiler/RTCode.h"
+#include <algorithm>
 #include <cstring>
 #include <sstream>
 
@@ -75,6 +76,101 @@ static void emitRuntimeFunction(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,C
     }
     code = CODE_RTFUNCBLOCK_END;
     ctxt->out.write((char *)&code,sizeof(RTCode));
+}
+
+inline void ASTIdentifier_to_RTID(ASTIdentifier *var,RTID &out);
+static RTID makeOwnedRTID(const std::string &value);
+
+static bool paramComesBefore(ASTIdentifier *lhs,ASTIdentifier *rhs){
+    if(lhs == rhs){
+        return false;
+    }
+    if(!lhs){
+        return false;
+    }
+    if(!rhs){
+        return true;
+    }
+    if(lhs->codeRegion.startLine != rhs->codeRegion.startLine){
+        return lhs->codeRegion.startLine < rhs->codeRegion.startLine;
+    }
+    if(lhs->codeRegion.startCol != rhs->codeRegion.startCol){
+        return lhs->codeRegion.startCol < rhs->codeRegion.startCol;
+    }
+    return lhs->val < rhs->val;
+}
+
+static std::vector<std::pair<ASTIdentifier *,ASTType *>> orderedParamPairs(const std::map<ASTIdentifier *,ASTType *> &paramMap){
+    std::vector<std::pair<ASTIdentifier *,ASTType *>> ordered;
+    ordered.reserve(paramMap.size());
+    for(auto &entry : paramMap){
+        ordered.push_back(entry);
+    }
+    std::sort(ordered.begin(),ordered.end(),[](const auto &lhs,const auto &rhs){
+        return paramComesBefore(lhs.first,rhs.first);
+    });
+    return ordered;
+}
+
+static void collectInlineFunctionExprs(ASTExpr *expr,std::vector<ASTExpr *> &out){
+    if(!expr){
+        return;
+    }
+    if(expr->type == INLINE_FUNC_EXPR){
+        out.push_back(expr);
+        return;
+    }
+    if(expr->leftExpr){
+        collectInlineFunctionExprs(expr->leftExpr,out);
+    }
+    if(expr->middleExpr){
+        collectInlineFunctionExprs(expr->middleExpr,out);
+    }
+    if(expr->rightExpr){
+        collectInlineFunctionExprs(expr->rightExpr,out);
+    }
+    if(expr->callee){
+        collectInlineFunctionExprs(expr->callee,out);
+    }
+    for(auto *arg : expr->exprArrayData){
+        collectInlineFunctionExprs(arg,out);
+    }
+    for(auto &entry : expr->dictExpr){
+        collectInlineFunctionExprs(entry.first,out);
+        collectInlineFunctionExprs(entry.second,out);
+    }
+}
+
+void CodeGen::ensureInlineFunctionTemplate(ASTExpr *inlineExpr,const std::string &hint){
+    if(!inlineExpr || inlineExpr->type != INLINE_FUNC_EXPR || !inlineExpr->inlineFuncBlock){
+        return;
+    }
+    if(inlineExpr->inlineFuncRuntimeName.empty()){
+        auto suffix = hint.empty() ? "inline" : hint;
+        inlineExpr->inlineFuncRuntimeName = "__inline__" + suffix + "_" + std::to_string(inlineFuncCounter++);
+    }
+    if(emittedInlineRuntimeFuncs.find(inlineExpr->inlineFuncRuntimeName) != emittedInlineRuntimeFuncs.end()){
+        return;
+    }
+
+    RTFuncTemplate inlineTemplate;
+    inlineTemplate.name = makeOwnedRTID(inlineExpr->inlineFuncRuntimeName);
+    auto orderedParams = orderedParamPairs(inlineExpr->inlineFuncParams);
+    for(auto &paramPair : orderedParams){
+        RTID paramId;
+        ASTIdentifier_to_RTID(paramPair.first,paramId);
+        inlineTemplate.argsTemplate.push_back(paramId);
+    }
+    emitRuntimeFunction(inlineExpr->inlineFuncBlock,genContext,this,inlineTemplate);
+    emittedInlineRuntimeFuncs.insert(inlineExpr->inlineFuncRuntimeName);
+}
+
+void CodeGen::ensureInlineExprTemplates(ASTExpr *expr){
+    std::vector<ASTExpr *> inlineExprs;
+    collectInlineFunctionExprs(expr,inlineExprs);
+    for(auto *inlineExpr : inlineExprs){
+        ensureInlineFunctionTemplate(inlineExpr,"expr");
+    }
 }
 
 
@@ -302,19 +398,14 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         ASTVarDecl *varDecl = (ASTVarDecl *)stmt;
         for(auto & spec : varDecl->specs){
             ASTIdentifier *var_id = spec.id;
-            if(spec.expr && spec.expr->type == INLINE_FUNC_EXPR){
-                auto *inlineExpr = (ASTExpr *)spec.expr;
-                if(inlineExpr->inlineFuncRuntimeName.empty()){
-                    inlineExpr->inlineFuncRuntimeName = "__inline__" + var_id->val + "_" + std::to_string(inlineFuncCounter++);
+            if(spec.expr){
+                if(spec.expr->type == INLINE_FUNC_EXPR){
+                    auto *inlineExpr = (ASTExpr *)spec.expr;
+                    ensureInlineFunctionTemplate(inlineExpr,var_id ? var_id->val : "var");
                 }
-                RTFuncTemplate inlineTemplate;
-                inlineTemplate.name = makeOwnedRTID(inlineExpr->inlineFuncRuntimeName);
-                for(auto &paramPair : inlineExpr->inlineFuncParams){
-                    RTID paramId;
-                    ASTIdentifier_to_RTID(paramPair.first,paramId);
-                    inlineTemplate.argsTemplate.push_back(paramId);
+                else {
+                    ensureInlineExprTemplates(spec.expr);
                 }
-                emitRuntimeFunction(inlineExpr->inlineFuncBlock,genContext,this,inlineTemplate);
             }
 
             RTVar code_var;
@@ -325,6 +416,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             if(spec.expr) {
                 ASTExpr *initialVal = spec.expr;
                 if(initialVal->type == INLINE_FUNC_EXPR){
+                    ensureInlineFunctionTemplate(initialVal,var_id ? var_id->val : "var");
                     RTCode code = CODE_RTFUNC_REF;
                     genContext->out.write((const char *)&code,sizeof(RTCode));
                     RTID funcId = makeOwnedRTID(initialVal->inlineFuncRuntimeName);
@@ -345,6 +437,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         if(!guardedSpec.id || !guardedSpec.expr){
             return;
         }
+        ensureInlineExprTemplates(guardedSpec.expr);
 
         RTCode code = CODE_RTSECURE_DECL;
         genContext->out.write((const char *)&code,sizeof(RTCode));
@@ -377,7 +470,8 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         ASTIdentifier_to_RTID(func_id,funcTemplate.name);
         funcTemplate.attributes = convertAttributes(func_node->attributes);
         funcTemplate.isLazy = func_node->isLazy;
-        for(auto & param_pair : func_node->params){
+        auto orderedParams = orderedParamPairs(func_node->params);
+        for(auto & param_pair : orderedParams){
             RTID param_id;
             ASTIdentifier_to_RTID(param_pair.first,param_id);
             funcTemplate.argsTemplate.push_back(param_id);
@@ -419,7 +513,8 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             ASTIdentifier_to_RTID(methodDecl->funcId,methodTemplate.name);
             methodTemplate.attributes = convertAttributes(methodDecl->attributes);
             methodTemplate.isLazy = methodDecl->isLazy;
-            for(auto &paramPair : methodDecl->params){
+            auto orderedMethodParams = orderedParamPairs(methodDecl->params);
+            for(auto &paramPair : orderedMethodParams){
                 RTID paramId;
                 ASTIdentifier_to_RTID(paramPair.first,paramId);
                 methodTemplate.argsTemplate.push_back(paramId);
@@ -430,7 +525,8 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             RTFuncTemplate ctorTemplate;
             ctorTemplate.name = makeOwnedRTID(classCtorTemplateName(ctorDecl->params.size()));
             ctorTemplate.attributes = convertAttributes(ctorDecl->attributes);
-            for(auto &paramPair : ctorDecl->params){
+            auto orderedCtorParams = orderedParamPairs(ctorDecl->params);
+            for(auto &paramPair : orderedCtorParams){
                 RTID paramId;
                 ASTIdentifier_to_RTID(paramPair.first,paramId);
                 ctorTemplate.argsTemplate.push_back(paramId);
@@ -448,7 +544,8 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             runtimeMethod.name = makeOwnedRTID(mangleClassMethodName(className,methodDecl->funcId->val));
             runtimeMethod.attributes = convertAttributes(methodDecl->attributes);
             runtimeMethod.isLazy = methodDecl->isLazy;
-            for(auto &paramPair : methodDecl->params){
+            auto orderedMethodParams = orderedParamPairs(methodDecl->params);
+            for(auto &paramPair : orderedMethodParams){
                 RTID paramId;
                 ASTIdentifier_to_RTID(paramPair.first,paramId);
                 runtimeMethod.argsTemplate.push_back(paramId);
@@ -459,7 +556,8 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             RTFuncTemplate runtimeCtor;
             runtimeCtor.name = makeOwnedRTID(mangleClassCtorName(className,ctorDecl->params.size()));
             runtimeCtor.attributes = convertAttributes(ctorDecl->attributes);
-            for(auto &paramPair : ctorDecl->params){
+            auto orderedCtorParams = orderedParamPairs(ctorDecl->params);
+            for(auto &paramPair : orderedCtorParams){
                 RTID paramId;
                 ASTIdentifier_to_RTID(paramPair.first,paramId);
                 runtimeCtor.argsTemplate.push_back(paramId);
@@ -477,6 +575,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             setContext(&tempContext);
             RTCode code = CODE_RTMEMBER_SET;
             for(auto &fieldInit : fieldInitializers){
+                ensureInlineExprTemplates(fieldInit.expr);
                 tempContext.out.write((char *)&code,sizeof(RTCode));
                 writeNamedVarRef(tempContext.out,"self");
                 RTID memberId = makeOwnedRTID(fieldInit.fieldName);
@@ -509,6 +608,11 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
     }
     else if(stmt->type == COND_DECL){
         ASTConditionalDecl *cond_decl = (ASTConditionalDecl *)stmt;
+        for(auto & cond : cond_decl->specs){
+            if(!cond.isElse() && cond.expr){
+                ensureInlineExprTemplates(cond.expr);
+            }
+        }
         RTCode code = CODE_CONDITIONAL;
         genContext->out.write((char *)&code,sizeof(RTCode));
         unsigned count = cond_decl->specs.size();
@@ -539,6 +643,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         if(!loopExpr || !loopBlock){
             return;
         }
+        ensureInlineExprTemplates(loopExpr);
 
         RTCode code = CODE_CONDITIONAL;
         genContext->out.write((char *)&code,sizeof(RTCode));
@@ -553,9 +658,12 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
     }
     else if(stmt->type == RETURN_DECL){
         ASTReturnDecl *return_decl = (ASTReturnDecl *)stmt;
+        bool hasValue = return_decl->expr != nullptr;
+        if(hasValue){
+            ensureInlineExprTemplates(return_decl->expr);
+        }
         RTCode code = CODE_RTRETURN;
         genContext->out.write((char *)&code,sizeof(RTCode));
-        bool hasValue = return_decl->expr != nullptr;
         genContext->out.write((char *)&hasValue,sizeof(hasValue));
         if(hasValue)
             consumeStmt(return_decl->expr);
@@ -599,7 +707,18 @@ StarbytesObject CodeGen::exprToRTInternalObject(ASTExpr *expr){
 
 
 void CodeGen::consumeStmt(ASTStmt *stmt){
+    if(!stmt){
+        return;
+    }
     ASTExpr *expr = (ASTExpr *)stmt;
+    if((stmt->type & EXPR) && exprEmitDepth == 0){
+        ensureInlineExprTemplates(expr);
+    }
+    struct ExprDepthGuard {
+        size_t &depth;
+        explicit ExprDepthGuard(size_t &depthRef):depth(depthRef){ ++depth; }
+        ~ExprDepthGuard(){ --depth; }
+    } depthGuard(exprEmitDepth);
     if(stmt->type == REGEX_LITERAL){
         auto *literalExpr = (ASTLiteralExpr *)stmt;
         RTCode code = CODE_RTREGEX_LITERAL;
@@ -626,6 +745,16 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         auto obj = exprToRTInternalObject(expr);
         genContext->out << &obj;
         StarbytesObjectRelease(obj);
+    }
+    else if(stmt->type == INLINE_FUNC_EXPR){
+        ensureInlineFunctionTemplate(expr,"expr");
+        if(expr->inlineFuncRuntimeName.empty()){
+            return;
+        }
+        RTCode code = CODE_RTFUNC_REF;
+        genContext->out.write((const char *)&code,sizeof(RTCode));
+        RTID id = makeOwnedRTID(expr->inlineFuncRuntimeName);
+        genContext->out << &id;
     }
     else if(stmt->type == ID_EXPR){
         if(expr->id->type == ASTIdentifier::Var) {
@@ -712,6 +841,16 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         genContext->out.write((const char *)&code,sizeof(RTCode));
         genContext->out.write((const char *)&binaryCode,sizeof(binaryCode));
         consumeStmt(expr->leftExpr);
+        consumeStmt(expr->rightExpr);
+    }
+    else if(stmt->type == TERNARY_EXPR){
+        if(!expr->leftExpr || !expr->middleExpr || !expr->rightExpr){
+            return;
+        }
+        RTCode code = CODE_RTTERNARY;
+        genContext->out.write((const char *)&code,sizeof(RTCode));
+        consumeStmt(expr->leftExpr);
+        consumeStmt(expr->middleExpr);
         consumeStmt(expr->rightExpr);
     }
     else if(stmt->type == ASSIGN_EXPR){

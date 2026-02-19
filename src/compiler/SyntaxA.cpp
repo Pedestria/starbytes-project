@@ -90,7 +90,15 @@ void SyntaxA::consumeCurrentTok(){
 
     ASTIdentifier *SyntaxA::buildIdentifier(const Tok & first_token,bool typeScope){
         if(typeScope){
-            
+            if(first_token.type == Tok::Identifier){
+                ASTIdentifier *id = new ASTIdentifier();
+                id->val = first_token.content;
+                id->codeRegion.startLine = id->codeRegion.endLine = first_token.srcPos.line;
+                id->codeRegion.startCol = first_token.srcPos.startCol;
+                id->codeRegion.endCol = first_token.srcPos.endCol;
+                return id;
+            }
+            return nullptr;
         }
         else {
             if(first_token.type == Tok::Identifier){
@@ -105,6 +113,7 @@ void SyntaxA::consumeCurrentTok(){
                 return nullptr;
             };
         }
+        return nullptr;
     }
 
     ASTType *SyntaxA::buildTypeFromTokenStream(TokRef first_token,ASTStmt *parentStmt,ASTTypeContext & ctxt){

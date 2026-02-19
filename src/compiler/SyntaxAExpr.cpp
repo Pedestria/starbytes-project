@@ -1,6 +1,7 @@
 #include "starbytes/compiler/ASTNodes.def"
 #include "starbytes/compiler/SyntaxA.h"
 #include "starbytes/compiler/AST.h"
+#include <functional>
 #include <iostream>
 #include <string>
 #include <cstdlib>
@@ -61,11 +62,135 @@ namespace starbytes::Syntax {
         return node;
     }
 
+    ASTExpr *SyntaxA::tryParseInlineFunctionExpr(TokRef first_token,std::shared_ptr<ASTScope> parentScope,bool allowLeadingFuncKeyword,bool *matched){
+        if(matched){
+            *matched = false;
+        }
+
+        size_t startIndex = privTokIndex;
+        auto fail = [&]() -> ASTExpr * {
+            privTokIndex = startIndex;
+            return nullptr;
+        };
+
+        Tok tok = first_token;
+        bool startedWithFuncKeyword = false;
+        if(allowLeadingFuncKeyword && tok.type == Tok::Keyword && tok.content == KW_FUNC){
+            startedWithFuncKeyword = true;
+            tok = nextTok();
+        }
+
+        if(tok.type != Tok::OpenParen){
+            return fail();
+        }
+
+        auto *inlineExpr = new ASTExpr();
+        inlineExpr->type = INLINE_FUNC_EXPR;
+        inlineExpr->codeRegion = regionFromToken(startedWithFuncKeyword ? first_token : tok);
+
+        auto currentGenericTypeParams = [&]() -> const std::set<std::string> * {
+            if(genericTypeParamStack.empty()){
+                return nullptr;
+            }
+            return &genericTypeParamStack.back();
+        };
+
+        tok = nextTok();
+        while(tok.type != Tok::CloseParen){
+            if(tok.type != Tok::Identifier){
+                return fail();
+            }
+
+            ASTIdentifier *paramId = nullptr;
+            ASTType *paramType = nullptr;
+            Tok lookahead = aheadTok();
+            ASTTypeContext paramTypeContext;
+            paramTypeContext.genericTypeParams = currentGenericTypeParams();
+            paramTypeContext.isPlaceholder = true;
+            if(lookahead.type == Tok::Colon){
+                paramId = buildIdentifier(tok,false);
+                if(!paramId){
+                    return fail();
+                }
+                gotoNextTok();
+                tok = nextTok();
+                paramType = buildTypeFromTokenStream(tok,inlineExpr,paramTypeContext);
+                if(!paramType){
+                    return fail();
+                }
+            }
+            else {
+                paramType = buildTypeFromTokenStream(tok,inlineExpr,paramTypeContext);
+                if(!paramType){
+                    return fail();
+                }
+                tok = nextTok();
+                if(tok.type != Tok::Identifier){
+                    return fail();
+                }
+                paramId = buildIdentifier(tok,false);
+                if(!paramId){
+                    return fail();
+                }
+            }
+            inlineExpr->inlineFuncParams.insert(std::make_pair(paramId,paramType));
+
+            tok = nextTok();
+            if(tok.type == Tok::Comma){
+                tok = nextTok();
+                continue;
+            }
+            if(tok.type == Tok::CloseParen){
+                break;
+            }
+            return fail();
+        }
+
+        tok = nextTok();
+        ASTTypeContext returnTypeContext;
+        returnTypeContext.genericTypeParams = currentGenericTypeParams();
+        returnTypeContext.isPlaceholder = true;
+        inlineExpr->inlineFuncReturnType = buildTypeFromTokenStream(tok,inlineExpr,returnTypeContext);
+        if(!inlineExpr->inlineFuncReturnType){
+            return fail();
+        }
+
+        tok = nextTok();
+        if(tok.type != Tok::OpenBrace){
+            return fail();
+        }
+
+        std::shared_ptr<ASTScope> inlineScope(new ASTScope({"inline_func",ASTScope::Function,parentScope}));
+        inlineScope->generateHashID();
+        inlineExpr->inlineFuncBlock = evalBlockStmt(tok,inlineScope);
+        if(!inlineExpr->inlineFuncBlock){
+            return fail();
+        }
+        gotoNextTok();
+
+        if(matched){
+            *matched = true;
+        }
+        return inlineExpr;
+    }
+
     ASTExpr *SyntaxA::evalDataExpr(TokRef first_token,std::shared_ptr<ASTScope> parentScope){
         Tok tokRef = first_token;
         ASTExpr *expr = nullptr;
+        bool inlineExprMatched = false;
+        if(tokRef.type == Tok::Keyword && tokRef.content == KW_FUNC){
+            expr = tryParseInlineFunctionExpr(tokRef,parentScope,true,&inlineExprMatched);
+            if(inlineExprMatched){
+                return expr;
+            }
+            return nullptr;
+        }
         /// Paren Unwrapping
         if(tokRef.type == Tok::OpenParen){
+            expr = tryParseInlineFunctionExpr(tokRef,parentScope,false,&inlineExprMatched);
+            if(inlineExprMatched){
+                return expr;
+            }
             tokRef = nextTok();
             expr = evalExpr(tokRef,parentScope);
             tokRef = nextTok();
@@ -601,8 +726,48 @@ namespace starbytes::Syntax {
             return expr;
         };
 
-        auto parseAssignment = [&](auto &&self,Tok tok) -> ASTExpr * {
-            auto *lhs = parseLogicOr(parseLogicOr,tok);
+        std::function<ASTExpr *(Tok)> parseAssignment;
+        std::function<ASTExpr *(Tok)> parseTernary;
+
+        parseTernary = [&](Tok tok) -> ASTExpr * {
+            auto *condition = parseLogicOr(parseLogicOr,tok);
+            if(!condition){
+                return nullptr;
+            }
+            tok = token_stream[privTokIndex];
+            if(tok.type != Tok::QuestionMark){
+                return condition;
+            }
+
+            Tok questionTok = tok;
+            tok = nextTok();
+            auto *trueExpr = parseAssignment(tok);
+            if(!trueExpr){
+                return nullptr;
+            }
+
+            tok = token_stream[privTokIndex];
+            if(tok.type != Tok::Colon){
+                return nullptr;
+            }
+
+            tok = nextTok();
+            auto *falseExpr = parseAssignment(tok);
+            if(!falseExpr){
+                return nullptr;
+            }
+
+            auto *node = new ASTExpr();
+            node->type = TERNARY_EXPR;
+            node->leftExpr = condition;
+            node->middleExpr = trueExpr;
+            node->rightExpr = falseExpr;
+            node->codeRegion = condition ? condition->codeRegion : regionFromToken(questionTok);
+            return node;
+        };
+
+        parseAssignment = [&](Tok tok) -> ASTExpr * {
+            auto *lhs = parseTernary(tok);
             if(!lhs){
                 return nullptr;
             }
@@ -650,7 +815,7 @@ namespace starbytes::Syntax {
             for(size_t i = 0;i < assignmentTokCount;++i){
                 rhsTok = nextTok();
             }
-            auto *rhs = self(self,rhsTok);
+            auto *rhs = parseAssignment(rhsTok);
             if(!rhs){
                 return nullptr;
             }
@@ -663,7 +828,7 @@ namespace starbytes::Syntax {
             return assignNode;
         };
 
-        return parseAssignment(parseAssignment,first_token);
+        return parseAssignment(first_token);
     }
 
 

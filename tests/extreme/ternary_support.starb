@@ -1,0 +1,22 @@
+class Counter {
+    decl n:Int = 0
+}
+
+func bump(counter:Counter, value:Int) Int {
+    counter.n += 1
+    return value
+}
+
+decl counter = new Counter()
+decl t1:Int = true ? bump(counter,10) : bump(counter,20)
+decl t2:Int = false ? bump(counter,30) : bump(counter,40)
+decl t3:Int = false ? 1 : true ? 2 : 3
+decl p:Int = true || false ? 7 : 9
+decl q:Int = false && true ? 7 : 9
+
+if(t1 == 10 && t2 == 40 && t3 == 2 && p == 7 && q == 9 && counter.n == 2){
+    print("TERNARY-OK")
+}
+else {
+    print("TERNARY-FAIL")
+}

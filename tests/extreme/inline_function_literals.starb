@@ -1,0 +1,24 @@
+def BinaryOp = (lhs:Int,rhs:Int) Int
+def Unary = (value:Int) Int
+
+decl add = (Int a, Int b) Int {
+    return a + b
+}
+print(add(2,3))
+
+decl incr:Unary = func (Int v) Int {
+    return v + 1
+}
+print(incr(10))
+
+decl immediate = func (Int x, Int y) Int {
+    return x - y
+}(9,4)
+print(immediate)
+
+decl typedBinary:BinaryOp = func (Int left, Int right) Int {
+    return left * right
+}
+print(typedBinary(3,4))
+
+print("INLINE-FUNCTION-LITERALS-OK")

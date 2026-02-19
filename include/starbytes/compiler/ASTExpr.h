@@ -44,6 +44,8 @@ namespace starbytes {
         /// @name Binary Expression / Member Expression Props
         /// @{
         ASTExpr * leftExpr = nullptr;
+        /// NOTE: `middleExpr` is used by TernaryExpr.
+        ASTExpr * middleExpr = nullptr;
         /// NOTE: `rightExpr` is also used for AssignExpr
         ASTExpr * rightExpr = nullptr;
         /// @}

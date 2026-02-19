@@ -9,6 +9,19 @@
 
 namespace starbytes {
 
+    static bool shouldSuppressUnusedInvocationWarning(ASTExpr *expr){
+        if(!expr || expr->type != IVKE_EXPR || !expr->callee){
+            return false;
+        }
+        if(expr->callee->type == ID_EXPR && expr->callee->id){
+            return expr->callee->id->val == "print";
+        }
+        if(expr->callee->type == MEMBER_EXPR && expr->callee->rightExpr && expr->callee->rightExpr->id){
+            return expr->callee->rightExpr->id->val == "print";
+        }
+        return false;
+    }
+
     static bool attributeArgIsString(const ASTAttributeArg &arg){
         if(!arg.value){
             return false;
@@ -126,6 +139,37 @@ namespace starbytes {
         }
         out << "__" << symbolName;
         return out.str();
+    }
+
+    static bool paramComesBefore(ASTIdentifier *lhs,ASTIdentifier *rhs){
+        if(lhs == rhs){
+            return false;
+        }
+        if(!lhs){
+            return false;
+        }
+        if(!rhs){
+            return true;
+        }
+        if(lhs->codeRegion.startLine != rhs->codeRegion.startLine){
+            return lhs->codeRegion.startLine < rhs->codeRegion.startLine;
+        }
+        if(lhs->codeRegion.startCol != rhs->codeRegion.startCol){
+            return lhs->codeRegion.startCol < rhs->codeRegion.startCol;
+        }
+        return lhs->val < rhs->val;
+    }
+
+    static std::vector<std::pair<ASTIdentifier *,ASTType *>> orderedParamPairs(const std::map<ASTIdentifier *,ASTType *> &paramMap){
+        std::vector<std::pair<ASTIdentifier *,ASTType *>> ordered;
+        ordered.reserve(paramMap.size());
+        for(auto &entry : paramMap){
+            ordered.push_back(entry);
+        }
+        std::sort(ordered.begin(),ordered.end(),[](const auto &lhs,const auto &rhs){
+            return paramComesBefore(lhs.first,rhs.first);
+        });
+        return ordered;
     }
 
     static bool regionHasLocation(const Region &region){
@@ -449,6 +493,21 @@ namespace starbytes {
         if(!funcData){
             return nullptr;
         }
+        if(funcData->funcType && funcData->funcType->nameMatches(FUNCTION_TYPE)){
+            auto *funcType = cloneTypeNode(funcData->funcType,parent);
+            if(!funcType){
+                return nullptr;
+            }
+            if(funcData->isLazy &&
+               !funcType->typeParams.empty() &&
+               funcType->typeParams.front() &&
+               !funcType->typeParams.front()->nameMatches(TASK_TYPE)){
+                auto *lazyReturn = ASTType::Create(TASK_TYPE->getName(),parent,false,false);
+                lazyReturn->addTypeParam(cloneTypeNode(funcType->typeParams.front(),parent));
+                funcType->typeParams[0] = lazyReturn;
+            }
+            return funcType;
+        }
         auto *funcType = ASTType::Create(FUNCTION_TYPE->getName(),parent,false,false);
         auto *returnType = cloneTypeNode(funcData->returnType ? funcData->returnType : VOID_TYPE,parent);
         if(!returnType){
@@ -462,13 +521,37 @@ namespace starbytes {
         else {
             funcType->addTypeParam(returnType);
         }
-        for(auto &param : funcData->paramMap){
-            if(!param.second){
-                continue;
+        if(!funcData->orderedParams.empty()){
+            for(auto &param : funcData->orderedParams){
+                if(!param.second){
+                    continue;
+                }
+                funcType->addTypeParam(cloneTypeNode(param.second,parent));
             }
-            funcType->addTypeParam(cloneTypeNode(param.second,parent));
+        }
+        else {
+            for(auto &param : funcData->paramMap){
+                if(!param.second){
+                    continue;
+                }
+                funcType->addTypeParam(cloneTypeNode(param.second,parent));
+            }
         }
         return funcType;
+    }
+
+    static void fillFunctionParamsFromDecl(Semantics::SymbolTable::Function *data,const std::map<ASTIdentifier *,ASTType *> &declParams){
+        if(!data){
+            return;
+        }
+        auto orderedDeclParams = orderedParamPairs(declParams);
+        for(auto & param_pair : orderedDeclParams){
+            if(!param_pair.first){
+                continue;
+            }
+            data->paramMap.insert(std::make_pair(param_pair.first->val,param_pair.second));
+            data->orderedParams.push_back(std::make_pair(param_pair.first->val,param_pair.second));
+        }
     }
 
     static ASTType *substituteTypeParams(ASTType *type,
@@ -634,10 +717,8 @@ namespace starbytes {
             data->returnType = func->returnType;
             data->funcType = func->funcType;
             data->isLazy = func->isLazy;
-            
-            for(auto & param_pair : func->params){
-                data->paramMap.insert(std::make_pair(param_pair.first->val,param_pair.second));
-            };
+            fillFunctionParamsFromDecl(data,func->params);
+            data->funcType = buildFunctionTypeFromFunctionData(data,func);
             
             e->name = sourceName;
             e->emittedName = emittedName;
@@ -706,9 +787,8 @@ namespace starbytes {
                      method->returnType = m->returnType;
                      method->funcType = m->funcType;
                      method->isLazy = m->isLazy;
-                     for(auto & param_pair : m->params){
-                         method->paramMap.insert(std::make_pair(param_pair.first->val,param_pair.second));
-                     }
+                     fillFunctionParamsFromDecl(method,m->params);
+                     method->funcType = buildFunctionTypeFromFunctionData(method,m);
                      data->instMethods.push_back(method);
                  }
                  for(auto & c : classDecl->constructors){
@@ -716,9 +796,7 @@ namespace starbytes {
                      ctor->name = "__ctor__" + std::to_string(c->params.size());
                      ctor->returnType = VOID_TYPE;
                      ctor->funcType = data->classType;
-                     for(auto &param_pair : c->params){
-                         ctor->paramMap.insert(std::make_pair(param_pair.first->val,param_pair.second));
-                     }
+                     fillFunctionParamsFromDecl(ctor,c->params);
                      data->constructors.push_back(ctor);
                  }
                  tablePtr->addSymbolInScope(e,decl->scope);
@@ -763,9 +841,8 @@ namespace starbytes {
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
-                    for(auto &paramPair : methodDecl->params){
-                        method->paramMap.insert(std::make_pair(paramPair.first->val,paramPair.second));
-                    }
+                    fillFunctionParamsFromDecl(method,methodDecl->params);
+                    method->funcType = buildFunctionTypeFromFunctionData(method,methodDecl);
                     data->methods.push_back(method);
                 }
                 tablePtr->addSymbolInScope(e,decl->scope);
@@ -974,7 +1051,7 @@ namespace starbytes {
             }
             bool hasErrored = false;
             auto rc = evalGenericDecl(decl,symbolTableContext,scopeContext,&hasErrored);
-            if(hasErrored && !rc)
+            if(hasErrored && !rc){
                 switch (decl->type) {
                     /// FuncDecl
                     case FUNC_DECL : {
@@ -1487,7 +1564,11 @@ namespace starbytes {
                         return false;
                         break;
                     }
+                    default: {
+                        return false;
+                    }
                 }
+            }
         }
         else if(stmt->type & EXPR){
             ASTExpr *expr = (ASTExpr *)stmt;
@@ -1510,7 +1591,7 @@ namespace starbytes {
                         return false;
                     };
                     
-                    if(return_type != VOID_TYPE){
+                    if(return_type != VOID_TYPE && !shouldSuppressUnusedInvocationWarning(expr)){
                         std::ostringstream ss;
                         std::string calleeName = "<invoke>";
                         if(expr->callee){

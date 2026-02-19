@@ -15,6 +15,10 @@ namespace starbytes {
         void _print_rt_internal_obj(StarbytesObject object,map<StarbytesClassType,std::string> &reg);
     
         void _print_rt_obj(StarbytesObject object,map<StarbytesClassType,std::string> &reg){
+            if(!object){
+                std::cout << "null" << std::flush;
+                return;
+            }
             if(StarbytesObjectIs(object)){
                 _print_rt_internal_obj(object,reg);
             }

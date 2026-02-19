@@ -3,6 +3,23 @@
 
 namespace starbytes {
 
+static bool shouldSuppressUnusedInvocationWarning(ASTStmt *stmt){
+    if(!stmt || stmt->type != IVKE_EXPR){
+        return false;
+    }
+    auto *expr = (ASTExpr *)stmt;
+    if(!expr->callee){
+        return false;
+    }
+    if(expr->callee->type == ID_EXPR && expr->callee->id){
+        return expr->callee->id->val == "print";
+    }
+    if(expr->callee->type == MEMBER_EXPR && expr->callee->rightExpr && expr->callee->rightExpr->id){
+        return expr->callee->rightExpr->id->val == "print";
+    }
+    return false;
+}
+
 ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
                                      Semantics::STableContext & symbolTableContext,
                                      ASTScopeSemanticsContext & scopeContext,
@@ -329,7 +346,7 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
                     return nullptr;
                 };
                 
-                if(node->type == IVKE_EXPR && t != VOID_TYPE){
+                if(node->type == IVKE_EXPR && t != VOID_TYPE && !shouldSuppressUnusedInvocationWarning(node)){
                     
                         auto *ivk = (ASTType *)node;
                         std::ostringstream ss;

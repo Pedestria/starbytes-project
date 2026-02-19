@@ -21,3 +21,5 @@ cmake-build-release
 deps
 *.sh
 tools/starbpkg/.request/
+Test.starbsymtb
+module_test_output.stbxm

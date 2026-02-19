@@ -40,6 +40,7 @@ namespace starbytes {
             ASTIdentifier *buildIdentifier(const Tok & first_token,bool typeScope);
             ASTType * buildTypeFromTokenStream(const Tok & first_token,ASTStmt *parentStmt,ASTTypeContext & ctxt);
             ASTBlockStmt *evalBlockStmt(const Tok &first_token,std::shared_ptr<ASTScope> parentScope);
+            ASTExpr * tryParseInlineFunctionExpr(const Tok & first_token,std::shared_ptr<ASTScope> parentScope,bool allowLeadingFuncKeyword,bool *matched);
             ASTExpr * evalDataExpr(const Tok & first_token,std::shared_ptr<ASTScope> parentScope);
             ASTExpr * evalArgExpr(const Tok & first_token,std::shared_ptr<ASTScope> parentScope);
             ASTExpr * evalExpr(const Tok & first_token,std::shared_ptr<ASTScope> parentScope);

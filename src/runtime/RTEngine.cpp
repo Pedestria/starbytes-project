@@ -277,6 +277,9 @@ public:
                 if(var.first.size() == name.size() &&
                    std::memcmp(var.first.data(),name.getBuffer(),name.size()) == 0){
                     /// Increase Reference count upon variable reference.
+                    if(!var.second){
+                        return nullptr;
+                    }
                     StarbytesObjectReference(var.second);
 //                     std::cout << "Found Var:" << name.data() << std::endl;
                     return var.second;
@@ -843,13 +846,20 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             break;
         }
         case CODE_RTIVKFUNC : {
-            auto funcRefObject = (StarbytesFuncRef)evalExpr(in);
+            auto calleeObject = evalExpr(in);
             unsigned argCount;
             in.read((char *)&argCount,sizeof(argCount));
-            if(!funcRefObject){
+            if(!calleeObject){
                 discardExprArgs(in,argCount);
                 return nullptr;
             }
+            if(!StarbytesObjectTypecheck(calleeObject,StarbytesFuncRefType())){
+                discardExprArgs(in,argCount);
+                lastRuntimeError = "invocation target is not a function";
+                StarbytesObjectRelease(calleeObject);
+                return nullptr;
+            }
+            auto funcRefObject = (StarbytesFuncRef)calleeObject;
             auto *funcTemplate = StarbytesFuncRefGetPtr(funcRefObject);
             StarbytesObject returnValue = nullptr;
             if(funcTemplate && funcTemplate->isLazy){
@@ -1244,6 +1254,30 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 StarbytesObjectRelease(object);
             }
             return StarbytesBoolNew((StarbytesBoolVal)matches);
+        }
+        case CODE_RTTERNARY: {
+            auto condition = evalExpr(in);
+            if(!condition){
+                skipExpr(in);
+                skipExpr(in);
+                return nullptr;
+            }
+            if(!StarbytesObjectTypecheck(condition,StarbytesBoolType())){
+                StarbytesObjectRelease(condition);
+                skipExpr(in);
+                skipExpr(in);
+                lastRuntimeError = "ternary condition must be Bool";
+                return nullptr;
+            }
+            bool chooseTrue = (bool)StarbytesBoolValue(condition);
+            StarbytesObjectRelease(condition);
+            if(chooseTrue){
+                auto trueValue = evalExpr(in);
+                skipExpr(in);
+                return trueValue;
+            }
+            skipExpr(in);
+            return evalExpr(in);
         }
         case CODE_RTINDEX_GET: {
             auto collection = evalExpr(in);
@@ -2262,6 +2296,12 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             in >> &typeId;
             break;
         }
+        case CODE_RTTERNARY: {
+            skipExpr(in);
+            skipExpr(in);
+            skipExpr(in);
+            break;
+        }
         default:
             break;
     }
@@ -2551,6 +2591,7 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
          || code == CODE_UNARY_OPERATOR
          || code == CODE_BINARY_OPERATOR
          || code == CODE_RTTYPECHECK
+         || code == CODE_RTTERNARY
          || code == CODE_RTMEMBER_SET
          || code == CODE_RTMEMBER_IVK
          || code == CODE_RTMEMBER_GET

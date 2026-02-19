@@ -68,6 +68,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 project ("Starbytes" C CXX)
 
+enable_testing()
+
 
 set(RAPIDJSON_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/deps/rapidjson/include")
 

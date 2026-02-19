@@ -68,8 +68,10 @@ bool WorkspaceManager::documentIsOpen(string_ref path){
 }
 
 Semantics::SymbolTable::Entry &  WorkspaceManager::getSymbolInfoInDocument(string_ref path, Region &refLoc){
-    Semantics::SymbolTable sym;
-    
+    (void)path;
+    (void)refLoc;
+    static Semantics::SymbolTable::Entry fallbackEntry {};
+    return fallbackEntry;
 }
 
 
