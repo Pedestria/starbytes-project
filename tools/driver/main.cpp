@@ -1,12 +1,18 @@
 #include "starbytes/base/FileExt.def"
+#include "starbytes/base/CmdLine.h"
 #include "starbytes/compiler/AST.h"
 #include "starbytes/compiler/Parser.h"
 #include "starbytes/compiler/Gen.h"
+#include "starbytes/interop.h"
 #include "starbytes/runtime/RTEngine.h"
+#include "profile/CompileProfile.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <optional>
@@ -34,6 +40,7 @@ enum class DriverCommand {
 struct DriverOptions {
     DriverCommand command = DriverCommand::Run;
     std::string scriptPath;
+    std::vector<std::string> scriptArgs;
     std::string moduleName;
     std::string outputPath;
     std::string outDir = ".starbytes";
@@ -42,6 +49,8 @@ struct DriverOptions {
     bool executeAfterCompile = false;
     bool cleanModule = false;
     bool printModulePath = false;
+    bool profileCompile = false;
+    std::string profileCompileOutPath;
     bool logDiagnostics = true;
     bool autoLoadNative = true;
     std::vector<std::string> nativeModules;
@@ -72,6 +81,7 @@ public:
 struct ModuleSource {
     std::filesystem::path filePath;
     std::string fileText;
+    uint64_t contentHash = 0;
     bool isInterfaceFile = false;
 };
 
@@ -91,9 +101,25 @@ struct ModuleGraph {
     bool rootHasMainSource = false;
 };
 
+struct ModuleAnalysisEntry {
+    uint64_t contentHash = 0;
+    std::string compilerVersion;
+    uint64_t flagsHash = 0;
+    std::vector<std::string> imports;
+};
+
+struct ModuleAnalysisCache {
+    std::unordered_map<std::string, ModuleAnalysisEntry> entriesBySourcePath;
+    bool dirty = false;
+};
+
 struct ResolverContext {
     std::vector<std::filesystem::path> moduleSearchDirs;
 };
+
+using CompileProfileData = starbytes::driver::profile::CompileProfileData;
+
+CompileProfileData *gActiveCompileProfile = nullptr;
 
 std::string makeAbsolutePathString(const std::filesystem::path &path) {
     std::error_code ec;
@@ -102,6 +128,171 @@ std::string makeAbsolutePathString(const std::filesystem::path &path) {
         return std::filesystem::absolute(path).string();
     }
     return weak.string();
+}
+
+std::string compilerVersionString() {
+#ifdef STARBYTES_VERSION
+    return STARBYTES_STRINGIFY(STARBYTES_VERSION);
+#else
+    return "unknown";
+#endif
+}
+
+uint64_t fnv1a64(const char *data, size_t size) {
+    uint64_t hash = 1469598103934665603ULL;
+    for(size_t i = 0; i < size; ++i) {
+        hash ^= static_cast<uint8_t>(data[i]);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+uint64_t hashString64(const std::string &value) {
+    return fnv1a64(value.data(), value.size());
+}
+
+bool loadModuleAnalysisCache(const std::filesystem::path &cachePath,
+                             ModuleAnalysisCache &cache,
+                             std::string &warning) {
+    cache.entriesBySourcePath.clear();
+    cache.dirty = false;
+
+    std::ifstream in(cachePath, std::ios::in);
+    if(!in.is_open()) {
+        return true;
+    }
+
+    std::string header;
+    if(!std::getline(in, header)) {
+        return true;
+    }
+    if(header != "STARBYTES_MODULE_ANALYSIS_CACHE_V1") {
+        warning = "Ignoring incompatible module analysis cache file: " + cachePath.string();
+        return true;
+    }
+
+    while(in) {
+        std::string tag;
+        in >> tag;
+        if(!in) {
+            break;
+        }
+        if(tag != "ENTRY") {
+            std::string discard;
+            std::getline(in, discard);
+            continue;
+        }
+
+        std::string sourcePath;
+        std::string compilerVersion;
+        uint64_t contentHash = 0;
+        uint64_t flagsHash = 0;
+        size_t importCount = 0;
+
+        in >> std::quoted(sourcePath) >> contentHash >> std::quoted(compilerVersion) >> flagsHash >> importCount;
+        if(!in) {
+            warning = "Ignoring malformed module analysis cache file: " + cachePath.string();
+            cache.entriesBySourcePath.clear();
+            return true;
+        }
+
+        ModuleAnalysisEntry entry;
+        entry.contentHash = contentHash;
+        entry.compilerVersion = std::move(compilerVersion);
+        entry.flagsHash = flagsHash;
+        entry.imports.reserve(importCount);
+        for(size_t i = 0; i < importCount; ++i) {
+            std::string importName;
+            in >> std::quoted(importName);
+            if(!in) {
+                warning = "Ignoring malformed module analysis cache file: " + cachePath.string();
+                cache.entriesBySourcePath.clear();
+                return true;
+            }
+            entry.imports.push_back(std::move(importName));
+        }
+        cache.entriesBySourcePath[sourcePath] = std::move(entry);
+    }
+
+    return true;
+}
+
+bool saveModuleAnalysisCache(const std::filesystem::path &cachePath,
+                             const ModuleAnalysisCache &cache,
+                             std::string &error) {
+    auto parent = cachePath.parent_path();
+    if(!parent.empty()) {
+        std::error_code dirErr;
+        std::filesystem::create_directories(parent, dirErr);
+        if(dirErr) {
+            error = "Failed to create module analysis cache directory '" + parent.string() + "': " + dirErr.message();
+            return false;
+        }
+    }
+
+    std::ofstream out(cachePath, std::ios::out | std::ios::trunc);
+    if(!out.is_open()) {
+        error = "Failed to write module analysis cache file: " + cachePath.string();
+        return false;
+    }
+
+    out << "STARBYTES_MODULE_ANALYSIS_CACHE_V1\n";
+    for(const auto &pair : cache.entriesBySourcePath) {
+        const auto &sourcePath = pair.first;
+        const auto &entry = pair.second;
+        out << "ENTRY "
+            << std::quoted(sourcePath) << " "
+            << entry.contentHash << " "
+            << std::quoted(entry.compilerVersion) << " "
+            << entry.flagsHash << " "
+            << entry.imports.size();
+        for(const auto &importName : entry.imports) {
+            out << " " << std::quoted(importName);
+        }
+        out << "\n";
+    }
+    return true;
+}
+
+std::optional<std::vector<std::string>> resolveImportsFromCache(const ModuleAnalysisCache &cache,
+                                                                const ModuleSource &source,
+                                                                const std::string &compilerVersion,
+                                                                uint64_t flagsHash) {
+    auto sourceKey = makeAbsolutePathString(source.filePath);
+    auto it = cache.entriesBySourcePath.find(sourceKey);
+    if(it == cache.entriesBySourcePath.end()) {
+        return std::nullopt;
+    }
+    const auto &entry = it->second;
+    if(entry.contentHash != source.contentHash) {
+        return std::nullopt;
+    }
+    if(entry.compilerVersion != compilerVersion) {
+        return std::nullopt;
+    }
+    if(entry.flagsHash != flagsHash) {
+        return std::nullopt;
+    }
+    return entry.imports;
+}
+
+void updateImportCache(ModuleAnalysisCache &cache,
+                       const ModuleSource &source,
+                       const std::string &compilerVersion,
+                       uint64_t flagsHash,
+                       const std::vector<std::string> &imports) {
+    auto sourceKey = makeAbsolutePathString(source.filePath);
+    auto &entry = cache.entriesBySourcePath[sourceKey];
+    if(entry.contentHash != source.contentHash ||
+       entry.compilerVersion != compilerVersion ||
+       entry.flagsHash != flagsHash ||
+       entry.imports != imports) {
+        entry.contentHash = source.contentHash;
+        entry.compilerVersion = compilerVersion;
+        entry.flagsHash = flagsHash;
+        entry.imports = imports;
+        cache.dirty = true;
+    }
 }
 
 std::string normalizeImportModuleName(const std::string &name) {
@@ -239,7 +430,23 @@ ResolverContext buildResolverContext(const std::filesystem::path &inputPath,
     return context;
 }
 
+uint64_t computeModuleAnalysisFlagsHash(const DriverOptions &opts,
+                                        const ResolverContext &resolverContext) {
+    std::ostringstream key;
+    key << "auto_native=" << (opts.autoLoadNative ? "1" : "0") << ";";
+    key << "native_dirs=";
+    for(const auto &dir : opts.nativeSearchDirs) {
+        key << makeAbsolutePathString(dir) << ";";
+    }
+    key << "resolver_dirs=";
+    for(const auto &dir : resolverContext.moduleSearchDirs) {
+        key << makeAbsolutePathString(dir) << ";";
+    }
+    return hashString64(key.str());
+}
+
 std::vector<std::string> extractImportsFromSource(const std::string &sourceText) {
+    auto importScanStart = std::chrono::steady_clock::now();
     std::vector<std::string> imports;
     static const std::regex importRegex(R"(^\s*import\s+([A-Za-z_][A-Za-z0-9_]*)\s*$)");
     std::istringstream lines(sourceText);
@@ -264,10 +471,15 @@ std::vector<std::string> extractImportsFromSource(const std::string &sourceText)
             imports.push_back(std::move(name));
         }
     }
+    if(gActiveCompileProfile && gActiveCompileProfile->enabled) {
+        auto importScanEnd = std::chrono::steady_clock::now();
+        gActiveCompileProfile->importScanNs += std::chrono::duration_cast<std::chrono::nanoseconds>(importScanEnd - importScanStart).count();
+    }
     return imports;
 }
 
 bool readFileText(const std::filesystem::path &path, std::string &outText, std::string &error) {
+    auto fileLoadStart = std::chrono::steady_clock::now();
     std::ifstream in(path, std::ios::in);
     if(!in.is_open()) {
         error = "Failed to open source file: " + path.string();
@@ -276,6 +488,10 @@ bool readFileText(const std::filesystem::path &path, std::string &outText, std::
     std::ostringstream buffer;
     buffer << in.rdbuf();
     outText = buffer.str();
+    if(gActiveCompileProfile && gActiveCompileProfile->enabled) {
+        auto fileLoadEnd = std::chrono::steady_clock::now();
+        gActiveCompileProfile->moduleFileLoadNs += std::chrono::duration_cast<std::chrono::nanoseconds>(fileLoadEnd - fileLoadStart).count();
+    }
     return true;
 }
 
@@ -333,7 +549,8 @@ bool collectModuleSourcesInDirectory(const std::filesystem::path &moduleDir,
         if(!readFileText(source.path, sourceText, error)) {
             return false;
         }
-        unit.sources.push_back({source.path, sourceText, source.isInterface});
+        auto contentHash = hashString64(sourceText);
+        unit.sources.push_back({source.path, sourceText, contentHash, source.isInterface});
     }
     return true;
 }
@@ -342,6 +559,7 @@ std::optional<std::filesystem::path> resolveImportModuleDirectory(const std::str
                                                                   const std::filesystem::path &currentModuleDir,
                                                                   const std::filesystem::path &workspaceRoot,
                                                                   const ResolverContext &resolverContext) {
+    auto resolveStart = std::chrono::steady_clock::now();
     std::vector<std::filesystem::path> candidates;
     candidates.push_back(currentModuleDir / moduleName);
     candidates.push_back(currentModuleDir.parent_path() / moduleName);
@@ -355,8 +573,16 @@ std::optional<std::filesystem::path> resolveImportModuleDirectory(const std::str
     for(const auto &candidate : candidates) {
         std::error_code ec;
         if(std::filesystem::exists(candidate, ec) && !ec && std::filesystem::is_directory(candidate, ec) && !ec) {
+            if(gActiveCompileProfile && gActiveCompileProfile->enabled) {
+                auto resolveEnd = std::chrono::steady_clock::now();
+                gActiveCompileProfile->importResolveNs += std::chrono::duration_cast<std::chrono::nanoseconds>(resolveEnd - resolveStart).count();
+            }
             return candidate;
         }
+    }
+    if(gActiveCompileProfile && gActiveCompileProfile->enabled) {
+        auto resolveEnd = std::chrono::steady_clock::now();
+        gActiveCompileProfile->importResolveNs += std::chrono::duration_cast<std::chrono::nanoseconds>(resolveEnd - resolveStart).count();
     }
     return std::nullopt;
 }
@@ -379,6 +605,9 @@ std::string joinCycle(const std::vector<std::string> &stack, const std::string &
 bool discoverModuleGraphByDirectory(const std::filesystem::path &moduleDir,
                                     const std::filesystem::path &workspaceRoot,
                                     const ResolverContext &resolverContext,
+                                    ModuleAnalysisCache &analysisCache,
+                                    const std::string &compilerVersion,
+                                    uint64_t flagsHash,
                                     ModuleGraph &graph,
                                     std::unordered_set<std::string> &visiting,
                                     std::vector<std::string> &stack,
@@ -405,7 +634,9 @@ bool discoverModuleGraphByDirectory(const std::filesystem::path &moduleDir,
 
     std::set<std::string> importedNames;
     for(const auto &source : unit.sources) {
-        auto imports = extractImportsFromSource(source.fileText);
+        auto cachedImports = resolveImportsFromCache(analysisCache, source, compilerVersion, flagsHash);
+        auto imports = cachedImports.has_value() ? *cachedImports : extractImportsFromSource(source.fileText);
+        updateImportCache(analysisCache, source, compilerVersion, flagsHash, imports);
         for(auto &name : imports) {
             if(importedNames.insert(name).second) {
                 unit.imports.push_back(name);
@@ -421,7 +652,16 @@ bool discoverModuleGraphByDirectory(const std::filesystem::path &moduleDir,
             stack.pop_back();
             return false;
         }
-        if(!discoverModuleGraphByDirectory(*resolvedDir, workspaceRoot, resolverContext, graph, visiting, stack, error)) {
+        if(!discoverModuleGraphByDirectory(*resolvedDir,
+                                           workspaceRoot,
+                                           resolverContext,
+                                           analysisCache,
+                                           compilerVersion,
+                                           flagsHash,
+                                           graph,
+                                           visiting,
+                                           stack,
+                                           error)) {
             visiting.erase(moduleKey);
             stack.pop_back();
             return false;
@@ -438,6 +678,9 @@ bool discoverModuleGraphByDirectory(const std::filesystem::path &moduleDir,
 bool discoverModuleGraphBySingleFile(const std::filesystem::path &sourceFile,
                                      const std::filesystem::path &workspaceRoot,
                                      const ResolverContext &resolverContext,
+                                     ModuleAnalysisCache &analysisCache,
+                                     const std::string &compilerVersion,
+                                     uint64_t flagsHash,
                                      ModuleGraph &graph,
                                      std::string &error) {
     ModuleBuildUnit rootUnit;
@@ -446,11 +689,14 @@ bool discoverModuleGraphBySingleFile(const std::filesystem::path &sourceFile,
     if(!readFileText(sourceFile, sourceText, error)) {
         return false;
     }
-    rootUnit.sources.push_back({sourceFile, sourceText, false});
+    rootUnit.sources.push_back({sourceFile, sourceText, hashString64(sourceText), false});
     rootUnit.hasMainSource = (sourceFile.filename() == ("main." STARBYTES_SRCFILE_EXT));
 
     std::set<std::string> importedNames;
-    for(auto &name : extractImportsFromSource(sourceText)) {
+    auto cachedImports = resolveImportsFromCache(analysisCache, rootUnit.sources.front(), compilerVersion, flagsHash);
+    auto rootImports = cachedImports.has_value() ? *cachedImports : extractImportsFromSource(sourceText);
+    updateImportCache(analysisCache, rootUnit.sources.front(), compilerVersion, flagsHash, rootImports);
+    for(auto &name : rootImports) {
         if(importedNames.insert(name).second) {
             rootUnit.imports.push_back(name);
         }
@@ -464,7 +710,16 @@ bool discoverModuleGraphBySingleFile(const std::filesystem::path &sourceFile,
             error = "Failed to resolve imported module `" + importName + "` from `" + sourceFile.string() + "`.";
             return false;
         }
-        if(!discoverModuleGraphByDirectory(*resolvedDir, workspaceRoot, resolverContext, graph, visiting, stack, error)) {
+        if(!discoverModuleGraphByDirectory(*resolvedDir,
+                                           workspaceRoot,
+                                           resolverContext,
+                                           analysisCache,
+                                           compilerVersion,
+                                           flagsHash,
+                                           graph,
+                                           visiting,
+                                           stack,
+                                           error)) {
             return false;
         }
     }
@@ -481,13 +736,25 @@ bool discoverModuleGraphBySingleFile(const std::filesystem::path &sourceFile,
 bool discoverModuleGraph(const std::filesystem::path &inputPath,
                          const std::filesystem::path &workspaceRoot,
                          const ResolverContext &resolverContext,
+                         ModuleAnalysisCache &analysisCache,
+                         const std::string &compilerVersion,
+                         uint64_t flagsHash,
                          ModuleGraph &graph,
                          std::string &error) {
     std::error_code ec;
     if(std::filesystem::is_directory(inputPath, ec)) {
         std::unordered_set<std::string> visiting;
         std::vector<std::string> stack;
-        if(!discoverModuleGraphByDirectory(inputPath, workspaceRoot, resolverContext, graph, visiting, stack, error)) {
+        if(!discoverModuleGraphByDirectory(inputPath,
+                                           workspaceRoot,
+                                           resolverContext,
+                                           analysisCache,
+                                           compilerVersion,
+                                           flagsHash,
+                                           graph,
+                                           visiting,
+                                           stack,
+                                           error)) {
             return false;
         }
         graph.rootKey = makeAbsolutePathString(inputPath);
@@ -502,7 +769,14 @@ bool discoverModuleGraph(const std::filesystem::path &inputPath,
         return false;
     }
 
-    return discoverModuleGraphBySingleFile(inputPath, workspaceRoot, resolverContext, graph, error);
+    return discoverModuleGraphBySingleFile(inputPath,
+                                           workspaceRoot,
+                                           resolverContext,
+                                           analysisCache,
+                                           compilerVersion,
+                                           flagsHash,
+                                           graph,
+                                           error);
 }
 
 std::string defaultModuleNameForPath(const std::filesystem::path &path) {
@@ -637,13 +911,9 @@ std::vector<std::filesystem::path> collectAutoNativeModulePaths(const DriverOpti
     return paths;
 }
 
-bool startsWith(const std::string &subject, const std::string &prefix) {
-    return subject.rfind(prefix, 0) == 0;
-}
-
 void printUsage(std::ostream &out) {
     out << "Usage:\n";
-    out << "  starbytes [command] <script." << STARBYTES_SRCFILE_EXT << "|module_dir> [options]\n";
+    out << "  starbytes [command] <script." << STARBYTES_SRCFILE_EXT << "|module_dir> [options] [-- <script args...>]\n";
     out << "  starbytes --help\n";
     out << "  starbytes --version\n";
 }
@@ -667,10 +937,14 @@ void printHelp(std::ostream &out) {
     out << "      --no-run               Skip execution after compile.\n";
     out << "      --clean                Remove generated module file on success.\n";
     out << "      --print-module-path    Print resolved module output path.\n";
+    out << "      --profile-compile      Print structured compile phase timings.\n";
+    out << "      --profile-compile-out <path>\n";
+    out << "                              Write compile profile output to file.\n";
     out << "      --no-diagnostics       Do not print diagnostics buffered by runtime handlers.\n";
     out << "  -n, --native <path>        Load a native module binary before runtime execution (repeatable).\n";
     out << "  -L, --native-dir <dir>     Add a search directory for auto native module resolution (repeatable).\n";
     out << "      --no-native-auto       Disable automatic native module resolution from imports.\n";
+    out << "      -- <args...>           Forward remaining arguments to script runtime (CmdLine module).\n";
 
     out << "\nExamples:\n";
     out << "  starbytes hello." << STARBYTES_SRCFILE_EXT << "\n";
@@ -690,163 +964,92 @@ void printVersion(std::ostream &out) {
 #endif
 }
 
-bool consumeValueOption(const std::string &arg,
-                        const std::string &longOpt,
-                        const std::string &shortOpt,
-                        int &index,
-                        int argc,
-                        const char *argv[],
-                        std::string &value,
-                        std::string &error) {
-    if(arg == longOpt || arg == shortOpt) {
-        if(index + 1 >= argc) {
-            error = "Missing value for option: " + arg;
-            return true;
-        }
-        ++index;
-        value = argv[index];
-        return true;
+std::string commandToString(DriverCommand command) {
+    switch(command) {
+        case DriverCommand::Run:
+            return "run";
+        case DriverCommand::Compile:
+            return "compile";
+        case DriverCommand::Check:
+            return "check";
+        case DriverCommand::Help:
+            return "help";
     }
-
-    const std::string longPrefix = longOpt + "=";
-    if(startsWith(arg, longPrefix)) {
-        value = arg.substr(longPrefix.size());
-        if(value.empty()) {
-            error = "Missing value for option: " + longOpt;
-        }
-        return true;
-    }
-
-    const std::string shortPrefix = shortOpt + "=";
-    if(startsWith(arg, shortPrefix)) {
-        value = arg.substr(shortPrefix.size());
-        if(value.empty()) {
-            error = "Missing value for option: " + shortOpt;
-        }
-        return true;
-    }
-
-    return false;
+    return "run";
 }
 
 ParseResult parseArgs(int argc, const char *argv[], DriverOptions &opts) {
-    std::vector<std::string> positional;
-    bool commandSet = false;
-    bool forceRun = false;
-    bool forceNoRun = false;
+    starbytes::cl::Parser parser;
+    parser.addCommand("run");
+    parser.addCommand("compile");
+    parser.addCommand("check");
+    parser.addCommand("help");
 
-    for(int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
+    parser.addFlagOption("help",{"h"});
+    parser.addFlagOption("version",{"V"});
+    parser.addValueOption("modulename",{"m"});
+    parser.addValueOption("output",{"o"});
+    parser.addValueOption("out-dir",{"d"});
+    parser.addMultiValueOption("native",{"n"});
+    parser.addMultiValueOption("native-dir",{"L"});
+    parser.addFlagOption("run");
+    parser.addFlagOption("no-run");
+    parser.addFlagOption("clean");
+    parser.addFlagOption("print-module-path");
+    parser.addFlagOption("profile-compile");
+    parser.addValueOption("profile-compile-out");
+    parser.addFlagOption("no-diagnostics");
+    parser.addFlagOption("no-native-auto");
 
-        if(arg == "--") {
-            for(++i; i < argc; ++i) {
-                positional.emplace_back(argv[i]);
-            }
-            break;
-        }
-
-        if(arg == "-h" || arg == "--help") {
-            opts.showHelp = true;
-            continue;
-        }
-        if(arg == "-V" || arg == "--version") {
-            opts.showVersion = true;
-            continue;
-        }
-
-        if(!commandSet && positional.empty()) {
-            if(arg == "run") {
-                opts.command = DriverCommand::Run;
-                commandSet = true;
-                continue;
-            }
-            if(arg == "compile") {
-                opts.command = DriverCommand::Compile;
-                commandSet = true;
-                continue;
-            }
-            if(arg == "check") {
-                opts.command = DriverCommand::Check;
-                commandSet = true;
-                continue;
-            }
-            if(arg == "help") {
-                opts.command = DriverCommand::Help;
-                opts.showHelp = true;
-                commandSet = true;
-                continue;
-            }
-        }
-
-        std::string value;
-        std::string error;
-        if(consumeValueOption(arg, "--modulename", "-m", i, argc, argv, value, error)) {
-            if(!error.empty()) {
-                return {false, 1, error};
-            }
-            opts.moduleName = value;
-            continue;
-        }
-        if(consumeValueOption(arg, "--output", "-o", i, argc, argv, value, error)) {
-            if(!error.empty()) {
-                return {false, 1, error};
-            }
-            opts.outputPath = value;
-            continue;
-        }
-        if(consumeValueOption(arg, "--out-dir", "-d", i, argc, argv, value, error)) {
-            if(!error.empty()) {
-                return {false, 1, error};
-            }
-            opts.outDir = value;
-            continue;
-        }
-        if(consumeValueOption(arg, "--native", "-n", i, argc, argv, value, error)) {
-            if(!error.empty()) {
-                return {false, 1, error};
-            }
-            opts.nativeModules.push_back(value);
-            continue;
-        }
-        if(consumeValueOption(arg, "--native-dir", "-L", i, argc, argv, value, error)) {
-            if(!error.empty()) {
-                return {false, 1, error};
-            }
-            opts.nativeSearchDirs.push_back(value);
-            continue;
-        }
-
-        if(arg == "--run") {
-            forceRun = true;
-            continue;
-        }
-        if(arg == "--no-run") {
-            forceNoRun = true;
-            continue;
-        }
-        if(arg == "--clean") {
-            opts.cleanModule = true;
-            continue;
-        }
-        if(arg == "--print-module-path") {
-            opts.printModulePath = true;
-            continue;
-        }
-        if(arg == "--no-diagnostics") {
-            opts.logDiagnostics = false;
-            continue;
-        }
-        if(arg == "--no-native-auto") {
-            opts.autoLoadNative = false;
-            continue;
-        }
-
-        if(!arg.empty() && arg[0] == '-') {
-            return {false, 1, "Unknown option: " + arg};
-        }
-
-        positional.push_back(arg);
+    auto parsed = parser.parse(argc,argv);
+    if(!parsed.ok) {
+        return {false, parsed.exitCode, parsed.error};
     }
+
+    if(parsed.command == "run") {
+        opts.command = DriverCommand::Run;
+    }
+    else if(parsed.command == "compile") {
+        opts.command = DriverCommand::Compile;
+    }
+    else if(parsed.command == "check") {
+        opts.command = DriverCommand::Check;
+    }
+    else if(parsed.command == "help") {
+        opts.command = DriverCommand::Help;
+    }
+
+    opts.showHelp = parsed.hasFlag("help") || opts.command == DriverCommand::Help;
+    opts.showVersion = parsed.hasFlag("version");
+    opts.cleanModule = parsed.hasFlag("clean");
+    opts.printModulePath = parsed.hasFlag("print-module-path");
+    opts.profileCompile = parsed.hasFlag("profile-compile");
+    opts.logDiagnostics = !parsed.hasFlag("no-diagnostics");
+    opts.autoLoadNative = !parsed.hasFlag("no-native-auto");
+    opts.scriptArgs = parsed.passthroughArgs;
+
+    const auto &moduleNameValues = parsed.values("modulename");
+    if(!moduleNameValues.empty()) {
+        opts.moduleName = moduleNameValues.back();
+    }
+    const auto &outputValues = parsed.values("output");
+    if(!outputValues.empty()) {
+        opts.outputPath = outputValues.back();
+    }
+    const auto &outDirValues = parsed.values("out-dir");
+    if(!outDirValues.empty()) {
+        opts.outDir = outDirValues.back();
+    }
+    const auto &profileOutValues = parsed.values("profile-compile-out");
+    if(!profileOutValues.empty()) {
+        opts.profileCompileOutPath = profileOutValues.back();
+        opts.profileCompile = true;
+    }
+    opts.nativeModules.assign(parsed.values("native").begin(),parsed.values("native").end());
+    opts.nativeSearchDirs.assign(parsed.values("native-dir").begin(),parsed.values("native-dir").end());
+
+    bool forceRun = parsed.hasFlag("run");
+    bool forceNoRun = parsed.hasFlag("no-run");
 
     if(opts.showHelp || opts.command == DriverCommand::Help || opts.showVersion) {
         return {true, 0, ""};
@@ -856,14 +1059,14 @@ ParseResult parseArgs(int argc, const char *argv[], DriverOptions &opts) {
         return {false, 1, "Conflicting options: --run and --no-run cannot be used together."};
     }
 
-    if(positional.empty()) {
+    if(parsed.positionals.empty()) {
         return {false, 1, "Missing input path."};
     }
-    if(positional.size() > 1) {
+    if(parsed.positionals.size() > 1) {
         return {false, 1, "Too many positional arguments. Expected exactly one input path."};
     }
 
-    opts.scriptPath = positional.front();
+    opts.scriptPath = parsed.positionals.front();
 
     opts.executeAfterCompile = (opts.command == DriverCommand::Run);
     if(opts.command == DriverCommand::Compile) {
@@ -923,14 +1126,44 @@ void maybeLogRuntimeDiagnostics(const DriverOptions &opts) {
 }
 
 int main(int argc, const char *argv[]) {
+    auto sessionStart = std::chrono::steady_clock::now();
+    CompileProfileData profile;
+    std::string profileOutPath;
+    auto finishWith = [&](int code) {
+        gActiveCompileProfile = nullptr;
+        if(profile.enabled) {
+            auto sessionEnd = std::chrono::steady_clock::now();
+            profile.totalNs = std::chrono::duration_cast<std::chrono::nanoseconds>(sessionEnd - sessionStart).count();
+            if(!profileOutPath.empty()) {
+                std::ofstream out(profileOutPath, std::ios::out | std::ios::trunc);
+                if(!out.is_open()) {
+                    std::cerr << "Failed to open profile output file: " << profileOutPath << std::endl;
+                    starbytes::driver::profile::printCompileProfile(std::cout, profile, false);
+                    return 1;
+                }
+                starbytes::driver::profile::printCompileProfile(out, profile, code == 0);
+                out.close();
+            } else {
+                starbytes::driver::profile::printCompileProfile(std::cout, profile, code == 0);
+            }
+        }
+        return code;
+    };
+
     DriverOptions opts;
     auto parsed = parseArgs(argc, argv, opts);
+    profile.enabled = opts.profileCompile;
+    profileOutPath = opts.profileCompileOutPath;
+    profile.command = commandToString(opts.command);
+    profile.input = opts.scriptPath;
+    profile.moduleName = opts.moduleName;
+
     if(!parsed.ok) {
         if(!parsed.error.empty()) {
             std::cerr << parsed.error << std::endl;
         }
         printUsage(std::cerr);
-        return parsed.exitCode;
+        return finishWith(parsed.exitCode);
     }
 
     if(opts.showVersion) {
@@ -938,55 +1171,140 @@ int main(int argc, const char *argv[]) {
     }
     if(opts.showHelp || opts.command == DriverCommand::Help) {
         printHelp(std::cout);
-        return 0;
+        return finishWith(0);
     }
     if(opts.showVersion) {
-        return 0;
+        return finishWith(0);
     }
 
     std::filesystem::path inputPath(opts.scriptPath);
     if(!std::filesystem::exists(inputPath)) {
         std::cerr << "Input path not found: " << opts.scriptPath << std::endl;
-        return 1;
+        return finishWith(1);
     }
 
     auto workspaceRoot = std::filesystem::current_path();
     auto absoluteInputPath = std::filesystem::path(makeAbsolutePathString(inputPath));
+    profile.input = absoluteInputPath.string();
+
+    StarbytesRuntimeSetExecutablePath((argc > 0 && argv[0]) ? argv[0] : "");
+    StarbytesRuntimeSetScriptPath(absoluteInputPath.string().c_str());
+    StarbytesRuntimeClearScriptArgs();
+    for(const auto &scriptArg : opts.scriptArgs) {
+        StarbytesRuntimePushScriptArg(scriptArg.c_str());
+    }
+
     std::vector<std::string> resolverWarnings;
     auto resolverContext = buildResolverContext(absoluteInputPath, workspaceRoot, argv[0], resolverWarnings);
     for(const auto &warning : resolverWarnings) {
         std::cerr << "Warning: " << warning << std::endl;
     }
 
+    auto analysisCacheRoot = opts.outDir.empty() ? std::filesystem::path(".starbytes")
+                                                  : std::filesystem::path(opts.outDir);
+    if(!opts.outputPath.empty()) {
+        auto outputParent = std::filesystem::path(opts.outputPath).parent_path();
+        if(!outputParent.empty()) {
+            analysisCacheRoot = outputParent;
+        }
+    }
+    auto analysisCachePath = analysisCacheRoot / ".cache" / "module_analysis_cache.v1";
+    auto compilerVersion = compilerVersionString();
+    auto analysisFlagsHash = computeModuleAnalysisFlagsHash(opts, resolverContext);
+    ModuleAnalysisCache analysisCache;
+    std::string analysisCacheWarning;
+    loadModuleAnalysisCache(analysisCachePath, analysisCache, analysisCacheWarning);
+    if(!analysisCacheWarning.empty()) {
+        std::cerr << "Warning: " << analysisCacheWarning << std::endl;
+    }
+
     ModuleGraph graph;
     std::string graphError;
-    if(!discoverModuleGraph(absoluteInputPath, workspaceRoot, resolverContext, graph, graphError)) {
+    gActiveCompileProfile = profile.enabled ? &profile : nullptr;
+    auto moduleGraphStart = std::chrono::steady_clock::now();
+    if(!discoverModuleGraph(absoluteInputPath,
+                            workspaceRoot,
+                            resolverContext,
+                            analysisCache,
+                            compilerVersion,
+                            analysisFlagsHash,
+                            graph,
+                            graphError)) {
         std::cerr << graphError << std::endl;
-        return 1;
+        if(profile.enabled) {
+            auto moduleGraphEnd = std::chrono::steady_clock::now();
+            profile.moduleGraphNs = std::chrono::duration_cast<std::chrono::nanoseconds>(moduleGraphEnd - moduleGraphStart).count();
+        }
+        return finishWith(1);
+    }
+    if(analysisCache.dirty) {
+        std::string cacheSaveError;
+        if(!saveModuleAnalysisCache(analysisCachePath, analysisCache, cacheSaveError)) {
+            std::cerr << "Warning: " << cacheSaveError << std::endl;
+        }
+    }
+    if(profile.enabled) {
+        auto moduleGraphEnd = std::chrono::steady_clock::now();
+        profile.moduleGraphNs = std::chrono::duration_cast<std::chrono::nanoseconds>(moduleGraphEnd - moduleGraphStart).count();
+        profile.moduleCount = graph.unitsByKey.size();
+        uint64_t sourceCount = 0;
+        for(const auto &entry : graph.unitsByKey) {
+            sourceCount += entry.second.sources.size();
+        }
+        profile.sourceCount = sourceCount;
     }
 
     if(opts.moduleName.empty()) {
         opts.moduleName = defaultModuleNameForPath(absoluteInputPath);
     }
+    profile.moduleName = opts.moduleName;
 
     if(graph.rootIsDirectory && opts.executeAfterCompile && !graph.rootHasMainSource) {
         std::cerr << "Missing entrypoint `main." << STARBYTES_SRCFILE_EXT
                   << "` in module directory: " << absoluteInputPath << std::endl;
-        return 1;
+        return finishWith(1);
     }
 
     if(opts.command == DriverCommand::Check) {
         NullASTConsumer astConsumer;
         starbytes::Parser parser(astConsumer);
+        parser.setProfilingEnabled(profile.enabled);
+        if(profile.enabled) {
+            parser.resetProfileData();
+        }
         auto parseContext = starbytes::ModuleParseContext::Create(opts.moduleName);
         std::string parseError;
         if(!parseModuleGraphSources(parser, parseContext, graph, parseError)) {
             std::cerr << parseError << std::endl;
-            return 1;
+            if(profile.enabled) {
+                const auto &parserProfile = parser.getProfileData();
+                profile.parseTotalNs = parserProfile.totalNs;
+                profile.lexNs = parserProfile.lexNs;
+                profile.syntaxNs = parserProfile.syntaxNs;
+                profile.semanticNs = parserProfile.semanticNs;
+                profile.consumerNs = parserProfile.consumerNs;
+                profile.parserSourceBytes = parserProfile.sourceBytes;
+                profile.parserTokenCount = parserProfile.tokenCount;
+                profile.parserStatementCount = parserProfile.statementCount;
+                profile.parserFileCount = parserProfile.fileCount;
+            }
+            return finishWith(1);
         }
         auto ok = parser.finish();
+        if(profile.enabled) {
+            const auto &parserProfile = parser.getProfileData();
+            profile.parseTotalNs = parserProfile.totalNs;
+            profile.lexNs = parserProfile.lexNs;
+            profile.syntaxNs = parserProfile.syntaxNs;
+            profile.semanticNs = parserProfile.semanticNs;
+            profile.consumerNs = parserProfile.consumerNs;
+            profile.parserSourceBytes = parserProfile.sourceBytes;
+            profile.parserTokenCount = parserProfile.tokenCount;
+            profile.parserStatementCount = parserProfile.statementCount;
+            profile.parserFileCount = parserProfile.fileCount;
+        }
         maybeLogRuntimeDiagnostics(opts);
-        return ok ? 0 : 1;
+        return finishWith(ok ? 0 : 1);
     }
 
     auto compiledModulePath = resolveCompiledModulePath(opts);
@@ -994,13 +1312,13 @@ int main(int argc, const char *argv[]) {
     std::string outputDirError;
     if(!ensureOutputParentDir(compiledModulePath, outputDirError)) {
         std::cerr << outputDirError << std::endl;
-        return 1;
+        return finishWith(1);
     }
 
     std::ofstream moduleOut(compiledModulePath, std::ios::out | std::ios::binary);
     if(!moduleOut.is_open()) {
         std::cerr << "Failed to open output module for writing: " << compiledModulePath << std::endl;
-        return 1;
+        return finishWith(1);
     }
 
     auto outputDirForGen = compiledModulePath.parent_path();
@@ -1014,6 +1332,10 @@ int main(int argc, const char *argv[]) {
     gen.setContext(&moduleGenContext);
 
     starbytes::Parser parser(gen);
+    parser.setProfilingEnabled(profile.enabled);
+    if(profile.enabled) {
+        parser.resetProfileData();
+    }
     std::string parseError;
     if(!parseModuleGraphSources(parser, parseContext, graph, parseError)) {
         moduleOut.close();
@@ -1023,8 +1345,20 @@ int main(int argc, const char *argv[]) {
             std::cerr << "Warning: failed to remove '" << compiledModulePath << "': " << removeErr.message() << std::endl;
         }
         std::cerr << parseError << std::endl;
+        if(profile.enabled) {
+            const auto &parserProfile = parser.getProfileData();
+            profile.parseTotalNs = parserProfile.totalNs;
+            profile.lexNs = parserProfile.lexNs;
+            profile.syntaxNs = parserProfile.syntaxNs;
+            profile.semanticNs = parserProfile.semanticNs;
+            profile.consumerNs = parserProfile.consumerNs;
+            profile.parserSourceBytes = parserProfile.sourceBytes;
+            profile.parserTokenCount = parserProfile.tokenCount;
+            profile.parserStatementCount = parserProfile.statementCount;
+            profile.parserFileCount = parserProfile.fileCount;
+        }
         maybeLogRuntimeDiagnostics(opts);
-        return 1;
+        return finishWith(1);
     }
     if(!parser.finish()) {
         moduleOut.close();
@@ -1033,11 +1367,41 @@ int main(int argc, const char *argv[]) {
         if(removeErr) {
             std::cerr << "Warning: failed to remove '" << compiledModulePath << "': " << removeErr.message() << std::endl;
         }
+        if(profile.enabled) {
+            const auto &parserProfile = parser.getProfileData();
+            profile.parseTotalNs = parserProfile.totalNs;
+            profile.lexNs = parserProfile.lexNs;
+            profile.syntaxNs = parserProfile.syntaxNs;
+            profile.semanticNs = parserProfile.semanticNs;
+            profile.consumerNs = parserProfile.consumerNs;
+            profile.parserSourceBytes = parserProfile.sourceBytes;
+            profile.parserTokenCount = parserProfile.tokenCount;
+            profile.parserStatementCount = parserProfile.statementCount;
+            profile.parserFileCount = parserProfile.fileCount;
+        }
         maybeLogRuntimeDiagnostics(opts);
-        return 1;
+        return finishWith(1);
     }
 
+    if(profile.enabled) {
+        const auto &parserProfile = parser.getProfileData();
+        profile.parseTotalNs = parserProfile.totalNs;
+        profile.lexNs = parserProfile.lexNs;
+        profile.syntaxNs = parserProfile.syntaxNs;
+        profile.semanticNs = parserProfile.semanticNs;
+        profile.consumerNs = parserProfile.consumerNs;
+        profile.parserSourceBytes = parserProfile.sourceBytes;
+        profile.parserTokenCount = parserProfile.tokenCount;
+        profile.parserStatementCount = parserProfile.statementCount;
+        profile.parserFileCount = parserProfile.fileCount;
+    }
+
+    auto genFinishStart = std::chrono::steady_clock::now();
     gen.finish();
+    if(profile.enabled) {
+        auto genFinishEnd = std::chrono::steady_clock::now();
+        profile.genFinishNs = std::chrono::duration_cast<std::chrono::nanoseconds>(genFinishEnd - genFinishStart).count();
+    }
     moduleOut.close();
 
     if(opts.printModulePath) {
@@ -1045,10 +1409,11 @@ int main(int argc, const char *argv[]) {
     }
 
     if(opts.executeAfterCompile) {
+        auto runtimeStart = std::chrono::steady_clock::now();
         std::ifstream rtcodeIn(compiledModulePath, std::ios::in | std::ios::binary);
         if(!rtcodeIn.is_open()) {
             std::cerr << "Failed to open compiled module: " << compiledModulePath << std::endl;
-            return 1;
+            return finishWith(1);
         }
 
         auto interp = starbytes::Runtime::Interp::Create();
@@ -1083,7 +1448,7 @@ int main(int argc, const char *argv[]) {
 
         for(const auto &nativePath : opts.nativeModules) {
             if(!tryLoadNativeModule(std::filesystem::path(nativePath), true)) {
-                return 1;
+                return finishWith(1);
             }
         }
 
@@ -1094,11 +1459,15 @@ int main(int argc, const char *argv[]) {
         }
         for(const auto &autoPath : autoNativePaths) {
             if(!tryLoadNativeModule(autoPath, false)) {
-                return 1;
+                return finishWith(1);
             }
         }
 
         interp->exec(rtcodeIn);
+        if(profile.enabled) {
+            auto runtimeEnd = std::chrono::steady_clock::now();
+            profile.runtimeExecNs = std::chrono::duration_cast<std::chrono::nanoseconds>(runtimeEnd - runtimeStart).count();
+        }
     }
 
     if(opts.cleanModule) {
@@ -1111,5 +1480,5 @@ int main(int argc, const char *argv[]) {
 
     maybeLogRuntimeDiagnostics(opts);
 
-    return (starbytes::stdDiagnosticHandler && starbytes::stdDiagnosticHandler->hasErrored()) ? 1 : 0;
+    return finishWith((starbytes::stdDiagnosticHandler && starbytes::stdDiagnosticHandler->hasErrored()) ? 1 : 0);
 }

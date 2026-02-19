@@ -1,5 +1,6 @@
 #include <istream>
 #include <memory>
+#include <cstdint>
 #include "Lexer.h"
 #include "SyntaxA.h"
 #include "SemanticA.h"
@@ -10,12 +11,26 @@
 namespace starbytes {
     struct ModuleParseContext {
         std::string name;
+        StringInterner stringStorage;
         Semantics::STableContext sTableContext;
-        static ModuleParseContext Create(std::string name);
+        static ModuleParseContext Create(string_ref name);
     };
 
     class Parser {
+    public:
+        struct ProfileData {
+            uint64_t totalNs = 0;
+            uint64_t lexNs = 0;
+            uint64_t syntaxNs = 0;
+            uint64_t semanticNs = 0;
+            uint64_t consumerNs = 0;
+            uint64_t sourceBytes = 0;
+            uint64_t tokenCount = 0;
+            uint64_t statementCount = 0;
+            uint64_t fileCount = 0;
+        };
 
+    private:
         std::unique_ptr<DiagnosticHandler> diagnosticHandler;
 
         std::unique_ptr<Syntax::Lexer> lexer;
@@ -23,9 +38,14 @@ namespace starbytes {
         std::vector<Syntax::Tok> tokenStream;
         std::unique_ptr<SemanticA> semanticA;
         ASTStreamConsumer & astConsumer;
+        bool profilingEnabled = false;
+        ProfileData profileData;
     public:
         void parseFromStream(std::istream & in,ModuleParseContext &moduleParseContext);
         bool finish();
+        void setProfilingEnabled(bool enabled);
+        const ProfileData & getProfileData() const;
+        void resetProfileData();
         Parser(ASTStreamConsumer & astConsumer);
     };
 };

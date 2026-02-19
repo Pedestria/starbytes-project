@@ -2,6 +2,10 @@
 #include "starbytes/compiler/ASTExpr.h"
 
 namespace starbytes {
+    static StringInterner &typeNameInterner(){
+        static StringInterner interner;
+        return interner;
+    }
 
     ASTType * VOID_TYPE = ASTType::Create("Void",nullptr,false);
     ASTType * STRING_TYPE = ASTType::Create("String",nullptr,false);
@@ -20,7 +24,7 @@ namespace starbytes {
         obj->isAlias = isAlias;
         obj->isOptional = false;
         obj->isThrowable = false;
-        obj->name = name.getBuffer();
+        obj->name = typeNameInterner().intern(name);
         obj->parentNode = parentNode;
         obj->isPlaceholder = isPlaceholder;
         return obj;
@@ -70,7 +74,7 @@ namespace starbytes {
         }
         
         if(typeParams.size() != other->typeParams.size()){
-            bool isCollectionWildcard = (name == ARRAY_TYPE->getName().getBuffer() || name == DICTIONARY_TYPE->getName().getBuffer())
+            bool isCollectionWildcard = (name == ARRAY_TYPE->getName() || name == DICTIONARY_TYPE->getName())
                                         && typeParams.empty()
                                         && !other->typeParams.empty();
             if(!isCollectionWildcard && (!typeParams.empty() || !other->typeParams.empty())){

@@ -5,7 +5,7 @@ namespace starbytes {
 
 using namespace Runtime;
 
-ModuleGenContext::ModuleGenContext(string_ref strRef,std::ostream & out,std::filesystem::path & outputPath):name(strRef.getBuffer()),out(out),outputPath(outputPath),tableContext(nullptr){
+ModuleGenContext::ModuleGenContext(string_ref strRef,std::ostream & out,std::filesystem::path & outputPath):name(strRef.str()),out(out),outputPath(outputPath),tableContext(nullptr){
     
 };
 

@@ -1,4 +1,5 @@
 #include <deque>
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -71,10 +72,25 @@ struct StandardDiagnostic : public Diagnostic {
 };
 
 class DiagnosticHandler {
+public:
+    struct Metrics {
+        uint64_t pushedCount = 0;
+        uint64_t renderedCount = 0;
+        uint64_t errorCount = 0;
+        uint64_t warningCount = 0;
+        uint64_t withLocationCount = 0;
+        uint64_t skippedResolvedCount = 0;
+        uint64_t pushTimeNs = 0;
+        uint64_t renderTimeNs = 0;
+        uint64_t hasErroredTimeNs = 0;
+        uint64_t maxBufferedCount = 0;
+    };
+
     protected:
     std::deque<DiagnosticPtr> buffer;
     StreamLogger logger;
     std::unique_ptr<CodeView> codeView;
+    Metrics metrics;
 
     using SELF = DiagnosticHandler;
 
@@ -88,6 +104,8 @@ class DiagnosticHandler {
     bool empty();
     bool hasErrored();
     void logAll();
+    Metrics getMetrics() const;
+    void resetMetrics();
 };
 
 static std::unique_ptr<DiagnosticHandler> stdDiagnosticHandler = DiagnosticHandler::createDefault(std::cout);

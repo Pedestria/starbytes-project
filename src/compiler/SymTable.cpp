@@ -78,7 +78,7 @@ void importType(ASTType **type,std::istream & in){
 void exportType(ASTType *type,std::ostream & out){
     SymbolTableCode c = DECLARE_TYPE;
     out.write((char *)&c,sizeof(c));
-    SymTableID id {type->getName().getBuffer()};
+    SymTableID id {type->getName().str()};
     out << id;
 };
 
@@ -143,7 +143,7 @@ void Semantics::SymbolTable::serializePublic(std::ostream & out){
 }
 
 void Semantics::SymbolTable::importModule(string_ref moduleName){
-    auto moduleNameStr = moduleName.getBuffer();
+    auto moduleNameStr = moduleName.str();
     if(std::find(deps.begin(),deps.end(),moduleNameStr) == deps.end()){
         deps.push_back(std::move(moduleNameStr));
     }

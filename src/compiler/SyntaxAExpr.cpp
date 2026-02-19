@@ -88,7 +88,7 @@ namespace starbytes::Syntax {
         inlineExpr->type = INLINE_FUNC_EXPR;
         inlineExpr->codeRegion = regionFromToken(startedWithFuncKeyword ? first_token : tok);
 
-        auto currentGenericTypeParams = [&]() -> const std::set<std::string> * {
+        auto currentGenericTypeParams = [&]() -> const string_set * {
             if(genericTypeParamStack.empty()){
                 return nullptr;
             }

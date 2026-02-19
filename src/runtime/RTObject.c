@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include <starbytes/interop.h>
 
@@ -28,6 +29,84 @@ struct _StarbytesFuncArgs {
     StarbytesObject *argv;
 };
 
+static char *gRuntimeExecutablePath = NULL;
+static char *gRuntimeScriptPath = NULL;
+static char **gRuntimeScriptArgs = NULL;
+static unsigned gRuntimeScriptArgCount = 0;
+static const char *kEnvExecutablePath = "STARBYTES_EXECUTABLE_PATH";
+static const char *kEnvScriptPath = "STARBYTES_SCRIPT_PATH";
+static const char *kEnvScriptArgCount = "STARBYTES_SCRIPT_ARGC";
+static const char *kEnvScriptArgPrefix = "STARBYTES_SCRIPT_ARG_";
+
+static char *StarbytesDupString(const char *value){
+    if(value == NULL){
+        return NULL;
+    }
+    size_t len = strlen(value);
+    char *copy = (char *)malloc(len + 1);
+    if(copy == NULL){
+        return NULL;
+    }
+    memcpy(copy,value,len + 1);
+    return copy;
+}
+
+static void StarbytesSetOwnedString(char **slot,const char *value){
+    if(slot == NULL){
+        return;
+    }
+    if(*slot != NULL){
+        free(*slot);
+        *slot = NULL;
+    }
+    *slot = StarbytesDupString(value);
+}
+
+static void StarbytesSetEnvVar(const char *name,const char *value){
+    if(name == NULL){
+        return;
+    }
+#if defined(_WIN32)
+    _putenv_s(name,value == NULL ? "" : value);
+#else
+    if(value == NULL){
+        unsetenv(name);
+    }
+    else {
+        setenv(name,value,1);
+    }
+#endif
+}
+
+static void StarbytesUnsetEnvVar(const char *name){
+    if(name == NULL){
+        return;
+    }
+#if defined(_WIN32)
+    _putenv_s(name,"");
+#else
+    unsetenv(name);
+#endif
+}
+
+static unsigned StarbytesReadEnvUnsigned(const char *name){
+    if(name == NULL){
+        return 0;
+    }
+    const char *raw = getenv(name);
+    if(raw == NULL || *raw == '\0'){
+        return 0;
+    }
+    return (unsigned)strtoul(raw,NULL,10);
+}
+
+static void StarbytesBuildArgEnvName(unsigned index,char *buffer,size_t bufferSize){
+    if(buffer == NULL || bufferSize == 0){
+        return;
+    }
+    snprintf(buffer,bufferSize,"%s%u",kEnvScriptArgPrefix,index);
+}
+
 static void _StarbytesPrivDataFreeDefault(void *data){
     free(data);
 }
@@ -37,6 +116,93 @@ StarbytesObject StarbytesFuncArgsGetArg(StarbytesFuncArgs args){
         return NULL;
     }
     return args->argv[args->index++];
+}
+
+void StarbytesRuntimeSetExecutablePath(const char *path){
+    StarbytesSetOwnedString(&gRuntimeExecutablePath,path);
+    StarbytesSetEnvVar(kEnvExecutablePath,path == NULL ? "" : path);
+}
+
+void StarbytesRuntimeSetScriptPath(const char *path){
+    StarbytesSetOwnedString(&gRuntimeScriptPath,path);
+    StarbytesSetEnvVar(kEnvScriptPath,path == NULL ? "" : path);
+}
+
+void StarbytesRuntimeClearScriptArgs(){
+    unsigned previousCount = gRuntimeScriptArgCount;
+    if(previousCount == 0){
+        previousCount = StarbytesReadEnvUnsigned(kEnvScriptArgCount);
+    }
+    for(unsigned i = 0; i < previousCount; ++i){
+        char key[64];
+        StarbytesBuildArgEnvName(i,key,sizeof(key));
+        StarbytesUnsetEnvVar(key);
+    }
+    StarbytesSetEnvVar(kEnvScriptArgCount,"0");
+
+    if(gRuntimeScriptArgs != NULL){
+        for(unsigned i = 0; i < gRuntimeScriptArgCount; ++i){
+            free(gRuntimeScriptArgs[i]);
+        }
+        free(gRuntimeScriptArgs);
+    }
+    gRuntimeScriptArgs = NULL;
+    gRuntimeScriptArgCount = 0;
+}
+
+void StarbytesRuntimePushScriptArg(const char *arg){
+    char *copiedArg = StarbytesDupString(arg == NULL ? "" : arg);
+    char **newArgs = (char **)realloc(gRuntimeScriptArgs,sizeof(char *) * (gRuntimeScriptArgCount + 1));
+    if(newArgs == NULL){
+        free(copiedArg);
+        return;
+    }
+    gRuntimeScriptArgs = newArgs;
+    gRuntimeScriptArgs[gRuntimeScriptArgCount] = copiedArg;
+    gRuntimeScriptArgCount += 1;
+
+    char key[64];
+    char countBuffer[32];
+    StarbytesBuildArgEnvName(gRuntimeScriptArgCount - 1,key,sizeof(key));
+    StarbytesSetEnvVar(key,arg == NULL ? "" : arg);
+    snprintf(countBuffer,sizeof(countBuffer),"%u",gRuntimeScriptArgCount);
+    StarbytesSetEnvVar(kEnvScriptArgCount,countBuffer);
+}
+
+CString StarbytesRuntimeGetExecutablePath(){
+    if(gRuntimeExecutablePath == NULL){
+        const char *fromEnv = getenv(kEnvExecutablePath);
+        if(fromEnv != NULL){
+            return fromEnv;
+        }
+    }
+    return gRuntimeExecutablePath;
+}
+
+CString StarbytesRuntimeGetScriptPath(){
+    if(gRuntimeScriptPath == NULL){
+        const char *fromEnv = getenv(kEnvScriptPath);
+        if(fromEnv != NULL){
+            return fromEnv;
+        }
+    }
+    return gRuntimeScriptPath;
+}
+
+unsigned StarbytesRuntimeGetScriptArgCount(){
+    if(gRuntimeScriptArgCount == 0){
+        return StarbytesReadEnvUnsigned(kEnvScriptArgCount);
+    }
+    return gRuntimeScriptArgCount;
+}
+
+CString StarbytesRuntimeGetScriptArg(unsigned index){
+    if(index >= gRuntimeScriptArgCount || gRuntimeScriptArgs == NULL){
+        char key[64];
+        StarbytesBuildArgEnvName(index,key,sizeof(key));
+        return getenv(key);
+    }
+    return gRuntimeScriptArgs[index];
 }
 
 size_t StarbytesStrType(){

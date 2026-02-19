@@ -10,7 +10,7 @@ namespace starbytes {
     class ASTIdentifier;
 
     class ASTType {
-        std::string name;
+        string_ref name;
         
         ASTStmt *parentNode;
     public:

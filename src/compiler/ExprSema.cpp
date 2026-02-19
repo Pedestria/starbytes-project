@@ -69,12 +69,12 @@ static ASTType *cloneTypeNode(ASTType *type,ASTStmt *parent){
 }
 
 static ASTType *substituteTypeParams(ASTType *type,
-                                     const std::map<std::string,ASTType *> &bindings,
+                                     const string_map<ASTType *> &bindings,
                                      ASTStmt *parent){
     if(!type){
         return nullptr;
     }
-    auto bound = bindings.find(type->getName().getBuffer());
+    auto bound = bindings.find(type->getName().view());
     if(type->isGenericParam && bound != bindings.end()){
         auto *replacement = cloneTypeNode(bound->second,parent);
         if(!replacement){
@@ -97,15 +97,15 @@ static ASTType *substituteTypeParams(ASTType *type,
     return result;
 }
 
-static bool isGenericParamName(const std::set<std::string> *genericTypeParams,string_ref name){
-    return genericTypeParams && genericTypeParams->find(name.getBuffer()) != genericTypeParams->end();
+static bool isGenericParamName(const string_set *genericTypeParams,string_ref name){
+    return genericTypeParams && genericTypeParams->find(name.view()) != genericTypeParams->end();
 }
 
 static ASTType *resolveAliasType(ASTType *type,
                                  Semantics::STableContext &symbolTableContext,
                                  std::shared_ptr<ASTScope> scope,
-                                 const std::set<std::string> *genericTypeParams,
-                                 std::set<std::string> &visiting){
+                                 const string_set *genericTypeParams,
+                                 string_set &visiting){
     if(!type){
         return nullptr;
     }
@@ -129,7 +129,7 @@ static ASTType *resolveAliasType(ASTType *type,
     if(!aliasData || !aliasData->aliasType || aliasData->genericParams.size() != resolved->typeParams.size()){
         return resolved;
     }
-    std::map<std::string,ASTType *> bindings;
+    string_map<ASTType *> bindings;
     for(size_t i = 0;i < aliasData->genericParams.size();++i){
         bindings.insert(std::make_pair(aliasData->genericParams[i],resolved->typeParams[i]));
     }
@@ -178,14 +178,14 @@ static std::vector<std::pair<ASTIdentifier *,ASTType *>> orderedParamPairs(const
 static ASTType *resolveAliasType(ASTType *type,
                                  Semantics::STableContext &symbolTableContext,
                                  std::shared_ptr<ASTScope> scope,
-                                 const std::set<std::string> *genericTypeParams){
-    std::set<std::string> visiting;
+                                 const string_set *genericTypeParams){
+    string_set visiting;
     return resolveAliasType(type,symbolTableContext,scope,genericTypeParams,visiting);
 }
 
-static std::map<std::string,ASTType *> classBindingsFromInstanceType(Semantics::SymbolTable::Class *classData,
+static string_map<ASTType *> classBindingsFromInstanceType(Semantics::SymbolTable::Class *classData,
                                                                      ASTType *instanceType){
-    std::map<std::string,ASTType *> bindings;
+    string_map<ASTType *> bindings;
     if(!classData || !instanceType){
         return bindings;
     }
@@ -198,9 +198,9 @@ static std::map<std::string,ASTType *> classBindingsFromInstanceType(Semantics::
     return bindings;
 }
 
-static std::map<std::string,ASTType *> interfaceBindingsFromInstanceType(Semantics::SymbolTable::Interface *interfaceData,
+static string_map<ASTType *> interfaceBindingsFromInstanceType(Semantics::SymbolTable::Interface *interfaceData,
                                                                          ASTType *instanceType){
-    std::map<std::string,ASTType *> bindings;
+    string_map<ASTType *> bindings;
     if(!interfaceData || !instanceType){
         return bindings;
     }
@@ -222,15 +222,15 @@ static Semantics::SymbolTable::Var *findClassFieldRecursive(Semantics::STableCon
                                                             Semantics::SymbolTable::Class *classData,
                                                             string_ref fieldName,
                                                             std::shared_ptr<ASTScope> scope,
-                                                            std::set<std::string> &visited){
+                                                            string_set &visited){
     if(!classData || !classData->classType){
         return nullptr;
     }
-    auto className = classData->classType->getName().getBuffer();
-    if(visited.find(className) != visited.end()){
+    auto className = classData->classType->getName();
+    if(visited.find(className.view()) != visited.end()){
         return nullptr;
     }
-    visited.insert(className);
+    visited.insert(className.str());
     for(auto *field : classData->fields){
         if(field->name == fieldName){
             return field;
@@ -251,16 +251,16 @@ static ClassMethodLookupResult findClassMethodRecursive(Semantics::STableContext
                                                         Semantics::SymbolTable::Class *classData,
                                                         string_ref methodName,
                                                         std::shared_ptr<ASTScope> scope,
-                                                        std::set<std::string> &visited){
+                                                        string_set &visited){
     ClassMethodLookupResult result;
     if(!classData || !classData->classType){
         return result;
     }
-    auto className = classData->classType->getName().getBuffer();
-    if(visited.find(className) != visited.end()){
+    auto className = classData->classType->getName();
+    if(visited.find(className.view()) != visited.end()){
         return result;
     }
-    visited.insert(className);
+    visited.insert(className.str());
     for(auto *method : classData->instMethods){
         if(method->name == methodName){
             result.method = method;
@@ -335,7 +335,7 @@ static ASTType *findClassFieldTypeFromDeclRecursive(ASTClassDecl *classDecl,
                                                     std::shared_ptr<ASTScope> scope,
                                                     string_ref fieldName,
                                                     bool *isReadonly,
-                                                    std::set<std::string> &visited){
+                                                    string_set &visited){
     if(!classDecl){
         return nullptr;
     }
@@ -361,7 +361,7 @@ static ASTFuncDecl *findClassMethodFromDeclRecursive(ASTClassDecl *classDecl,
                                                      Semantics::STableContext &symbolTableContext,
                                                      std::shared_ptr<ASTScope> scope,
                                                      string_ref methodName,
-                                                     std::set<std::string> &visited){
+                                                     string_set &visited){
     if(!classDecl){
         return nullptr;
     }
@@ -1034,13 +1034,13 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         if(!resolved){
                             return std::nullopt;
                         }
-                        auto resolvedName = resolved->getName().getBuffer();
+                        auto resolvedName = resolved->getName();
                         if(resolved->nameMatches(STRING_TYPE) || resolved->nameMatches(ARRAY_TYPE)
                            || resolved->nameMatches(DICTIONARY_TYPE) || resolved->nameMatches(BOOL_TYPE)
                            || resolved->nameMatches(INT_TYPE) || resolved->nameMatches(FLOAT_TYPE)
                            || resolved->nameMatches(REGEX_TYPE) || resolved->nameMatches(ANY_TYPE)
                            || resolved->nameMatches(TASK_TYPE) || resolved->nameMatches(FUNCTION_TYPE)){
-                            return resolvedName;
+                            return resolvedName.str();
                         }
 
                         auto *entry = findTypeEntryNoDiag(symbolTableContext,resolved->getName(),scopeContext.scope);
@@ -1076,19 +1076,19 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     std::optional<std::string> runtimeTypeName;
                     auto *rhsExpr = expr_to_eval->rightExpr;
                     if(rhsExpr->type == ID_EXPR && rhsExpr->id){
-                        auto rawName = rhsExpr->id->val;
-                        if(rawName == STRING_TYPE->getName().getBuffer() || rawName == ARRAY_TYPE->getName().getBuffer()
-                           || rawName == DICTIONARY_TYPE->getName().getBuffer() || rawName == BOOL_TYPE->getName().getBuffer()
-                           || rawName == INT_TYPE->getName().getBuffer() || rawName == FLOAT_TYPE->getName().getBuffer()
-                           || rawName == REGEX_TYPE->getName().getBuffer() || rawName == ANY_TYPE->getName().getBuffer()
-                           || rawName == TASK_TYPE->getName().getBuffer() || rawName == FUNCTION_TYPE->getName().getBuffer()){
-                            runtimeTypeName = rawName;
+                        string_ref rawName = rhsExpr->id->val;
+                        if(rawName == STRING_TYPE->getName() || rawName == ARRAY_TYPE->getName()
+                           || rawName == DICTIONARY_TYPE->getName() || rawName == BOOL_TYPE->getName()
+                           || rawName == INT_TYPE->getName() || rawName == FLOAT_TYPE->getName()
+                           || rawName == REGEX_TYPE->getName() || rawName == ANY_TYPE->getName()
+                           || rawName == TASK_TYPE->getName() || rawName == FUNCTION_TYPE->getName()){
+                            runtimeTypeName = rawName.str();
                         }
                         else {
                             auto *entry = findTypeEntryNoDiag(symbolTableContext,rawName,scopeContext.scope);
                             if(!entry){
                                 std::ostringstream ss;
-                                ss << "Unknown type `" << rawName << "` in runtime type check.";
+                                ss << "Unknown type `" << rawName.str() << "` in runtime type check.";
                                 errStream.push(SemanticADiagnostic::create(ss.str(),rhsExpr,Diagnostic::Error));
                                 return nullptr;
                             }
@@ -1316,7 +1316,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 if(classEntry){
                     auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
                     auto classBindings = classBindingsFromInstanceType(classData,leftType);
-                    std::set<std::string> visited;
+                    string_set visited;
                     if(auto *field = findClassFieldRecursive(symbolTableContext,classData,memberName,scopeContext.scope,visited)){
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
                         auto *boundFieldType = substituteTypeParams(field->type,classBindings,expr_to_eval);
@@ -1376,7 +1376,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 if(classNode && classNode->type == CLASS_DECL){
                     auto *classDecl = (ASTClassDecl *)classNode;
                     bool readonly = false;
-                    std::set<std::string> visited;
+                    string_set visited;
                     if(auto *fieldType = findClassFieldTypeFromDeclRecursive(classDecl,symbolTableContext,scopeContext.scope,memberName,&readonly,visited)){
                         (void)readonly;
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
@@ -1489,7 +1489,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     auto classEntry = findClassEntry(symbolTableContext,baseType->getName(),scopeContext.scope);
                     if(classEntry){
                         auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
-                        std::set<std::string> visited;
+                        string_set visited;
                         auto *field = findClassFieldRecursive(symbolTableContext,classData,memberExpr->rightExpr->id->val,scopeContext.scope,visited);
                         if(field && field->isReadonly){
                             errStream.push(SemanticADiagnostic::create("Cannot assign to readonly/const field.",expr_to_eval,Diagnostic::Error));
@@ -1500,7 +1500,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         ASTStmt *classNode = baseType->getParentNode();
                         if(classNode && classNode->type == CLASS_DECL){
                             bool readonly = false;
-                            std::set<std::string> visited;
+                            string_set visited;
                             auto *fieldType = findClassFieldTypeFromDeclRecursive((ASTClassDecl *)classNode,symbolTableContext,scopeContext.scope,memberExpr->rightExpr->id->val,&readonly,visited);
                             (void)fieldType;
                             if(readonly){
@@ -1876,7 +1876,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     if(classEntry){
                         auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
                         auto classBindings = classBindingsFromInstanceType(classData,baseType);
-                        std::set<std::string> visited;
+                        string_set visited;
                         auto lookup = findClassMethodRecursive(symbolTableContext,classData,memberExpr->rightExpr->id->val,scopeContext.scope,visited);
                         if(!lookup.method){
                             errStream.push(SemanticADiagnostic::create("Unknown method.",expr_to_eval,Diagnostic::Error));
@@ -1950,7 +1950,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     ASTStmt *classNode = baseType->getParentNode();
                     if(classNode && classNode->type == CLASS_DECL){
                         auto *classDecl = (ASTClassDecl *)classNode;
-                        std::set<std::string> visited;
+                        string_set visited;
                         auto *methodDecl = findClassMethodFromDeclRecursive(classDecl,symbolTableContext,scopeContext.scope,memberExpr->rightExpr->id->val,visited);
                         if(!methodDecl){
                             errStream.push(SemanticADiagnostic::create("Unknown method.",expr_to_eval,Diagnostic::Error));

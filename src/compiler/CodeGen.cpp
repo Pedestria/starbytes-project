@@ -79,7 +79,7 @@ static void emitRuntimeFunction(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,C
 }
 
 inline void ASTIdentifier_to_RTID(ASTIdentifier *var,RTID &out);
-static RTID makeOwnedRTID(const std::string &value);
+static RTID makeOwnedRTID(string_ref value);
 
 static bool paramComesBefore(ASTIdentifier *lhs,ASTIdentifier *rhs){
     if(lhs == rhs){
@@ -180,7 +180,7 @@ inline void ASTIdentifier_to_RTID(ASTIdentifier *var,RTID &out){
     out.value = name.getBuffer();
 }
 
-static RTID makeOwnedRTID(const std::string &value){
+static RTID makeOwnedRTID(string_ref value){
     RTID id;
     id.len = value.size();
     char *buf = new char[id.len];
@@ -189,23 +189,35 @@ static RTID makeOwnedRTID(const std::string &value){
     return id;
 }
 
-static std::string mangleClassMethodName(const std::string &className,const std::string &methodName){
-    return "__" + className + "__" + methodName;
+static std::string mangleClassMethodName(string_ref className,string_ref methodName){
+    Twine out;
+    out + "__";
+    out + className.str();
+    out + "__";
+    out + methodName.str();
+    return out.str();
 }
 
 static std::string classCtorTemplateName(size_t arity){
-    return "__ctor__" + std::to_string(arity);
+    Twine out;
+    out + "__ctor__";
+    out + std::to_string(arity);
+    return out.str();
 }
 
-static std::string mangleClassCtorName(const std::string &className,size_t arity){
+static std::string mangleClassCtorName(string_ref className,size_t arity){
     return mangleClassMethodName(className,classCtorTemplateName(arity));
 }
 
-static std::string mangleClassFieldInitName(const std::string &className){
-    return "__" + className + "__field_init";
+static std::string mangleClassFieldInitName(string_ref className){
+    Twine out;
+    out + "__";
+    out + className.str();
+    out + "__field_init";
+    return out.str();
 }
 
-static void writeNamedVarRef(std::ostream &out,const std::string &name){
+static void writeNamedVarRef(std::ostream &out,string_ref name){
     RTCode code = CODE_RTVAR_REF;
     out.write((const char *)&code,sizeof(RTCode));
     RTID id = makeOwnedRTID(name);

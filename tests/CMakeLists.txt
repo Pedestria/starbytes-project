@@ -36,6 +36,42 @@ add_starbytes_test(
 
 add_starbytes_test(
     NAME
+    "adt-ref-test"
+    INCLUDE_LIB
+    FILES
+    "AdtRefTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "compile-profile-test"
+    INCLUDE_LIB
+    FILES
+    "CompileProfileTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "diagnostic-baseline-test"
+    INCLUDE_LIB
+    FILES
+    "DiagnosticBaselineTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "cmdline-parser-test"
+    INCLUDE_LIB
+    FILES
+    "CmdLineParserTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
     "lsp-server-test"
     INCLUDE_LIB
     FILES

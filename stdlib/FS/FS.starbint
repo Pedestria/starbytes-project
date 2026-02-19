@@ -1,0 +1,64 @@
+// StdLib FS Module (path + metadata utilities).
+// Note: file stream and direct read/write helpers remain in IO to avoid API duplication.
+
+def PathList = Array<String>
+
+@native(name="fs_currentDirectory")
+func currentDirectory() String!
+
+@native(name="fs_changeDirectory")
+func changeDirectory(path:String) Bool!
+
+@native(name="fs_pathAbsolute")
+func pathAbsolute(path:String) String!
+
+@native(name="fs_pathNormalize")
+func pathNormalize(path:String) String!
+
+@native(name="fs_pathCanonical")
+func pathCanonical(path:String) String!
+
+@native(name="fs_pathJoin")
+func pathJoin(parts:PathList) String!
+
+@native(name="fs_pathParent")
+func pathParent(path:String) String
+
+@native(name="fs_pathFilename")
+func pathFilename(path:String) String
+
+@native(name="fs_pathStem")
+func pathStem(path:String) String
+
+@native(name="fs_pathExtension")
+func pathExtension(path:String) String
+
+@native(name="fs_pathIsAbsolute")
+func pathIsAbsolute(path:String) Bool
+
+@native(name="fs_isFile")
+func isFile(path:String) Bool
+
+@native(name="fs_isDirectory")
+func isDirectory(path:String) Bool
+
+@native(name="fs_fileSize")
+func fileSize(path:String) Int!
+
+@native(name="fs_lastWriteEpochSeconds")
+func lastWriteEpochSeconds(path:String) Int!
+
+@native(name="fs_copyPath")
+func copyPath(src:String,dst:String,recursive:Bool,overwrite:Bool) Bool!
+
+@native(name="fs_removeTree")
+func removeTree(path:String) Bool!
+
+@native(name="fs_walkPaths")
+func walkPaths(path:String,recursive:Bool,includeDirectories:Bool) PathList!
+
+@native(name="fs_tempDirectory")
+func tempDirectory() String!
+
+@native(name="fs_homeDirectory")
+func homeDirectory() String!

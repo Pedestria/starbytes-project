@@ -24,7 +24,7 @@ namespace starbytes {
     struct ASTScopeSemanticsContext {
         std::shared_ptr<ASTScope> scope;
         std::map<ASTIdentifier *,ASTType *> *args = nullptr;
-        const std::set<std::string> *genericTypeParams = nullptr;
+        const string_set *genericTypeParams = nullptr;
     };
     /**
      * @brief The Semantics Analyzer
@@ -35,7 +35,7 @@ namespace starbytes {
         bool typeExists(ASTType *type,
                         Semantics::STableContext & symbolTableContext,
                         std::shared_ptr<ASTScope> scope,
-                        const std::set<std::string> *genericTypeParams = nullptr,
+                        const string_set *genericTypeParams = nullptr,
                         ASTStmt *diagNode = nullptr);
         ASTType *evalExprForTypeId(ASTExpr *expr_to_eval,
                                    Semantics::STableContext & symbolTableContext,

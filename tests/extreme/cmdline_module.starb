@@ -1,0 +1,11 @@
+import CmdLine
+
+print(executablePath())
+print(scriptPath())
+print(argCount())
+print(rawArgs())
+print(hasFlag("verbose",["v"]))
+print(flagValue("config",["c"]))
+print(flagValues("tag",["t"]))
+print(positionals())
+print("CMDLINE-MODULE-OK")

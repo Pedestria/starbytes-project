@@ -189,6 +189,16 @@ CString StarbytesTaskGetError(StarbytesTask task);
 
 StarbytesObject StarbytesFuncArgsGetArg(StarbytesFuncArgs args);
 
+/// Runtime command-line context (set by host/driver, read by stdlib modules)
+void StarbytesRuntimeSetExecutablePath(const char *path);
+void StarbytesRuntimeSetScriptPath(const char *path);
+void StarbytesRuntimeClearScriptArgs();
+void StarbytesRuntimePushScriptArg(const char *arg);
+CString StarbytesRuntimeGetExecutablePath();
+CString StarbytesRuntimeGetScriptPath();
+unsigned StarbytesRuntimeGetScriptArgCount();
+CString StarbytesRuntimeGetScriptArg(unsigned index);
+
 
 typedef StarbytesObject (*StarbytesFuncCallback)(StarbytesFuncArgs args);
 

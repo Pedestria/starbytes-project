@@ -1,5 +1,6 @@
 #include "starbytes/base/Diagnostic.h"
 #include "starbytes/base/CodeView.h"
+#include <chrono>
 #include <iostream>
 #include <ostream>
 #include <sstream>
@@ -36,7 +37,9 @@ void StreamLogger::integer(const int &i){
 }
 
 void StreamLogger::string(string_ref s){
-    out.write(s.getBuffer(),s.size());
+    if(s.size() > 0 && s.getBuffer()) {
+        out.write(s.getBuffer(),s.size());
+    }
 }
 
 void StreamLogger::lineBreak(unsigned c){
@@ -63,7 +66,25 @@ std::unique_ptr<DiagnosticHandler> DiagnosticHandler::createDefault(std::ostream
 }
 
 DiagnosticHandler & DiagnosticHandler::push(DiagnosticPtr diagnostic){
+    auto start = std::chrono::steady_clock::now();
+    if(diagnostic){
+        metrics.pushedCount += 1;
+        if(diagnostic->isError()){
+            metrics.errorCount += 1;
+        }
+        else {
+            metrics.warningCount += 1;
+        }
+        if(diagnostic->location.has_value()){
+            metrics.withLocationCount += 1;
+        }
+    }
     buffer.emplace_back(diagnostic);
+    if(buffer.size() > metrics.maxBufferedCount){
+        metrics.maxBufferedCount = buffer.size();
+    }
+    auto end = std::chrono::steady_clock::now();
+    metrics.pushTimeNs += std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
     return *this;
 };
 
@@ -79,39 +100,62 @@ bool DiagnosticHandler::empty(){
 };
 
 bool DiagnosticHandler::hasErrored(){
+    auto start = std::chrono::steady_clock::now();
     for(auto & diag : buffer){
-        if(diag->isError()){
+        if(diag && diag->isError()){
+            auto end = std::chrono::steady_clock::now();
+            metrics.hasErroredTimeNs += std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
             return true;
             break;
         };
     };
+    auto end = std::chrono::steady_clock::now();
+    metrics.hasErroredTimeNs += std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
     return false;
 };
 
 void DiagnosticHandler::logAll(){
     while(!buffer.empty()){
+        auto start = std::chrono::steady_clock::now();
         auto & d = buffer.front();
-        if(!d->resolved){
+        if(!d){
+            metrics.skippedResolvedCount += 1;
+        }
+        else if(!d->resolved){
             d->send(logger,codeView.get());
             logger.lineBreak();
+            metrics.renderedCount += 1;
+        }
+        else {
+            metrics.skippedResolvedCount += 1;
         };
+        auto end = std::chrono::steady_clock::now();
+        metrics.renderTimeNs += std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
         buffer.pop_front();
     };
 };
+
+DiagnosticHandler::Metrics DiagnosticHandler::getMetrics() const{
+    return metrics;
+}
+
+void DiagnosticHandler::resetMetrics(){
+    metrics = {};
+}
 
 bool Diagnostic::isError(){
     return t == Diagnostic::Error;
 }
 DiagnosticPtr StandardDiagnostic::createError(string_ref message){
     StandardDiagnostic d {};
-    d.message = message.getBuffer();
+    d.message = message.str();
     d.t = Diagnostic::Error;
     return std::make_shared<StandardDiagnostic>(std::move(d));
 }
 
 DiagnosticPtr StandardDiagnostic::createError(string_ref message,const Region &region){
     StandardDiagnostic d {};
-    d.message = message.getBuffer();
+    d.message = message.str();
     d.t = Diagnostic::Error;
     d.location = region;
     return std::make_shared<StandardDiagnostic>(std::move(d));
@@ -119,14 +163,14 @@ DiagnosticPtr StandardDiagnostic::createError(string_ref message,const Region &r
 
 DiagnosticPtr StandardDiagnostic::createWarning(string_ref message){
     StandardDiagnostic d {};
-    d.message = message.getBuffer();
+    d.message = message.str();
     d.t = Diagnostic::Warning;
     return std::make_shared<StandardDiagnostic>(std::move(d));
 }
 
 DiagnosticPtr StandardDiagnostic::createWarning(string_ref message,const Region &region){
     StandardDiagnostic d {};
-    d.message = message.getBuffer();
+    d.message = message.str();
     d.t = Diagnostic::Warning;
     d.location = region;
     return std::make_shared<StandardDiagnostic>(std::move(d));

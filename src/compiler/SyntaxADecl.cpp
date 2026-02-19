@@ -135,7 +135,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
             return nullptr;
         }
 
-        auto currentGenericTypeParams = [&]() -> const std::set<std::string> * {
+        auto currentGenericTypeParams = [&]() -> const string_set * {
             if(genericTypeParamStack.empty()){
                 return nullptr;
             }
@@ -167,7 +167,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
         };
 
         auto pushGenericTypeParamScope = [&](const std::vector<ASTIdentifier *> &params){
-            std::set<std::string> names;
+            string_set names;
             for(auto *paramId : params){
                 if(paramId){
                     names.insert(paramId->val);
@@ -334,7 +334,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                 ASTTypeContext typeCtxt;
                 typeCtxt.isPlaceholder = true;
                 typeCtxt.isAlias = true;
-                std::set<std::string> aliasTypeParamNames;
+                string_set aliasTypeParamNames;
                 for(auto *paramId : aliasDecl->genericTypeParams){
                     if(paramId){
                         aliasTypeParamNames.insert(paramId->val);

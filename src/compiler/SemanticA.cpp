@@ -125,19 +125,20 @@ namespace starbytes {
         return path;
     }
 
-    static std::string buildEmittedName(std::shared_ptr<ASTScope> scope,const std::string &symbolName){
+    static std::string buildEmittedName(std::shared_ptr<ASTScope> scope,string_ref symbolName){
         auto nsPath = getNamespacePath(scope);
         if(nsPath.empty()){
-            return symbolName;
+            return symbolName.str();
         }
-        std::ostringstream out;
+        Twine out;
         for(size_t i = 0;i < nsPath.size();++i){
             if(i > 0){
-                out << "__";
+                out + "__";
             }
-            out << nsPath[i];
+            out + nsPath[i];
         }
-        out << "__" << symbolName;
+        out + "__";
+        out + symbolName.str();
         return out.str();
     }
 
@@ -377,7 +378,7 @@ namespace starbytes {
                                                  Semantics::STableContext &symbolTableContext,
                                                  std::shared_ptr<ASTScope> scope,
                                                  const std::string &fieldName,
-                                                 std::set<std::string> &visited){
+                                                 string_set &visited){
         if(!classDecl){
             return nullptr;
         }
@@ -387,11 +388,11 @@ namespace starbytes {
         if(!classDecl->superClass){
             return nullptr;
         }
-        auto superName = classDecl->superClass->getName().getBuffer();
-        if(visited.find(superName) != visited.end()){
+        auto superName = classDecl->superClass->getName();
+        if(visited.find(superName.view()) != visited.end()){
             return nullptr;
         }
-        visited.insert(superName);
+        visited.insert(superName.str());
         auto *superDecl = resolveClassDeclFromType(classDecl->superClass,symbolTableContext,scope);
         return findFieldTypeByNameRecursive(superDecl,symbolTableContext,scope,fieldName,visited);
     }
@@ -400,7 +401,7 @@ namespace starbytes {
                                                   Semantics::STableContext &symbolTableContext,
                                                   std::shared_ptr<ASTScope> scope,
                                                   const std::string &methodName,
-                                                  std::set<std::string> &visited){
+                                                  string_set &visited){
         if(!classDecl){
             return nullptr;
         }
@@ -410,11 +411,11 @@ namespace starbytes {
         if(!classDecl->superClass){
             return nullptr;
         }
-        auto superName = classDecl->superClass->getName().getBuffer();
-        if(visited.find(superName) != visited.end()){
+        auto superName = classDecl->superClass->getName();
+        if(visited.find(superName.view()) != visited.end()){
             return nullptr;
         }
-        visited.insert(superName);
+        visited.insert(superName.str());
         auto *superDecl = resolveClassDeclFromType(classDecl->superClass,symbolTableContext,scope);
         return findMethodByNameRecursive(superDecl,symbolTableContext,scope,methodName,visited);
     }
@@ -444,8 +445,8 @@ namespace starbytes {
         return true;
     }
 
-    static std::set<std::string> genericParamSet(const std::vector<ASTIdentifier *> &params){
-        std::set<std::string> names;
+    static string_set genericParamSet(const std::vector<ASTIdentifier *> &params){
+        string_set names;
         for(auto *param : params){
             if(param){
                 names.insert(param->val);
@@ -454,8 +455,8 @@ namespace starbytes {
         return names;
     }
 
-    static bool isGenericParamName(const std::set<std::string> *genericTypeParams,string_ref name){
-        return genericTypeParams && genericTypeParams->find(name.getBuffer()) != genericTypeParams->end();
+    static bool isGenericParamName(const string_set *genericTypeParams,string_ref name){
+        return genericTypeParams && genericTypeParams->find(name.view()) != genericTypeParams->end();
     }
 
     static ASTType *cloneTypeNode(ASTType *type,ASTStmt *parent){
@@ -554,13 +555,13 @@ namespace starbytes {
         }
     }
 
-    static ASTType *substituteTypeParams(ASTType *type,
-                                         const std::map<std::string,ASTType *> &bindings,
+static ASTType *substituteTypeParams(ASTType *type,
+                                         const string_map<ASTType *> &bindings,
                                          ASTStmt *parent){
         if(!type){
             return nullptr;
         }
-        auto bound = bindings.find(type->getName().getBuffer());
+        auto bound = bindings.find(type->getName().view());
         if(type->isGenericParam && bound != bindings.end()){
             auto *replacement = cloneTypeNode(bound->second,parent);
             if(!replacement){
@@ -604,8 +605,8 @@ namespace starbytes {
     static ASTType *resolveAliasType(ASTType *type,
                                      Semantics::STableContext &symbolTableContext,
                                      std::shared_ptr<ASTScope> scope,
-                                     const std::set<std::string> *genericTypeParams,
-                                     std::set<std::string> &visiting){
+                                     const string_set *genericTypeParams,
+                                     string_set &visiting){
         if(!type){
             return nullptr;
         }
@@ -642,7 +643,7 @@ namespace starbytes {
             return resolved;
         }
 
-        std::map<std::string,ASTType *> bindings;
+        string_map<ASTType *> bindings;
         for(size_t i = 0;i < aliasData->genericParams.size();++i){
             bindings.insert(std::make_pair(aliasData->genericParams[i],resolved->typeParams[i]));
         }
@@ -660,8 +661,8 @@ namespace starbytes {
     static ASTType *resolveAliasType(ASTType *type,
                                      Semantics::STableContext &symbolTableContext,
                                      std::shared_ptr<ASTScope> scope,
-                                     const std::set<std::string> *genericTypeParams){
-        std::set<std::string> visiting;
+                                     const string_set *genericTypeParams){
+        string_set visiting;
         return resolveAliasType(type,symbolTableContext,scope,genericTypeParams,visiting);
     }
 
@@ -902,7 +903,7 @@ namespace starbytes {
     bool SemanticA::typeExists(ASTType *type,
                                Semantics::STableContext &contextTableContext,
                                std::shared_ptr<ASTScope> scope,
-                               const std::set<std::string> *genericTypeParams,
+                               const string_set *genericTypeParams,
                                ASTStmt *diagNode){
         if(!type){
             return false;
@@ -1197,16 +1198,16 @@ namespace starbytes {
                         classDecl->interfaces = resolvedInterfaces;
 
                         if(classDecl->superClass){
-                            std::set<std::string> seenTypes;
+                            string_set seenTypes;
                             seenTypes.insert(classDecl->id->val);
                             auto *cursorType = classDecl->superClass;
                             while(cursorType){
-                                auto cursorName = cursorType->getName().getBuffer();
-                                if(seenTypes.find(cursorName) != seenTypes.end()){
+                                auto cursorName = cursorType->getName();
+                                if(seenTypes.find(cursorName.view()) != seenTypes.end()){
                                     errStream.push(SemanticADiagnostic::create("Circular class inheritance detected.",classDecl,Diagnostic::Error));
                                     return false;
                                 }
-                                seenTypes.insert(cursorName);
+                                seenTypes.insert(cursorName.str());
                                 auto *cursorEntry = findTypeEntryNoDiag(symbolTableContext,cursorType->getName(),scope);
                                 if(!cursorEntry || cursorEntry->type != Semantics::SymbolTable::Entry::Class){
                                     break;
@@ -1231,7 +1232,7 @@ namespace starbytes {
                             }
                         }
 
-                        std::set<std::string> methodNames;
+                        string_set methodNames;
                         for(auto &m : classDecl->methods){
                             if(methodNames.find(m->funcId->val) != methodNames.end()){
                                 errStream.push(SemanticADiagnostic::create("Duplicate class method name.",m,Diagnostic::Error));
@@ -1345,7 +1346,7 @@ namespace starbytes {
                                 return false;
                             }
 
-                            std::map<std::string,ASTType *> interfaceBindings;
+                            string_map<ASTType *> interfaceBindings;
                             for(size_t i = 0;i < interfaceData->genericParams.size() && i < implementedInterfaceType->typeParams.size();++i){
                                 interfaceBindings.insert(std::make_pair(interfaceData->genericParams[i],implementedInterfaceType->typeParams[i]));
                             }
@@ -1354,7 +1355,7 @@ namespace starbytes {
                                 if(!requiredField || !requiredField->type){
                                     continue;
                                 }
-                                std::set<std::string> visited;
+                                string_set visited;
                                 auto *classFieldType = findFieldTypeByNameRecursive(classDecl,symbolTableContext,scope,requiredField->name,visited);
                                 if(!classFieldType){
                                     std::ostringstream ss;
@@ -1378,7 +1379,7 @@ namespace starbytes {
                                 if(!requiredMethod){
                                     continue;
                                 }
-                                std::set<std::string> visited;
+                                string_set visited;
                                 auto *classMethod = findMethodByNameRecursive(classDecl,symbolTableContext,scope,requiredMethod->name,visited);
                                 if(!classMethod){
                                     std::ostringstream ss;
@@ -1442,7 +1443,7 @@ namespace starbytes {
                             }
                         }
 
-                        std::set<std::string> methodNames;
+                        string_set methodNames;
                         for(auto *methodDecl : interfaceDecl->methods){
                             if(!methodDecl->funcId){
                                 errStream.push(SemanticADiagnostic::create("Interface method is missing an identifier.",methodDecl,Diagnostic::Error));

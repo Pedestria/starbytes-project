@@ -1,0 +1,28 @@
+// StdLib CmdLine Module
+// Runtime command-line argument helpers. Uses args passed after `--` in driver invocation.
+
+def StringList = Array<String>
+
+@native(name="cmd_rawArgs")
+func rawArgs() StringList
+
+@native(name="cmd_argCount")
+func argCount() Int
+
+@native(name="cmd_executablePath")
+func executablePath() String
+
+@native(name="cmd_scriptPath")
+func scriptPath() String
+
+@native(name="cmd_hasFlag")
+func hasFlag(name:String,aliases:StringList) Bool
+
+@native(name="cmd_flagValue")
+func flagValue(name:String,aliases:StringList) String?
+
+@native(name="cmd_flagValues")
+func flagValues(name:String,aliases:StringList) StringList
+
+@native(name="cmd_positionals")
+func positionals() StringList

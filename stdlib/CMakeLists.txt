@@ -29,7 +29,9 @@ function(add_starbytes_stdlib_module _NAME)
     set_target_properties(${T_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/stdlib" SUFFIX ".ntstarbmod")
 endfunction()
 
+add_starbytes_stdlib_module("CmdLine" "CmdLine/CmdLine.cpp")
 add_starbytes_stdlib_module("IO" "IO/IO.cpp")
+add_starbytes_stdlib_module("FS" "FS/FS.cpp")
 add_starbytes_stdlib_module("Time" "Time/Time.cpp")
 
 find_package(Threads REQUIRED)

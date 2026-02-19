@@ -3,7 +3,8 @@
 add_starbytes_tool(
     NAME "starbytes" 
     INCLUDE_LIB FILES 
-    ${CMAKE_CURRENT_SOURCE_DIR}/driver/main.cpp 
+    ${CMAKE_CURRENT_SOURCE_DIR}/driver/main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/driver/profile/CompileProfile.cpp
     DEPENDENCIES ${STARBYTES_ALL_LIBS})
 
 add_starbytes_tool(
