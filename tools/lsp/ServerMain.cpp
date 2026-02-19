@@ -1,4 +1,11 @@
 #include "ServerMain.h"
+#include "starbytes/base/Diagnostic.h"
+#include "starbytes/compiler/AST.h"
+#include "starbytes/compiler/ASTDecl.h"
+#include "starbytes/compiler/ASTExpr.h"
+#include "starbytes/compiler/Lexer.h"
+#include "starbytes/compiler/SyntaxA.h"
+#include "starbytes/compiler/Type.h"
 
 #include <algorithm>
 #include <cctype>
@@ -73,6 +80,8 @@ struct SymbolEntry {
   std::string name;
   int kind = SYMBOL_KIND_VARIABLE;
   std::string detail;
+  std::string signature;
+  std::string documentation;
   unsigned line = 0;
   unsigned start = 0;
   unsigned length = 0;
@@ -85,21 +94,15 @@ struct SemanticTokenEntry {
   unsigned type = TOKEN_TYPE_KEYWORD;
 };
 
+struct DocumentAnalysis {
+  std::vector<Syntax::Tok> tokenStream;
+  std::vector<SymbolEntry> symbols;
+};
+
 const std::vector<std::string> kKeywordCompletions = {
     "decl", "imut", "func", "class", "struct", "interface", "enum", "scope", "import", "if",
     "elif", "else", "for", "while", "return", "new", "secure", "catch", "def", "lazy", "await",
     "true", "false"};
-
-const std::regex kDeclRegex(R"(\bdecl\s+(?:imut\s+)?([A-Za-z_][A-Za-z0-9_]*))");
-const std::regex kFuncRegex(R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*))");
-const std::regex kClassRegex(R"(\bclass\s+([A-Za-z_][A-Za-z0-9_]*))");
-const std::regex kScopeRegex(R"(\bscope\s+([A-Za-z_][A-Za-z0-9_]*))");
-const std::regex kInterfaceRegex(R"(\binterface\s+([A-Za-z_][A-Za-z0-9_]*))");
-const std::regex kStructRegex(R"(\bstruct\s+([A-Za-z_][A-Za-z0-9_]*))");
-const std::regex kEnumRegex(R"(\benum\s+([A-Za-z_][A-Za-z0-9_]*))");
-
-const std::regex kKeywordRegex(
-    R"(\b(decl|imut|func|class|struct|interface|enum|scope|import|if|elif|else|for|while|return|new|secure|catch|def|lazy|await|true|false)\b)");
 
 const std::regex kFuncSignatureRegex(
     R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*([A-Za-z_][A-Za-z0-9_<>!?]*)?)");
@@ -130,88 +133,558 @@ std::string idToKey(const rapidjson::Value &id) {
   return "unknown";
 }
 
-void addSymbolsByPattern(const std::string &lineText,
-                         unsigned line,
-                         const std::regex &pattern,
-                         int kind,
-                         const char *detail,
-                         std::vector<SymbolEntry> &symbols) {
-  for (std::sregex_iterator it(lineText.begin(), lineText.end(), pattern), end; it != end; ++it) {
-    unsigned start = static_cast<unsigned>((*it).position(1));
-    unsigned length = static_cast<unsigned>((*it).length(1));
-    if (length == 0) {
+std::string trimRightCopy(std::string value) {
+  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) {
+    value.pop_back();
+  }
+  return value;
+}
+
+std::string trimLeftCopy(std::string value) {
+  size_t i = 0;
+  while (i < value.size() && std::isspace(static_cast<unsigned char>(value[i]))) {
+    ++i;
+  }
+  return value.substr(i);
+}
+
+std::string trimCopy(std::string value) {
+  return trimLeftCopy(trimRightCopy(std::move(value)));
+}
+
+bool startsWith(const std::string &value, const std::string &prefix) {
+  return value.rfind(prefix, 0) == 0;
+}
+
+bool endsWith(const std::string &value, const std::string &suffix) {
+  if (suffix.size() > value.size()) {
+    return false;
+  }
+  return std::equal(suffix.rbegin(), suffix.rend(), value.rbegin());
+}
+
+std::vector<std::string> splitLines(const std::string &text) {
+  std::vector<std::string> lines;
+  std::istringstream in(text);
+  std::string line;
+  while (std::getline(in, line)) {
+    lines.push_back(line);
+  }
+  return lines;
+}
+
+std::string toStdString(string_ref ref) {
+  return std::string(ref.getBuffer(), ref.size());
+}
+
+std::string typeToString(ASTType *type) {
+  if (!type) {
+    return "Any";
+  }
+
+  auto name = toStdString(type->getName());
+  auto functionTypeName = toStdString(FUNCTION_TYPE->getName());
+  if (name == functionTypeName) {
+    std::string rendered = "(";
+    if (!type->typeParams.empty()) {
+      for (size_t i = 1; i < type->typeParams.size(); ++i) {
+        if (i > 1) {
+          rendered += ", ";
+        }
+        rendered += typeToString(type->typeParams[i]);
+      }
+      rendered += ")";
+      rendered += " ";
+      rendered += typeToString(type->typeParams.front());
+    } else {
+      rendered += ") Void";
+    }
+    if (type->isOptional) {
+      rendered += "?";
+    }
+    if (type->isThrowable) {
+      rendered += "!";
+    }
+    return rendered;
+  }
+
+  std::string rendered = name;
+  if (!type->typeParams.empty()) {
+    rendered += "<";
+    for (size_t i = 0; i < type->typeParams.size(); ++i) {
+      if (i > 0) {
+        rendered += ", ";
+      }
+      rendered += typeToString(type->typeParams[i]);
+    }
+    rendered += ">";
+  }
+  if (type->isOptional) {
+    rendered += "?";
+  }
+  if (type->isThrowable) {
+    rendered += "!";
+  }
+  return rendered;
+}
+
+std::string genericParamsToString(const std::vector<ASTIdentifier *> &params) {
+  if (params.empty()) {
+    return {};
+  }
+  std::string value = "<";
+  for (size_t i = 0; i < params.size(); ++i) {
+    if (i > 0) {
+      value += ", ";
+    }
+    value += params[i] ? params[i]->val : "T";
+  }
+  value += ">";
+  return value;
+}
+
+bool lineHasDeclKeyword(const std::vector<std::string> &lines, unsigned line, const std::string &keyword) {
+  if (line >= lines.size()) {
+    return false;
+  }
+  auto trimmed = trimLeftCopy(lines[line]);
+  if (!startsWith(trimmed, keyword)) {
+    return false;
+  }
+  if (trimmed.size() == keyword.size()) {
+    return true;
+  }
+  return std::isspace(static_cast<unsigned char>(trimmed[keyword.size()])) != 0;
+}
+
+std::string extractLeadingDocComment(const std::vector<std::string> &lines, unsigned declarationLine) {
+  if (declarationLine == 0 || declarationLine - 1 >= lines.size()) {
+    return {};
+  }
+
+  int i = static_cast<int>(declarationLine) - 1;
+  auto first = trimCopy(lines[i]);
+  if (first.empty()) {
+    return {};
+  }
+
+  std::vector<std::string> collected;
+  bool isLineComment = false;
+  bool isBlockComment = false;
+  if (startsWith(first, "//")) {
+    isLineComment = true;
+    while (i >= 0) {
+      auto candidate = trimCopy(lines[i]);
+      if (!startsWith(candidate, "//")) {
+        break;
+      }
+      collected.push_back(lines[i]);
+      --i;
+    }
+  } else if (endsWith(first, "*/")) {
+    isBlockComment = true;
+    bool foundStart = false;
+    while (i >= 0) {
+      auto raw = lines[i];
+      auto candidate = trimCopy(raw);
+      if (candidate.empty() && collected.empty()) {
+        return {};
+      }
+      collected.push_back(raw);
+      if (candidate.find("/*") != std::string::npos) {
+        foundStart = true;
+        break;
+      }
+      --i;
+    }
+    if (!foundStart) {
+      return {};
+    }
+  } else {
+    return {};
+  }
+
+  std::reverse(collected.begin(), collected.end());
+  std::vector<std::string> normalized;
+  normalized.reserve(collected.size());
+  for (size_t idx = 0; idx < collected.size(); ++idx) {
+    auto line = trimLeftCopy(collected[idx]);
+    if (isLineComment) {
+      if (startsWith(line, "///")) {
+        line = line.substr(3);
+      } else if (startsWith(line, "//")) {
+        line = line.substr(2);
+      }
+      line = trimLeftCopy(line);
+      normalized.push_back(trimRightCopy(line));
       continue;
     }
-    symbols.push_back({(*it)[1].str(), kind, detail, line, start, length});
+
+    if (isBlockComment) {
+      if (idx == 0) {
+        auto pos = line.find("/*");
+        if (pos != std::string::npos) {
+          line = line.substr(pos + 2);
+        }
+      }
+      if (idx + 1 == collected.size()) {
+        auto pos = line.rfind("*/");
+        if (pos != std::string::npos) {
+          line = line.substr(0, pos);
+        }
+      }
+      line = trimLeftCopy(line);
+      if (startsWith(line, "*")) {
+        line = line.substr(1);
+        if (!line.empty() && line[0] == ' ') {
+          line = line.substr(1);
+        }
+      }
+      normalized.push_back(trimRightCopy(line));
+    }
   }
+
+  while (!normalized.empty() && trimCopy(normalized.front()).empty()) {
+    normalized.erase(normalized.begin());
+  }
+  while (!normalized.empty() && trimCopy(normalized.back()).empty()) {
+    normalized.pop_back();
+  }
+  if (normalized.empty()) {
+    return {};
+  }
+
+  std::string out;
+  for (size_t idx = 0; idx < normalized.size(); ++idx) {
+    if (idx > 0) {
+      out += "\n";
+    }
+    out += normalized[idx];
+  }
+  return out;
+}
+
+std::string functionSignature(ASTFuncDecl *funcDecl) {
+  if (!funcDecl || !funcDecl->funcId) {
+    return {};
+  }
+  std::vector<std::pair<ASTIdentifier *, ASTType *>> params(funcDecl->params.begin(), funcDecl->params.end());
+  std::sort(params.begin(), params.end(), [](const auto &lhs, const auto &rhs) {
+    auto *leftId = lhs.first;
+    auto *rightId = rhs.first;
+    if (!leftId || !rightId) {
+      return leftId != nullptr;
+    }
+    if (leftId->codeRegion.startLine != rightId->codeRegion.startLine) {
+      return leftId->codeRegion.startLine < rightId->codeRegion.startLine;
+    }
+    return leftId->codeRegion.startCol < rightId->codeRegion.startCol;
+  });
+
+  std::string signature;
+  if (funcDecl->isLazy) {
+    signature += "lazy ";
+  }
+  signature += "func ";
+  signature += funcDecl->funcId->val;
+  signature += "(";
+  for (size_t idx = 0; idx < params.size(); ++idx) {
+    if (idx > 0) {
+      signature += ", ";
+    }
+    signature += params[idx].first ? params[idx].first->val : "arg";
+    signature += ":";
+    signature += typeToString(params[idx].second);
+  }
+  signature += ")";
+  signature += " ";
+  signature += typeToString(funcDecl->returnType ? funcDecl->returnType : VOID_TYPE);
+  return signature;
+}
+
+void pushSymbol(std::vector<SymbolEntry> &symbols,
+                ASTIdentifier *id,
+                int kind,
+                const std::string &detail,
+                const std::string &signature,
+                const std::vector<std::string> &lines) {
+  if (!id) {
+    return;
+  }
+
+  SymbolEntry symbol;
+  symbol.name = id->val;
+  symbol.kind = kind;
+  symbol.detail = detail;
+  symbol.signature = signature;
+  unsigned sourceLine = id->codeRegion.startLine;
+  symbol.line = sourceLine > 0 ? sourceLine - 1 : 0;
+  symbol.start = id->codeRegion.startCol;
+  symbol.length = id->codeRegion.endCol > id->codeRegion.startCol ? id->codeRegion.endCol - id->codeRegion.startCol
+                                                                   : static_cast<unsigned>(symbol.name.size());
+  symbol.documentation = extractLeadingDocComment(lines, symbol.line);
+  symbols.push_back(std::move(symbol));
+}
+
+void collectSymbolsFromStmt(ASTStmt *stmt, const std::vector<std::string> &lines, std::vector<SymbolEntry> &symbols);
+
+void collectSymbolsFromDecl(ASTDecl *decl, const std::vector<std::string> &lines, std::vector<SymbolEntry> &symbols) {
+  if (!decl) {
+    return;
+  }
+
+  switch (decl->type) {
+    case VAR_DECL: {
+      auto *varDecl = static_cast<ASTVarDecl *>(decl);
+      for (auto &spec : varDecl->specs) {
+        if (!spec.id) {
+          continue;
+        }
+        std::string detail = varDecl->isConst ? "constant" : "variable";
+        if (spec.type) {
+          detail += ": ";
+          detail += typeToString(spec.type);
+        }
+        std::string signature = varDecl->isConst ? "decl imut " : "decl ";
+        signature += spec.id->val;
+        if (spec.type) {
+          signature += ":";
+          signature += typeToString(spec.type);
+        }
+        pushSymbol(symbols, spec.id, varDecl->isConst ? SYMBOL_KIND_CONSTANT : SYMBOL_KIND_VARIABLE, detail, signature,
+                   lines);
+      }
+      break;
+    }
+    case FUNC_DECL: {
+      auto *funcDecl = static_cast<ASTFuncDecl *>(decl);
+      std::string detail = funcDecl->isLazy ? "lazy function" : "function";
+      pushSymbol(symbols, funcDecl->funcId, SYMBOL_KIND_FUNCTION, detail, functionSignature(funcDecl), lines);
+      break;
+    }
+    case CLASS_DECL: {
+      auto *classDecl = static_cast<ASTClassDecl *>(decl);
+      if (!classDecl->id) {
+        break;
+      }
+      bool isStructDecl = lineHasDeclKeyword(lines, classDecl->id->codeRegion.startLine > 0 ? classDecl->id->codeRegion.startLine - 1 : 0, "struct");
+      int kind = isStructDecl ? SYMBOL_KIND_STRUCT : SYMBOL_KIND_CLASS;
+      std::string detail = isStructDecl ? "struct" : "class";
+      std::string signature = detail + " " + classDecl->id->val + genericParamsToString(classDecl->genericTypeParams);
+      if (classDecl->superClass) {
+        signature += " : ";
+        signature += typeToString(classDecl->superClass);
+      }
+      if (!classDecl->interfaces.empty()) {
+        if (!classDecl->superClass) {
+          signature += " : ";
+        } else {
+          signature += ", ";
+        }
+        for (size_t idx = 0; idx < classDecl->interfaces.size(); ++idx) {
+          if (idx > 0) {
+            signature += ", ";
+          }
+          signature += typeToString(classDecl->interfaces[idx]);
+        }
+      }
+      pushSymbol(symbols, classDecl->id, kind, detail, signature, lines);
+      for (auto *field : classDecl->fields) {
+        collectSymbolsFromDecl(field, lines, symbols);
+      }
+      for (auto *method : classDecl->methods) {
+        collectSymbolsFromDecl(method, lines, symbols);
+      }
+      break;
+    }
+    case INTERFACE_DECL: {
+      auto *interfaceDecl = static_cast<ASTInterfaceDecl *>(decl);
+      std::string signature = "interface ";
+      signature += interfaceDecl->id ? interfaceDecl->id->val : "Interface";
+      signature += genericParamsToString(interfaceDecl->genericTypeParams);
+      pushSymbol(symbols, interfaceDecl->id, SYMBOL_KIND_INTERFACE, "interface", signature, lines);
+      for (auto *field : interfaceDecl->fields) {
+        collectSymbolsFromDecl(field, lines, symbols);
+      }
+      for (auto *method : interfaceDecl->methods) {
+        collectSymbolsFromDecl(method, lines, symbols);
+      }
+      break;
+    }
+    case SCOPE_DECL: {
+      auto *scopeDecl = static_cast<ASTScopeDecl *>(decl);
+      if (!scopeDecl->scopeId) {
+        break;
+      }
+      unsigned line = scopeDecl->scopeId->codeRegion.startLine > 0 ? scopeDecl->scopeId->codeRegion.startLine - 1 : 0;
+      bool isEnumDecl = lineHasDeclKeyword(lines, line, "enum");
+      int kind = isEnumDecl ? SYMBOL_KIND_ENUM : SYMBOL_KIND_NAMESPACE;
+      std::string detail = isEnumDecl ? "enum" : "scope";
+      std::string signature = detail + " " + scopeDecl->scopeId->val;
+      pushSymbol(symbols, scopeDecl->scopeId, kind, detail, signature, lines);
+      if (scopeDecl->blockStmt) {
+        for (auto *stmt : scopeDecl->blockStmt->body) {
+          collectSymbolsFromStmt(stmt, lines, symbols);
+        }
+      }
+      break;
+    }
+    case TYPE_ALIAS_DECL: {
+      auto *aliasDecl = static_cast<ASTTypeAliasDecl *>(decl);
+      std::string signature = "def ";
+      signature += aliasDecl->id ? aliasDecl->id->val : "TypeAlias";
+      signature += genericParamsToString(aliasDecl->genericTypeParams);
+      signature += " = ";
+      signature += typeToString(aliasDecl->aliasedType);
+      pushSymbol(symbols, aliasDecl->id, SYMBOL_KIND_CLASS, "type alias", signature, lines);
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+void collectSymbolsFromStmt(ASTStmt *stmt, const std::vector<std::string> &lines, std::vector<SymbolEntry> &symbols) {
+  if (!stmt || !(stmt->type & DECL)) {
+    return;
+  }
+  collectSymbolsFromDecl(static_cast<ASTDecl *>(stmt), lines, symbols);
+}
+
+DocumentAnalysis analyzeDocument(const std::string &text) {
+  DocumentAnalysis analysis;
+  std::ostringstream diagSink;
+  auto diagnostics = DiagnosticHandler::createDefault(diagSink);
+  Syntax::Lexer lexer(*diagnostics);
+  std::istringstream in(text);
+  lexer.tokenizeFromIStream(in, analysis.tokenStream);
+
+  Syntax::SyntaxA syntax;
+  syntax.setTokenStream(analysis.tokenStream);
+  auto lines = splitLines(text);
+
+  while (true) {
+    ASTStmt *stmt = syntax.nextStatement();
+    if (!stmt) {
+      if (syntax.isAtEnd()) {
+        break;
+      }
+      syntax.consumeCurrentTok();
+      continue;
+    }
+    collectSymbolsFromStmt(stmt, lines, analysis.symbols);
+  }
+  return analysis;
 }
 
 std::vector<SymbolEntry> collectSymbolsFromText(const std::string &text) {
-  std::vector<SymbolEntry> symbols;
-  std::istringstream lines(text);
-  std::string lineText;
-  unsigned line = 0;
-  while (std::getline(lines, lineText)) {
-    addSymbolsByPattern(lineText, line, kDeclRegex, SYMBOL_KIND_VARIABLE, "variable", symbols);
-    addSymbolsByPattern(lineText, line, kFuncRegex, SYMBOL_KIND_FUNCTION, "function", symbols);
-    addSymbolsByPattern(lineText, line, kClassRegex, SYMBOL_KIND_CLASS, "class", symbols);
-    addSymbolsByPattern(lineText, line, kScopeRegex, SYMBOL_KIND_NAMESPACE, "scope", symbols);
-    addSymbolsByPattern(lineText, line, kInterfaceRegex, SYMBOL_KIND_INTERFACE, "interface", symbols);
-    addSymbolsByPattern(lineText, line, kStructRegex, SYMBOL_KIND_STRUCT, "struct", symbols);
-    addSymbolsByPattern(lineText, line, kEnumRegex, SYMBOL_KIND_ENUM, "enum", symbols);
-    ++line;
-  }
-  return symbols;
+  return analyzeDocument(text).symbols;
 }
 
-void addSemanticTokensForLine(const std::string &lineText, unsigned line, std::vector<SemanticTokenEntry> &tokens) {
-  for (std::sregex_iterator it(lineText.begin(), lineText.end(), kKeywordRegex), end; it != end; ++it) {
-    tokens.push_back({line, static_cast<unsigned>((*it).position(0)), static_cast<unsigned>((*it).length(0)),
-                      TOKEN_TYPE_KEYWORD});
+unsigned symbolKindToSemanticTokenType(int kind) {
+  switch (kind) {
+    case SYMBOL_KIND_NAMESPACE:
+      return TOKEN_TYPE_NAMESPACE;
+    case SYMBOL_KIND_CLASS:
+    case SYMBOL_KIND_INTERFACE:
+    case SYMBOL_KIND_STRUCT:
+    case SYMBOL_KIND_ENUM:
+      return TOKEN_TYPE_CLASS;
+    case SYMBOL_KIND_FUNCTION:
+    case SYMBOL_KIND_METHOD:
+      return TOKEN_TYPE_FUNCTION;
+    case SYMBOL_KIND_VARIABLE:
+    case SYMBOL_KIND_FIELD:
+    case SYMBOL_KIND_CONSTANT:
+    default:
+      return TOKEN_TYPE_VARIABLE;
   }
-  for (std::sregex_iterator it(lineText.begin(), lineText.end(), kClassRegex), end; it != end; ++it) {
-    tokens.push_back(
-        {line, static_cast<unsigned>((*it).position(1)), static_cast<unsigned>((*it).length(1)), TOKEN_TYPE_CLASS});
+}
+
+std::string spanKey(unsigned line, unsigned start, unsigned length) {
+  return std::to_string(line) + ":" + std::to_string(start) + ":" + std::to_string(length);
+}
+
+unsigned semanticTokenTypePriority(unsigned tokenType) {
+  switch (tokenType) {
+    case TOKEN_TYPE_NAMESPACE:
+      return 4;
+    case TOKEN_TYPE_CLASS:
+      return 3;
+    case TOKEN_TYPE_FUNCTION:
+      return 2;
+    case TOKEN_TYPE_VARIABLE:
+      return 1;
+    default:
+      return 0;
   }
-  for (std::sregex_iterator it(lineText.begin(), lineText.end(), kInterfaceRegex), end; it != end; ++it) {
-    tokens.push_back(
-        {line, static_cast<unsigned>((*it).position(1)), static_cast<unsigned>((*it).length(1)), TOKEN_TYPE_CLASS});
+}
+
+void recordIdentifierType(std::unordered_map<std::string, unsigned> &out, const std::string &name, unsigned tokenType) {
+  auto it = out.find(name);
+  if (it == out.end() || semanticTokenTypePriority(tokenType) > semanticTokenTypePriority(it->second)) {
+    out[name] = tokenType;
   }
-  for (std::sregex_iterator it(lineText.begin(), lineText.end(), kStructRegex), end; it != end; ++it) {
-    tokens.push_back(
-        {line, static_cast<unsigned>((*it).position(1)), static_cast<unsigned>((*it).length(1)), TOKEN_TYPE_CLASS});
+}
+
+bool semanticTokenInRange(unsigned line, unsigned rangeStartLine, unsigned rangeEndLine, bool useRange) {
+  if (!useRange) {
+    return true;
   }
-  for (std::sregex_iterator it(lineText.begin(), lineText.end(), kEnumRegex), end; it != end; ++it) {
-    tokens.push_back(
-        {line, static_cast<unsigned>((*it).position(1)), static_cast<unsigned>((*it).length(1)), TOKEN_TYPE_CLASS});
-  }
-  for (std::sregex_iterator it(lineText.begin(), lineText.end(), kFuncRegex), end; it != end; ++it) {
-    tokens.push_back({line, static_cast<unsigned>((*it).position(1)), static_cast<unsigned>((*it).length(1)),
-                      TOKEN_TYPE_FUNCTION});
-  }
-  for (std::sregex_iterator it(lineText.begin(), lineText.end(), kDeclRegex), end; it != end; ++it) {
-    tokens.push_back({line, static_cast<unsigned>((*it).position(1)), static_cast<unsigned>((*it).length(1)),
-                      TOKEN_TYPE_VARIABLE});
-  }
-  for (std::sregex_iterator it(lineText.begin(), lineText.end(), kScopeRegex), end; it != end; ++it) {
-    tokens.push_back({line, static_cast<unsigned>((*it).position(1)), static_cast<unsigned>((*it).length(1)),
-                      TOKEN_TYPE_NAMESPACE});
-  }
+  return line >= rangeStartLine && line <= rangeEndLine;
 }
 
 std::vector<SemanticTokenEntry> collectSemanticTokenEntries(const std::string &text,
                                                             unsigned rangeStartLine,
                                                             unsigned rangeEndLine,
                                                             bool useRange) {
+  auto analysis = analyzeDocument(text);
   std::vector<SemanticTokenEntry> tokens;
-  std::istringstream lines(text);
-  std::string lineText;
-  unsigned line = 0;
-  while (std::getline(lines, lineText)) {
-    if (!useRange || (line >= rangeStartLine && line <= rangeEndLine)) {
-      addSemanticTokensForLine(lineText, line, tokens);
+
+  std::unordered_map<std::string, unsigned> declarationSpanTypes;
+  std::unordered_map<std::string, unsigned> identifierTypes;
+  declarationSpanTypes.reserve(analysis.symbols.size());
+  identifierTypes.reserve(analysis.symbols.size());
+  for (const auto &symbol : analysis.symbols) {
+    auto semanticType = symbolKindToSemanticTokenType(symbol.kind);
+    declarationSpanTypes[spanKey(symbol.line, symbol.start, symbol.length)] = semanticType;
+    recordIdentifierType(identifierTypes, symbol.name, semanticType);
+  }
+
+  tokens.reserve(analysis.tokenStream.size());
+  for (const auto &token : analysis.tokenStream) {
+    unsigned line = token.srcPos.line > 0 ? token.srcPos.line - 1 : 0;
+    if (!semanticTokenInRange(line, rangeStartLine, rangeEndLine, useRange)) {
+      continue;
     }
-    ++line;
+
+    unsigned start = token.srcPos.startCol;
+    unsigned length = static_cast<unsigned>(token.content.size());
+    if (length == 0) {
+      continue;
+    }
+
+    if (token.type == Syntax::Tok::Keyword || token.type == Syntax::Tok::BooleanLiteral) {
+      tokens.push_back({line, start, length, TOKEN_TYPE_KEYWORD});
+      continue;
+    }
+
+    if (token.type != Syntax::Tok::Identifier) {
+      continue;
+    }
+
+    unsigned semanticType = TOKEN_TYPE_VARIABLE;
+    auto declIt = declarationSpanTypes.find(spanKey(line, start, length));
+    if (declIt != declarationSpanTypes.end()) {
+      semanticType = declIt->second;
+    } else {
+      auto idIt = identifierTypes.find(token.content);
+      if (idIt != identifierTypes.end()) {
+        semanticType = idIt->second;
+      }
+    }
+
+    tokens.push_back({line, start, length, semanticType});
   }
 
   std::sort(tokens.begin(), tokens.end(), [](const SemanticTokenEntry &lhs, const SemanticTokenEntry &rhs) {
@@ -1082,6 +1555,10 @@ void Server::handleCompletion(rapidjson::Document &request) {
       int kind = COMPLETION_KIND_TEXT;
       if (symbol.kind == SYMBOL_KIND_CLASS) {
         kind = COMPLETION_KIND_CLASS;
+      } else if (symbol.kind == SYMBOL_KIND_METHOD) {
+        kind = COMPLETION_KIND_METHOD;
+      } else if (symbol.kind == SYMBOL_KIND_FIELD) {
+        kind = COMPLETION_KIND_FIELD;
       } else if (symbol.kind == SYMBOL_KIND_FUNCTION) {
         kind = COMPLETION_KIND_FUNCTION;
       } else if (symbol.kind == SYMBOL_KIND_NAMESPACE) {
@@ -1092,6 +1569,8 @@ void Server::handleCompletion(rapidjson::Document &request) {
         kind = COMPLETION_KIND_STRUCT;
       } else if (symbol.kind == SYMBOL_KIND_ENUM) {
         kind = COMPLETION_KIND_ENUM;
+      } else if (symbol.kind == SYMBOL_KIND_CONSTANT) {
+        kind = COMPLETION_KIND_VALUE;
       } else {
         kind = COMPLETION_KIND_VARIABLE;
       }
@@ -1204,7 +1683,18 @@ void Server::handleHover(rapidjson::Document &request) {
 
   std::string markdown = "**" + word + "**";
   if (bestSymbol.has_value()) {
-    markdown += " (" + bestSymbol->detail + ")\n\nDeclared in `" + bestUri + "`";
+    if (!bestSymbol->signature.empty()) {
+      markdown = "```starbytes\n" + bestSymbol->signature + "\n```";
+    } else {
+      markdown = "**" + bestSymbol->name + "**";
+    }
+    if (!bestSymbol->detail.empty()) {
+      markdown += "\n\n_" + bestSymbol->detail + "_";
+    }
+    if (!bestSymbol->documentation.empty()) {
+      markdown += "\n\n" + bestSymbol->documentation;
+    }
+    markdown += "\n\nDeclared in `" + bestUri + "`";
   }
   contents.AddMember("value", rapidjson::Value(markdown.c_str(), alloc), alloc);
   result.AddMember("contents", contents, alloc);
