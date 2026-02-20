@@ -1,13 +1,26 @@
-import * as fs from "fs/promises"
+import * as fs from "fs/promises";
 
-let bundle_name = "./Starbytes.tmbundle"
+async function main(): Promise<void> {
+    const bundleName = "./Starbytes.tmbundle";
+    const syntaxesDir = `${bundleName}/Syntaxes`;
 
-let d = fs.mkdir(bundle_name)
-d.then(() => {
-    let syn = fs.mkdir(`${bundle_name}/Syntaxes`)
-    syn.then(() => {
-        fs.copyFile("./Info.plist",`${bundle_name}/Info.plist`)
-        fs.copyFile("./syntaxes/starbytes.tmlanguage",`${bundle_name}/Syntaxes/Starbytes.tmlanguage`)
-    })
+    try {
+        await fs.rmdir(bundleName,{ recursive: true });
+    }
+    catch (error: any) {
+        if(error && error.code !== "ENOENT"){
+            throw error;
+        }
+    }
+    await fs.mkdir(syntaxesDir,{ recursive: true });
 
-})
+    await Promise.all([
+        fs.copyFile("./Info.plist",`${bundleName}/Info.plist`),
+        fs.copyFile("./syntaxes/starbytes.tmLanguage",`${syntaxesDir}/Starbytes.tmLanguage`),
+    ]);
+}
+
+main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});

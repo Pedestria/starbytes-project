@@ -72,11 +72,22 @@ add_starbytes_test(
 
 add_starbytes_test(
     NAME
+    "symbol-lookup-stress-test"
+    INCLUDE_LIB
+    FILES
+    "SymbolLookupStressTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
     "lsp-server-test"
     INCLUDE_LIB
     FILES
     "lspServerTest.cpp"
     "${CMAKE_SOURCE_DIR}/tools/lsp/ServerMain.cpp"
+    "${CMAKE_SOURCE_DIR}/tools/lsp/DocumentAnalysis.cpp"
+    "${CMAKE_SOURCE_DIR}/tools/lsp/SymbolCache.cpp"
     DEPENDENCIES
     ${STARBYTES_ALL_LIBS})
 

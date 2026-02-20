@@ -3,6 +3,7 @@
 #include <iostream>
 #include <memory>
 #include <sstream>
+#include <vector>
 
 #include "ADT.h"
 
@@ -103,6 +104,8 @@ public:
     void setCodeViewSource(std::string sourceName,std::string sourceText);
     bool empty();
     bool hasErrored();
+    std::vector<DiagnosticPtr> snapshot(bool includeResolved = false) const;
+    void clear();
     void logAll();
     Metrics getMetrics() const;
     void resetMetrics();

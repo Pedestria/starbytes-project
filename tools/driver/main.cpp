@@ -217,6 +217,26 @@ bool loadModuleAnalysisCache(const std::filesystem::path &cachePath,
     return true;
 }
 
+void pruneStaleModuleAnalysisCacheEntries(ModuleAnalysisCache &cache){
+    std::vector<std::string> staleKeys;
+    staleKeys.reserve(cache.entriesBySourcePath.size());
+    for(const auto &entry : cache.entriesBySourcePath){
+        std::error_code ec;
+        auto sourcePath = std::filesystem::path(entry.first);
+        if(!std::filesystem::exists(sourcePath,ec) || ec ||
+           !std::filesystem::is_regular_file(sourcePath,ec) || ec) {
+            staleKeys.push_back(entry.first);
+        }
+    }
+    if(staleKeys.empty()){
+        return;
+    }
+    for(const auto &key : staleKeys){
+        cache.entriesBySourcePath.erase(key);
+    }
+    cache.dirty = true;
+}
+
 bool saveModuleAnalysisCache(const std::filesystem::path &cachePath,
                              const ModuleAnalysisCache &cache,
                              std::string &error) {
@@ -252,6 +272,58 @@ bool saveModuleAnalysisCache(const std::filesystem::path &cachePath,
         out << "\n";
     }
     return true;
+}
+
+std::vector<std::filesystem::path> generatedOutputArtifacts(const std::filesystem::path &compiledModulePath) {
+    std::vector<std::filesystem::path> artifacts;
+    artifacts.push_back(compiledModulePath);
+
+    auto interfacePath = compiledModulePath;
+    interfacePath.replace_extension("." STARBYTES_INTERFACEFILE_EXT);
+    if(std::find(artifacts.begin(),artifacts.end(),interfacePath) == artifacts.end()) {
+        artifacts.push_back(interfacePath);
+    }
+
+    auto symbolPath = compiledModulePath;
+    symbolPath.replace_extension(".starbsymtb");
+    if(std::find(artifacts.begin(),artifacts.end(),symbolPath) == artifacts.end()) {
+        artifacts.push_back(symbolPath);
+    }
+
+    return artifacts;
+}
+
+void removeGeneratedOutputArtifacts(const std::filesystem::path &compiledModulePath) {
+    auto artifacts = generatedOutputArtifacts(compiledModulePath);
+    for(const auto &artifactPath : artifacts) {
+        std::error_code removeErr;
+        std::filesystem::remove(artifactPath, removeErr);
+        if(removeErr && std::filesystem::exists(artifactPath)) {
+            std::cerr << "Warning: failed to remove '" << artifactPath << "': " << removeErr.message() << std::endl;
+        }
+    }
+}
+
+void cleanAnalysisCacheDirectory(const std::filesystem::path &analysisCacheRoot){
+    auto cacheDir = analysisCacheRoot / ".cache";
+    std::error_code removeErr;
+    std::filesystem::remove_all(cacheDir,removeErr);
+    if(removeErr && std::filesystem::exists(cacheDir)) {
+        std::cerr << "Warning: failed to remove cache directory '" << cacheDir << "': "
+                  << removeErr.message() << std::endl;
+    }
+
+    std::error_code emptyErr;
+    if(std::filesystem::exists(analysisCacheRoot,emptyErr) && !emptyErr &&
+       std::filesystem::is_directory(analysisCacheRoot,emptyErr) && !emptyErr &&
+       std::filesystem::is_empty(analysisCacheRoot,emptyErr) && !emptyErr) {
+        std::error_code rootRemoveErr;
+        std::filesystem::remove(analysisCacheRoot,rootRemoveErr);
+        if(rootRemoveErr && std::filesystem::exists(analysisCacheRoot)) {
+            std::cerr << "Warning: failed to remove empty cache root '" << analysisCacheRoot << "': "
+                      << rootRemoveErr.message() << std::endl;
+        }
+    }
 }
 
 std::optional<std::vector<std::string>> resolveImportsFromCache(const ModuleAnalysisCache &cache,
@@ -935,7 +1007,7 @@ void printHelp(std::ostream &out) {
     out << "  -d, --out-dir <dir>        Output directory for compiled module (default: .starbytes).\n";
     out << "      --run                  Execute after compile (useful with compile command).\n";
     out << "      --no-run               Skip execution after compile.\n";
-    out << "      --clean                Remove generated module file on success.\n";
+    out << "      --clean                Remove generated output artifacts and compile cache on success.\n";
     out << "      --print-module-path    Print resolved module output path.\n";
     out << "      --profile-compile      Print structured compile phase timings.\n";
     out << "      --profile-compile-out <path>\n";
@@ -1217,6 +1289,7 @@ int main(int argc, const char *argv[]) {
     if(!analysisCacheWarning.empty()) {
         std::cerr << "Warning: " << analysisCacheWarning << std::endl;
     }
+    pruneStaleModuleAnalysisCacheEntries(analysisCache);
 
     ModuleGraph graph;
     std::string graphError;
@@ -1328,6 +1401,25 @@ int main(int argc, const char *argv[]) {
 
     starbytes::Gen gen;
     auto moduleGenContext = starbytes::ModuleGenContext::Create(opts.moduleName, moduleOut, outputDirForGen);
+    auto rootUnitIt = graph.unitsByKey.find(graph.rootKey);
+    auto shouldGenerateInterface = graph.rootIsDirectory && !graph.rootHasMainSource;
+    moduleGenContext.generateInterface = shouldGenerateInterface;
+    if(shouldGenerateInterface && rootUnitIt != graph.unitsByKey.end()) {
+        const auto &rootUnit = rootUnitIt->second;
+        bool hasConcreteSources = false;
+        for(const auto &source : rootUnit.sources) {
+            if(!source.isInterfaceFile) {
+                hasConcreteSources = true;
+                break;
+            }
+        }
+        for(const auto &source : rootUnit.sources) {
+            if(hasConcreteSources && source.isInterfaceFile) {
+                continue;
+            }
+            moduleGenContext.interfaceSourceAllowlist.insert(makeAbsolutePathString(source.filePath));
+        }
+    }
     auto parseContext = starbytes::ModuleParseContext::Create(opts.moduleName);
     gen.setContext(&moduleGenContext);
 
@@ -1339,11 +1431,7 @@ int main(int argc, const char *argv[]) {
     std::string parseError;
     if(!parseModuleGraphSources(parser, parseContext, graph, parseError)) {
         moduleOut.close();
-        std::error_code removeErr;
-        std::filesystem::remove(compiledModulePath, removeErr);
-        if(removeErr) {
-            std::cerr << "Warning: failed to remove '" << compiledModulePath << "': " << removeErr.message() << std::endl;
-        }
+        removeGeneratedOutputArtifacts(compiledModulePath);
         std::cerr << parseError << std::endl;
         if(profile.enabled) {
             const auto &parserProfile = parser.getProfileData();
@@ -1362,11 +1450,7 @@ int main(int argc, const char *argv[]) {
     }
     if(!parser.finish()) {
         moduleOut.close();
-        std::error_code removeErr;
-        std::filesystem::remove(compiledModulePath, removeErr);
-        if(removeErr) {
-            std::cerr << "Warning: failed to remove '" << compiledModulePath << "': " << removeErr.message() << std::endl;
-        }
+        removeGeneratedOutputArtifacts(compiledModulePath);
         if(profile.enabled) {
             const auto &parserProfile = parser.getProfileData();
             profile.parseTotalNs = parserProfile.totalNs;
@@ -1471,11 +1555,8 @@ int main(int argc, const char *argv[]) {
     }
 
     if(opts.cleanModule) {
-        std::error_code removeErr;
-        std::filesystem::remove(compiledModulePath, removeErr);
-        if(removeErr && std::filesystem::exists(compiledModulePath)) {
-            std::cerr << "Warning: failed to remove '" << compiledModulePath << "': " << removeErr.message() << std::endl;
-        }
+        removeGeneratedOutputArtifacts(compiledModulePath);
+        cleanAnalysisCacheDirectory(analysisCacheRoot);
     }
 
     maybeLogRuntimeDiagnostics(opts);

@@ -1,14 +1,16 @@
 interface Named {
     func getName() String
 }
-
+// My class
 class User : Named {
     decl name:String = "alex"
 
-    func getName() String {
+    func getName() String! {
         return self.name
     }
 }
 
 decl user = new User()
 decl flag = user is Named
+// My Constant
+decl myArray = [1,2,3]

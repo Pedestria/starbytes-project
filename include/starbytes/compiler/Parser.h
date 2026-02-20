@@ -46,7 +46,8 @@ namespace starbytes {
         void setProfilingEnabled(bool enabled);
         const ProfileData & getProfileData() const;
         void resetProfileData();
-        Parser(ASTStreamConsumer & astConsumer);
+        DiagnosticHandler *getDiagnosticHandler();
+        Parser(ASTStreamConsumer & astConsumer,std::unique_ptr<DiagnosticHandler> diagnostics = nullptr);
     };
 };
 

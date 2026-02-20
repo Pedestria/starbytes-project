@@ -7,6 +7,8 @@
 
 #include <rapidjson/document.h>
 
+#include "SymbolCache.h"
+
 #ifndef STARBYTES_LSP_SERVERMAIN_H
 #define STARBYTES_LSP_SERVERMAIN_H
 
@@ -45,6 +47,7 @@ class Server {
   std::unordered_map<std::string, DocumentState> documents;
   std::unordered_map<std::string, SemanticSnapshot> semanticSnapshots;
   std::unordered_set<std::string> canceledRequestIds;
+  SymbolCache symbolCache;
 
   bool readMessage(std::string &body);
   void writeMessage(rapidjson::Document &doc);
@@ -73,11 +76,15 @@ class Server {
                                 size_t rangeEnd = std::string::npos);
 
   void loadWorkspaceDocuments();
+  bool getBuiltinsDocument(std::string &uriOut, std::string &textOut);
   bool getDocumentTextByUri(const std::string &uri, std::string &textOut);
   void setDocumentTextByUri(const std::string &uri, const std::string &text, int version, bool isOpen);
   void removeOpenDocumentByUri(const std::string &uri);
   void publishDiagnostics(const std::string &uri);
   void maybeApplyIncrementalChange(std::string &text, const rapidjson::Value &change);
+  void configureSymbolCache();
+  std::vector<SymbolEntry> collectSymbolsForUri(const std::string &uri, const std::string &text);
+  void invalidateSymbolCacheForUri(const std::string &uri);
 
   void handleInitialize(rapidjson::Document &request);
   void handleInitialized(rapidjson::Document &request);

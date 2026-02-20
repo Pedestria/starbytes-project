@@ -1,17 +1,14 @@
 #include "ServerMain.h"
+#include "DocumentAnalysis.h"
+#include "SymbolTypes.h"
+#include "starbytes/base/CodeView.h"
 #include "starbytes/base/Diagnostic.h"
-#include "starbytes/compiler/AST.h"
-#include "starbytes/compiler/ASTDecl.h"
-#include "starbytes/compiler/ASTExpr.h"
-#include "starbytes/compiler/Lexer.h"
-#include "starbytes/compiler/SyntaxA.h"
-#include "starbytes/compiler/Type.h"
+#include "starbytes/base/DoxygenDoc.h"
 
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
-#include <regex>
 #include <set>
 #include <sstream>
 #include <string>
@@ -36,76 +33,16 @@ constexpr int JSONRPC_INTERNAL_ERROR = -32603;
 constexpr int LSP_SERVER_NOT_INITIALIZED = -32002;
 constexpr int LSP_REQUEST_CANCELLED = -32800;
 
-constexpr int COMPLETION_KIND_TEXT = 1;
-constexpr int COMPLETION_KIND_METHOD = 2;
-constexpr int COMPLETION_KIND_FUNCTION = 3;
-constexpr int COMPLETION_KIND_CONSTRUCTOR = 4;
-constexpr int COMPLETION_KIND_FIELD = 5;
-constexpr int COMPLETION_KIND_VARIABLE = 6;
-constexpr int COMPLETION_KIND_CLASS = 7;
-constexpr int COMPLETION_KIND_INTERFACE = 8;
-constexpr int COMPLETION_KIND_MODULE = 9;
-constexpr int COMPLETION_KIND_PROPERTY = 10;
-constexpr int COMPLETION_KIND_UNIT = 11;
-constexpr int COMPLETION_KIND_VALUE = 12;
-constexpr int COMPLETION_KIND_ENUM = 13;
-constexpr int COMPLETION_KIND_KEYWORD = 14;
-constexpr int COMPLETION_KIND_SNIPPET = 15;
-constexpr int COMPLETION_KIND_STRUCT = 22;
-
-constexpr int SYMBOL_KIND_NAMESPACE = 3;
-constexpr int SYMBOL_KIND_CLASS = 5;
-constexpr int SYMBOL_KIND_METHOD = 6;
-constexpr int SYMBOL_KIND_FIELD = 8;
-constexpr int SYMBOL_KIND_ENUM = 10;
-constexpr int SYMBOL_KIND_INTERFACE = 11;
-constexpr int SYMBOL_KIND_FUNCTION = 12;
-constexpr int SYMBOL_KIND_VARIABLE = 13;
-constexpr int SYMBOL_KIND_CONSTANT = 14;
-constexpr int SYMBOL_KIND_STRUCT = 23;
-
-constexpr unsigned TOKEN_TYPE_NAMESPACE = 0;
-constexpr unsigned TOKEN_TYPE_CLASS = 1;
-constexpr unsigned TOKEN_TYPE_FUNCTION = 2;
-constexpr unsigned TOKEN_TYPE_VARIABLE = 3;
-constexpr unsigned TOKEN_TYPE_KEYWORD = 4;
-
 struct CompletionEntry {
   std::string label;
   int kind = COMPLETION_KIND_TEXT;
   std::string detail;
 };
 
-struct SymbolEntry {
-  std::string name;
-  int kind = SYMBOL_KIND_VARIABLE;
-  std::string detail;
-  std::string signature;
-  std::string documentation;
-  unsigned line = 0;
-  unsigned start = 0;
-  unsigned length = 0;
-};
-
-struct SemanticTokenEntry {
-  unsigned line = 0;
-  unsigned start = 0;
-  unsigned length = 0;
-  unsigned type = TOKEN_TYPE_KEYWORD;
-};
-
-struct DocumentAnalysis {
-  std::vector<Syntax::Tok> tokenStream;
-  std::vector<SymbolEntry> symbols;
-};
-
 const std::vector<std::string> kKeywordCompletions = {
     "decl", "imut", "func", "class", "struct", "interface", "enum", "scope", "import", "if",
     "elif", "else", "for", "while", "return", "new", "secure", "catch", "def", "lazy", "await",
     "true", "false"};
-
-const std::regex kFuncSignatureRegex(
-    R"(\bfunc\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*([A-Za-z_][A-Za-z0-9_<>!?]*)?)");
 
 std::string toLower(std::string value) {
   std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
@@ -133,596 +70,6 @@ std::string idToKey(const rapidjson::Value &id) {
   return "unknown";
 }
 
-std::string trimRightCopy(std::string value) {
-  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) {
-    value.pop_back();
-  }
-  return value;
-}
-
-std::string trimLeftCopy(std::string value) {
-  size_t i = 0;
-  while (i < value.size() && std::isspace(static_cast<unsigned char>(value[i]))) {
-    ++i;
-  }
-  return value.substr(i);
-}
-
-std::string trimCopy(std::string value) {
-  return trimLeftCopy(trimRightCopy(std::move(value)));
-}
-
-bool startsWith(const std::string &value, const std::string &prefix) {
-  return value.rfind(prefix, 0) == 0;
-}
-
-bool endsWith(const std::string &value, const std::string &suffix) {
-  if (suffix.size() > value.size()) {
-    return false;
-  }
-  return std::equal(suffix.rbegin(), suffix.rend(), value.rbegin());
-}
-
-std::vector<std::string> splitLines(const std::string &text) {
-  std::vector<std::string> lines;
-  std::istringstream in(text);
-  std::string line;
-  while (std::getline(in, line)) {
-    lines.push_back(line);
-  }
-  return lines;
-}
-
-std::string toStdString(string_ref ref) {
-  return std::string(ref.getBuffer(), ref.size());
-}
-
-std::string typeToString(ASTType *type) {
-  if (!type) {
-    return "Any";
-  }
-
-  auto name = toStdString(type->getName());
-  auto functionTypeName = toStdString(FUNCTION_TYPE->getName());
-  if (name == functionTypeName) {
-    std::string rendered = "(";
-    if (!type->typeParams.empty()) {
-      for (size_t i = 1; i < type->typeParams.size(); ++i) {
-        if (i > 1) {
-          rendered += ", ";
-        }
-        rendered += typeToString(type->typeParams[i]);
-      }
-      rendered += ")";
-      rendered += " ";
-      rendered += typeToString(type->typeParams.front());
-    } else {
-      rendered += ") Void";
-    }
-    if (type->isOptional) {
-      rendered += "?";
-    }
-    if (type->isThrowable) {
-      rendered += "!";
-    }
-    return rendered;
-  }
-
-  std::string rendered = name;
-  if (!type->typeParams.empty()) {
-    rendered += "<";
-    for (size_t i = 0; i < type->typeParams.size(); ++i) {
-      if (i > 0) {
-        rendered += ", ";
-      }
-      rendered += typeToString(type->typeParams[i]);
-    }
-    rendered += ">";
-  }
-  if (type->isOptional) {
-    rendered += "?";
-  }
-  if (type->isThrowable) {
-    rendered += "!";
-  }
-  return rendered;
-}
-
-std::string genericParamsToString(const std::vector<ASTIdentifier *> &params) {
-  if (params.empty()) {
-    return {};
-  }
-  std::string value = "<";
-  for (size_t i = 0; i < params.size(); ++i) {
-    if (i > 0) {
-      value += ", ";
-    }
-    value += params[i] ? params[i]->val : "T";
-  }
-  value += ">";
-  return value;
-}
-
-bool lineHasDeclKeyword(const std::vector<std::string> &lines, unsigned line, const std::string &keyword) {
-  if (line >= lines.size()) {
-    return false;
-  }
-  auto trimmed = trimLeftCopy(lines[line]);
-  if (!startsWith(trimmed, keyword)) {
-    return false;
-  }
-  if (trimmed.size() == keyword.size()) {
-    return true;
-  }
-  return std::isspace(static_cast<unsigned char>(trimmed[keyword.size()])) != 0;
-}
-
-std::string extractLeadingDocComment(const std::vector<std::string> &lines, unsigned declarationLine) {
-  if (declarationLine == 0 || declarationLine - 1 >= lines.size()) {
-    return {};
-  }
-
-  int i = static_cast<int>(declarationLine) - 1;
-  auto first = trimCopy(lines[i]);
-  if (first.empty()) {
-    return {};
-  }
-
-  std::vector<std::string> collected;
-  bool isLineComment = false;
-  bool isBlockComment = false;
-  if (startsWith(first, "//")) {
-    isLineComment = true;
-    while (i >= 0) {
-      auto candidate = trimCopy(lines[i]);
-      if (!startsWith(candidate, "//")) {
-        break;
-      }
-      collected.push_back(lines[i]);
-      --i;
-    }
-  } else if (endsWith(first, "*/")) {
-    isBlockComment = true;
-    bool foundStart = false;
-    while (i >= 0) {
-      auto raw = lines[i];
-      auto candidate = trimCopy(raw);
-      if (candidate.empty() && collected.empty()) {
-        return {};
-      }
-      collected.push_back(raw);
-      if (candidate.find("/*") != std::string::npos) {
-        foundStart = true;
-        break;
-      }
-      --i;
-    }
-    if (!foundStart) {
-      return {};
-    }
-  } else {
-    return {};
-  }
-
-  std::reverse(collected.begin(), collected.end());
-  std::vector<std::string> normalized;
-  normalized.reserve(collected.size());
-  for (size_t idx = 0; idx < collected.size(); ++idx) {
-    auto line = trimLeftCopy(collected[idx]);
-    if (isLineComment) {
-      if (startsWith(line, "///")) {
-        line = line.substr(3);
-      } else if (startsWith(line, "//")) {
-        line = line.substr(2);
-      }
-      line = trimLeftCopy(line);
-      normalized.push_back(trimRightCopy(line));
-      continue;
-    }
-
-    if (isBlockComment) {
-      if (idx == 0) {
-        auto pos = line.find("/*");
-        if (pos != std::string::npos) {
-          line = line.substr(pos + 2);
-        }
-      }
-      if (idx + 1 == collected.size()) {
-        auto pos = line.rfind("*/");
-        if (pos != std::string::npos) {
-          line = line.substr(0, pos);
-        }
-      }
-      line = trimLeftCopy(line);
-      if (startsWith(line, "*")) {
-        line = line.substr(1);
-        if (!line.empty() && line[0] == ' ') {
-          line = line.substr(1);
-        }
-      }
-      normalized.push_back(trimRightCopy(line));
-    }
-  }
-
-  while (!normalized.empty() && trimCopy(normalized.front()).empty()) {
-    normalized.erase(normalized.begin());
-  }
-  while (!normalized.empty() && trimCopy(normalized.back()).empty()) {
-    normalized.pop_back();
-  }
-  if (normalized.empty()) {
-    return {};
-  }
-
-  std::string out;
-  for (size_t idx = 0; idx < normalized.size(); ++idx) {
-    if (idx > 0) {
-      out += "\n";
-    }
-    out += normalized[idx];
-  }
-  return out;
-}
-
-std::string functionSignature(ASTFuncDecl *funcDecl) {
-  if (!funcDecl || !funcDecl->funcId) {
-    return {};
-  }
-  std::vector<std::pair<ASTIdentifier *, ASTType *>> params(funcDecl->params.begin(), funcDecl->params.end());
-  std::sort(params.begin(), params.end(), [](const auto &lhs, const auto &rhs) {
-    auto *leftId = lhs.first;
-    auto *rightId = rhs.first;
-    if (!leftId || !rightId) {
-      return leftId != nullptr;
-    }
-    if (leftId->codeRegion.startLine != rightId->codeRegion.startLine) {
-      return leftId->codeRegion.startLine < rightId->codeRegion.startLine;
-    }
-    return leftId->codeRegion.startCol < rightId->codeRegion.startCol;
-  });
-
-  std::string signature;
-  if (funcDecl->isLazy) {
-    signature += "lazy ";
-  }
-  signature += "func ";
-  signature += funcDecl->funcId->val;
-  signature += "(";
-  for (size_t idx = 0; idx < params.size(); ++idx) {
-    if (idx > 0) {
-      signature += ", ";
-    }
-    signature += params[idx].first ? params[idx].first->val : "arg";
-    signature += ":";
-    signature += typeToString(params[idx].second);
-  }
-  signature += ")";
-  signature += " ";
-  signature += typeToString(funcDecl->returnType ? funcDecl->returnType : VOID_TYPE);
-  return signature;
-}
-
-void pushSymbol(std::vector<SymbolEntry> &symbols,
-                ASTIdentifier *id,
-                int kind,
-                const std::string &detail,
-                const std::string &signature,
-                const std::vector<std::string> &lines) {
-  if (!id) {
-    return;
-  }
-
-  SymbolEntry symbol;
-  symbol.name = id->val;
-  symbol.kind = kind;
-  symbol.detail = detail;
-  symbol.signature = signature;
-  unsigned sourceLine = id->codeRegion.startLine;
-  symbol.line = sourceLine > 0 ? sourceLine - 1 : 0;
-  symbol.start = id->codeRegion.startCol;
-  symbol.length = id->codeRegion.endCol > id->codeRegion.startCol ? id->codeRegion.endCol - id->codeRegion.startCol
-                                                                   : static_cast<unsigned>(symbol.name.size());
-  symbol.documentation = extractLeadingDocComment(lines, symbol.line);
-  symbols.push_back(std::move(symbol));
-}
-
-void collectSymbolsFromStmt(ASTStmt *stmt, const std::vector<std::string> &lines, std::vector<SymbolEntry> &symbols);
-
-void collectSymbolsFromDecl(ASTDecl *decl, const std::vector<std::string> &lines, std::vector<SymbolEntry> &symbols) {
-  if (!decl) {
-    return;
-  }
-
-  switch (decl->type) {
-    case VAR_DECL: {
-      auto *varDecl = static_cast<ASTVarDecl *>(decl);
-      for (auto &spec : varDecl->specs) {
-        if (!spec.id) {
-          continue;
-        }
-        std::string detail = varDecl->isConst ? "constant" : "variable";
-        if (spec.type) {
-          detail += ": ";
-          detail += typeToString(spec.type);
-        }
-        std::string signature = varDecl->isConst ? "decl imut " : "decl ";
-        signature += spec.id->val;
-        if (spec.type) {
-          signature += ":";
-          signature += typeToString(spec.type);
-        }
-        pushSymbol(symbols, spec.id, varDecl->isConst ? SYMBOL_KIND_CONSTANT : SYMBOL_KIND_VARIABLE, detail, signature,
-                   lines);
-      }
-      break;
-    }
-    case FUNC_DECL: {
-      auto *funcDecl = static_cast<ASTFuncDecl *>(decl);
-      std::string detail = funcDecl->isLazy ? "lazy function" : "function";
-      pushSymbol(symbols, funcDecl->funcId, SYMBOL_KIND_FUNCTION, detail, functionSignature(funcDecl), lines);
-      break;
-    }
-    case CLASS_DECL: {
-      auto *classDecl = static_cast<ASTClassDecl *>(decl);
-      if (!classDecl->id) {
-        break;
-      }
-      bool isStructDecl = lineHasDeclKeyword(lines, classDecl->id->codeRegion.startLine > 0 ? classDecl->id->codeRegion.startLine - 1 : 0, "struct");
-      int kind = isStructDecl ? SYMBOL_KIND_STRUCT : SYMBOL_KIND_CLASS;
-      std::string detail = isStructDecl ? "struct" : "class";
-      std::string signature = detail + " " + classDecl->id->val + genericParamsToString(classDecl->genericTypeParams);
-      if (classDecl->superClass) {
-        signature += " : ";
-        signature += typeToString(classDecl->superClass);
-      }
-      if (!classDecl->interfaces.empty()) {
-        if (!classDecl->superClass) {
-          signature += " : ";
-        } else {
-          signature += ", ";
-        }
-        for (size_t idx = 0; idx < classDecl->interfaces.size(); ++idx) {
-          if (idx > 0) {
-            signature += ", ";
-          }
-          signature += typeToString(classDecl->interfaces[idx]);
-        }
-      }
-      pushSymbol(symbols, classDecl->id, kind, detail, signature, lines);
-      for (auto *field : classDecl->fields) {
-        collectSymbolsFromDecl(field, lines, symbols);
-      }
-      for (auto *method : classDecl->methods) {
-        collectSymbolsFromDecl(method, lines, symbols);
-      }
-      break;
-    }
-    case INTERFACE_DECL: {
-      auto *interfaceDecl = static_cast<ASTInterfaceDecl *>(decl);
-      std::string signature = "interface ";
-      signature += interfaceDecl->id ? interfaceDecl->id->val : "Interface";
-      signature += genericParamsToString(interfaceDecl->genericTypeParams);
-      pushSymbol(symbols, interfaceDecl->id, SYMBOL_KIND_INTERFACE, "interface", signature, lines);
-      for (auto *field : interfaceDecl->fields) {
-        collectSymbolsFromDecl(field, lines, symbols);
-      }
-      for (auto *method : interfaceDecl->methods) {
-        collectSymbolsFromDecl(method, lines, symbols);
-      }
-      break;
-    }
-    case SCOPE_DECL: {
-      auto *scopeDecl = static_cast<ASTScopeDecl *>(decl);
-      if (!scopeDecl->scopeId) {
-        break;
-      }
-      unsigned line = scopeDecl->scopeId->codeRegion.startLine > 0 ? scopeDecl->scopeId->codeRegion.startLine - 1 : 0;
-      bool isEnumDecl = lineHasDeclKeyword(lines, line, "enum");
-      int kind = isEnumDecl ? SYMBOL_KIND_ENUM : SYMBOL_KIND_NAMESPACE;
-      std::string detail = isEnumDecl ? "enum" : "scope";
-      std::string signature = detail + " " + scopeDecl->scopeId->val;
-      pushSymbol(symbols, scopeDecl->scopeId, kind, detail, signature, lines);
-      if (scopeDecl->blockStmt) {
-        for (auto *stmt : scopeDecl->blockStmt->body) {
-          collectSymbolsFromStmt(stmt, lines, symbols);
-        }
-      }
-      break;
-    }
-    case TYPE_ALIAS_DECL: {
-      auto *aliasDecl = static_cast<ASTTypeAliasDecl *>(decl);
-      std::string signature = "def ";
-      signature += aliasDecl->id ? aliasDecl->id->val : "TypeAlias";
-      signature += genericParamsToString(aliasDecl->genericTypeParams);
-      signature += " = ";
-      signature += typeToString(aliasDecl->aliasedType);
-      pushSymbol(symbols, aliasDecl->id, SYMBOL_KIND_CLASS, "type alias", signature, lines);
-      break;
-    }
-    default:
-      break;
-  }
-}
-
-void collectSymbolsFromStmt(ASTStmt *stmt, const std::vector<std::string> &lines, std::vector<SymbolEntry> &symbols) {
-  if (!stmt || !(stmt->type & DECL)) {
-    return;
-  }
-  collectSymbolsFromDecl(static_cast<ASTDecl *>(stmt), lines, symbols);
-}
-
-DocumentAnalysis analyzeDocument(const std::string &text) {
-  DocumentAnalysis analysis;
-  std::ostringstream diagSink;
-  auto diagnostics = DiagnosticHandler::createDefault(diagSink);
-  Syntax::Lexer lexer(*diagnostics);
-  std::istringstream in(text);
-  lexer.tokenizeFromIStream(in, analysis.tokenStream);
-
-  Syntax::SyntaxA syntax;
-  syntax.setTokenStream(analysis.tokenStream);
-  auto lines = splitLines(text);
-
-  while (true) {
-    ASTStmt *stmt = syntax.nextStatement();
-    if (!stmt) {
-      if (syntax.isAtEnd()) {
-        break;
-      }
-      syntax.consumeCurrentTok();
-      continue;
-    }
-    collectSymbolsFromStmt(stmt, lines, analysis.symbols);
-  }
-  return analysis;
-}
-
-std::vector<SymbolEntry> collectSymbolsFromText(const std::string &text) {
-  return analyzeDocument(text).symbols;
-}
-
-unsigned symbolKindToSemanticTokenType(int kind) {
-  switch (kind) {
-    case SYMBOL_KIND_NAMESPACE:
-      return TOKEN_TYPE_NAMESPACE;
-    case SYMBOL_KIND_CLASS:
-    case SYMBOL_KIND_INTERFACE:
-    case SYMBOL_KIND_STRUCT:
-    case SYMBOL_KIND_ENUM:
-      return TOKEN_TYPE_CLASS;
-    case SYMBOL_KIND_FUNCTION:
-    case SYMBOL_KIND_METHOD:
-      return TOKEN_TYPE_FUNCTION;
-    case SYMBOL_KIND_VARIABLE:
-    case SYMBOL_KIND_FIELD:
-    case SYMBOL_KIND_CONSTANT:
-    default:
-      return TOKEN_TYPE_VARIABLE;
-  }
-}
-
-std::string spanKey(unsigned line, unsigned start, unsigned length) {
-  return std::to_string(line) + ":" + std::to_string(start) + ":" + std::to_string(length);
-}
-
-unsigned semanticTokenTypePriority(unsigned tokenType) {
-  switch (tokenType) {
-    case TOKEN_TYPE_NAMESPACE:
-      return 4;
-    case TOKEN_TYPE_CLASS:
-      return 3;
-    case TOKEN_TYPE_FUNCTION:
-      return 2;
-    case TOKEN_TYPE_VARIABLE:
-      return 1;
-    default:
-      return 0;
-  }
-}
-
-void recordIdentifierType(std::unordered_map<std::string, unsigned> &out, const std::string &name, unsigned tokenType) {
-  auto it = out.find(name);
-  if (it == out.end() || semanticTokenTypePriority(tokenType) > semanticTokenTypePriority(it->second)) {
-    out[name] = tokenType;
-  }
-}
-
-bool semanticTokenInRange(unsigned line, unsigned rangeStartLine, unsigned rangeEndLine, bool useRange) {
-  if (!useRange) {
-    return true;
-  }
-  return line >= rangeStartLine && line <= rangeEndLine;
-}
-
-std::vector<SemanticTokenEntry> collectSemanticTokenEntries(const std::string &text,
-                                                            unsigned rangeStartLine,
-                                                            unsigned rangeEndLine,
-                                                            bool useRange) {
-  auto analysis = analyzeDocument(text);
-  std::vector<SemanticTokenEntry> tokens;
-
-  std::unordered_map<std::string, unsigned> declarationSpanTypes;
-  std::unordered_map<std::string, unsigned> identifierTypes;
-  declarationSpanTypes.reserve(analysis.symbols.size());
-  identifierTypes.reserve(analysis.symbols.size());
-  for (const auto &symbol : analysis.symbols) {
-    auto semanticType = symbolKindToSemanticTokenType(symbol.kind);
-    declarationSpanTypes[spanKey(symbol.line, symbol.start, symbol.length)] = semanticType;
-    recordIdentifierType(identifierTypes, symbol.name, semanticType);
-  }
-
-  tokens.reserve(analysis.tokenStream.size());
-  for (const auto &token : analysis.tokenStream) {
-    unsigned line = token.srcPos.line > 0 ? token.srcPos.line - 1 : 0;
-    if (!semanticTokenInRange(line, rangeStartLine, rangeEndLine, useRange)) {
-      continue;
-    }
-
-    unsigned start = token.srcPos.startCol;
-    unsigned length = static_cast<unsigned>(token.content.size());
-    if (length == 0) {
-      continue;
-    }
-
-    if (token.type == Syntax::Tok::Keyword || token.type == Syntax::Tok::BooleanLiteral) {
-      tokens.push_back({line, start, length, TOKEN_TYPE_KEYWORD});
-      continue;
-    }
-
-    if (token.type != Syntax::Tok::Identifier) {
-      continue;
-    }
-
-    unsigned semanticType = TOKEN_TYPE_VARIABLE;
-    auto declIt = declarationSpanTypes.find(spanKey(line, start, length));
-    if (declIt != declarationSpanTypes.end()) {
-      semanticType = declIt->second;
-    } else {
-      auto idIt = identifierTypes.find(token.content);
-      if (idIt != identifierTypes.end()) {
-        semanticType = idIt->second;
-      }
-    }
-
-    tokens.push_back({line, start, length, semanticType});
-  }
-
-  std::sort(tokens.begin(), tokens.end(), [](const SemanticTokenEntry &lhs, const SemanticTokenEntry &rhs) {
-    if (lhs.line != rhs.line) {
-      return lhs.line < rhs.line;
-    }
-    if (lhs.start != rhs.start) {
-      return lhs.start < rhs.start;
-    }
-    if (lhs.length != rhs.length) {
-      return lhs.length < rhs.length;
-    }
-    return lhs.type < rhs.type;
-  });
-  return tokens;
-}
-
-std::vector<unsigned> encodeSemanticTokens(const std::vector<SemanticTokenEntry> &tokens) {
-  std::vector<unsigned> encoded;
-  encoded.reserve(tokens.size() * 5);
-
-  unsigned prevLine = 0;
-  unsigned prevStart = 0;
-  bool first = true;
-  for (const auto &token : tokens) {
-    unsigned deltaLine = first ? token.line : (token.line - prevLine);
-    unsigned deltaStart = first ? token.start : (deltaLine == 0 ? token.start - prevStart : token.start);
-    encoded.push_back(deltaLine);
-    encoded.push_back(deltaStart);
-    encoded.push_back(token.length);
-    encoded.push_back(token.type);
-    encoded.push_back(0);
-    prevLine = token.line;
-    prevStart = token.start;
-    first = false;
-  }
-  return encoded;
-}
 
 } // namespace
 
@@ -1085,6 +432,57 @@ void Server::loadWorkspaceDocuments() {
   }
 }
 
+bool Server::getBuiltinsDocument(std::string &uriOut, std::string &textOut) {
+  for (const auto &doc : documents) {
+    if (isBuiltinsInterfaceUri(doc.first)) {
+      uriOut = doc.first;
+      textOut = doc.second.text;
+      return !textOut.empty();
+    }
+  }
+
+  std::vector<std::string> candidateUris;
+  candidateUris.reserve(workspaceRoots.size() + 1);
+
+  for (const auto &workspaceUri : workspaceRoots) {
+    std::string workspacePath;
+    if (!parseUriToPath(workspaceUri, workspacePath)) {
+      continue;
+    }
+    std::filesystem::path builtinsPath = std::filesystem::path(workspacePath) / "stdlib" / "builtins.starbint";
+    candidateUris.push_back(pathToUri(builtinsPath.string()));
+  }
+
+  std::filesystem::path localBuiltins = std::filesystem::current_path() / "stdlib" / "builtins.starbint";
+  candidateUris.push_back(pathToUri(localBuiltins.string()));
+
+  std::filesystem::path probe = std::filesystem::current_path();
+  for(unsigned depth = 0; depth < 6; ++depth) {
+    auto nestedBuiltins = probe / "stdlib" / "builtins.starbint";
+    candidateUris.push_back(pathToUri(nestedBuiltins.string()));
+    auto parent = probe.parent_path();
+    if(parent.empty() || parent == probe) {
+      break;
+    }
+    probe = parent;
+  }
+
+  for (const auto &candidateUri : candidateUris) {
+    std::string candidateText;
+    if (!getDocumentTextByUri(candidateUri, candidateText)) {
+      continue;
+    }
+    if (candidateText.empty()) {
+      continue;
+    }
+    uriOut = candidateUri;
+    textOut = std::move(candidateText);
+    return true;
+  }
+
+  return false;
+}
+
 bool Server::getDocumentTextByUri(const std::string &uri, std::string &textOut) {
   auto it = documents.find(uri);
   if (it != documents.end()) {
@@ -1109,9 +507,35 @@ bool Server::getDocumentTextByUri(const std::string &uri, std::string &textOut) 
   return true;
 }
 
+void Server::configureSymbolCache() {
+  std::filesystem::path cacheRoot = std::filesystem::current_path() / ".starbytes";
+  if(!workspaceRoots.empty()) {
+    std::string workspacePath;
+    if(parseUriToPath(workspaceRoots.front(), workspacePath)) {
+      cacheRoot = std::filesystem::path(workspacePath) / ".starbytes";
+    }
+  }
+  symbolCache.setCachePath(cacheRoot / ".cache" / "lsp_symbols_cache.v1");
+}
+
+std::vector<SymbolEntry> Server::collectSymbolsForUri(const std::string &uri, const std::string &text) {
+  std::vector<SymbolEntry> symbols;
+  if(symbolCache.tryGet(uri, text, symbols)) {
+    return symbols;
+  }
+  symbols = collectSymbolsFromText(text);
+  symbolCache.put(uri, text, symbols);
+  return symbols;
+}
+
+void Server::invalidateSymbolCacheForUri(const std::string &uri) {
+  symbolCache.invalidate(uri);
+}
+
 void Server::setDocumentTextByUri(const std::string &uri, const std::string &text, int version, bool isOpen) {
   documents[uri] = {text, version, isOpen};
   semanticSnapshots.erase(uri);
+  invalidateSymbolCacheForUri(uri);
 }
 
 void Server::removeOpenDocumentByUri(const std::string &uri) {
@@ -1130,12 +554,14 @@ void Server::removeOpenDocumentByUri(const std::string &uri) {
       it->second.version = 0;
       it->second.isOpen = false;
       semanticSnapshots.erase(uri);
+      invalidateSymbolCacheForUri(uri);
       return;
     }
   }
 
   documents.erase(it);
   semanticSnapshots.erase(uri);
+  invalidateSymbolCacheForUri(uri);
 }
 
 void Server::publishDiagnostics(const std::string &uri) {
@@ -1147,50 +573,27 @@ void Server::publishDiagnostics(const std::string &uri) {
 
   std::string text;
   if (getDocumentTextByUri(uri, text)) {
-    std::vector<std::pair<unsigned, unsigned>> braceStack;
-    unsigned line = 0;
-    unsigned character = 0;
-
-    auto pushDiagnostic = [&](unsigned startLine, unsigned startChar, unsigned endLine, unsigned endChar,
-                              const char *message) {
+    auto compilerDiagnostics = collectCompilerDiagnosticsForText(uri, text);
+    for (const auto &entry : compilerDiagnostics) {
       rapidjson::Value diag(rapidjson::kObjectType);
       rapidjson::Value range(rapidjson::kObjectType);
       rapidjson::Value start(rapidjson::kObjectType);
       rapidjson::Value end(rapidjson::kObjectType);
+      unsigned startLine = entry.region.startLine > 0 ? entry.region.startLine - 1 : 0;
+      unsigned endLine = entry.region.endLine > 0 ? entry.region.endLine - 1 : startLine;
+      unsigned startCol = entry.region.startCol;
+      unsigned endCol = entry.region.endCol > entry.region.startCol ? entry.region.endCol : (entry.region.startCol + 1);
       start.AddMember("line", startLine, alloc);
-      start.AddMember("character", startChar, alloc);
+      start.AddMember("character", startCol, alloc);
       end.AddMember("line", endLine, alloc);
-      end.AddMember("character", endChar, alloc);
+      end.AddMember("character", endCol, alloc);
       range.AddMember("start", start, alloc);
       range.AddMember("end", end, alloc);
       diag.AddMember("range", range, alloc);
-      diag.AddMember("severity", 1, alloc);
-      diag.AddMember("source", rapidjson::Value("starbytes-lsp", alloc), alloc);
-      diag.AddMember("message", rapidjson::Value(message, alloc), alloc);
+      diag.AddMember("severity", entry.severity, alloc);
+      diag.AddMember("source", rapidjson::Value("starbytes-compiler", alloc), alloc);
+      diag.AddMember("message", rapidjson::Value(entry.message.c_str(), alloc), alloc);
       diagnostics.PushBack(diag, alloc);
-    };
-
-    for (char ch : text) {
-      if (ch == '{') {
-        braceStack.push_back({line, character});
-      } else if (ch == '}') {
-        if (braceStack.empty()) {
-          pushDiagnostic(line, character, line, character + 1, "Unmatched closing brace `}`.");
-        } else {
-          braceStack.pop_back();
-        }
-      }
-
-      if (ch == '\n') {
-        ++line;
-        character = 0;
-      } else {
-        ++character;
-      }
-    }
-
-    for (const auto &entry : braceStack) {
-      pushDiagnostic(entry.first, entry.second, entry.first, entry.second + 1, "Unmatched opening brace `{`.");
     }
   }
 
@@ -1265,6 +668,7 @@ void Server::handleInitialize(rapidjson::Document &request) {
     workspaceRoots.push_back(pathToUri(std::filesystem::current_path().string()));
   }
 
+  configureSymbolCache();
   loadWorkspaceDocuments();
   initialized = true;
 
@@ -1361,6 +765,7 @@ void Server::handleShutdown(rapidjson::Document &request) {
     return;
   }
   shutdownRequested = true;
+  symbolCache.save();
   rapidjson::Document payloadDoc(rapidjson::kObjectType);
   rapidjson::Value result;
   result.SetNull();
@@ -1533,6 +938,29 @@ void Server::handleCompletion(rapidjson::Document &request) {
   auto prefix = extractPrefixAtPosition(text, line, character);
   auto loweredPrefix = toLower(prefix);
 
+  std::string builtinsUri;
+  std::string builtinsText;
+  BuiltinApiIndex builtinsIndex;
+  if (getBuiltinsDocument(builtinsUri, builtinsText)) {
+    builtinsIndex = buildBuiltinApiIndex(builtinsUri, builtinsText);
+  }
+
+  std::string memberReceiver;
+  std::string memberPrefix;
+  bool memberContext =
+      extractMemberCompletionContext(text, offsetFromPosition(text, line, character), memberReceiver, memberPrefix);
+  if (memberContext) {
+    loweredPrefix = toLower(memberPrefix);
+  }
+  std::optional<std::string> inferredMemberType;
+  if (memberContext && !builtinsIndex.membersByType.empty()) {
+    inferredMemberType = inferBuiltinTypeForReceiver(text, memberReceiver, line, builtinsIndex);
+  }
+  if (memberContext && !inferredMemberType.has_value()) {
+    memberContext = false;
+    loweredPrefix = toLower(prefix);
+  }
+
   std::vector<CompletionEntry> entries;
   std::set<std::string> seen;
   auto pushEntry = [&](const std::string &label, int kind, const std::string &detail) {
@@ -1545,36 +973,45 @@ void Server::handleCompletion(rapidjson::Document &request) {
     }
   };
 
-  for (const auto &keyword : kKeywordCompletions) {
-    pushEntry(keyword, COMPLETION_KIND_KEYWORD, "keyword");
+  if (!memberContext) {
+    for (const auto &keyword : kKeywordCompletions) {
+      pushEntry(keyword, COMPLETION_KIND_KEYWORD, "keyword");
+    }
+  }
+
+  if (memberContext && inferredMemberType.has_value()) {
+      auto memberIt = builtinsIndex.membersByType.find(*inferredMemberType);
+      if (memberIt != builtinsIndex.membersByType.end()) {
+        for (const auto &member : memberIt->second) {
+          pushEntry(member.second.name, completionKindFromSymbolKind(member.second.kind), member.second.detail);
+        }
+      }
   }
 
   for (const auto &doc : documents) {
-    auto symbols = collectSymbolsFromText(doc.second.text);
+    auto symbols = collectSymbolsForUri(doc.first, doc.second.text);
     for (const auto &symbol : symbols) {
-      int kind = COMPLETION_KIND_TEXT;
-      if (symbol.kind == SYMBOL_KIND_CLASS) {
-        kind = COMPLETION_KIND_CLASS;
-      } else if (symbol.kind == SYMBOL_KIND_METHOD) {
-        kind = COMPLETION_KIND_METHOD;
-      } else if (symbol.kind == SYMBOL_KIND_FIELD) {
-        kind = COMPLETION_KIND_FIELD;
-      } else if (symbol.kind == SYMBOL_KIND_FUNCTION) {
-        kind = COMPLETION_KIND_FUNCTION;
-      } else if (symbol.kind == SYMBOL_KIND_NAMESPACE) {
-        kind = COMPLETION_KIND_MODULE;
-      } else if (symbol.kind == SYMBOL_KIND_INTERFACE) {
-        kind = COMPLETION_KIND_INTERFACE;
-      } else if (symbol.kind == SYMBOL_KIND_STRUCT) {
-        kind = COMPLETION_KIND_STRUCT;
-      } else if (symbol.kind == SYMBOL_KIND_ENUM) {
-        kind = COMPLETION_KIND_ENUM;
-      } else if (symbol.kind == SYMBOL_KIND_CONSTANT) {
-        kind = COMPLETION_KIND_VALUE;
-      } else {
-        kind = COMPLETION_KIND_VARIABLE;
+      if (memberContext) {
+        if (!symbol.isMember) {
+          continue;
+        }
+        if (!inferredMemberType.has_value() || symbol.containerName != *inferredMemberType) {
+          continue;
+        }
+      } else if (symbol.isMember) {
+        continue;
       }
-      pushEntry(symbol.name, kind, symbol.detail);
+      pushEntry(symbol.name, completionKindFromSymbolKind(symbol.kind), symbol.detail);
+    }
+  }
+
+  if (!memberContext) {
+    for (const auto &topLevel : builtinsIndex.topLevelByName) {
+      const auto &symbol = topLevel.second;
+      if (symbol.isMember) {
+        continue;
+      }
+      pushEntry(symbol.name, completionKindFromSymbolKind(symbol.kind), symbol.detail);
     }
   }
 
@@ -1609,7 +1046,73 @@ void Server::handleCompletionResolve(rapidjson::Document &request) {
   auto &alloc = payloadDoc.GetAllocator();
   rapidjson::Value item;
   item.CopyFrom(request["params"], alloc);
-  if (!item.HasMember("documentation")) {
+
+  std::string label;
+  if(item.HasMember("label") && item["label"].IsString()) {
+    label = item["label"].GetString();
+  }
+
+  std::optional<SymbolEntry> resolvedSymbol;
+  std::string builtinsUri;
+  std::string builtinsText;
+  BuiltinApiIndex builtinsIndex;
+  if(getBuiltinsDocument(builtinsUri, builtinsText)) {
+    builtinsIndex = buildBuiltinApiIndex(builtinsUri, builtinsText);
+  }
+  if(!label.empty()) {
+    auto top = builtinsIndex.topLevelByName.find(label);
+    if(top != builtinsIndex.topLevelByName.end()) {
+      resolvedSymbol = top->second;
+    }
+    if(!resolvedSymbol.has_value()) {
+      for(const auto &memberType : builtinsIndex.membersByType) {
+        auto m = memberType.second.find(label);
+        if(m != memberType.second.end()) {
+          resolvedSymbol = m->second;
+          break;
+        }
+      }
+    }
+    if(!resolvedSymbol.has_value()) {
+      for (const auto &doc : documents) {
+        auto symbols = collectSymbolsForUri(doc.first, doc.second.text);
+        auto it = std::find_if(symbols.begin(), symbols.end(), [&](const SymbolEntry &symbol) {
+          return symbol.name == label;
+        });
+        if(it != symbols.end()) {
+          resolvedSymbol = *it;
+          break;
+        }
+      }
+    }
+  }
+
+  if(resolvedSymbol.has_value()) {
+    if(!item.HasMember("detail")) {
+      item.AddMember("detail", rapidjson::Value(resolvedSymbol->detail.c_str(), alloc), alloc);
+    }
+    std::string renderedDoc = DoxygenDoc::parse(resolvedSymbol->documentation).renderMarkdown();
+    if(renderedDoc.empty()) {
+      renderedDoc = resolvedSymbol->documentation;
+    }
+    if(!resolvedSymbol->signature.empty()) {
+      if(!renderedDoc.empty()) {
+        renderedDoc = "```starbytes\n" + resolvedSymbol->signature + "\n```\n\n" + renderedDoc;
+      }
+      else {
+        renderedDoc = "```starbytes\n" + resolvedSymbol->signature + "\n```";
+      }
+    }
+    if(!renderedDoc.empty()) {
+      if(item.HasMember("documentation")) {
+        item["documentation"].SetString(renderedDoc.c_str(), alloc);
+      }
+      else {
+        item.AddMember("documentation", rapidjson::Value(renderedDoc.c_str(), alloc), alloc);
+      }
+    }
+  }
+  else if (!item.HasMember("documentation")) {
     item.AddMember("documentation", rapidjson::Value("Starbytes symbol", alloc), alloc);
   }
   writeResult(request["id"], item);
@@ -1654,11 +1157,35 @@ void Server::handleHover(rapidjson::Document &request) {
     return;
   }
 
+  std::string builtinsUri;
+  std::string builtinsText;
+  BuiltinApiIndex builtinsIndex;
+  if (getBuiltinsDocument(builtinsUri, builtinsText)) {
+    builtinsIndex = buildBuiltinApiIndex(builtinsUri, builtinsText);
+  }
+
   std::optional<SymbolEntry> bestSymbol;
   std::string bestUri = uri;
 
+  std::string memberReceiver;
+  bool memberContext = extractReceiverBeforeOffset(text, wordStart, memberReceiver);
+  if (memberContext && !builtinsIndex.membersByType.empty()) {
+    auto inferredType =
+        inferBuiltinTypeForReceiver(text, memberReceiver, params["position"]["line"].GetUint(), builtinsIndex);
+    if (inferredType.has_value()) {
+      auto typeMembers = builtinsIndex.membersByType.find(*inferredType);
+      if (typeMembers != builtinsIndex.membersByType.end()) {
+        auto memberIt = typeMembers->second.find(word);
+        if (memberIt != typeMembers->second.end()) {
+          bestSymbol = memberIt->second;
+          bestUri = builtinsIndex.uri;
+        }
+      }
+    }
+  }
+
   auto scanDefinitions = [&](const std::string &candidateUri, const std::string &candidateText) {
-    auto symbols = collectSymbolsFromText(candidateText);
+    auto symbols = collectSymbolsForUri(candidateUri, candidateText);
     for (const auto &symbol : symbols) {
       if (symbol.name != word) {
         continue;
@@ -1670,8 +1197,18 @@ void Server::handleHover(rapidjson::Document &request) {
     }
   };
 
-  for (const auto &doc : documents) {
-    scanDefinitions(doc.first, doc.second.text);
+  if (!bestSymbol.has_value()) {
+    for (const auto &doc : documents) {
+      scanDefinitions(doc.first, doc.second.text);
+    }
+  }
+
+  if (!bestSymbol.has_value() && !builtinsIndex.topLevelByName.empty()) {
+    auto topLevel = builtinsIndex.topLevelByName.find(word);
+    if (topLevel != builtinsIndex.topLevelByName.end()) {
+      bestSymbol = topLevel->second;
+      bestUri = builtinsIndex.uri;
+    }
   }
 
   rapidjson::Document payloadDoc(rapidjson::kObjectType);
@@ -1683,17 +1220,49 @@ void Server::handleHover(rapidjson::Document &request) {
 
   std::string markdown = "**" + word + "**";
   if (bestSymbol.has_value()) {
-    if (!bestSymbol->signature.empty()) {
-      markdown = "```starbytes\n" + bestSymbol->signature + "\n```";
-    } else {
-      markdown = "**" + bestSymbol->name + "**";
+    auto titleKind = bestSymbol->detail.empty() ? "symbol" : bestSymbol->detail;
+    if (!titleKind.empty()) {
+      titleKind[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(titleKind[0])));
     }
-    if (!bestSymbol->detail.empty()) {
-      markdown += "\n\n_" + bestSymbol->detail + "_";
+    markdown = "### " + titleKind + " `" + bestSymbol->name + "`";
+
+    std::string signatureBlock = bestSymbol->signature;
+    if (!signatureBlock.empty() && bestSymbol->isMember && !bestSymbol->containerName.empty()) {
+      if (bestSymbol->kind == SYMBOL_KIND_METHOD || bestSymbol->kind == SYMBOL_KIND_FIELD ||
+          bestSymbol->kind == SYMBOL_KIND_CONSTANT || bestSymbol->kind == SYMBOL_KIND_VARIABLE) {
+        signatureBlock = "class " + bestSymbol->containerName + " {\n    " + bestSymbol->signature + "\n}";
+      }
     }
-    if (!bestSymbol->documentation.empty()) {
+    if (!signatureBlock.empty()) {
+      markdown += "\n\n```starbytes\n" + signatureBlock + "\n```";
+    }
+
+    std::string symbolText;
+    if (getDocumentTextByUri(bestUri, symbolText)) {
+      CodeView codeView(bestUri, symbolText);
+      Region region;
+      region.startLine = bestSymbol->line + 1;
+      region.endLine = bestSymbol->line + 1;
+      region.startCol = bestSymbol->start;
+      region.endCol = bestSymbol->start + std::max<unsigned>(1, bestSymbol->length);
+      auto rendered = codeView.renderRegion(region, "", 1);
+      if (!rendered.empty()) {
+        markdown += "\n\n```text\n" + rendered + "\n```";
+      }
+    }
+
+    auto parsedDoc = DoxygenDoc::parse(bestSymbol->documentation);
+    auto renderedDoc = parsedDoc.renderMarkdown();
+    if (!renderedDoc.empty()) {
+      markdown += "\n\n" + renderedDoc;
+    } else if (!bestSymbol->documentation.empty()) {
       markdown += "\n\n" + bestSymbol->documentation;
     }
+
+    if (bestSymbol->isMember && !bestSymbol->containerName.empty()) {
+      markdown += "\n\nParent scope: `" + bestSymbol->containerName + "`";
+    }
+
     markdown += "\n\nDeclared in `" + bestUri + "`";
   }
   contents.AddMember("value", rapidjson::Value(markdown.c_str(), alloc), alloc);
@@ -1757,32 +1326,65 @@ void Server::handleDefinition(rapidjson::Document &request) {
     return;
   }
 
+  std::string builtinsUri;
+  std::string builtinsText;
+  BuiltinApiIndex builtinsIndex;
+  if (getBuiltinsDocument(builtinsUri, builtinsText)) {
+    builtinsIndex = buildBuiltinApiIndex(builtinsUri, builtinsText);
+  }
+
   rapidjson::Document payloadDoc(rapidjson::kObjectType);
   auto &alloc = payloadDoc.GetAllocator();
   rapidjson::Value locations(rapidjson::kArrayType);
 
+  auto appendLocation = [&](const std::string &defUri, const SymbolEntry &symbol) {
+    rapidjson::Value location(rapidjson::kObjectType);
+    location.AddMember("uri", rapidjson::Value(defUri.c_str(), alloc), alloc);
+
+    rapidjson::Value range(rapidjson::kObjectType);
+    rapidjson::Value rangeStart(rapidjson::kObjectType);
+    rapidjson::Value rangeEnd(rapidjson::kObjectType);
+    rangeStart.AddMember("line", symbol.line, alloc);
+    rangeStart.AddMember("character", symbol.start, alloc);
+    rangeEnd.AddMember("line", symbol.line, alloc);
+    rangeEnd.AddMember("character", symbol.start + symbol.length, alloc);
+    range.AddMember("start", rangeStart, alloc);
+    range.AddMember("end", rangeEnd, alloc);
+    location.AddMember("range", range, alloc);
+    locations.PushBack(location, alloc);
+  };
+
+  std::string memberReceiver;
+  bool memberContext = extractReceiverBeforeOffset(text, start, memberReceiver);
+  if (memberContext && !builtinsIndex.membersByType.empty()) {
+    auto inferredType = inferBuiltinTypeForReceiver(text, memberReceiver, params["position"]["line"].GetUint(), builtinsIndex);
+    if (inferredType.has_value()) {
+      auto typeMembers = builtinsIndex.membersByType.find(*inferredType);
+      if (typeMembers != builtinsIndex.membersByType.end()) {
+        auto memberIt = typeMembers->second.find(word);
+        if (memberIt != typeMembers->second.end()) {
+          appendLocation(builtinsIndex.uri, memberIt->second);
+          writeResult(request["id"], locations);
+          return;
+        }
+      }
+    }
+  }
+
   for (const auto &doc : documents) {
-    auto symbols = collectSymbolsFromText(doc.second.text);
+    auto symbols = collectSymbolsForUri(doc.first, doc.second.text);
     for (const auto &symbol : symbols) {
       if (symbol.name != word) {
         continue;
       }
+      appendLocation(doc.first, symbol);
+    }
+  }
 
-      rapidjson::Value location(rapidjson::kObjectType);
-      location.AddMember("uri", rapidjson::Value(doc.first.c_str(), alloc), alloc);
-
-      rapidjson::Value range(rapidjson::kObjectType);
-      rapidjson::Value rangeStart(rapidjson::kObjectType);
-      rapidjson::Value rangeEnd(rapidjson::kObjectType);
-      rangeStart.AddMember("line", symbol.line, alloc);
-      rangeStart.AddMember("character", symbol.start, alloc);
-      rangeEnd.AddMember("line", symbol.line, alloc);
-      rangeEnd.AddMember("character", symbol.start + symbol.length, alloc);
-      range.AddMember("start", rangeStart, alloc);
-      range.AddMember("end", rangeEnd, alloc);
-      location.AddMember("range", range, alloc);
-
-      locations.PushBack(location, alloc);
+  if (locations.Empty() && !builtinsIndex.topLevelByName.empty()) {
+    auto topLevel = builtinsIndex.topLevelByName.find(word);
+    if (topLevel != builtinsIndex.topLevelByName.end()) {
+      appendLocation(builtinsIndex.uri, topLevel->second);
     }
   }
 
@@ -1854,7 +1456,7 @@ void Server::handleReferences(rapidjson::Document &request) {
 
     std::set<size_t> declarationOffsets;
     if (!includeDeclaration) {
-      auto symbols = collectSymbolsFromText(doc.second.text);
+      auto symbols = collectSymbolsForUri(doc.first, doc.second.text);
       for (const auto &symbol : symbols) {
         if (symbol.name != word) {
           continue;
@@ -1909,7 +1511,7 @@ void Server::handleDocumentSymbol(rapidjson::Document &request) {
   auto uri = std::string(request["params"]["textDocument"]["uri"].GetString());
   std::string text;
   getDocumentTextByUri(uri, text);
-  auto symbols = collectSymbolsFromText(text);
+  auto symbols = collectSymbolsForUri(uri, text);
 
   rapidjson::Document payloadDoc(rapidjson::kObjectType);
   auto &alloc = payloadDoc.GetAllocator();
@@ -1972,7 +1574,7 @@ void Server::handleWorkspaceSymbol(rapidjson::Document &request) {
   rapidjson::Value result(rapidjson::kArrayType);
 
   for (const auto &doc : documents) {
-    auto symbols = collectSymbolsFromText(doc.second.text);
+    auto symbols = collectSymbolsForUri(doc.first, doc.second.text);
     for (const auto &symbol : symbols) {
       auto loweredName = toLower(symbol.name);
       if (!loweredQuery.empty() && loweredName.find(loweredQuery) == std::string::npos) {
@@ -2217,21 +1819,49 @@ void Server::handleSignatureHelp(rapidjson::Document &request) {
 
   auto functionName = text.substr(nameStart, nameEnd - nameStart);
 
+  std::string builtinsUri;
+  std::string builtinsText;
+  BuiltinApiIndex builtinsIndex;
+  if (getBuiltinsDocument(builtinsUri, builtinsText)) {
+    builtinsIndex = buildBuiltinApiIndex(builtinsUri, builtinsText);
+  }
+
   std::string signatureParams;
   std::string signatureReturn;
+  std::string signatureName = functionName;
   bool found = false;
-  for (const auto &doc : documents) {
-    for (std::sregex_iterator it(doc.second.text.begin(), doc.second.text.end(), kFuncSignatureRegex), end; it != end; ++it) {
-      if ((*it)[1].str() != functionName) {
-        continue;
+
+  if (!builtinsIndex.topLevelByName.empty()) {
+    std::string memberReceiver;
+    bool memberContext = extractReceiverBeforeOffset(text, nameStart, memberReceiver);
+    if (memberContext && !builtinsIndex.membersByType.empty()) {
+      auto inferredType = inferBuiltinTypeForReceiver(text, memberReceiver, params["position"]["line"].GetUint(), builtinsIndex);
+      if (inferredType.has_value()) {
+        auto typeMembers = builtinsIndex.membersByType.find(*inferredType);
+        if (typeMembers != builtinsIndex.membersByType.end()) {
+          auto member = typeMembers->second.find(functionName);
+          if (member != typeMembers->second.end() &&
+              signaturePartsFromSignature(member->second.signature, signatureName, signatureParams, signatureReturn)) {
+            found = true;
+          }
+        }
       }
-      signatureParams = (*it)[2].str();
-      signatureReturn = (*it)[3].matched ? (*it)[3].str() : "";
-      found = true;
-      break;
     }
+    if (!found) {
+      auto builtinTop = builtinsIndex.topLevelByName.find(functionName);
+      if (builtinTop != builtinsIndex.topLevelByName.end() && builtinTop->second.kind == SYMBOL_KIND_FUNCTION &&
+          signaturePartsFromSignature(builtinTop->second.signature, signatureName, signatureParams, signatureReturn)) {
+        found = true;
+      }
+    }
+  }
+
+  for (const auto &doc : documents) {
     if (found) {
       break;
+    }
+    if (findFunctionSignatureInText(doc.second.text, functionName, signatureName, signatureParams, signatureReturn)) {
+      found = true;
     }
   }
 
@@ -2255,7 +1885,7 @@ void Server::handleSignatureHelp(rapidjson::Document &request) {
   rapidjson::Value signatures(rapidjson::kArrayType);
   rapidjson::Value signature(rapidjson::kObjectType);
 
-  std::string label = functionName + "(" + signatureParams + ")";
+  std::string label = signatureName + "(" + signatureParams + ")";
   if (!signatureReturn.empty()) {
     label += " " + signatureReturn;
   }
@@ -2783,12 +2413,46 @@ void Server::processRequest(rapidjson::Document &request) {
   }
 
   if (method == "textDocument/diagnostic") {
+    if (!request.HasMember("params") || !request["params"].IsObject() ||
+        !request["params"].HasMember("textDocument") || !request["params"]["textDocument"].IsObject() ||
+        !request["params"]["textDocument"].HasMember("uri") || !request["params"]["textDocument"]["uri"].IsString()) {
+      writeError(request["id"], JSONRPC_INVALID_PARAMS, "Invalid textDocument/diagnostic params");
+      return;
+    }
+
+    auto uri = std::string(request["params"]["textDocument"]["uri"].GetString());
+    std::string text;
+    getDocumentTextByUri(uri, text);
+    auto compilerDiagnostics = collectCompilerDiagnosticsForText(uri, text);
+
     rapidjson::Document payloadDoc(rapidjson::kObjectType);
     auto &alloc = payloadDoc.GetAllocator();
     rapidjson::Value result(rapidjson::kObjectType);
     result.AddMember("kind", rapidjson::Value("full", alloc), alloc);
     rapidjson::Value items(rapidjson::kArrayType);
+    for (const auto &entry : compilerDiagnostics) {
+      rapidjson::Value diag(rapidjson::kObjectType);
+      rapidjson::Value range(rapidjson::kObjectType);
+      rapidjson::Value start(rapidjson::kObjectType);
+      rapidjson::Value end(rapidjson::kObjectType);
+      unsigned startLine = entry.region.startLine > 0 ? entry.region.startLine - 1 : 0;
+      unsigned endLine = entry.region.endLine > 0 ? entry.region.endLine - 1 : startLine;
+      unsigned startCol = entry.region.startCol;
+      unsigned endCol = entry.region.endCol > entry.region.startCol ? entry.region.endCol : (entry.region.startCol + 1);
+      start.AddMember("line", startLine, alloc);
+      start.AddMember("character", startCol, alloc);
+      end.AddMember("line", endLine, alloc);
+      end.AddMember("character", endCol, alloc);
+      range.AddMember("start", start, alloc);
+      range.AddMember("end", end, alloc);
+      diag.AddMember("range", range, alloc);
+      diag.AddMember("severity", entry.severity, alloc);
+      diag.AddMember("source", rapidjson::Value("starbytes-compiler", alloc), alloc);
+      diag.AddMember("message", rapidjson::Value(entry.message.c_str(), alloc), alloc);
+      items.PushBack(diag, alloc);
+    }
     result.AddMember("items", items, alloc);
+    result.AddMember("resultId", rapidjson::Value("0", alloc), alloc);
     writeResult(request["id"], result);
     return;
   }
@@ -2798,6 +2462,37 @@ void Server::processRequest(rapidjson::Document &request) {
     auto &alloc = payloadDoc.GetAllocator();
     rapidjson::Value result(rapidjson::kObjectType);
     rapidjson::Value items(rapidjson::kArrayType);
+    for (const auto &doc : documents) {
+      auto compilerDiagnostics = collectCompilerDiagnosticsForText(doc.first, doc.second.text);
+      rapidjson::Value report(rapidjson::kObjectType);
+      report.AddMember("uri", rapidjson::Value(doc.first.c_str(), alloc), alloc);
+      report.AddMember("kind", rapidjson::Value("full", alloc), alloc);
+      rapidjson::Value diags(rapidjson::kArrayType);
+      for (const auto &entry : compilerDiagnostics) {
+        rapidjson::Value diag(rapidjson::kObjectType);
+        rapidjson::Value range(rapidjson::kObjectType);
+        rapidjson::Value start(rapidjson::kObjectType);
+        rapidjson::Value end(rapidjson::kObjectType);
+        unsigned startLine = entry.region.startLine > 0 ? entry.region.startLine - 1 : 0;
+        unsigned endLine = entry.region.endLine > 0 ? entry.region.endLine - 1 : startLine;
+        unsigned startCol = entry.region.startCol;
+        unsigned endCol = entry.region.endCol > entry.region.startCol ? entry.region.endCol : (entry.region.startCol + 1);
+        start.AddMember("line", startLine, alloc);
+        start.AddMember("character", startCol, alloc);
+        end.AddMember("line", endLine, alloc);
+        end.AddMember("character", endCol, alloc);
+        range.AddMember("start", start, alloc);
+        range.AddMember("end", end, alloc);
+        diag.AddMember("range", range, alloc);
+        diag.AddMember("severity", entry.severity, alloc);
+        diag.AddMember("source", rapidjson::Value("starbytes-compiler", alloc), alloc);
+        diag.AddMember("message", rapidjson::Value(entry.message.c_str(), alloc), alloc);
+        diags.PushBack(diag, alloc);
+      }
+      report.AddMember("items", diags, alloc);
+      report.AddMember("resultId", rapidjson::Value("0", alloc), alloc);
+      items.PushBack(report, alloc);
+    }
     result.AddMember("items", items, alloc);
     writeResult(request["id"], result);
     return;
@@ -2893,6 +2588,7 @@ void Server::run() {
       processNotification(request);
     }
   }
+  symbolCache.save();
 }
 
 } // namespace starbytes::lsp

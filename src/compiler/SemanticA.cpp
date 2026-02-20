@@ -696,8 +696,8 @@ static ASTType *substituteTypeParams(ASTType *type,
         auto buildVarEntry = [&](ASTVarDecl::VarSpec &spec,std::shared_ptr<ASTScope> scope,bool isReadonly){
             std::string sourceName = spec.id->val;
             std::string emittedName = buildEmittedName(scope,sourceName);
-            auto *e = new Semantics::SymbolTable::Entry();
-            auto data = new Semantics::SymbolTable::Var();
+            auto *e = tablePtr->allocate<Semantics::SymbolTable::Entry>();
+            auto data = tablePtr->allocate<Semantics::SymbolTable::Var>();
             data->name = sourceName;
             data->type = spec.type;
             data->isReadonly = isReadonly;
@@ -712,8 +712,8 @@ static ASTType *substituteTypeParams(ASTType *type,
         auto buildFuncEntry = [&](ASTFuncDecl *func,std::shared_ptr<ASTScope> scope){
             std::string sourceName = func->funcId->val;
             std::string emittedName = buildEmittedName(scope,sourceName);
-            auto *e = new Semantics::SymbolTable::Entry();
-            auto data = new Semantics::SymbolTable::Function();
+            auto *e = tablePtr->allocate<Semantics::SymbolTable::Entry>();
+            auto data = tablePtr->allocate<Semantics::SymbolTable::Function>();
             data->name = sourceName;
             data->returnType = func->returnType;
             data->funcType = func->funcType;
@@ -746,11 +746,11 @@ static ASTType *substituteTypeParams(ASTType *type,
                  auto classDecl = (ASTClassDecl *)decl;
                  std::string sourceName = classDecl->id->val;
                  std::string emittedName = buildEmittedName(decl->scope,sourceName);
-                 Semantics::SymbolTable::Entry *e = new Semantics::SymbolTable::Entry();
+                 auto *e = tablePtr->allocate<Semantics::SymbolTable::Entry>();
                  e->name = sourceName;
                  e->emittedName = emittedName;
                  e->type = Semantics::SymbolTable::Entry::Class;
-                 auto data = new Semantics::SymbolTable::Class();
+                 auto *data = tablePtr->allocate<Semantics::SymbolTable::Class>();
                  e->data = data;
                  data->classType = ASTType::Create(emittedName.c_str(),classDecl,false,false);
                  for(auto *genericParam : classDecl->genericTypeParams){
@@ -775,7 +775,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                          }
                      }
                      for(auto & v_spec : f->specs){
-                         auto *field = new Semantics::SymbolTable::Var();
+                         auto *field = tablePtr->allocate<Semantics::SymbolTable::Var>();
                          field->name = v_spec.id->val;
                          field->type = v_spec.type;
                          field->isReadonly = readonlyField;
@@ -783,7 +783,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                      }
                  }
                  for(auto & m : classDecl->methods){
-                     auto *method = new Semantics::SymbolTable::Function();
+                     auto *method = tablePtr->allocate<Semantics::SymbolTable::Function>();
                      method->name = m->funcId->val;
                      method->returnType = m->returnType;
                      method->funcType = m->funcType;
@@ -793,7 +793,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                      data->instMethods.push_back(method);
                  }
                  for(auto & c : classDecl->constructors){
-                     auto *ctor = new Semantics::SymbolTable::Function();
+                     auto *ctor = tablePtr->allocate<Semantics::SymbolTable::Function>();
                      ctor->name = "__ctor__" + std::to_string(c->params.size());
                      ctor->returnType = VOID_TYPE;
                      ctor->funcType = data->classType;
@@ -807,11 +807,11 @@ static ASTType *substituteTypeParams(ASTType *type,
                 auto *interfaceDecl = (ASTInterfaceDecl *)decl;
                 std::string sourceName = interfaceDecl->id->val;
                 std::string emittedName = buildEmittedName(decl->scope,sourceName);
-                auto *e = new Semantics::SymbolTable::Entry();
+                auto *e = tablePtr->allocate<Semantics::SymbolTable::Entry>();
                 e->name = sourceName;
                 e->emittedName = emittedName;
                 e->type = Semantics::SymbolTable::Entry::Interface;
-                auto *data = new Semantics::SymbolTable::Interface();
+                auto *data = tablePtr->allocate<Semantics::SymbolTable::Interface>();
                 e->data = data;
                 data->interfaceType = ASTType::Create(emittedName.c_str(),interfaceDecl,false,false);
                 for(auto *genericParam : interfaceDecl->genericTypeParams){
@@ -828,7 +828,7 @@ static ASTType *substituteTypeParams(ASTType *type,
 
                 for(auto *fieldDecl : interfaceDecl->fields){
                     for(auto &spec : fieldDecl->specs){
-                        auto *field = new Semantics::SymbolTable::Var();
+                        auto *field = tablePtr->allocate<Semantics::SymbolTable::Var>();
                         field->name = spec.id->val;
                         field->type = spec.type;
                         field->isReadonly = fieldDecl->isConst;
@@ -837,7 +837,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                 }
 
                 for(auto *methodDecl : interfaceDecl->methods){
-                    auto *method = new Semantics::SymbolTable::Function();
+                    auto *method = tablePtr->allocate<Semantics::SymbolTable::Function>();
                     method->name = methodDecl->funcId->val;
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
@@ -853,8 +853,8 @@ static ASTType *substituteTypeParams(ASTType *type,
                 auto *aliasDecl = (ASTTypeAliasDecl *)decl;
                 auto sourceName = aliasDecl->id->val;
                 auto emittedName = buildEmittedName(decl->scope,sourceName);
-                auto *entry = new Semantics::SymbolTable::Entry();
-                auto *data = new Semantics::SymbolTable::TypeAlias();
+                auto *entry = tablePtr->allocate<Semantics::SymbolTable::Entry>();
+                auto *data = tablePtr->allocate<Semantics::SymbolTable::TypeAlias>();
                 entry->name = sourceName;
                 entry->emittedName = emittedName;
                 entry->type = Semantics::SymbolTable::Entry::TypeAlias;
@@ -878,11 +878,11 @@ static ASTType *substituteTypeParams(ASTType *type,
             }
             case SCOPE_DECL : {
                 auto *scopeDecl = (ASTScopeDecl *)decl;
-                auto *entry = new Semantics::SymbolTable::Entry();
+                auto *entry = tablePtr->allocate<Semantics::SymbolTable::Entry>();
                 entry->name = scopeDecl->scopeId->val;
                 entry->emittedName = entry->name;
                 entry->type = Semantics::SymbolTable::Entry::Scope;
-                entry->data = new std::shared_ptr<ASTScope>(scopeDecl->blockStmt->parentScope);
+                entry->data = tablePtr->allocate<std::shared_ptr<ASTScope>>(scopeDecl->blockStmt->parentScope);
                 tablePtr->addSymbolInScope(entry,decl->scope);
                 break;
             }

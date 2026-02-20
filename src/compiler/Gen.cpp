@@ -22,11 +22,18 @@ interfaceGen(std::make_unique<InterfaceGen>())
 
 void Gen::consumeSTableContext(Semantics::STableContext *ctxt){
     codeGen->consumeSTableContext(ctxt);
+    if(interfaceEnabled){
+        interfaceGen->consumeSTableContext(ctxt);
+    }
 };
 
 void Gen::setContext(ModuleGenContext *context){
     genContext = context;
     codeGen->setContext(context);
+    interfaceEnabled = (context && context->generateInterface);
+    if(interfaceEnabled){
+        interfaceGen->setContext(context);
+    }
 };
 
 bool Gen::acceptsSymbolTableContext(){
@@ -35,14 +42,23 @@ bool Gen::acceptsSymbolTableContext(){
 
 void Gen::consumeDecl(ASTDecl *stmt){
     codeGen->consumeDecl(stmt);
+    if(interfaceEnabled){
+        interfaceGen->consumeDecl(stmt);
+    }
 };
 
 void Gen::consumeStmt(ASTStmt *stmt){
     codeGen->consumeStmt(stmt);
+    if(interfaceEnabled){
+        interfaceGen->consumeStmt(stmt);
+    }
 };
 
 void Gen::finish(){
     codeGen->finish();
+    if(interfaceEnabled){
+        interfaceGen->finish();
+    }
     if(genContext && genContext->tableContext && genContext->tableContext->main){
         std::ofstream out(std::filesystem::path(genContext->outputPath).append(genContext->name).concat(".starbsymtb"));
         genContext->tableContext->main->serializePublic(out);

@@ -4,6 +4,17 @@ Last updated: February 19, 2026
 
 This roadmap turns Starbytes from a promising prototype into a complete interpreted language with a usable toolchain.
 
+## My Proposed Features/Fixes
+
+- Maps (Maps are type-strict dictionaries. Dict vs. Map<T,U>)
+- Long, Double number support
+- Fix symbol resolution inside secure/catch decls (Visible in LSP)
+- Full Type inference. (decl name = "name")
+- LSP shows class/interface inheritance (superclasses: A,B, interfaces: IFace)
+- Implement full doxygen parsing
+- Buitlin types have full doxygen documentation of every class and method.
+
+
 ## Guiding Principles
 
 - Keep language semantics coherent before adding many new features.

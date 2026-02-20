@@ -1,223 +1,229 @@
-name: "Starbytes Syntax"
-scopeName: "source.starb" 
+name: 'Starbytes Syntax'
+scopeName: 'source.starb'
 uuid: 86e272a9-6421-4db5-a7b8-01d296c9fca5
-fileTypes: ["starb","stb"]
+fileTypes: ['starb', 'stb']
 foldingStartMarker: '\{\s*$'
 foldingStopMarker: '^\s*\}'
 
 variables:
-  identifier: '\w+'
-  typeID: '{{identifier}}'
-  declKeywords: (?:decl|class|func|scope|import|if|elif|else|imut|return)
-  number: '[0-9]+(?:\.[0-9]+)?'
-  boolean: '(?:true|false)'
+  identifier: '[A-Za-z_][A-Za-z0-9_]*'
+  qualifiedIdentifier: '{{identifier}}(?:\.{{identifier}})*'
+  builtinType: '(?:Void|String|Bool|Array|Dict|Int|Float|Regex|Any|Task)'
+  typeToken: '(?:{{builtinType}}|{{identifier}})'
+  keywordDecl: '(?:import|scope|class|struct|interface|enum|decl|func|lazy|new|def|imut)'
+  keywordCtrl: '(?:if|elif|else|for|while|return|secure|catch|await|is)'
+  reservedWords: '(?:{{keywordDecl}}|{{keywordCtrl}}|true|false)'
+  number: '(?:0|[1-9][0-9]*)(?:\.[0-9]+)?'
 
-patterns: 
- - include: "#statements"
+patterns:
+  - include: '#comments'
+  - include: '#strings'
+  - include: '#regex'
+  - include: '#attributes'
+  - include: '#imports'
+  - include: '#type-alias'
+  - include: '#type-and-scope-declarations'
+  - include: '#function-declarations'
+  - include: '#constructor-declarations'
+  - include: '#variable-declarations'
+  - include: '#control-keywords'
+  - include: '#booleans'
+  - include: '#numbers'
+  - include: '#types'
+  - include: '#operators'
+  - include: '#calls'
+  - include: '#member-access'
 
-repository: 
-  statements:
+repository:
+  comments:
     patterns:
-      - include: "#declarations"
-      - include: "#expressions"
-  declarations:
+      - name: 'comment.line.double-slash.starb'
+        match: '//.*$'
+      - name: 'comment.block.starb'
+        begin: '/\*'
+        end: '\*/'
+
+  strings:
     patterns:
-      - include: "#variable-declaration"
-      - include: "#import-declaration"
-      - include: "#function-declaration"
-      - include: "#scope-declaration"
-      - include: "#class-declaration"
-      - include: "#if-declaration"
-      - include: "#single-comment"
-  expressions:
+      - name: 'string.quoted.double.starb'
+        begin: '"'
+        end: '"'
+        patterns:
+          - name: 'constant.character.escape.starb'
+            match: '\\.'
+
+  regex:
     patterns:
-      - include: "#literals"
-      - include: "#call-expression"
-      - include: "#number"
-      - include: "#boolean"
-      - include: "#identifier"
-      - include: "#single-comment"
-  single-comment:
-    name: "comment.line.double-slash"
-    match: '\/\/.*'
-  number:
-    name: "constant.numeric"
-    match: '{{number}}'
-  boolean:
-    name: "constant.language"
-    match: '{{boolean}}'
-  identifier:
-    name: "variable.readwrite.strbyts"
-    match: '\b{{identifier}}\b'
-  call-expression:
-    name: "strbyts.callexp"
-    begin: '({{identifier}})\s*\('
-    end: '\s*\)'
-    beginCaptures:
-      '1':
-        name: "entity.name.function"
+      - name: 'string.regexp.starb'
+        match: '(?<![/\w])/(?![/*])(?:\\.|[^/\\\n])+/[a-zA-Z]*'
+
+  attributes:
     patterns:
-      - include: "#expressions"
-  literals:
+      - name: 'meta.annotation.starb'
+        begin: '(@)({{identifier}})\s*(\()'
+        end: '\)'
+        beginCaptures:
+          '1':
+            name: 'punctuation.definition.annotation.starb'
+          '2':
+            name: 'entity.name.tag.annotation.starb'
+          '3':
+            name: 'punctuation.section.group.begin.starb'
+        endCaptures:
+          '0':
+            name: 'punctuation.section.group.end.starb'
+        patterns:
+          - include: '#strings'
+          - include: '#numbers'
+          - include: '#booleans'
+          - include: '#operators'
+      - name: 'meta.annotation.starb'
+        match: '(@)({{identifier}})'
+        captures:
+          '1':
+            name: 'punctuation.definition.annotation.starb'
+          '2':
+            name: 'entity.name.tag.annotation.starb'
+
+  imports:
     patterns:
-      - include: "#string-literal"
-  string-literal:
-    name: "string.quoted.double.strbyts"
-    begin: '"'
-    end: '"'
+      - name: 'meta.import.starb'
+        match: '\b(import)\s+({{qualifiedIdentifier}})'
+        captures:
+          '1':
+            name: 'keyword.control.import.starb'
+          '2':
+            name: 'entity.name.namespace.starb'
+
+  type-alias:
     patterns:
-      - name: 'constant.character.escape.strbyts'
-        match: '\\.'
-  import-declaration:
-    name: "strbyts.import"
-    match: '\b(import)\b +({{identifier}})'
-    captures:
-      "1":
-        name: "keyword.control.strbyts.import"
-      "2":
-        name: "variable.readwrite"
-  scope-declaration:
-    name: "strbyts.scope"
-    begin: '\b(scope)\b +({{identifier}})\s*\{'
-    end: '^\s*\}'
-    beginCaptures:
-      "1":
-        name: "keyword.control.strbyts.scope"
-      "2":
-        name: "variable.readwrite"
+      - name: 'meta.type.alias.starb'
+        begin: '\b(def)\s+({{identifier}})\b'
+        end: '(?=$)'
+        beginCaptures:
+          '1':
+            name: 'keyword.declaration.typealias.starb'
+          '2':
+            name: 'entity.name.type.starb'
+        patterns:
+          - include: '#types'
+          - include: '#operators'
+          - include: '#numbers'
+
+  type-and-scope-declarations:
     patterns:
-      - include: "#statements"     
-  variable-declaration:
-    name: "strbyts.decl"
-    match: '\b(decl)\b +({{identifier}}):?({{typeID}})?'
-    captures:
-      '1':
-        name: "keyword.control.strbyts.decl"
-      '2':
-        name: "variable.readwrite"
-      '3':
-        name: "entity.name.type"
-  function-declaration:
-    name: "strbyts.func"
-    begin: '\b(func)\b +({{identifier}}) *'
-    end: '(?<=\})'
-    beginCaptures:
-      '1':
-        name: "keyword.control.strbyts.func"
-      '2':
-        name: "entity.name.function"
+      - name: 'meta.scope.declaration.starb'
+        match: '\b(scope)\s+({{identifier}})\b'
+        captures:
+          '1':
+            name: 'keyword.declaration.scope.starb'
+          '2':
+            name: 'entity.name.namespace.starb'
+      - name: 'meta.type.declaration.starb'
+        match: '\b(class|struct|interface|enum)\s+({{identifier}})\b'
+        captures:
+          '1':
+            name: 'keyword.declaration.type.starb'
+          '2':
+            name: 'entity.name.type.starb'
+
+  function-declarations:
     patterns:
-      - include: "#function-params"
-      - include: "#function-return"
-      - include: "#function-body"
-  if-declaration:
-    name: "strbyts.if"
-    begin: '\b(if)\b *'
-    end: '(?<=\})'
-    beginCaptures:
-      '1':
-        name: "keyword.control.strbyts.if"
+      - name: 'meta.function.declaration.starb'
+        match: '\b((?:lazy\s+)?func)\s+({{identifier}})\b'
+        captures:
+          '1':
+            name: 'keyword.declaration.function.starb'
+          '2':
+            name: 'entity.name.function.starb'
+
+  constructor-declarations:
     patterns:
-      - include: "#if-decl-paren"
-      - include: "#block-statement"
-  if-decl-paren:
-    name: "strbyts.if.parens"
-    begin: '\('
-    end: '\)'
+      - name: 'meta.constructor.starb'
+        match: '\b(new)\b(?=\s*\()'
+        captures:
+          '1':
+            name: 'keyword.declaration.constructor.starb'
+
+  variable-declarations:
     patterns:
-      - include: "#expressions"
-  block-statement:
-    name: "strbyts.block"
-    begin: '\{'
-    end: '\}'
+      - name: 'meta.variable.declaration.starb'
+        match: '\b(decl)\s+(imut\s+)?(func\s+)?({{identifier}})\s*(\[\s*\])?'
+        captures:
+          '1':
+            name: 'keyword.declaration.variable.starb'
+          '2':
+            name: 'storage.modifier.immutable.starb'
+          '3':
+            name: 'keyword.declaration.function.starb'
+          '4':
+            name: 'variable.other.definition.starb'
+          '5':
+            name: 'storage.modifier.array.inferred.starb'
+      - name: 'meta.catch.parameter.starb'
+        match: '\b(catch)\s*\(\s*({{identifier}})\s*:\s*({{typeToken}})'
+        captures:
+          '1':
+            name: 'keyword.control.exception.starb'
+          '2':
+            name: 'variable.parameter.catch.starb'
+          '3':
+            name: 'entity.name.type.starb'
+
+  control-keywords:
     patterns:
-      - include: "#throw-declaration"
-      - include: "#return-declaration"
-      - include: "#statements"
-  typedParameter:
-    name: "strbyts.tparam"
-    match: "({{identifier}}):({{typeID}})"
-    captures:
-      '1':
-        name: "variable.parameter"
-      '2':
-        name: "entity.name.type"
-  function-params:
-    name: "strbyts.func.params"
-    begin: '\('
-    end: '\)'
+      - name: 'keyword.control.starb'
+        match: '\b(if|elif|else|for|while|return|secure|catch|await|is)\b'
+      - name: 'storage.modifier.immutable.starb'
+        match: '\bimut\b'
+
+  booleans:
     patterns:
-      - include: "#typedParameter"
-  return-declaration:
-    name: "strbyts.func.body.return-decl"
-    begin: '\b(return)\b +'
-    end: '(?<=\})|(?={{declKeywords}})'
-    beginCaptures:
-      '1':
-        name: "keyword.control.strbyts.return"
+      - name: 'constant.language.boolean.starb'
+        match: '\b(true|false)\b'
+
+  numbers:
     patterns:
-      - include: "#expressions"
-  throw-declaration:
-    name: "strbyts.func.body.throw-decl"
-    begin: '\b(throw)\b +'
-    end: '(?<=\})|(?={{declKeywords}})'
-    beginCaptures:
-      '1':
-        name: "keyword.control.strbyts.throw"
+      - name: 'constant.numeric.starb'
+        match: '\b{{number}}\b'
+
+  types:
     patterns:
-      - include: "#expressions"
-  function-body:
-    name: "strbyts.func.body"
-    begin: '\{'
-    end: '^\s*\}'
+      - name: 'support.type.builtin.starb'
+        match: '\b{{builtinType}}\b'
+      - name: 'entity.name.type.starb'
+        match: '\b[A-Z][A-Za-z0-9_]*\b'
+
+  operators:
     patterns:
-      - include: "#throw-declaration"
-      - include: "#return-declaration"
-      - include: "#statements"
-  function-return:
-    name: "strbys.func.return"
-    match: '>[?!>] *({{typeID}})'
-    captures:
-      '1':
-        name: 'entity.name.type'
-  class-declaration:
-    name: "strbyts.class"
-    begin: '\b(class)\b *\b({{typeID}})\b\s*\{'
-    end: '^\s*\}'
-    beginCaptures:
-      '1':
-        name: "keyword.control.strbyts.class"
-      '2':
-        name: 'entity.name.class'
+      - name: 'keyword.operator.comparison.starb'
+        match: '==|!=|<=|>=|<|>'
+      - name: 'keyword.operator.assignment.starb'
+        match: '<<=|>>=|\+=|-=|\*=|/=|%=|&=|\|=|\^=|=(?!=)'
+      - name: 'keyword.operator.logical.starb'
+        match: '&&|\|\|'
+      - name: 'keyword.operator.bitwise.starb'
+        match: '<<|>>|&|\||\^|~'
+      - name: 'keyword.operator.arithmetic.starb'
+        match: '\+|-|\*|/|%'
+      - name: 'keyword.operator.ternary.starb'
+        match: '\?|:'
+
+  calls:
     patterns:
-      - include: "#class-body-declarations"
-  class-body-declarations:
+      - name: 'meta.function-call.starb'
+        match: '\b(?!{{reservedWords}}\b)({{identifier}})\b(?=\s*\()'
+        captures:
+          '1':
+            name: 'entity.name.function.call.starb'
+
+  member-access:
     patterns:
-      - include: "#class-property-declaration"
-      - include: "#class-method-declaration"
-  class-property-declaration:
-    name: "strbyts.class.property"
-    match: '^\s*(immutable)? +(loose)? +\b({{identifier}})\b(?! *\()'
-    captures:
-      '1':
-        name: 'keyword.control.strbyts.immutable'
-      '2':
-        name: 'keyword.control.strbyts.loose'
-      '3':
-        name: 'variable.readwrite'
-  class-method-declaration:
-    name: "strbyts.class.function"
-    begin: '^\s*\b({{identifier}})\b *'
-    end: '(?<=\})'
-    beginCaptures:
-      '1':
-        name: 'entity.name.function'
-    patterns:
-      - include: "#function-params"
-      - include: "#function-return"
-      - include: "#function-body"
+      - name: 'meta.member.access.starb'
+        match: '(\.)({{identifier}})'
+        captures:
+          '1':
+            name: 'punctuation.accessor.dot.starb'
+          '2':
+            name: 'variable.other.member.starb'
   
-
-
-
-

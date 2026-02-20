@@ -6,6 +6,7 @@
 #include "CodeGen.h"
 #include "InterfaceGen.h"
 #include <filesystem>
+#include <unordered_set>
 
 #ifndef STARBYTES_GEN_GEN_H
 #define STARBYTES_GEN_GEN_H
@@ -16,6 +17,7 @@ namespace starbytes {
         std::string name;
         std::ostream & out;
         std::filesystem::path outputPath;
+        std::unordered_set<std::string> interfaceSourceAllowlist;
         Semantics::STableContext * tableContext;
         static ModuleGenContext Create(string_ref strRef,std::ostream & out,std::filesystem::path & outputPath);
         ModuleGenContext(string_ref strRef,std::ostream & out,std::filesystem::path & outputPath);
@@ -28,6 +30,7 @@ namespace starbytes {
         
         std::unique_ptr<CodeGen> codeGen;
         std::unique_ptr<InterfaceGen> interfaceGen;
+        bool interfaceEnabled = false;
         
     public:
         Gen();

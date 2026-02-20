@@ -1,0 +1,72 @@
+// Starbytes builtins surface (intrinsic types + members).
+// This file is documentation metadata for editor tooling and language reference.
+// It mirrors behavior implemented in semantic analysis/runtime.
+
+def DictKey = Int | Float | String
+
+// Intrinsic global function.
+func print(object:Any) Void
+
+// Builtin type: String
+interface String {
+    decl length:Int
+
+    func isEmpty() Bool
+    func at(index:Int) String?
+    func slice(start:Int,end:Int) String
+
+    func contains(value:String) Bool
+    func startsWith(prefix:String) Bool
+    func endsWith(suffix:String) Bool
+    func indexOf(value:String) Int
+    func lastIndexOf(value:String) Int
+
+    func lower() String
+    func upper() String
+    func trim() String
+    func replace(oldValue:String,newValue:String) String
+    func split(separator:String) Array<String>
+    func repeat(count:Int) String
+}
+
+// Builtin type: Array<T>
+interface Array<T> {
+    decl length:Int
+
+    func isEmpty() Bool
+    func push(value:T) Int
+    func pop() T?
+    func at(index:Int) T?
+    func set(index:Int,value:T) Bool
+    func insert(index:Int,value:T) Bool
+    func removeAt(index:Int) T?
+    func clear() Bool
+    func contains(value:T) Bool
+    func indexOf(value:T) Int
+    func slice(start:Int,end:Int) Array<T>
+    func join(separator:String) String
+    func copy() Array<T>
+    func reverse() Array<T>
+}
+
+// Builtin type: Dict
+interface Dict {
+    decl length:Int
+
+    func isEmpty() Bool
+    func has(key:DictKey) Bool
+    func get(key:DictKey) Any?
+    func set(key:DictKey,value:Any) Bool
+    func remove(key:DictKey) Any?
+    func keys() Array
+    func values() Array
+    func clear() Bool
+    func copy() Dict
+}
+
+// Builtin type: Task<T>
+// No direct methods yet. Produced by lazy functions and consumed by `await`.
+interface Task<T> {}
+
+// Builtin scalar types currently expose operators/type-checking only:
+// Void, Bool, Int, Float, Regex, Any

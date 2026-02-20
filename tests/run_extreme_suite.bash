@@ -167,6 +167,27 @@ else
   echo "[PASS] driver-compile-clean removed compiled module"
   PASS_COUNT=$((PASS_COUNT + 1))
 fi
+if [[ -f "$ROOT_DIR/.starbytes/extreme-cli/simple.starbsymtb" ]]; then
+  echo "[FAIL] driver-compile-clean symbol table should be removed by --clean"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+else
+  echo "[PASS] driver-compile-clean removed symbol table"
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
+if [[ -f "$ROOT_DIR/.starbytes/extreme-cli/simple.starbint" ]]; then
+  echo "[FAIL] driver-compile-clean interface file should be removed by --clean"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+else
+  echo "[PASS] driver-compile-clean removed interface file (if generated)"
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
+if [[ -d "$ROOT_DIR/.starbytes/extreme-cli/.cache" ]]; then
+  echo "[FAIL] driver-compile-clean cache directory should be removed by --clean"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+else
+  echo "[PASS] driver-compile-clean removed compile cache directory"
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
 
 run_expect_success "no-native-auto-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/no_native_auto.starb" --no-native-auto
 assert_log_contains "no-native-auto-run" "NO-NATIVE-CATCH"

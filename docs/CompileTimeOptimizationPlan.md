@@ -55,15 +55,28 @@ Completed notes:
 - Dependency/source edit invalidates cached imports automatically.
 
 ## Phase 3: Symbol Resolution Data Structures
-Status: In progress
+Status: Complete
 
 1. Move hot symbol lookups to per-scope hash maps.
 2. Minimize linear scans in semantic checks.
 3. Add micro-benchmarks for lookup-heavy files.
 
+Completed notes:
+- Added per-scope hash indexing in `Semantics::SymbolTable` (`scope -> symbol -> entries`).
+- Added emitted-name hash indexing for fast emitted symbol reverse lookup.
+- Replaced linear `findEntry*` scans in `STableContext` with indexed scope-chain lookups.
+- Added `symbol-lookup-stress-test` to exercise lookup-heavy symbol resolution paths.
+
 ## Phase 4: Allocation and Memory
+Status: Complete
+
 1. Introduce arena allocation for AST/type lifetimes.
 2. Reduce per-node heap churn in parse/semantic phases.
+
+Completed notes:
+- Added centralized owned allocation APIs on `Semantics::SymbolTable` for semantic entry/payload objects.
+- Switched `SemanticA::addSTableEntryForDecl` to allocate symbol table entries/payloads via the table allocator path.
+- Consolidated symbol allocation cleanup into `SymbolTable` teardown to reduce fragmented allocation/deallocation behavior.
 
 ## Phase 5: Parallel Module Compilation
 1. Build import DAG.
@@ -76,4 +89,3 @@ Status: In progress
 
 ## Phase 7: Tooling Reuse
 1. Reuse analysis across LSP requests for same document version.
-2. Avoid duplicate parse work for hover/completion/semantic tokens.

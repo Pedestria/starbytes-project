@@ -1,5 +1,7 @@
 
 #include <vector>
+#include <utility>
+#include <unordered_map>
 #include "AST.h"
 
 #ifndef STARBYTES_PARSER_SYMTABLE_H
@@ -72,11 +74,25 @@ namespace starbytes {
             
             friend struct STableContext;
             std::map<Entry *,std::shared_ptr<ASTScope>> body;
+            std::vector<std::pair<void *,void (*)(void *)>> ownedAllocations;
+            std::unordered_map<const ASTScope *,std::unordered_map<std::string,std::vector<Entry *>>> entriesByScope;
+            std::unordered_map<std::string,std::vector<Entry *>> entriesByEmittedName;
             std::vector<std::string> deps;
 
         public:
+            template<typename T,typename... Args>
+            T * allocate(Args&&... args){
+                auto *ptr = new T(std::forward<Args>(args)...);
+                ownedAllocations.push_back({ptr,[](void *object){
+                    delete static_cast<T *>(object);
+                }});
+                return ptr;
+            }
+
             void importModule(string_ref moduleName);
             void addSymbolInScope(Entry *entry,std::shared_ptr<ASTScope> scope);
+            const std::vector<Entry *> * findEntriesInExactScope(string_ref symbolName,std::shared_ptr<ASTScope> scope) const;
+            const std::vector<Entry *> * findEntriesByEmittedName(string_ref emittedName) const;
             bool symbolExists(string_ref symbolName,std::shared_ptr<ASTScope> scope);
             auto indexOf(string_ref symbolName,std::shared_ptr<ASTScope> scope) -> decltype(body)::iterator;
             

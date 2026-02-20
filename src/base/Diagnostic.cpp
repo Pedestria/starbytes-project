@@ -114,6 +114,25 @@ bool DiagnosticHandler::hasErrored(){
     return false;
 };
 
+std::vector<DiagnosticPtr> DiagnosticHandler::snapshot(bool includeResolved) const{
+    std::vector<DiagnosticPtr> out;
+    out.reserve(buffer.size());
+    for(const auto &diag : buffer){
+        if(!diag){
+            continue;
+        }
+        if(!includeResolved && diag->resolved){
+            continue;
+        }
+        out.push_back(diag);
+    }
+    return out;
+}
+
+void DiagnosticHandler::clear(){
+    buffer.clear();
+}
+
 void DiagnosticHandler::logAll(){
     while(!buffer.empty()){
         auto start = std::chrono::steady_clock::now();

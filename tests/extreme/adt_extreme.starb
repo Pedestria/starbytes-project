@@ -76,3 +76,10 @@ print(dict.clear())
 print(dict.length)
 
 print("EXTREME-ADT-OK")
+class A {
+
+}
+
+class B : A {
+
+}
