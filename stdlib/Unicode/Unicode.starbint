@@ -1,109 +1,162 @@
-// Unicode module: ICU-backed normalization, casing, segmentation, collation.
+/// @brief StdLib Unicode module.
+/// @details ICU-backed normalization, locale-aware casing, segmentation, and collation APIs.
 
+/// @brief Unicode normalization form NFC.
 decl imut NFC:Int = 0
+/// @brief Unicode normalization form NFD.
 decl imut NFD:Int = 1
+/// @brief Unicode normalization form NFKC.
 decl imut NFKC:Int = 2
+/// @brief Unicode normalization form NFKD.
 decl imut NFKD:Int = 3
 
+/// @brief Word break iterator kind.
 decl imut WORD:Int = 0
+/// @brief Sentence break iterator kind.
 decl imut SENTENCE:Int = 1
+/// @brief Line break iterator kind.
 decl imut LINE:Int = 2
+/// @brief Grapheme-cluster break iterator kind.
 decl imut GRAPHEME:Int = 3
 
+/// @brief Unicode locale descriptor.
 class Locale {
+    /// @brief Returns locale identifier string.
     @native(name="Unicode_Locale_id")
     func id() String
 }
 
+/// @brief Locale-sensitive collation comparator.
 class Collator {
+    /// @brief Compares two strings by locale collation rules.
+    /// @param lhs Left value.
+    /// @param rhs Right value.
+    /// @return Negative/zero/positive compare result.
     @native(name="Unicode_Collator_compare")
     func compare(lhs:String,rhs:String) Int!
 
+    /// @brief Returns collation sort key bytes.
+    /// @param text Input text.
     @native(name="Unicode_Collator_sortKey")
     func sortKey(text:String) Array<Int>!
 }
 
+/// @brief Break iterator over prepared text.
 class BreakIterator {
+    /// @brief Returns boundary offsets for configured break type.
     @native(name="Unicode_BreakIterator_boundaries")
     func boundaries() Array<Int>!
 }
 
+/// @brief Unicode scalar metadata.
 class UnicodeScalarInfo {
+    /// @brief Returns Unicode codepoint.
     @native(name="Unicode_ScalarInfo_codepoint")
     func codepoint() Int
 
+    /// @brief Returns scalar character name.
     @native(name="Unicode_ScalarInfo_name")
     func name() String
 
+    /// @brief Returns general category abbreviation.
     @native(name="Unicode_ScalarInfo_category")
     func category() String
 
+    /// @brief Returns script name.
     @native(name="Unicode_ScalarInfo_script")
     func script() String
 }
 
+/// @brief Normalizes text into target form.
+/// @param text Input text.
+/// @param form One of NFC/NFD/NFKC/NFKD.
 @native(name="Unicode_normalize")
 func normalize(text:String,form:Int) String!
 
+/// @brief Checks whether text is already normalized in target form.
 @native(name="Unicode_isNormalized")
 func isNormalized(text:String,form:Int) Bool!
 
+/// @brief Returns full Unicode case-folded text.
 @native(name="Unicode_caseFold")
 func caseFold(text:String) String!
 
+/// @brief Returns current process locale.
 @native(name="Unicode_Locale_current")
 func localeCurrent() Locale!
 
+/// @brief Returns ICU root locale.
 @native(name="Unicode_Locale_root")
 func localeRoot() Locale!
 
+/// @brief Creates locale from identifier.
+/// @param identifier Locale id (for example `en_US`).
 @native(name="Unicode_Locale_from")
 func localeFrom(identifier:String) Locale!
 
+/// @brief Creates collator for locale.
 @native(name="Unicode_Collator_create")
 func collatorCreate(locale:Locale) Collator!
 
+/// @brief Creates break iterator for text.
+/// @param kind One of WORD/SENTENCE/LINE/GRAPHEME.
+/// @param locale Locale for language-specific boundaries.
+/// @param text Input text.
 @native(name="Unicode_BreakIterator_create")
 func breakIteratorCreate(kind:Int,locale:Locale,text:String) BreakIterator!
 
+/// @brief Converts text to uppercase with locale rules.
 @native(name="Unicode_toUpper")
 func toUpper(text:String,locale:Locale) String!
 
+/// @brief Converts text to lowercase with locale rules.
 @native(name="Unicode_toLower")
 func toLower(text:String,locale:Locale) String!
 
+/// @brief Converts text to title case with locale rules.
 @native(name="Unicode_toTitle")
 func toTitle(text:String,locale:Locale) String!
 
+/// @brief Splits text into grapheme clusters.
 @native(name="Unicode_graphemes")
 func graphemes(text:String,locale:Locale) Array<String>!
 
+/// @brief Splits text into words.
 @native(name="Unicode_words")
 func words(text:String,locale:Locale) Array<String>!
 
+/// @brief Splits text into sentences.
 @native(name="Unicode_sentences")
 func sentences(text:String,locale:Locale) Array<String>!
 
+/// @brief Splits text into line segments.
 @native(name="Unicode_lines")
 func lines(text:String,locale:Locale) Array<String>!
 
+/// @brief Returns Unicode scalar values from text.
 @native(name="Unicode_codepoints")
 func codepoints(text:String) Array<Int>!
 
+/// @brief Builds text from Unicode scalar values.
 @native(name="Unicode_fromCodepoints")
 func fromCodepoints(values:Array<Int>) String!
 
+/// @brief Returns metadata for a Unicode scalar.
 @native(name="Unicode_scalarInfo")
 func scalarInfo(codepoint:Int) UnicodeScalarInfo!
 
+/// @brief Locale-aware case-insensitive substring search.
 @native(name="Unicode_containsFolded")
 func containsFolded(haystack:String,needle:String,locale:Locale) Bool!
 
+/// @brief Locale-aware case-insensitive prefix check.
 @native(name="Unicode_startsWithFolded")
 func startsWithFolded(text:String,prefix:String,locale:Locale) Bool!
 
+/// @brief Locale-aware case-insensitive suffix check.
 @native(name="Unicode_endsWithFolded")
 func endsWithFolded(text:String,suffix:String,locale:Locale) Bool!
 
+/// @brief Estimates display width of text in monospace columns.
 @native(name="Unicode_displayWidth")
 func displayWidth(text:String,locale:Locale) Int!

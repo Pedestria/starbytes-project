@@ -1,88 +1,152 @@
-// Starbytes builtins surface (intrinsic types + members).
-// This file is documentation metadata for editor tooling and language reference.
-// It mirrors behavior implemented in semantic analysis/runtime.
+/// @brief Starbytes intrinsic builtin API surface.
+/// @note This file is consumed by tooling (LSP/docs extraction) and mirrors runtime + semantic behavior.
+/// @see stdlib/Builtins.md
 
 def DictKey = Int | Long | Float | Double | String
 
-// Intrinsic global function.
+/// @brief Writes a value to stdout.
+/// @param object Value to print.
+/// @return Void.
 func print(object:Any) Void
 
-// Builtin type: String
+/// @brief Intrinsic UTF-8 string type.
 interface String {
+    /// @brief Number of code units in the string representation.
     decl length:Int
 
+    /// @brief Returns whether the string is empty.
     func isEmpty() Bool
+    /// @brief Returns character at index.
+    /// @param index Zero-based index.
+    /// @return Optional single-character string.
     func at(index:Int) String?
+    /// @brief Returns substring in half-open range [start,end).
     func slice(start:Int,end:Int) String
 
+    /// @brief Returns whether string contains a substring.
     func contains(value:String) Bool
+    /// @brief Returns whether string starts with prefix.
     func startsWith(prefix:String) Bool
+    /// @brief Returns whether string ends with suffix.
     func endsWith(suffix:String) Bool
+    /// @brief Returns first index of substring or -1.
     func indexOf(value:String) Int
+    /// @brief Returns last index of substring or -1.
     func lastIndexOf(value:String) Int
 
+    /// @brief Lowercase transform.
     func lower() String
+    /// @brief Uppercase transform.
     func upper() String
+    /// @brief Trim surrounding whitespace.
     func trim() String
+    /// @brief Replace all oldValue occurrences with newValue.
     func replace(oldValue:String,newValue:String) String
+    /// @brief Split by separator.
     func split(separator:String) Array<String>
+    /// @brief Repeat string count times.
     func repeat(count:Int) String
 }
 
-// Builtin type: Array<T>
+/// @brief Intrinsic generic array type.
+/// @tparam T Element type.
 interface Array<T> {
+    /// @brief Number of elements.
     decl length:Int
 
+    /// @brief Returns whether array is empty.
     func isEmpty() Bool
+    /// @brief Appends value and returns new length.
     func push(value:T) Int
+    /// @brief Removes and returns last element.
     func pop() T?
+    /// @brief Returns element at index.
     func at(index:Int) T?
+    /// @brief Sets element at index.
     func set(index:Int,value:T) Bool
+    /// @brief Inserts element at index.
     func insert(index:Int,value:T) Bool
+    /// @brief Removes element at index.
     func removeAt(index:Int) T?
+    /// @brief Clears all elements.
     func clear() Bool
+    /// @brief Returns whether value exists.
     func contains(value:T) Bool
+    /// @brief Returns index of value or -1.
     func indexOf(value:T) Int
+    /// @brief Returns slice in half-open range [start,end).
     func slice(start:Int,end:Int) Array<T>
+    /// @brief Joins elements with separator.
     func join(separator:String) String
+    /// @brief Returns shallow copy.
     func copy() Array<T>
+    /// @brief Returns reversed copy.
     func reverse() Array<T>
 }
 
-// Builtin type: Dict
+/// @brief Intrinsic dynamic dictionary type.
 interface Dict {
+    /// @brief Number of entries.
     decl length:Int
 
+    /// @brief Returns whether dictionary is empty.
     func isEmpty() Bool
+    /// @brief Returns whether key exists.
     func has(key:DictKey) Bool
+    /// @brief Returns value for key.
     func get(key:DictKey) Any?
+    /// @brief Sets value for key.
     func set(key:DictKey,value:Any) Bool
+    /// @brief Removes and returns value for key.
     func remove(key:DictKey) Any?
+    /// @brief Returns key array.
     func keys() Array
+    /// @brief Returns value array.
     func values() Array
+    /// @brief Clears all entries.
     func clear() Bool
+    /// @brief Returns shallow copy.
     func copy() Dict
 }
 
-// Builtin type: Map<K,V>
-// Type-strict dictionary surface. Key/value types are tracked by the compiler.
+/// @brief Intrinsic type-strict map.
+/// @tparam K Key type.
+/// @tparam V Value type.
 interface Map<K,V> {
+    /// @brief Number of entries.
     decl length:Int
 
+    /// @brief Returns whether map is empty.
     func isEmpty() Bool
+    /// @brief Returns whether key exists.
     func has(key:K) Bool
+    /// @brief Returns value for key.
     func get(key:K) V?
+    /// @brief Sets value for key.
     func set(key:K,value:V) Bool
+    /// @brief Removes and returns value for key.
     func remove(key:K) V?
+    /// @brief Returns key array.
     func keys() Array<K>
+    /// @brief Returns value array.
     func values() Array<V>
+    /// @brief Clears all entries.
     func clear() Bool
+    /// @brief Returns shallow copy.
     func copy() Map<K,V>
 }
 
-// Builtin type: Task<T>
-// No direct methods yet. Produced by lazy functions and consumed by `await`.
+/// @brief Lazy-evaluation task type.
+/// @tparam T Resolved value type.
+/// @note Produced by `lazy` calls and consumed by `await`.
 interface Task<T> {}
 
-// Builtin scalar types currently expose operators/type-checking only:
-// Void, Bool, Int, Long, Float, Double, Regex, Any
+/// @brief Scalar builtin types expose operator/type-check semantics only.
+/// @see Void
+/// @see Bool
+/// @see Int
+/// @see Long
+/// @see Float
+/// @see Double
+/// @see Regex
+/// @see Any

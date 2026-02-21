@@ -13,6 +13,7 @@
 #include <regex>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 namespace starbytes::lsp {
@@ -25,21 +26,6 @@ const std::regex kFuncSignatureRegex(
 struct ParsedDocument {
   std::vector<Syntax::Tok> tokenStream;
   std::vector<SymbolEntry> symbols;
-};
-
-class NullAstConsumer final : public ASTStreamConsumer {
-public:
-  bool acceptsSymbolTableContext() override {
-    return false;
-  }
-
-  void consumeDecl(ASTDecl *stmt) override {
-    (void)stmt;
-  }
-
-  void consumeStmt(ASTStmt *stmt) override {
-    (void)stmt;
-  }
 };
 
 std::string toLower(std::string value) {
@@ -351,6 +337,67 @@ void collectSymbolsFromStmt(ASTStmt *stmt,
                             std::vector<SymbolEntry> &symbols,
                             const std::string &containerName);
 
+class SymbolCollectingConsumer final : public ASTStreamConsumer {
+public:
+  SymbolCollectingConsumer(const std::vector<std::string> &linesIn,std::vector<SymbolEntry> &symbolsIn)
+      : lines(linesIn), symbols(symbolsIn) {}
+
+  bool acceptsSymbolTableContext() override {
+    return false;
+  }
+
+  void consumeDecl(ASTDecl *stmt) override {
+    collectSymbolsFromStmt(stmt, lines, symbols, std::string());
+  }
+
+  void consumeStmt(ASTStmt *stmt) override {
+    collectSymbolsFromStmt(stmt, lines, symbols, std::string());
+  }
+
+private:
+  const std::vector<std::string> &lines;
+  std::vector<SymbolEntry> &symbols;
+};
+
+class NoopAstConsumer final : public ASTStreamConsumer {
+public:
+  bool acceptsSymbolTableContext() override {
+    return false;
+  }
+
+  void consumeDecl(ASTDecl *stmt) override {
+    (void)stmt;
+  }
+
+  void consumeStmt(ASTStmt *stmt) override {
+    (void)stmt;
+  }
+};
+
+void collectSymbolsSyntaxOnly(const std::vector<Syntax::Tok> &tokenStream,
+                              const std::vector<std::string> &lines,
+                              std::vector<SymbolEntry> &symbols) {
+  Syntax::SyntaxA syntax;
+  auto streamCopy = tokenStream;
+  syntax.setTokenStream(streamCopy);
+  while (true) {
+    ASTStmt *stmt = syntax.nextStatement();
+    if (!stmt) {
+      if (syntax.isAtEnd()) {
+        break;
+      }
+      syntax.consumeCurrentTok();
+      continue;
+    }
+    collectSymbolsFromStmt(stmt, lines, symbols, std::string());
+  }
+}
+
+std::string symbolIdentityKey(const SymbolEntry &symbol) {
+  return std::to_string(symbol.line) + ":" + std::to_string(symbol.start) + ":" +
+         std::to_string(symbol.length) + ":" + symbol.name + ":" + symbol.containerName;
+}
+
 void collectSymbolsFromDecl(ASTDecl *decl,
                             const std::vector<std::string> &lines,
                             std::vector<SymbolEntry> &symbols,
@@ -538,27 +585,51 @@ void collectSymbolsFromStmt(ASTStmt *stmt,
 
 ParsedDocument parseDocument(const std::string &text) {
   ParsedDocument analysis;
-  std::ostringstream diagSink;
-  auto diagnostics = DiagnosticHandler::createDefault(diagSink);
-  Syntax::Lexer lexer(*diagnostics);
+  auto lines = splitLines(text);
+  std::vector<SymbolEntry> semanticSymbols;
+
+  std::ostringstream lexDiagSink;
+  auto lexDiagnostics = DiagnosticHandler::createDefault(lexDiagSink);
+  lexDiagnostics->setOutputMode(DiagnosticHandler::OutputMode::Machine);
+  Syntax::Lexer lexer(*lexDiagnostics);
   std::istringstream in(text);
   lexer.tokenizeFromIStream(in, analysis.tokenStream);
 
-  Syntax::SyntaxA syntax;
-  syntax.setTokenStream(analysis.tokenStream);
-  auto lines = splitLines(text);
+  std::ostringstream parserDiagSink;
+  auto parserDiagnostics = DiagnosticHandler::createDefault(parserDiagSink);
+  parserDiagnostics->setOutputMode(DiagnosticHandler::OutputMode::Machine);
+  parserDiagnostics->setDefaultSourceName("starbytes-lsp");
+  parserDiagnostics->setDefaultPhase(Diagnostic::Phase::Parser);
+  SymbolCollectingConsumer symbolConsumer(lines, semanticSymbols);
+  Parser parser(symbolConsumer, std::move(parserDiagnostics));
+  parser.setInfer64BitNumbers(false);
+  auto parseContext = ModuleParseContext::Create("starbytes-lsp-document");
+  parseContext.name = "starbytes-lsp-document";
+  std::istringstream parseIn(text);
+  parser.parseFromStream(parseIn, parseContext);
+  parser.finish();
 
-  while (true) {
-    ASTStmt *stmt = syntax.nextStatement();
-    if (!stmt) {
-      if (syntax.isAtEnd()) {
-        break;
-      }
-      syntax.consumeCurrentTok();
-      continue;
-    }
-    collectSymbolsFromStmt(stmt, lines, analysis.symbols, std::string());
+  std::vector<SymbolEntry> syntaxSymbols;
+  collectSymbolsSyntaxOnly(analysis.tokenStream, lines, syntaxSymbols);
+
+  if(semanticSymbols.empty()) {
+    analysis.symbols = std::move(syntaxSymbols);
+    return analysis;
   }
+
+  analysis.symbols = std::move(semanticSymbols);
+  std::unordered_set<std::string> seen;
+  seen.reserve(analysis.symbols.size() * 2);
+  for(const auto &symbol : analysis.symbols) {
+    seen.insert(symbolIdentityKey(symbol));
+  }
+  for(auto &symbol : syntaxSymbols) {
+    auto key = symbolIdentityKey(symbol);
+    if(seen.insert(key).second) {
+      analysis.symbols.push_back(std::move(symbol));
+    }
+  }
+
   return analysis;
 }
 
@@ -703,9 +774,11 @@ std::vector<CompilerDiagnosticEntry> collectCompilerDiagnosticsForText(const std
   std::vector<CompilerDiagnosticEntry> diagnosticsOut;
   std::ostringstream sink;
   auto diagnostics = DiagnosticHandler::createDefault(sink);
+  diagnostics->setOutputMode(DiagnosticHandler::OutputMode::Machine);
+  diagnostics->setDefaultSourceName(sourceName);
   auto *handler = diagnostics.get();
 
-  NullAstConsumer consumer;
+  NoopAstConsumer consumer;
   Parser parser(consumer, std::move(diagnostics));
   auto parseContext = ModuleParseContext::Create(sourceName);
   parseContext.name = sourceName;
@@ -725,6 +798,14 @@ std::vector<CompilerDiagnosticEntry> collectCompilerDiagnosticsForText(const std
       }
       mapped.severity = diag->isError() ? 1 : 2;
       mapped.message = diag->message;
+      mapped.id = diag->id;
+      mapped.code = diag->code;
+      mapped.phase = diag->phaseString();
+      mapped.source = "starbytes-compiler";
+      mapped.producerSource = diag->sourceName;
+      mapped.relatedSpans = diag->relatedSpans;
+      mapped.notes = diag->notes;
+      mapped.fixits = diag->fixits;
       diagnosticsOut.push_back(std::move(mapped));
     }
     handler->clear();

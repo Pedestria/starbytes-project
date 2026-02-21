@@ -1,28 +1,39 @@
-// StdLib CmdLine Module
-// Runtime command-line argument helpers. Uses args passed after `--` in driver invocation.
+/// @brief StdLib CmdLine module.
+/// @details Runtime command-line argument helpers backed by driver-passed arguments.
+/// @note Arguments forwarded after `--` are visible here.
 
 def StringList = Array<String>
 
+/// @brief Returns raw script argument vector.
 @native(name="cmd_rawArgs")
 func rawArgs() StringList
 
+/// @brief Returns number of raw script arguments.
 @native(name="cmd_argCount")
 func argCount() Int
 
+/// @brief Returns absolute executable path.
 @native(name="cmd_executablePath")
 func executablePath() String
 
+/// @brief Returns current script/module entry path.
 @native(name="cmd_scriptPath")
 func scriptPath() String
 
+/// @brief Returns whether flag is present.
+/// @param name Canonical long flag name.
+/// @param aliases Alternate names (short/long).
 @native(name="cmd_hasFlag")
 func hasFlag(name:String,aliases:StringList) Bool
 
+/// @brief Returns last flag value if present.
 @native(name="cmd_flagValue")
 func flagValue(name:String,aliases:StringList) String?
 
+/// @brief Returns all values associated with a flag.
 @native(name="cmd_flagValues")
 func flagValues(name:String,aliases:StringList) StringList
 
+/// @brief Returns non-option positional arguments.
 @native(name="cmd_positionals")
 func positionals() StringList

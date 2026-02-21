@@ -41,16 +41,43 @@ Exit criteria:
 - No runtime regressions in existing parse/compile/run/LSP tests.
 
 ## Phase 2: Unified Diagnostic Schema
+Status: Implemented
+
 Scope:
 - Standardize one internal diagnostic schema across parser/sema/runtime/LSP:
   - `id`, `severity`, `message`, `primary_span`, `related_spans`, `notes`, `fixits`, `phase`.
 - Introduce stable error code families and compatibility adapters for existing producers.
 
+Implemented:
+- Extended `/Users/alextopper/Documents/GitHub/starbytes-project/include/starbytes/base/Diagnostic.h` schema:
+  - `id`, `code`, `phase`, `relatedSpans`, `notes`, `fixits`.
+- Added compatibility adapters in `/Users/alextopper/Documents/GitHub/starbytes-project/src/base/Diagnostic.cpp`:
+  - automatic phase/source backfill from handler defaults.
+  - stable code/id generation for legacy producers.
+- Producer integration:
+  - parser defaults + parser error code in `/Users/alextopper/Documents/GitHub/starbytes-project/src/compiler/Parser.cpp`.
+  - semantic producer tagging/code family in `/Users/alextopper/Documents/GitHub/starbytes-project/src/compiler/SemanticA.cpp`.
+  - runtime default phase/source initialization in `/Users/alextopper/Documents/GitHub/starbytes-project/tools/driver/main.cpp`.
+- LSP schema propagation:
+  - enriched diagnostic payload in `/Users/alextopper/Documents/GitHub/starbytes-project/tools/lsp/DocumentAnalysis.h`.
+  - mapping from compiler diagnostics in `/Users/alextopper/Documents/GitHub/starbytes-project/tools/lsp/DocumentAnalysis.cpp`.
+  - JSON emission (`code`, `relatedInformation`, `data.phase`, `data.id`, `data.notes`, `data.fixits`) in `/Users/alextopper/Documents/GitHub/starbytes-project/tools/lsp/ServerMain.cpp`.
+
 ## Phase 3: Span and Source Rendering Optimization
+Status: Implemented
+
 Scope:
 - Build shared source/line index cache for span translation.
 - Avoid repeated line/column recomputation.
 - Add lazy `CodeView` rendering for non-human sinks.
+
+Implemented:
+- Shared source/line index cache in `/Users/alextopper/Documents/GitHub/starbytes-project/src/base/CodeView.cpp` with cached line-start tables reused across identical sources.
+- `CodeView` storage switched to indexed source representation in `/Users/alextopper/Documents/GitHub/starbytes-project/include/starbytes/base/CodeView.h`.
+- Lazy rendering mode for non-human sinks:
+  - `DiagnosticHandler::OutputMode` (`Human`, `Machine`) in `/Users/alextopper/Documents/GitHub/starbytes-project/include/starbytes/base/Diagnostic.h`.
+  - machine mode disables `CodeView` source binding/rendering in `/Users/alextopper/Documents/GitHub/starbytes-project/src/base/Diagnostic.cpp`.
+  - LSP diagnostics collection uses machine mode in `/Users/alextopper/Documents/GitHub/starbytes-project/tools/lsp/DocumentAnalysis.cpp`.
 
 ## Phase 4: Deduplication and Cascade Control
 Scope:

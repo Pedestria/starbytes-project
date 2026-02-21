@@ -44,6 +44,7 @@ bool testDriverLikeParse() {
     parser.addValueOption("profile-compile-out");
     parser.addFlagOption("no-diagnostics");
     parser.addFlagOption("no-native-auto");
+    parser.addFlagOption("infer-64bit-numbers");
 
     auto argv = makeArgv({
         "starbytes",
@@ -65,6 +66,7 @@ bool testDriverLikeParse() {
         "--profile-compile-out=profile.json",
         "--no-diagnostics",
         "--no-native-auto",
+        "--infer-64bit-numbers",
         "--",
         "--user-arg",
         "tail"
@@ -79,6 +81,7 @@ bool testDriverLikeParse() {
         && expect(result.hasFlag("profile-compile"),"expected profile-compile flag")
         && expect(result.hasFlag("no-diagnostics"),"expected no-diagnostics flag")
         && expect(result.hasFlag("no-native-auto"),"expected no-native-auto flag")
+        && expect(result.hasFlag("infer-64bit-numbers"),"expected infer-64bit-numbers flag")
         && expect(result.firstValue("modulename").value_or("") == "App","expected modulename value")
         && expect(result.firstValue("output").value_or("") == "build/out.starbmod","expected output value")
         && expect(result.firstValue("out-dir").value_or("") == ".starbytes","expected out-dir value")

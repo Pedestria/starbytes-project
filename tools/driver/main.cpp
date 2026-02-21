@@ -58,6 +58,7 @@ struct DriverOptions {
     std::string profileCompileOutPath;
     bool logDiagnostics = true;
     bool autoLoadNative = true;
+    bool infer64BitNumbers = false;
     std::vector<std::string> nativeModules;
     std::vector<std::string> nativeSearchDirs;
     unsigned jobs = 1;
@@ -680,6 +681,7 @@ uint64_t computeModuleAnalysisFlagsHash(const DriverOptions &opts,
                                         const ResolverContext &resolverContext) {
     std::ostringstream key;
     key << "auto_native=" << (opts.autoLoadNative ? "1" : "0") << ";";
+    key << "infer_64bit_numbers=" << (opts.infer64BitNumbers ? "1" : "0") << ";";
     key << "native_dirs=";
     for(const auto &dir : opts.nativeSearchDirs) {
         key << makeAbsolutePathString(dir) << ";";
@@ -1212,7 +1214,8 @@ public:
 ModuleCompileTaskResult compileModuleSymbolsOnly(const std::string &moduleKey,
                                                  const ModuleBuildUnit &unit,
                                                  const std::unordered_map<std::string,std::shared_ptr<starbytes::Semantics::SymbolTable>> &depTables,
-                                                 bool profileEnabled){
+                                                 bool profileEnabled,
+                                                 bool infer64BitNumbers){
     ModuleCompileTaskResult result;
     result.moduleKey = moduleKey;
 
@@ -1221,6 +1224,7 @@ ModuleCompileTaskResult compileModuleSymbolsOnly(const std::string &moduleKey,
     NullASTConsumer consumer;
     starbytes::Parser parser(consumer,std::move(diagnostics));
     parser.setProfilingEnabled(profileEnabled);
+    parser.setInfer64BitNumbers(infer64BitNumbers);
     if(profileEnabled){
         parser.resetProfileData();
     }
@@ -1265,6 +1269,7 @@ ModuleCompileTaskResult compileModuleToSegment(const std::string &moduleKey,
                                                const std::unordered_map<std::string,std::shared_ptr<starbytes::Semantics::SymbolTable>> &depTables,
                                                const std::filesystem::path &artifactDir,
                                                bool profileEnabled,
+                                               bool infer64BitNumbers,
                                                bool generateInterface,
                                                const std::unordered_set<std::string> &interfaceAllowlist){
     ModuleCompileTaskResult result;
@@ -1298,6 +1303,7 @@ ModuleCompileTaskResult compileModuleToSegment(const std::string &moduleKey,
 
     starbytes::Parser parser(gen,std::move(diagnostics));
     parser.setProfilingEnabled(profileEnabled);
+    parser.setInfer64BitNumbers(infer64BitNumbers);
     if(profileEnabled){
         parser.resetProfileData();
     }
@@ -1430,6 +1436,7 @@ void printHelp(std::ostream &out) {
     out << "  -L, --native-dir <dir>     Add a search directory for auto native module resolution (repeatable).\n";
     out << "  -j, --jobs <count>         Parallel module build jobs (default: CPU count).\n";
     out << "      --no-native-auto       Disable automatic native module resolution from imports.\n";
+    out << "      --infer-64bit-numbers  Infer numeric literals as Long/Double by default.\n";
     out << "      -- <args...>           Forward remaining arguments to script runtime (CmdLine module).\n";
 
     out << "\nExamples:\n";
@@ -1487,6 +1494,7 @@ ParseResult parseArgs(int argc, const char *argv[], DriverOptions &opts) {
     parser.addValueOption("profile-compile-out");
     parser.addFlagOption("no-diagnostics");
     parser.addFlagOption("no-native-auto");
+    parser.addFlagOption("infer-64bit-numbers");
 
     auto parsed = parser.parse(argc,argv);
     if(!parsed.ok) {
@@ -1513,6 +1521,7 @@ ParseResult parseArgs(int argc, const char *argv[], DriverOptions &opts) {
     opts.profileCompile = parsed.hasFlag("profile-compile");
     opts.logDiagnostics = !parsed.hasFlag("no-diagnostics");
     opts.autoLoadNative = !parsed.hasFlag("no-native-auto");
+    opts.infer64BitNumbers = parsed.hasFlag("infer-64bit-numbers");
     opts.scriptArgs = parsed.passthroughArgs;
 
     const auto &moduleNameValues = parsed.values("modulename");
@@ -1655,6 +1664,10 @@ int main(int argc, const char *argv[]) {
     };
 
     DriverOptions opts;
+    if(starbytes::stdDiagnosticHandler) {
+        starbytes::stdDiagnosticHandler->setDefaultPhase(starbytes::Diagnostic::Phase::Runtime);
+        starbytes::stdDiagnosticHandler->setDefaultSourceName("starbytes-runtime");
+    }
     auto parsed = parseArgs(argc, argv, opts);
     profile.enabled = opts.profileCompile;
     profileOutPath = opts.profileCompileOutPath;
@@ -1774,6 +1787,7 @@ int main(int argc, const char *argv[]) {
         NullASTConsumer astConsumer;
         starbytes::Parser parser(astConsumer);
         parser.setProfilingEnabled(profile.enabled);
+        parser.setInfer64BitNumbers(opts.infer64BitNumbers);
         if(profile.enabled) {
             parser.resetProfileData();
         }
@@ -1957,7 +1971,7 @@ int main(int argc, const char *argv[]) {
                 rebuild = rebuildIt->second;
             }
             if(!rebuild){
-                auto symbolOnly = compileModuleSymbolsOnly(moduleKey,unit,depTables,profile.enabled);
+                auto symbolOnly = compileModuleSymbolsOnly(moduleKey,unit,depTables,profile.enabled,opts.infer64BitNumbers);
                 symbolOnly.segmentPath = cachedSegmentPaths[moduleKey];
                 auto symIt = cachedSymbolPaths.find(moduleKey);
                 if(symIt != cachedSymbolPaths.end()){
@@ -1995,6 +2009,7 @@ int main(int argc, const char *argv[]) {
                                                    depTables,
                                                    moduleArtifactDir,
                                                    profile.enabled,
+                                                   opts.infer64BitNumbers,
                                                    shouldGenerateInterface,
                                                    interfaceAllowlist);
             if(compiled.success){

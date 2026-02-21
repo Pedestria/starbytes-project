@@ -32,6 +32,7 @@ namespace starbytes {
     class SemanticA {
         Syntax::SyntaxA & syntaxARef;
         DiagnosticHandler & errStream;
+        bool prefer64BitNumberInference = false;
         bool typeExists(ASTType *type,
                         Semantics::STableContext & symbolTableContext,
                         std::shared_ptr<ASTScope> scope,
@@ -69,6 +70,8 @@ namespace starbytes {
                                    Semantics::SymbolTable *tablePtr);
         bool checkSymbolsForStmt(ASTStmt *stmt,
                                  Semantics::STableContext & symbolTableContext);
+        void setPrefer64BitNumberInference(bool enabled);
+        bool getPrefer64BitNumberInference() const;
 
         SemanticA(Syntax::SyntaxA & syntaxARef,
                   DiagnosticHandler & errStream);

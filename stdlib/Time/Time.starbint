@@ -1,117 +1,181 @@
-// Time module: Python-style practicality + Swift-style value semantics.
+/// @brief StdLib Time module.
+/// @details Python-style utility with Swift-like value semantics for durations, instants, zones, and datetimes.
 
+/// @brief Duration value (nanosecond precision storage).
 class Duration {
+    /// @brief Returns total duration in nanoseconds.
     @native(name="Time_Duration_nanoseconds")
     func nanoseconds() Int
 
+    /// @brief Returns total duration in milliseconds (integer truncation).
     @native(name="Time_Duration_milliseconds")
     func milliseconds() Int
 
+    /// @brief Returns total duration in seconds as floating-point value.
     @native(name="Time_Duration_secondsFloat")
     func secondsFloat() Float
 }
 
+/// @brief Monotonic clock instant.
 class Instant {
+    /// @brief Returns raw monotonic tick value used by elapsed calculations.
     @native(name="Time_Instant_ticks")
     func ticks() Int
 }
 
+/// @brief Time zone descriptor.
 class TimeZone {
+    /// @brief Returns time zone identifier (for example `UTC`).
     @native(name="Time_TimeZone_id")
     func id() String
 
+    /// @brief Returns current UTC offset in minutes.
     @native(name="Time_TimeZone_offsetMinutes")
     func offsetMinutes() Int
 }
 
+/// @brief Zoned date-time value.
 class DateTime {
+    /// @brief Returns unix timestamp seconds component.
     @native(name="Time_DateTime_unixSeconds")
     func unixSeconds() Int
 
+    /// @brief Returns nanosecond component.
     @native(name="Time_DateTime_nanosecond")
     func nanosecond() Int
 
+    /// @brief Returns year component.
     @native(name="Time_DateTime_year")
     func year() Int
 
+    /// @brief Returns month component (1-12).
     @native(name="Time_DateTime_month")
     func month() Int
 
+    /// @brief Returns day-of-month component (1-31).
     @native(name="Time_DateTime_day")
     func day() Int
 
+    /// @brief Returns hour component (0-23).
     @native(name="Time_DateTime_hour")
     func hour() Int
 
+    /// @brief Returns minute component (0-59).
     @native(name="Time_DateTime_minute")
     func minute() Int
 
+    /// @brief Returns second component (0-59).
     @native(name="Time_DateTime_second")
     func second() Int
 
+    /// @brief Returns associated time zone.
     @native(name="Time_DateTime_timezone")
     func timezone() TimeZone!
 }
 
+/// @brief Returns zero-length duration.
 @native(name="Time_durationZero")
 func durationZero() Duration
 
+/// @brief Constructs duration from nanoseconds.
+/// @param nanos Nanoseconds.
 @native(name="Time_durationFromNanos")
 func durationFromNanos(nanos:Int) Duration!
 
+/// @brief Constructs duration from milliseconds.
+/// @param millis Milliseconds.
 @native(name="Time_durationFromMillis")
 func durationFromMillis(millis:Int) Duration!
 
+/// @brief Constructs duration from seconds.
+/// @param seconds Seconds as floating-point.
 @native(name="Time_durationFromSeconds")
 func durationFromSeconds(seconds:Float) Duration!
 
+/// @brief Adds two durations.
+/// @param lhs Left duration.
+/// @param rhs Right duration.
 @native(name="Time_durationAdd")
 func durationAdd(lhs:Duration,rhs:Duration) Duration!
 
+/// @brief Subtracts one duration from another.
+/// @param lhs Left duration.
+/// @param rhs Right duration.
 @native(name="Time_durationSub")
 func durationSub(lhs:Duration,rhs:Duration) Duration!
 
+/// @brief Scales a duration by floating-point factor.
+/// @param duration Input duration.
+/// @param factor Multiplication factor.
 @native(name="Time_durationMul")
 func durationMul(duration:Duration,factor:Float) Duration!
 
+/// @brief Divides a duration by floating-point divisor.
+/// @param duration Input duration.
+/// @param divisor Division factor.
 @native(name="Time_durationDiv")
 func durationDiv(duration:Duration,divisor:Float) Duration!
 
+/// @brief Compares two durations.
+/// @return Negative if lhs<rhs, zero if equal, positive if lhs>rhs.
 @native(name="Time_durationCompare")
 func durationCompare(lhs:Duration,rhs:Duration) Int
 
+/// @brief Sleeps current execution context for the given duration.
+/// @param duration Sleep duration.
 @native(name="Time_sleep")
 func sleep(duration:Duration) Bool!
 
+/// @brief Returns current monotonic instant.
 @native(name="Time_monotonicNow")
 func monotonicNow() Instant!
 
+/// @brief Computes elapsed duration since a start instant.
+/// @param start Start instant from monotonic clock.
 @native(name="Time_elapsedSince")
 func elapsedSince(start:Instant) Duration!
 
+/// @brief Returns current UTC date-time.
 @native(name="Time_utcNow")
 func utcNow() DateTime!
 
+/// @brief Returns current local date-time.
 @native(name="Time_localNow")
 func localNow() DateTime!
 
+/// @brief Returns UTC time zone descriptor.
 @native(name="Time_timezoneUTC")
 func timezoneUTC() TimeZone!
 
+/// @brief Returns local/system time zone descriptor.
 @native(name="Time_timezoneLocal")
 func timezoneLocal() TimeZone!
 
+/// @brief Resolves a time zone by identifier.
+/// @param id Time zone identifier.
 @native(name="Time_timezoneFromID")
 func timezoneFromID(id:String) TimeZone!
 
+/// @brief Parses ISO-8601 text into DateTime.
+/// @param text ISO-8601 formatted timestamp.
 @native(name="Time_parseISO8601")
 func parseISO8601(text:String) DateTime!
 
+/// @brief Formats DateTime as ISO-8601 in target time zone.
+/// @param dt Source datetime.
+/// @param tz Target timezone.
 @native(name="Time_formatISO8601")
 func formatISO8601(dt:DateTime,tz:TimeZone) String!
 
+/// @brief Creates DateTime from unix timestamp + timezone.
+/// @param seconds Unix epoch seconds.
+/// @param nanos Nanosecond fraction.
+/// @param tz Target timezone.
 @native(name="Time_fromUnix")
 func fromUnix(seconds:Int,nanos:Int,tz:TimeZone) DateTime!
 
+/// @brief Converts DateTime to target timezone.
+/// @param dt Source datetime.
+/// @param tz Destination timezone.
 @native(name="Time_convertTimeZone")
 func convertTimeZone(dt:DateTime,tz:TimeZone) DateTime!

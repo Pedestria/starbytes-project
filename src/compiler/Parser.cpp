@@ -223,6 +223,9 @@ void annotateStmtParentFile(ASTStmt *stmt,const std::string &parentFile){
     astConsumer(astConsumer)
     {
         ASTScopeGlobal->generateHashID();
+        diagnosticHandler->setDefaultPhase(Diagnostic::Phase::Parser);
+        diagnosticHandler->setDefaultSourceName("starbytes-parser");
+        semanticA->setPrefer64BitNumberInference(infer64BitNumbers);
         semanticA->start();
     }
 
@@ -264,7 +267,12 @@ void annotateStmtParentFile(ASTStmt *stmt,const std::string &parentFile){
                 region.startLine = region.endLine = tok.srcPos.line;
                 region.startCol = tok.srcPos.startCol;
                 region.endCol = tok.srcPos.endCol;
-                diagnosticHandler->push(StandardDiagnostic::createError(fmtString("Unexpected token `@{0}`.",tok.content),region));
+                auto diag = StandardDiagnostic::createError(fmtString("Unexpected token `@{0}`.",tok.content),region);
+                if(diag){
+                    diag->phase = Diagnostic::Phase::Parser;
+                    diag->code = "SB-PARSE-E0001";
+                }
+                diagnosticHandler->push(diag);
                 syntaxA->consumeCurrentTok();
                 continue;
             }
@@ -325,6 +333,17 @@ void annotateStmtParentFile(ASTStmt *stmt,const std::string &parentFile){
 
     void Parser::setProfilingEnabled(bool enabled){
         profilingEnabled = enabled;
+    }
+
+    void Parser::setInfer64BitNumbers(bool enabled){
+        infer64BitNumbers = enabled;
+        if(semanticA){
+            semanticA->setPrefer64BitNumberInference(enabled);
+        }
+    }
+
+    bool Parser::getInfer64BitNumbers() const{
+        return infer64BitNumbers;
     }
 
     const Parser::ProfileData & Parser::getProfileData() const{

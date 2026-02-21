@@ -72,6 +72,15 @@ add_starbytes_test(
 
 add_starbytes_test(
     NAME
+    "doxygen-doc-test"
+    INCLUDE_LIB
+    FILES
+    "DoxygenDocTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
     "symbol-lookup-stress-test"
     INCLUDE_LIB
     FILES

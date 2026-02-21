@@ -1,0 +1,10 @@
+decl i = 40
+decl f = 3.5
+
+if(i is Int && f is Float){
+    print("INFER-32BIT-OK")
+}
+
+if(i is Long && f is Double){
+    print("INFER-64BIT-OK")
+}

@@ -1,0 +1,24 @@
+decl inferredName = "name"
+decl names = ["alpha","beta","gamma"]
+decl typedNames:String[] = names
+
+decl matrix = [[1,2],[3,4]]
+decl typedMatrix:Int[][] = matrix
+
+decl scores = {"alice":1,"bob":2}
+decl typedScores:Map<String,Int> = scores
+
+decl buckets = [{"ok":1},{"next":2}]
+decl typedBuckets:Map<String,Int>[] = buckets
+
+decl strictEmpty:Int[] = []
+decl strictMap:Map<String,Int> = {}
+
+print(inferredName.upper())
+print(typedNames.join(","))
+print(typedMatrix[0].at(0))
+print(typedScores.get("alice"))
+print(typedBuckets[1].get("next"))
+print(strictEmpty.length)
+print(strictMap.length)
+print("GENERIC-INFERENCE-OK")

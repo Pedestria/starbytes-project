@@ -1,0 +1,1 @@
+decl rows:Map<String,Int>[] = [{"ok":1}, {"bad":"x"}]

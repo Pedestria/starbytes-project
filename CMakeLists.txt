@@ -8,7 +8,7 @@ option(USE_VCPKG_AS_TOOLCHAIN "Use vcpkg cmake toolchain file" OFF)
 set(ENABLE_STARBYTES_LSP TRUE)
 
 
-set(STARBYTES_PROJECT_VERSION "0.8.0")
+set(STARBYTES_PROJECT_VERSION "0.9.0")
 message("Starbytes Project Version " ${STARBYTES_PROJECT_VERSION})
 
 macro(find_vcpkg USE_TOOLCHAIN)

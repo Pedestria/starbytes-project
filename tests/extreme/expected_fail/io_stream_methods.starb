@@ -9,11 +9,30 @@ secure(decl tf = openText(textPath,"r+","utf-8","\n",-1)) catch (error:String) {
     print("IO-STREAM-OPEN-CATCH")
     print(error)
 }
-print(tf.readable())
+if(tf.readable()){
+    print("IO-STREAM-READABLE-OK")
+}
+else {
+    print("IO-STREAM-READABLE-BAD")
+}
 secure(decl line = tf.readLine()) catch {
     print("IO-STREAM-READLINE-CATCH")
 }
 print(line)
+if(line.contains("alpha")){
+    print("IO-STREAM-LINE-OK")
+}
+else {
+    print("IO-STREAM-LINE-BAD")
+}
 secure(decl closeTextOk = tf.close()) catch {
     print("IO-STREAM-CLOSE-CATCH")
 }
+decl closed = tf.isClosed()
+if(closed){
+    print("IO-STREAM-CLOSED-OK")
+}
+else {
+    print("IO-STREAM-CLOSED-BAD")
+}
+print("IO-STREAM-METHODS-OK")

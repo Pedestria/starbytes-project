@@ -1,74 +1,111 @@
-// Threading module: Phase-1 primitives (no background Starbytes function execution yet).
+/// @brief StdLib Threading module.
+/// @details Concurrency primitives; no background execution of Starbytes closures yet.
 
+/// @brief Wait timeout sentinel that means "wait forever".
 decl imut WAIT_FOREVER:Int = -1
 
+/// @brief Mutual exclusion primitive.
 class Mutex {
+    /// @brief Blocks until lock is acquired.
     @native(name="Threading_Mutex_lock")
     func lock() Bool!
 
+    /// @brief Attempts to acquire lock without blocking.
     @native(name="Threading_Mutex_tryLock")
     func tryLock() Bool
 
+    /// @brief Releases held lock.
     @native(name="Threading_Mutex_unlock")
     func unlock() Bool!
 }
 
+/// @brief Condition variable primitive.
 class Condition {
+    /// @brief Waits for condition notification.
+    /// @param mutex Associated mutex.
+    /// @param timeoutMillis Wait timeout in milliseconds or WAIT_FOREVER.
     @native(name="Threading_Condition_wait")
     func wait(mutex:Mutex,timeoutMillis:Int) Bool!
 
+    /// @brief Wakes one waiting thread.
     @native(name="Threading_Condition_notifyOne")
     func notifyOne() Bool!
 
+    /// @brief Wakes all waiting threads.
     @native(name="Threading_Condition_notifyAll")
     func notifyAll() Bool!
 }
 
+/// @brief Counting semaphore primitive.
 class Semaphore {
+    /// @brief Acquires one permit.
+    /// @param timeoutMillis Wait timeout in milliseconds or WAIT_FOREVER.
     @native(name="Threading_Semaphore_acquire")
     func acquire(timeoutMillis:Int) Bool!
 
+    /// @brief Releases one or more permits.
+    /// @param count Permit count to release.
     @native(name="Threading_Semaphore_release")
     func release(count:Int) Bool!
 
+    /// @brief Returns approximate current permit count.
     @native(name="Threading_Semaphore_currentCount")
     func currentCount() Int
 }
 
+/// @brief Manual/auto-reset event primitive.
 class Event {
+    /// @brief Waits until event is signaled.
+    /// @param timeoutMillis Wait timeout in milliseconds or WAIT_FOREVER.
     @native(name="Threading_Event_wait")
     func wait(timeoutMillis:Int) Bool!
 
+    /// @brief Signals event.
     @native(name="Threading_Event_set")
     func set() Bool!
 
+    /// @brief Resets event to non-signaled.
     @native(name="Threading_Event_reset")
     func reset() Bool!
 
+    /// @brief Returns whether event is currently signaled.
     @native(name="Threading_Event_isSet")
     func isSet() Bool
 }
 
+/// @brief Creates a mutex instance.
 @native(name="Threading_mutexCreate")
 func mutexCreate() Mutex!
 
+/// @brief Creates a condition variable instance.
 @native(name="Threading_conditionCreate")
 func conditionCreate() Condition!
 
+/// @brief Creates a semaphore instance.
+/// @param initial Initial permit count.
+/// @param max Maximum permit count.
 @native(name="Threading_semaphoreCreate")
 func semaphoreCreate(initial:Int,max:Int) Semaphore!
 
+/// @brief Creates an event instance.
+/// @param initial Initial signaled state.
+/// @param manualReset Whether reset must be explicit.
 @native(name="Threading_eventCreate")
 func eventCreate(initial:Bool,manualReset:Bool) Event!
 
+/// @brief Returns runtime identifier of current thread.
 @native(name="Threading_currentThreadId")
 func currentThreadId() String
 
+/// @brief Returns hardware concurrency hint.
 @native(name="Threading_hardwareConcurrency")
 func hardwareConcurrency() Int
 
+/// @brief Yields execution to scheduler.
 @native(name="Threading_yieldNow")
 func yieldNow() Bool!
 
+/// @brief Sleeps current thread for given milliseconds.
+/// @param ms Milliseconds to sleep.
 @native(name="Threading_sleepMillis")
 func sleepMillis(ms:Int) Bool!

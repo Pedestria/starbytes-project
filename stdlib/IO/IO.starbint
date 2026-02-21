@@ -1,4 +1,5 @@
-// StdLib IO Module (Python3-inspired layering + Swift-style semantics)
+/// @brief StdLib IO module (Python/Swift-inspired stream surface).
+/// @details Provides text/binary stream primitives and convenience file helpers.
 
 def Bytes = Array<Int>
 
@@ -6,36 +7,45 @@ decl imut SEEK_START:Int = 0
 decl imut SEEK_CURRENT:Int = 1
 decl imut SEEK_END:Int = 2
 
+/// @brief Closeable resource contract.
 interface Closable {
+    /// @brief Closes underlying resource.
     func close() Bool!
+    /// @brief Returns whether resource is closed.
     func isClosed() Bool
 }
 
+/// @brief Text read contract.
 interface ReadableText {
     func read(upTo:Int) String!
     func readToEnd() String!
     func readLine() String?
 }
 
+/// @brief Text write contract.
 interface WritableText {
     func write(text:String) Int!
 }
 
+/// @brief Binary read contract.
 interface ReadableBytes {
     func readBytes(upTo:Int) Bytes!
     func readAllBytes() Bytes!
 }
 
+/// @brief Binary write contract.
 interface WritableBytes {
     func writeBytes(data:Bytes) Int!
 }
 
+/// @brief Seek contract.
 interface Seekable {
     func seek(offset:Int,origin:Int) Int!
     func position() Int!
     func truncate(size:Int) Int!
 }
 
+/// @brief Common IO capability flags.
 interface IOBase {
     func flush() Bool!
     func readable() Bool
@@ -43,6 +53,7 @@ interface IOBase {
     func seekable() Bool
 }
 
+/// @brief Full text stream surface.
 interface TextIOBase {
     func close() Bool!
     func isClosed() Bool
@@ -61,6 +72,7 @@ interface TextIOBase {
     func newline() String
 }
 
+/// @brief Full buffered binary stream surface.
 interface BufferedIOBase {
     func close() Bool!
     func isClosed() Bool
@@ -76,6 +88,7 @@ interface BufferedIOBase {
     func seekable() Bool
 }
 
+/// @brief Text file stream.
 class TextFile : TextIOBase {
     @native(name="TextFile_close")
     func close() Bool!
@@ -123,6 +136,7 @@ class TextFile : TextIOBase {
     func newline() String
 }
 
+/// @brief Binary file stream.
 class BinaryFile : BufferedIOBase {
     @native(name="BinaryFile_close")
     func close() Bool!
@@ -161,40 +175,53 @@ class BinaryFile : BufferedIOBase {
     func seekable() Bool
 }
 
+/// @brief Generic text stream alias.
 class Stream : TextFile {}
 
+/// @brief Opens text file with mode/encoding/newline controls.
 @native(name="openText")
 func openText(path:String,mode:String,encoding:String,newline:String,buffering:Int) TextFile!
 
+/// @brief Opens binary file.
 @native(name="openBinary")
 func openBinary(path:String,mode:String,buffering:Int) BinaryFile!
 
+/// @brief Opens default stream with mode only.
 @native(name="openFile")
 func openFile(file:String,mode:String) Stream!
 
+/// @brief Returns whether path exists.
 @native(name="io_exists")
 func exists(path:String) Bool
 
+/// @brief Removes file/directory path.
 @native(name="io_remove")
 func remove(path:String) Bool!
 
+/// @brief Renames/moves path.
 @native(name="io_rename")
 func rename(src:String,dst:String) Bool!
 
+/// @brief Creates directory.
 @native(name="io_mkdir")
 func createDirectory(path:String,recursive:Bool) Bool!
 
+/// @brief Lists directory entries.
 @native(name="io_listdir")
 func listDirectory(path:String) Array<String>!
 
+/// @brief Reads full text file.
 @native(name="io_readText")
 func readText(path:String,encoding:String) String!
 
+/// @brief Writes full text file.
 @native(name="io_writeText")
 func writeText(path:String,text:String,encoding:String) Bool!
 
+/// @brief Reads full file bytes.
 @native(name="io_readBytes")
 func readBytes(path:String) Bytes!
 
+/// @brief Writes full file bytes.
 @native(name="io_writeBytes")
 func writeBytes(path:String,data:Bytes) Bool!

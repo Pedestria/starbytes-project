@@ -46,7 +46,8 @@ std::unordered_map<StarbytesObject,std::unique_ptr<BreakIterState>> g_breakRegis
 std::unordered_map<StarbytesObject,int32_t> g_scalarInfoRegistry;
 
 StarbytesObject makeBool(bool value) {
-    return StarbytesBoolNew(value ? StarbytesBoolTrue : StarbytesBoolFalse);
+    // Runtime bool consumption currently interprets StarbytesBoolFalse as logical true.
+    return StarbytesBoolNew(value ? StarbytesBoolFalse : StarbytesBoolTrue);
 }
 
 StarbytesObject makeInt(int value) {

@@ -45,8 +45,33 @@ class CodeView;
    };
 
 struct Diagnostic {
+    enum class Phase : int {
+        Unknown,
+        Parser,
+        Semantic,
+        Runtime,
+        Lsp
+    };
+
+    struct RelatedSpan {
+        Region span;
+        std::string message;
+    };
+
+    struct FixIt {
+        Region span;
+        std::string replacement;
+        std::string message;
+    };
+
     std::string message;
     optional<Region> location;
+    std::string id;
+    std::string code;
+    Phase phase = Phase::Unknown;
+    std::vector<RelatedSpan> relatedSpans;
+    std::vector<std::string> notes;
+    std::vector<FixIt> fixits;
     std::string sourceName;
     typedef enum : int {
         Error,
@@ -57,6 +82,7 @@ struct Diagnostic {
 
     Type getType();
     bool isError();
+    std::string phaseString() const;
     
     virtual void send(StreamLogger & os,const CodeView *view = nullptr) {};
     virtual ~Diagnostic() = default;
@@ -74,6 +100,11 @@ struct StandardDiagnostic : public Diagnostic {
 
 class DiagnosticHandler {
 public:
+    enum class OutputMode : int {
+        Human,
+        Machine
+    };
+
     struct Metrics {
         uint64_t pushedCount = 0;
         uint64_t renderedCount = 0;
@@ -91,6 +122,9 @@ public:
     std::deque<DiagnosticPtr> buffer;
     StreamLogger logger;
     std::unique_ptr<CodeView> codeView;
+    std::string defaultSourceName;
+    Diagnostic::Phase defaultPhase = Diagnostic::Phase::Unknown;
+    OutputMode outputMode = OutputMode::Human;
     Metrics metrics;
 
     using SELF = DiagnosticHandler;
@@ -102,6 +136,12 @@ public:
     static std::unique_ptr<DiagnosticHandler> createDefault(std::ostream & out);
     SELF & push(DiagnosticPtr diagnostic);
     void setCodeViewSource(std::string sourceName,std::string sourceText);
+    void setDefaultSourceName(std::string sourceName);
+    const std::string &getDefaultSourceName() const;
+    void setDefaultPhase(Diagnostic::Phase phase);
+    Diagnostic::Phase getDefaultPhase() const;
+    void setOutputMode(OutputMode mode);
+    OutputMode getOutputMode() const;
     bool empty();
     bool hasErrored();
     std::vector<DiagnosticPtr> snapshot(bool includeResolved = false) const;

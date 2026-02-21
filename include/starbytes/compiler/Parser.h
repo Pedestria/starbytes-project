@@ -39,11 +39,14 @@ namespace starbytes {
         std::unique_ptr<SemanticA> semanticA;
         ASTStreamConsumer & astConsumer;
         bool profilingEnabled = false;
+        bool infer64BitNumbers = false;
         ProfileData profileData;
     public:
         void parseFromStream(std::istream & in,ModuleParseContext &moduleParseContext);
         bool finish();
         void setProfilingEnabled(bool enabled);
+        void setInfer64BitNumbers(bool enabled);
+        bool getInfer64BitNumbers() const;
         const ProfileData & getProfileData() const;
         void resetProfileData();
         DiagnosticHandler *getDiagnosticHandler();

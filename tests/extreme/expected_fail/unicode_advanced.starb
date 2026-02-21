@@ -9,9 +9,37 @@ secure(decl folded = caseFold("Straße")) catch {
     print("UNICODE-FOLD-CATCH")
 }
 print(folded)
+if(folded == "straße"){
+    print("UNICODE-FOLD-OK")
+}
+else {
+    print("UNICODE-FOLD-BAD")
+}
 
-// Currently unstable in runtime; kept as crash repro regression test.
 secure(decl contains = containsFolded("StarBytes","star",loc)) catch {
     print("UNICODE-CONTAINS-CATCH")
 }
 print(contains)
+if(contains){
+    print("UNICODE-CONTAINS-OK")
+}
+else {
+    print("UNICODE-CONTAINS-BAD")
+}
+
+secure(decl starts = startsWithFolded("StarBytes","star",loc)) catch {
+    print("UNICODE-STARTS-CATCH")
+}
+secure(decl ends = endsWithFolded("StarBytes","BYTES",loc)) catch {
+    print("UNICODE-ENDS-CATCH")
+}
+secure(decl norm = isNormalized("abc",0)) catch {
+    print("UNICODE-ISNORM-CATCH")
+}
+
+if(starts && ends && norm){
+    print("UNICODE-ADVANCED-OK")
+}
+else {
+    print("UNICODE-ADVANCED-BAD")
+}

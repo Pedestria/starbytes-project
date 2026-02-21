@@ -102,6 +102,19 @@ run_expect_success "typed-array-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extre
 assert_log_contains "typed-array-run" "TYPED-ARRAY-SYNTAX-OK"
 run_expect_failure "typed-array-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/typed_array_invalid.starb"
 assert_log_contains "typed-array-invalid-check" "Method argument type mismatch"
+run_expect_failure "typed-array-inferred-mismatch-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/typed_array_inferred_mismatch_invalid.starb"
+assert_log_contains "typed-array-inferred-mismatch-check" 'Context: Type `Array` was implied from var initializer'
+run_expect_failure "typed-nested-map-array-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/typed_nested_map_array_invalid.starb"
+assert_log_contains "typed-nested-map-array-invalid-check" 'Context: Type `Array` was implied from var initializer'
+run_expect_success "generic-inference-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_inference_extreme.starb"
+run_expect_success "generic-inference-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/generic_inference_extreme.starb"
+assert_log_contains "generic-inference-run" "GENERIC-INFERENCE-OK"
+run_expect_success "numeric-inference-default-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/numeric_inference_modes.starb"
+assert_log_contains "numeric-inference-default-run" "INFER-32BIT-OK"
+run_expect_success "numeric-inference-64bit-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/numeric_inference_modes.starb" --infer-64bit-numbers
+assert_log_contains "numeric-inference-64bit-run" "INFER-64BIT-OK"
+run_expect_success "inferred-var-types-custom-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/inferred_var_types_custom.starb"
+assert_log_contains "inferred-var-types-custom-run" "INFER-CUSTOM-INVOKE-OK"
 run_expect_success "map-long-double-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/map_long_double_support.starb"
 run_expect_success "map-long-double-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/map_long_double_support.starb"
 assert_log_contains "map-long-double-run" "MAP-LONG-DOUBLE-OK"
@@ -132,6 +145,8 @@ assert_log_contains "cast-downcast-unsecure-check" "Optional or throwable values
 run_expect_success "stdlib-smoke-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/stdlib_smoke.starb"
 run_expect_success "stdlib-smoke-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/stdlib_smoke.starb"
 assert_log_contains "stdlib-smoke-run" "EXTREME-STDLIB-SMOKE-OK"
+run_expect_success "cmdline-module-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/cmdline_module.starb" -- --verbose --config "./test.toml" --tag one --tag two positional
+assert_log_contains "cmdline-module-run" "CMDLINE-MODULE-OK"
 
 run_expect_success "module-app-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/modules/App"
 assert_log_contains "module-app-run" "APP-MODULE-OK"
@@ -228,7 +243,14 @@ run_expect_failure "operators-invalid-bitwise" "$STARBYTES_BIN" check "$ROOT_DIR
 assert_log_contains "operators-invalid-bitwise" "Bitwise and shift operators require Int operands"
 
 run_expect_success "expected-io-stream-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/expected_fail/io_stream_methods.starb"
+assert_log_contains "expected-io-stream-run" "IO-STREAM-READABLE-OK"
+assert_log_contains "expected-io-stream-run" "IO-STREAM-LINE-OK"
+assert_log_contains "expected-io-stream-run" "IO-STREAM-CLOSED-OK"
+assert_log_contains "expected-io-stream-run" "IO-STREAM-METHODS-OK"
 run_expect_success "expected-unicode-advanced-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/expected_fail/unicode_advanced.starb"
+assert_log_contains "expected-unicode-advanced-run" "UNICODE-FOLD-OK"
+assert_log_contains "expected-unicode-advanced-run" "UNICODE-CONTAINS-OK"
+assert_log_contains "expected-unicode-advanced-run" "UNICODE-ADVANCED-OK"
 
 echo
 echo "Extreme suite finished: pass=$PASS_COUNT fail=$FAIL_COUNT"

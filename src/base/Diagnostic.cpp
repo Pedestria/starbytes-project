@@ -1,6 +1,7 @@
 #include "starbytes/base/Diagnostic.h"
 #include "starbytes/base/CodeView.h"
 #include <chrono>
+#include <iomanip>
 #include <iostream>
 #include <ostream>
 #include <sstream>
@@ -10,6 +11,79 @@ namespace starbytes {
 
 static bool regionHasLocation(const Region &region){
     return region.startLine > 0 || region.endLine > 0 || region.startCol > 0 || region.endCol > 0;
+}
+
+static uint32_t stableHash32(const std::string &text){
+    uint32_t hash = 2166136261u;
+    for(unsigned char c : text){
+        hash ^= c;
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static const char *phaseToCodeFamily(Diagnostic::Phase phase){
+    switch(phase){
+        case Diagnostic::Phase::Parser:
+            return "SB-PARSE";
+        case Diagnostic::Phase::Semantic:
+            return "SB-SEMA";
+        case Diagnostic::Phase::Runtime:
+            return "SB-RUNTIME";
+        case Diagnostic::Phase::Lsp:
+            return "SB-LSP";
+        case Diagnostic::Phase::Unknown:
+        default:
+            return "SB-GENERAL";
+    }
+}
+
+static void applyLegacyDiagnosticSchema(Diagnostic &diag,
+                                        Diagnostic::Phase defaultPhase,
+                                        const std::string &defaultSourceName){
+    if(diag.phase == Diagnostic::Phase::Unknown && defaultPhase != Diagnostic::Phase::Unknown){
+        diag.phase = defaultPhase;
+    }
+
+    if(diag.sourceName.empty() && !defaultSourceName.empty()){
+        diag.sourceName = defaultSourceName;
+    }
+
+    const bool hasPrimarySpan = diag.location.has_value() && regionHasLocation(diag.location.value());
+    if(diag.code.empty()){
+        std::string fingerprint = diag.message;
+        if(hasPrimarySpan){
+            const auto &region = diag.location.value();
+            fingerprint += "|";
+            fingerprint += std::to_string(region.startLine);
+            fingerprint += ":";
+            fingerprint += std::to_string(region.startCol);
+            fingerprint += ":";
+            fingerprint += std::to_string(region.endLine);
+            fingerprint += ":";
+            fingerprint += std::to_string(region.endCol);
+        }
+        auto hash = stableHash32(fingerprint);
+        std::ostringstream codeBuilder;
+        codeBuilder << phaseToCodeFamily(diag.phase)
+                    << (diag.isError() ? "-E" : "-W")
+                    << std::uppercase << std::hex << std::setw(4) << std::setfill('0')
+                    << (hash & 0xFFFFu);
+        diag.code = codeBuilder.str();
+    }
+
+    if(diag.id.empty()){
+        std::ostringstream idBuilder;
+        idBuilder << diag.code;
+        if(hasPrimarySpan){
+            idBuilder << "@";
+            if(!diag.sourceName.empty()){
+                idBuilder << diag.sourceName << ":";
+            }
+            idBuilder << diag.location->startLine << ":" << diag.location->startCol;
+        }
+        diag.id = idBuilder.str();
+    }
 }
 
 StreamLogger::StreamLogger(std::ostream & out):out(out){
@@ -68,6 +142,7 @@ std::unique_ptr<DiagnosticHandler> DiagnosticHandler::createDefault(std::ostream
 DiagnosticHandler & DiagnosticHandler::push(DiagnosticPtr diagnostic){
     auto start = std::chrono::steady_clock::now();
     if(diagnostic){
+        applyLegacyDiagnosticSchema(*diagnostic,defaultPhase,defaultSourceName);
         metrics.pushedCount += 1;
         if(diagnostic->isError()){
             metrics.errorCount += 1;
@@ -75,7 +150,7 @@ DiagnosticHandler & DiagnosticHandler::push(DiagnosticPtr diagnostic){
         else {
             metrics.warningCount += 1;
         }
-        if(diagnostic->location.has_value()){
+        if(diagnostic->location.has_value() && regionHasLocation(diagnostic->location.value())){
             metrics.withLocationCount += 1;
         }
     }
@@ -89,10 +164,41 @@ DiagnosticHandler & DiagnosticHandler::push(DiagnosticPtr diagnostic){
 };
 
 void DiagnosticHandler::setCodeViewSource(std::string sourceName,std::string sourceText){
+    defaultSourceName = sourceName;
+    if(outputMode == OutputMode::Machine){
+        return;
+    }
     if(!codeView){
         codeView = std::make_unique<CodeView>();
     }
     codeView->setSource(std::move(sourceName),std::move(sourceText));
+}
+
+void DiagnosticHandler::setDefaultSourceName(std::string sourceName){
+    defaultSourceName = std::move(sourceName);
+}
+
+const std::string &DiagnosticHandler::getDefaultSourceName() const{
+    return defaultSourceName;
+}
+
+void DiagnosticHandler::setDefaultPhase(Diagnostic::Phase phase){
+    defaultPhase = phase;
+}
+
+Diagnostic::Phase DiagnosticHandler::getDefaultPhase() const{
+    return defaultPhase;
+}
+
+void DiagnosticHandler::setOutputMode(OutputMode mode){
+    outputMode = mode;
+    if(outputMode == OutputMode::Machine){
+        codeView.reset();
+    }
+}
+
+DiagnosticHandler::OutputMode DiagnosticHandler::getOutputMode() const{
+    return outputMode;
 }
 
 bool DiagnosticHandler::empty(){
@@ -164,6 +270,22 @@ void DiagnosticHandler::resetMetrics(){
 
 bool Diagnostic::isError(){
     return t == Diagnostic::Error;
+}
+
+std::string Diagnostic::phaseString() const{
+    switch(phase){
+        case Phase::Parser:
+            return "parser";
+        case Phase::Semantic:
+            return "semantic";
+        case Phase::Runtime:
+            return "runtime";
+        case Phase::Lsp:
+            return "lsp";
+        case Phase::Unknown:
+        default:
+            return "unknown";
+    }
 }
 DiagnosticPtr StandardDiagnostic::createError(string_ref message){
     StandardDiagnostic d {};

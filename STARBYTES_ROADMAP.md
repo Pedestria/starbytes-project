@@ -1,29 +1,9 @@
 # Starbytes Completion Roadmap
 
-Last updated: February 20, 2026
+Last updated: February 21, 2026
 
 This roadmap turns Starbytes from a promising prototype into a complete interpreted language with a usable toolchain.
 
-## My Proposed Features/Fixes
--- FINISHED
-- Type casting, down and up, and conversion (Downcasting is a throwable return)
-    example usage:
-    ```starbytes
-    decl a: Float = 4.0
-    decl b = Int(a)
-    ```
-    (For type conversion on custom classes, use conversion functions. `func <type-name> (){}`)
-- Maps (Maps are type-strict dictionaries. Dict vs. Map<T,U>)
-- Long, Double number support
-- Fix symbol resolution inside secure/catch decls (Visible in LSP)
---UNFINISHED
-
-- Add helper classes/functions to `interop.h` to help with native module building (remove NativeArgsLayout,readIntArg, readStringArg, skipOptionalModuleReceiver from stdlib modules)
-- Fix stability issues for stdlib modules, and document with doxygen documentation.
-- Full type inference capabilities, even for generic types (decl name = "name")
-- LSP hover shows class/interface inheritance below declaration (superclasses: A,B, interfaces: IFace)
-- Implement full doxygen spec parsing
-- Buitlin types have full doxygen documentation of every class and method.
 
 ## Guiding Principles
 
@@ -59,6 +39,8 @@ Implemented language/runtime/tooling features include:
 - Data/collections:
   - array and dictionary literals
   - typed arrays (`T[]`) and implied array typing
+  - inferred variable typing surfaced for literals, constructor calls, and invocation returns
+  - configurable numeric literal inference mode (`--infer-64bit-numbers` for Long/Double defaults)
   - indexing and mutation.
 - Regex:
   - runtime regex literal compilation with PCRE2 and catchable failures.
@@ -79,6 +61,7 @@ Implemented language/runtime/tooling features include:
   - LSP protocol surface implemented for core editor loop.
   - semantic highlighting generated from compiler pipeline.
   - richer hover details including declaration-adjacent comments.
+  - inferred declaration types shown in LSP by using compiler-backed semantic symbol extraction (with syntax fallback merge for invalid code paths).
   - modularized LSP analysis pipeline (`DocumentAnalysis`) to reduce server coupling and duplicate parsing logic.
   - VSCode extension integration path for LSP workflow.
 - Packaging/dev workflow:
@@ -86,10 +69,10 @@ Implemented language/runtime/tooling features include:
 
 Known gaps and stability risks:
 
-- Typed collection enforcement/inference has improved but still needs more edge-case tightening in generics-heavy flows.
+- Typed collection enforcement/inference has improved significantly; remaining work is mostly high-complexity generic edge-case hardening.
 - Some native stdlib surfaces are unstable and currently tracked as expected-fail crash repro cases (notably parts of advanced `IO` stream methods and advanced `Unicode` operations).
 - LSP supports core features and semantic tokens, but reliability hardening and advanced refactor ergonomics are still pending.
-- Diagnostics and error-code standardization are not yet fully unified across parser/sema/runtime.
+- Diagnostics schema and rendering optimizations have progressed (schema unification + source indexing/lazy rendering), but full parser/sema/runtime error-code governance is still pending.
 
 ## Phase Progress Snapshot
 
@@ -97,15 +80,15 @@ Known gaps and stability risks:
 - M2 Type System/Data Model: mostly complete; remaining hardening in collection/generic edge cases.
 - M3 Modules and Imports: complete baseline with `.starbmodpath` and cache-backed import analysis.
 - M4 Standard Library Baseline: baseline implemented, stabilization in progress.
-- M5 Diagnostics: partial-to-moderate progress; richer messaging exists but full standardization is pending.
-- M6 LSP Maturity: mid-to-late stage (semantic tokens + richer hovers + compiler-backed symbols + modular analysis split), with stability hardening and refactor ergonomics pending.
+- M5 Diagnostics: moderate progress with phase 1-3 completed (metrics baseline, unified schema foundations, span/render optimization); standardization hardening is still pending.
+- M6 LSP Maturity: late-mid stage (semantic tokens + richer hovers + compiler-backed symbols + inferred type surfacing + modular analysis split), with stability hardening and refactor ergonomics pending.
 - M7 Syntax Surface Completion: mostly complete for currently documented syntax, with lambda ergonomics still the main unresolved area.
 - M8 Tooling/Release Readiness: in progress with package manager baseline and expanded test coverage.
 
 ## Version Status
 
-- Current project version target: `0.8.0`.
-- Rationale: language/tooling baseline is substantially broader, compile-time optimization phases 1-4 are complete, and LSP architecture has moved into a more maintainable modular shape.
+- Current project version target: `0.9.0`.
+- Rationale: core language and module/tooling baseline is now broader and more cohesive, diagnostics optimization phases 1-3 are implemented, and LSP now surfaces inferred declaration types through compiler-backed semantic analysis.
 
 ---
 

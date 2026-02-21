@@ -1112,11 +1112,11 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 auto *literal = (ASTLiteralExpr *)expr_to_eval;
                 /// If is Integer
                 if(literal->intValue.has_value()){
-                    type = INT_TYPE;
+                    type = prefer64BitNumberInference ? LONG_TYPE : INT_TYPE;
                 }
                 /// Else it is a Floating Point
                 else {
-                    type = FLOAT_TYPE;
+                    type = prefer64BitNumberInference ? DOUBLE_TYPE : FLOAT_TYPE;
                 };
                 break;
             }

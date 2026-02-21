@@ -23,6 +23,14 @@ struct CompilerDiagnosticEntry {
   Region region;
   int severity = 1;
   std::string message;
+  std::string id;
+  std::string code;
+  std::string phase;
+  std::string source = "starbytes-compiler";
+  std::string producerSource;
+  std::vector<Diagnostic::RelatedSpan> relatedSpans;
+  std::vector<std::string> notes;
+  std::vector<Diagnostic::FixIt> fixits;
 };
 
 bool isBuiltinsInterfaceUri(const std::string &uri);

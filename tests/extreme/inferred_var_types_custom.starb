@@ -1,0 +1,12 @@
+class Animal {
+    func myFunc() String {
+        return "Prop"
+    }
+}
+
+decl b = new Animal()
+decl c = b.myFunc()
+
+if(b is Animal && c is String){
+    print("INFER-CUSTOM-INVOKE-OK")
+}

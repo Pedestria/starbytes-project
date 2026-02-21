@@ -58,7 +58,7 @@ namespace starbytes {
             return true;
         }
         bool first_m = name == other->name;
-        if(name == "Any" || other->name == "Any"){
+        if(name == "Any"){
             return true;
         }
         if(name == DICTIONARY_TYPE->getName() && other->name == MAP_TYPE->getName()){

@@ -1,6 +1,8 @@
 #ifndef STARBYTES_BASE_CODEVIEW_H
 #define STARBYTES_BASE_CODEVIEW_H
 
+#include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -8,9 +10,14 @@
 
 namespace starbytes {
 
-class CodeView {
+struct CodeViewSourceIndex {
     std::string sourceName;
-    std::vector<std::string> lines;
+    std::string sourceText;
+    std::vector<size_t> lineStarts;
+};
+
+class CodeView {
+    std::shared_ptr<const CodeViewSourceIndex> indexedSource;
 public:
     CodeView() = default;
     CodeView(std::string sourceName,std::string sourceText);

@@ -691,20 +691,39 @@ static ASTType *substituteTypeParams(ASTType *type,
 
     DiagnosticPtr SemanticADiagnostic::create(string_ref message, ASTStmt *stmt, Type ty){
         auto region = deriveRegionFromStmt(stmt);
+        DiagnosticPtr created = nullptr;
         if(ty == Diagnostic::Warning){
             if(regionHasLocation(region)){
-                return StandardDiagnostic::createWarning(message,region);
+                created = StandardDiagnostic::createWarning(message,region);
             }
-            return StandardDiagnostic::createWarning(message);
+            else {
+                created = StandardDiagnostic::createWarning(message);
+            }
         }
-        if(regionHasLocation(region)){
-            return StandardDiagnostic::createError(message,region);
+        else if(regionHasLocation(region)){
+            created = StandardDiagnostic::createError(message,region);
         }
-        return StandardDiagnostic::createError(message);
+        else {
+            created = StandardDiagnostic::createError(message);
+        }
+        if(created){
+            created->phase = Diagnostic::Phase::Semantic;
+            created->sourceName = "starbytes-sema";
+            created->code = (ty == Diagnostic::Warning) ? "SB-SEMA-W0001" : "SB-SEMA-E0001";
+        }
+        return created;
     }
 
     SemanticA::SemanticA(Syntax::SyntaxA & syntaxARef,DiagnosticHandler & errStream):syntaxARef(syntaxARef),errStream(errStream){
             
+    }
+
+    void SemanticA::setPrefer64BitNumberInference(bool enabled){
+        prefer64BitNumberInference = enabled;
+    }
+
+    bool SemanticA::getPrefer64BitNumberInference() const{
+        return prefer64BitNumberInference;
     }
 
     void SemanticA::start(){
@@ -1062,6 +1081,28 @@ static ASTType *substituteTypeParams(ASTType *type,
            && resolvedType->typeParams.empty()
            && resolvedType->nameMatches(resolvedOtherType)){
             return true;
+        }
+
+        // Contextual inference for empty collection literals:
+        // allow explicit typed destinations to accept empty [] / {} initializers.
+        if(expr_to_eval) {
+            if(expr_to_eval->type == ARRAY_EXPR &&
+               expr_to_eval->exprArrayData.empty() &&
+               resolvedType->nameMatches(ARRAY_TYPE) &&
+               !resolvedType->typeParams.empty() &&
+               resolvedOtherType->nameMatches(ARRAY_TYPE) &&
+               resolvedOtherType->typeParams.empty()) {
+                return true;
+            }
+
+            if(expr_to_eval->type == DICT_EXPR &&
+               expr_to_eval->dictExpr.empty() &&
+               resolvedType->nameMatches(MAP_TYPE) &&
+               resolvedType->typeParams.size() == 2 &&
+               resolvedOtherType->nameMatches(DICTIONARY_TYPE) &&
+               resolvedOtherType->typeParams.empty()) {
+                return true;
+            }
         }
 
         if(resolvedType->nameMatches(FUNCTION_TYPE) && expr_to_eval){

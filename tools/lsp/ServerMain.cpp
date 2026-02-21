@@ -51,6 +51,93 @@ std::string toLower(std::string value) {
   return value;
 }
 
+std::string trimCopy(std::string value) {
+  size_t start = 0;
+  while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start]))) {
+    ++start;
+  }
+  size_t end = value.size();
+  while (end > start && std::isspace(static_cast<unsigned char>(value[end - 1]))) {
+    --end;
+  }
+  return value.substr(start, end - start);
+}
+
+std::vector<std::string> splitCommaList(const std::string &text) {
+  std::vector<std::string> out;
+  std::string current;
+  for (char ch : text) {
+    if (ch == ',') {
+      auto trimmed = trimCopy(current);
+      if (!trimmed.empty()) {
+        out.push_back(trimmed);
+      }
+      current.clear();
+      continue;
+    }
+    current.push_back(ch);
+  }
+  auto trimmed = trimCopy(current);
+  if (!trimmed.empty()) {
+    out.push_back(trimmed);
+  }
+  return out;
+}
+
+void appendInheritanceMarkdown(std::string &markdown, const SymbolEntry &symbol) {
+  if (symbol.kind != SYMBOL_KIND_CLASS && symbol.kind != SYMBOL_KIND_STRUCT &&
+      symbol.kind != SYMBOL_KIND_INTERFACE) {
+    return;
+  }
+  auto colonPos = symbol.signature.find(':');
+  if (colonPos == std::string::npos) {
+    return;
+  }
+  auto inheritPart = trimCopy(symbol.signature.substr(colonPos + 1));
+  if (inheritPart.empty()) {
+    return;
+  }
+  auto bases = splitCommaList(inheritPart);
+  if (bases.empty()) {
+    return;
+  }
+
+  std::vector<std::string> superclasses;
+  std::vector<std::string> interfaces;
+  if (symbol.kind == SYMBOL_KIND_INTERFACE) {
+    interfaces = bases;
+  } else {
+    superclasses.push_back(bases.front());
+    if (bases.size() > 1) {
+      interfaces.insert(interfaces.end(), bases.begin() + 1, bases.end());
+    }
+  }
+
+  if (superclasses.empty() && interfaces.empty()) {
+    return;
+  }
+
+  markdown += "\n\n**Inheritance**";
+  if (!superclasses.empty()) {
+    markdown += "\n- Superclasses: ";
+    for (size_t i = 0; i < superclasses.size(); ++i) {
+      if (i > 0) {
+        markdown += ", ";
+      }
+      markdown += "`" + superclasses[i] + "`";
+    }
+  }
+  if (!interfaces.empty()) {
+    markdown += "\n- Interfaces: ";
+    for (size_t i = 0; i < interfaces.size(); ++i) {
+      if (i > 0) {
+        markdown += ", ";
+      }
+      markdown += "`" + interfaces[i] + "`";
+    }
+  }
+}
+
 std::vector<SemanticTokenEntry> filterSemanticTokensByLineRange(const std::vector<SemanticTokenEntry> &tokens,
                                                                 unsigned startLine,
                                                                 unsigned endLine) {
@@ -63,6 +150,106 @@ std::vector<SemanticTokenEntry> filterSemanticTokensByLineRange(const std::vecto
     filtered.push_back(token);
   }
   return filtered;
+}
+
+bool hasRegionLocation(const Region &region) {
+  return region.startLine > 0 || region.endLine > 0 || region.startCol > 0 || region.endCol > 0;
+}
+
+rapidjson::Value buildRangeFromRegion(const Region &region, rapidjson::Document::AllocatorType &alloc) {
+  rapidjson::Value range(rapidjson::kObjectType);
+  rapidjson::Value start(rapidjson::kObjectType);
+  rapidjson::Value end(rapidjson::kObjectType);
+  unsigned startLine = region.startLine > 0 ? region.startLine - 1 : 0;
+  unsigned endLine = region.endLine > 0 ? region.endLine - 1 : startLine;
+  unsigned startCol = region.startCol;
+  unsigned endCol = region.endCol > region.startCol ? region.endCol : (region.startCol + 1);
+  start.AddMember("line", startLine, alloc);
+  start.AddMember("character", startCol, alloc);
+  end.AddMember("line", endLine, alloc);
+  end.AddMember("character", endCol, alloc);
+  range.AddMember("start", start, alloc);
+  range.AddMember("end", end, alloc);
+  return range;
+}
+
+void appendCompilerDiagnosticJson(rapidjson::Value &diag,
+                                  const CompilerDiagnosticEntry &entry,
+                                  const std::string &uri,
+                                  rapidjson::Document::AllocatorType &alloc) {
+  diag.AddMember("range", buildRangeFromRegion(entry.region, alloc), alloc);
+  diag.AddMember("severity", entry.severity, alloc);
+  diag.AddMember("source", rapidjson::Value(entry.source.c_str(), alloc), alloc);
+  diag.AddMember("message", rapidjson::Value(entry.message.c_str(), alloc), alloc);
+
+  if(!entry.code.empty()) {
+    diag.AddMember("code", rapidjson::Value(entry.code.c_str(), alloc), alloc);
+  }
+
+  if(!entry.relatedSpans.empty()) {
+    rapidjson::Value relatedInfo(rapidjson::kArrayType);
+    for(const auto &related : entry.relatedSpans) {
+      if(!hasRegionLocation(related.span)) {
+        continue;
+      }
+      rapidjson::Value info(rapidjson::kObjectType);
+      rapidjson::Value location(rapidjson::kObjectType);
+      location.AddMember("uri", rapidjson::Value(uri.c_str(), alloc), alloc);
+      location.AddMember("range", buildRangeFromRegion(related.span, alloc), alloc);
+      info.AddMember("location", location, alloc);
+      info.AddMember("message", rapidjson::Value(related.message.c_str(), alloc), alloc);
+      relatedInfo.PushBack(info, alloc);
+    }
+    if(!relatedInfo.Empty()) {
+      diag.AddMember("relatedInformation", relatedInfo, alloc);
+    }
+  }
+
+  rapidjson::Value data(rapidjson::kObjectType);
+  bool hasData = false;
+  if(!entry.id.empty()) {
+    data.AddMember("id", rapidjson::Value(entry.id.c_str(), alloc), alloc);
+    hasData = true;
+  }
+  if(!entry.phase.empty()) {
+    data.AddMember("phase", rapidjson::Value(entry.phase.c_str(), alloc), alloc);
+    hasData = true;
+  }
+  if(!entry.producerSource.empty()) {
+    data.AddMember("producerSource", rapidjson::Value(entry.producerSource.c_str(), alloc), alloc);
+    hasData = true;
+  }
+  if(!entry.notes.empty()) {
+    rapidjson::Value notes(rapidjson::kArrayType);
+    for(const auto &note : entry.notes) {
+      notes.PushBack(rapidjson::Value(note.c_str(), alloc), alloc);
+    }
+    data.AddMember("notes", notes, alloc);
+    hasData = true;
+  }
+  if(!entry.fixits.empty()) {
+    rapidjson::Value fixits(rapidjson::kArrayType);
+    for(const auto &fixit : entry.fixits) {
+      if(!hasRegionLocation(fixit.span)) {
+        continue;
+      }
+      rapidjson::Value fixitObj(rapidjson::kObjectType);
+      fixitObj.AddMember("range", buildRangeFromRegion(fixit.span, alloc), alloc);
+      fixitObj.AddMember("replacement", rapidjson::Value(fixit.replacement.c_str(), alloc), alloc);
+      if(!fixit.message.empty()) {
+        fixitObj.AddMember("message", rapidjson::Value(fixit.message.c_str(), alloc), alloc);
+      }
+      fixits.PushBack(fixitObj, alloc);
+    }
+    if(!fixits.Empty()) {
+      data.AddMember("fixits", fixits, alloc);
+      hasData = true;
+    }
+  }
+
+  if(hasData) {
+    diag.AddMember("data", data, alloc);
+  }
 }
 
 std::string idToKey(const rapidjson::Value &id) {
@@ -684,23 +871,7 @@ void Server::publishDiagnostics(const std::string &uri) {
       const auto &compilerDiagnostics = getCompilerDiagnosticsForDocument(uri, docIt->second);
       for (const auto &entry : compilerDiagnostics) {
         rapidjson::Value diag(rapidjson::kObjectType);
-        rapidjson::Value range(rapidjson::kObjectType);
-        rapidjson::Value start(rapidjson::kObjectType);
-        rapidjson::Value end(rapidjson::kObjectType);
-        unsigned startLine = entry.region.startLine > 0 ? entry.region.startLine - 1 : 0;
-        unsigned endLine = entry.region.endLine > 0 ? entry.region.endLine - 1 : startLine;
-        unsigned startCol = entry.region.startCol;
-        unsigned endCol = entry.region.endCol > entry.region.startCol ? entry.region.endCol : (entry.region.startCol + 1);
-        start.AddMember("line", startLine, alloc);
-        start.AddMember("character", startCol, alloc);
-        end.AddMember("line", endLine, alloc);
-        end.AddMember("character", endCol, alloc);
-        range.AddMember("start", start, alloc);
-        range.AddMember("end", end, alloc);
-        diag.AddMember("range", range, alloc);
-        diag.AddMember("severity", entry.severity, alloc);
-        diag.AddMember("source", rapidjson::Value("starbytes-compiler", alloc), alloc);
-        diag.AddMember("message", rapidjson::Value(entry.message.c_str(), alloc), alloc);
+        appendCompilerDiagnosticJson(diag, entry, uri, alloc);
         diagnostics.PushBack(diag, alloc);
       }
     }
@@ -857,7 +1028,7 @@ void Server::handleInitialize(rapidjson::Document &request) {
 
   rapidjson::Value serverInfo(rapidjson::kObjectType);
   serverInfo.AddMember("name", rapidjson::Value("Starbytes LSP", alloc), alloc);
-  serverInfo.AddMember("version", rapidjson::Value("0.8.0", alloc), alloc);
+  serverInfo.AddMember("version", rapidjson::Value("0.9.0", alloc), alloc);
 
   rapidjson::Value result(rapidjson::kObjectType);
   result.AddMember("capabilities", capabilities, alloc);
@@ -1339,6 +1510,7 @@ void Server::handleHover(rapidjson::Document &request) {
     if (!signatureBlock.empty()) {
       markdown += "\n\n```starbytes\n" + signatureBlock + "\n```";
     }
+    appendInheritanceMarkdown(markdown, *bestSymbol);
 
     std::string symbolText;
     if (getDocumentTextByUri(bestUri, symbolText)) {
@@ -2557,23 +2729,7 @@ void Server::processRequest(rapidjson::Document &request) {
     rapidjson::Value items(rapidjson::kArrayType);
     for (const auto &entry : compilerDiagnostics) {
       rapidjson::Value diag(rapidjson::kObjectType);
-      rapidjson::Value range(rapidjson::kObjectType);
-      rapidjson::Value start(rapidjson::kObjectType);
-      rapidjson::Value end(rapidjson::kObjectType);
-      unsigned startLine = entry.region.startLine > 0 ? entry.region.startLine - 1 : 0;
-      unsigned endLine = entry.region.endLine > 0 ? entry.region.endLine - 1 : startLine;
-      unsigned startCol = entry.region.startCol;
-      unsigned endCol = entry.region.endCol > entry.region.startCol ? entry.region.endCol : (entry.region.startCol + 1);
-      start.AddMember("line", startLine, alloc);
-      start.AddMember("character", startCol, alloc);
-      end.AddMember("line", endLine, alloc);
-      end.AddMember("character", endCol, alloc);
-      range.AddMember("start", start, alloc);
-      range.AddMember("end", end, alloc);
-      diag.AddMember("range", range, alloc);
-      diag.AddMember("severity", entry.severity, alloc);
-      diag.AddMember("source", rapidjson::Value("starbytes-compiler", alloc), alloc);
-      diag.AddMember("message", rapidjson::Value(entry.message.c_str(), alloc), alloc);
+      appendCompilerDiagnosticJson(diag, entry, uri, alloc);
       items.PushBack(diag, alloc);
     }
     result.AddMember("items", items, alloc);
@@ -2595,23 +2751,7 @@ void Server::processRequest(rapidjson::Document &request) {
       rapidjson::Value diags(rapidjson::kArrayType);
       for (const auto &entry : compilerDiagnostics) {
         rapidjson::Value diag(rapidjson::kObjectType);
-        rapidjson::Value range(rapidjson::kObjectType);
-        rapidjson::Value start(rapidjson::kObjectType);
-        rapidjson::Value end(rapidjson::kObjectType);
-        unsigned startLine = entry.region.startLine > 0 ? entry.region.startLine - 1 : 0;
-        unsigned endLine = entry.region.endLine > 0 ? entry.region.endLine - 1 : startLine;
-        unsigned startCol = entry.region.startCol;
-        unsigned endCol = entry.region.endCol > entry.region.startCol ? entry.region.endCol : (entry.region.startCol + 1);
-        start.AddMember("line", startLine, alloc);
-        start.AddMember("character", startCol, alloc);
-        end.AddMember("line", endLine, alloc);
-        end.AddMember("character", endCol, alloc);
-        range.AddMember("start", start, alloc);
-        range.AddMember("end", end, alloc);
-        diag.AddMember("range", range, alloc);
-        diag.AddMember("severity", entry.severity, alloc);
-        diag.AddMember("source", rapidjson::Value("starbytes-compiler", alloc), alloc);
-        diag.AddMember("message", rapidjson::Value(entry.message.c_str(), alloc), alloc);
+        appendCompilerDiagnosticJson(diag, entry, doc.first, alloc);
         diags.PushBack(diag, alloc);
       }
       report.AddMember("items", diags, alloc);

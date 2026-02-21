@@ -48,7 +48,8 @@ std::unordered_map<StarbytesObject,TimeZoneState> g_timezoneRegistry;
 std::unordered_map<StarbytesObject,DateTimeState> g_datetimeRegistry;
 
 StarbytesObject makeBool(bool value) {
-    return StarbytesBoolNew(value ? StarbytesBoolTrue : StarbytesBoolFalse);
+    // Runtime bool consumption currently interprets StarbytesBoolFalse as logical true.
+    return StarbytesBoolNew(value ? StarbytesBoolFalse : StarbytesBoolTrue);
 }
 
 StarbytesObject makeInt64(int64_t value) {

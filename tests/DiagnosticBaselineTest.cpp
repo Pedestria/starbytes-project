@@ -21,6 +21,8 @@ int main() {
     }
 
     handler->resetMetrics();
+    handler->setDefaultPhase(starbytes::Diagnostic::Phase::Semantic);
+    handler->setDefaultSourceName("DiagBaseline.starb");
     auto initial = handler->getMetrics();
     if(initial.pushedCount != 0 || initial.renderedCount != 0) {
         return fail("metrics should be zero after reset");
@@ -35,6 +37,23 @@ int main() {
     handler->setCodeViewSource("DiagBaseline.starb", "decl alpha:Int = 1\n");
     handler->push(starbytes::StandardDiagnostic::createError("bad alpha", region));
     handler->push(starbytes::StandardDiagnostic::createWarning("warn alpha"));
+
+    auto snapshot = handler->snapshot();
+    if(snapshot.size() != 2) {
+        return fail("snapshot should include two diagnostics");
+    }
+    if(snapshot[0]->code.find("SB-SEMA-E") != 0) {
+        return fail("missing semantic error code family");
+    }
+    if(snapshot[1]->code.find("SB-SEMA-W") != 0) {
+        return fail("missing semantic warning code family");
+    }
+    if(snapshot[0]->phaseString() != "semantic") {
+        return fail("expected semantic phase");
+    }
+    if(snapshot[0]->id.empty()) {
+        return fail("expected stable diagnostic id");
+    }
 
     if(!handler->hasErrored()) {
         return fail("hasErrored should report true when an error exists");
@@ -76,6 +95,18 @@ int main() {
     }
     if(output.find("DiagBaseline.starb:1:6") == std::string::npos) {
         return fail("missing code-view location output");
+    }
+
+    std::ostringstream machineOut;
+    auto machineHandler = starbytes::DiagnosticHandler::createDefault(machineOut);
+    machineHandler->setDefaultPhase(starbytes::Diagnostic::Phase::Parser);
+    machineHandler->setOutputMode(starbytes::DiagnosticHandler::OutputMode::Machine);
+    machineHandler->setCodeViewSource("DiagMachine.starb","decl beta:Int = 1\n");
+    machineHandler->push(starbytes::StandardDiagnostic::createError("bad beta", region));
+    machineHandler->logAll();
+    auto machineText = machineOut.str();
+    if(machineText.find(" --> ") != std::string::npos) {
+        return fail("machine mode should skip code-view rendering");
     }
 
     handler->resetMetrics();

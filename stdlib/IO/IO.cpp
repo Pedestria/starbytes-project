@@ -30,7 +30,8 @@ struct NativeArgsLayout {
 std::unordered_map<StarbytesObject,std::unique_ptr<NativeStream>> g_streamRegistry;
 
 StarbytesObject makeBool(bool value) {
-    return StarbytesBoolNew(value ? StarbytesBoolTrue : StarbytesBoolFalse);
+    // Runtime bool consumption currently interprets StarbytesBoolFalse as logical true.
+    return StarbytesBoolNew(value ? StarbytesBoolFalse : StarbytesBoolTrue);
 }
 
 StarbytesObject makeInt(int value) {
@@ -60,7 +61,7 @@ bool readBoolArg(StarbytesFuncArgs args,bool &outValue) {
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesBoolType())) {
         return false;
     }
-    outValue = (StarbytesBoolValue(arg) == StarbytesBoolTrue);
+    outValue = (StarbytesBoolValue(arg) == StarbytesBoolFalse);
     return true;
 }
 
