@@ -602,6 +602,27 @@ static ASTType *substituteTypeParams(ASTType *type,
         return nullptr;
     }
 
+    static ASTType *canonicalizeBuiltinAliasType(ASTType *type){
+        if(!type){
+            return nullptr;
+        }
+        if(type->nameMatches(LONG_TYPE)){
+            auto *canonical = ASTType::Create(INT_TYPE->getName(),type->getParentNode(),false,false);
+            canonical->isOptional = type->isOptional;
+            canonical->isThrowable = type->isThrowable;
+            canonical->isGenericParam = type->isGenericParam;
+            return canonical;
+        }
+        if(type->nameMatches(DOUBLE_TYPE)){
+            auto *canonical = ASTType::Create(FLOAT_TYPE->getName(),type->getParentNode(),false,false);
+            canonical->isOptional = type->isOptional;
+            canonical->isThrowable = type->isThrowable;
+            canonical->isGenericParam = type->isGenericParam;
+            return canonical;
+        }
+        return type;
+    }
+
     static ASTType *resolveAliasType(ASTType *type,
                                      Semantics::STableContext &symbolTableContext,
                                      std::shared_ptr<ASTScope> scope,
@@ -626,6 +647,8 @@ static ASTType *substituteTypeParams(ASTType *type,
             resolved->isGenericParam = true;
             return resolved;
         }
+
+        resolved = canonicalizeBuiltinAliasType(resolved);
 
         auto *entry = findTypeEntryNoDiag(symbolTableContext,resolved->getName(),scope);
         if(!entry || entry->type != Semantics::SymbolTable::Entry::TypeAlias){
@@ -891,6 +914,18 @@ static ASTType *substituteTypeParams(ASTType *type,
                 if(secureDecl->guardedDecl){
                     addSTableEntryForDecl(secureDecl->guardedDecl,tablePtr);
                 }
+                if(secureDecl->catchErrorId && secureDecl->catchBlock && secureDecl->catchBlock->parentScope){
+                    auto *entry = tablePtr->allocate<Semantics::SymbolTable::Entry>();
+                    auto *data = tablePtr->allocate<Semantics::SymbolTable::Var>();
+                    data->name = secureDecl->catchErrorId->val;
+                    data->type = secureDecl->catchErrorType ? secureDecl->catchErrorType : STRING_TYPE;
+                    data->isReadonly = false;
+                    entry->name = data->name;
+                    entry->emittedName = buildEmittedName(secureDecl->catchBlock->parentScope,data->name);
+                    entry->type = Semantics::SymbolTable::Entry::Var;
+                    entry->data = data;
+                    tablePtr->addSymbolInScope(entry,secureDecl->catchBlock->parentScope);
+                }
                 break;
             }
         default : {
@@ -931,6 +966,26 @@ static ASTType *substituteTypeParams(ASTType *type,
             return true;
         }
 
+        if(type->nameMatches(MAP_TYPE)){
+            if(type->typeParams.size() != 2){
+                errStream.push(SemanticADiagnostic::create("Type `Map` expects exactly two type arguments.",diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
+                return false;
+            }
+            auto *keyType = resolveAliasType(type->typeParams.front(),contextTableContext,scope,genericTypeParams);
+            bool keyIsValid = keyType && (keyType->isGenericParam
+                                          || keyType->nameMatches(ANY_TYPE)
+                                          || keyType->nameMatches(STRING_TYPE)
+                                          || keyType->nameMatches(INT_TYPE)
+                                          || keyType->nameMatches(LONG_TYPE)
+                                          || keyType->nameMatches(FLOAT_TYPE)
+                                          || keyType->nameMatches(DOUBLE_TYPE));
+            if(!keyIsValid){
+                errStream.push(SemanticADiagnostic::create("Type `Map` key must be String/Int/Long/Float/Double (or generic).",diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
+                return false;
+            }
+            return true;
+        }
+
         if(type->nameMatches(FUNCTION_TYPE)){
             if(type->typeParams.empty()){
                 errStream.push(SemanticADiagnostic::create("Function type must include a return type.",diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
@@ -943,9 +998,12 @@ static ASTType *substituteTypeParams(ASTType *type,
            type->nameMatches(STRING_TYPE) ||
            type->nameMatches(ARRAY_TYPE) ||
            type->nameMatches(DICTIONARY_TYPE) ||
+           type->nameMatches(MAP_TYPE) ||
            type->nameMatches(BOOL_TYPE) ||
            type->nameMatches(INT_TYPE) ||
            type->nameMatches(FLOAT_TYPE) ||
+           type->nameMatches(LONG_TYPE) ||
+           type->nameMatches(DOUBLE_TYPE) ||
            type->nameMatches(ANY_TYPE) ||
            type->nameMatches(REGEX_TYPE)){
             return true;

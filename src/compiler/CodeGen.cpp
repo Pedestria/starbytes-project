@@ -683,8 +683,35 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
     };
 }
 
+static bool exprCanBeConvertedToRTInternalObject(ASTExpr *expr){
+    if(!expr){
+        return false;
+    }
+    if(expr->type & LITERAL){
+        return true;
+    }
+    if(expr->type == ARRAY_EXPR){
+        for(auto *elementExpr : expr->exprArrayData){
+            if(!exprCanBeConvertedToRTInternalObject(elementExpr)){
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 bool stmtCanBeConvertedToRTInternalObject(ASTStmt *stmt){
-    return (stmt->type == ARRAY_EXPR) || (stmt->type & LITERAL);
+    if(!stmt){
+        return false;
+    }
+    if(stmt->type & LITERAL){
+        return true;
+    }
+    if(stmt->type == ARRAY_EXPR){
+        return exprCanBeConvertedToRTInternalObject((ASTExpr *)stmt);
+    }
+    return false;
 }
 
 StarbytesObject CodeGen::exprToRTInternalObject(ASTExpr *expr){
@@ -692,8 +719,11 @@ StarbytesObject CodeGen::exprToRTInternalObject(ASTExpr *expr){
     if (expr->type == ARRAY_EXPR){
         ob = StarbytesArrayNew();
         
-        for(auto & expr : expr->exprArrayData){
-            auto obj = exprToRTInternalObject(expr);
+        for(auto *elementExpr : expr->exprArrayData){
+            auto obj = exprToRTInternalObject(elementExpr);
+            if(!obj){
+                continue;
+            }
             StarbytesArrayPush(ob,obj);
         };
     }
@@ -739,6 +769,16 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         RTID flagsId = makeOwnedRTID(literalExpr->regexFlags.value_or(""));
         genContext->out << &patternId;
         genContext->out << &flagsId;
+        return;
+    }
+    if(stmt->type == ARRAY_EXPR && !stmtCanBeConvertedToRTInternalObject(stmt)){
+        RTCode code = CODE_RTARRAY_LITERAL;
+        genContext->out.write((const char *)&code,sizeof(RTCode));
+        unsigned elementCount = expr->exprArrayData.size();
+        genContext->out.write((const char *)&elementCount,sizeof(elementCount));
+        for(auto *elementExpr : expr->exprArrayData){
+            consumeStmt(elementExpr);
+        }
         return;
     }
     if(stmt->type == DICT_EXPR){
@@ -981,6 +1021,24 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
             for(auto *arg : expr->exprArrayData){
                 consumeStmt(arg);
             }
+            return;
+        }
+
+        bool calleeIsTypeLike = expr->callee
+            && ((expr->callee->type == ID_EXPR && expr->callee->id
+                 && expr->callee->id->type == ASTIdentifier::Class)
+                || (expr->callee->type == MEMBER_EXPR
+                    && expr->callee->rightExpr && expr->callee->rightExpr->id
+                    && expr->callee->rightExpr->id->type == ASTIdentifier::Class));
+        if(expr->runtimeCastTargetName.has_value() && calleeIsTypeLike){
+            if(expr->exprArrayData.size() != 1){
+                return;
+            }
+            RTCode code = CODE_RTCAST;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            consumeStmt(expr->exprArrayData.front());
+            RTID targetTypeId = makeOwnedRTID(expr->runtimeCastTargetName.value());
+            genContext->out << &targetTypeId;
             return;
         }
 

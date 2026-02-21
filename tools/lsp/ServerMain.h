@@ -1,5 +1,6 @@
 #include <istream>
 #include <ostream>
+#include <cstdint>
 #include <string>
 #include <unordered_set>
 #include <unordered_map>
@@ -7,6 +8,7 @@
 
 #include <rapidjson/document.h>
 
+#include "DocumentAnalysis.h"
 #include "SymbolCache.h"
 
 #ifndef STARBYTES_LSP_SERVERMAIN_H
@@ -23,10 +25,29 @@ struct ServerOptions {
 };
 
 class Server {
+  struct DocumentAnalysisCache {
+    int version = -1;
+    uint64_t textHash = 0;
+    bool diagnosticsReady = false;
+    std::vector<CompilerDiagnosticEntry> diagnostics;
+    bool semanticTokensReady = false;
+    std::vector<SemanticTokenEntry> semanticTokens;
+  };
+
   struct DocumentState {
     std::string text;
     int version = 0;
     bool isOpen = false;
+    uint64_t textHash = 0;
+    DocumentAnalysisCache analysis;
+  };
+
+  struct BuiltinsIndexCache {
+    bool valid = false;
+    std::string uri;
+    int version = 0;
+    uint64_t textHash = 0;
+    BuiltinApiIndex index;
   };
 
   struct SemanticSnapshot {
@@ -48,6 +69,7 @@ class Server {
   std::unordered_map<std::string, SemanticSnapshot> semanticSnapshots;
   std::unordered_set<std::string> canceledRequestIds;
   SymbolCache symbolCache;
+  BuiltinsIndexCache builtinsIndexCache;
 
   bool readMessage(std::string &body);
   void writeMessage(rapidjson::Document &doc);
@@ -58,6 +80,7 @@ class Server {
   static std::string trim(const std::string &in);
   static bool isIdentifierChar(char c);
   static bool isIdentifierStart(char c);
+  static uint64_t hashText(const std::string &text);
   static bool parseUriToPath(const std::string &uri, std::string &pathOut);
   static std::string pathToUri(const std::string &path);
   static size_t offsetFromPosition(const std::string &text, unsigned line, unsigned character);
@@ -83,6 +106,10 @@ class Server {
   void publishDiagnostics(const std::string &uri);
   void maybeApplyIncrementalChange(std::string &text, const rapidjson::Value &change);
   void configureSymbolCache();
+  const std::vector<CompilerDiagnosticEntry> &getCompilerDiagnosticsForDocument(const std::string &uri,
+                                                                                DocumentState &state);
+  const std::vector<SemanticTokenEntry> &getSemanticTokensForDocument(const std::string &uri, DocumentState &state);
+  const BuiltinApiIndex *getBuiltinsApiIndex();
   std::vector<SymbolEntry> collectSymbolsForUri(const std::string &uri, const std::string &text);
   void invalidateSymbolCacheForUri(const std::string &uri);
 

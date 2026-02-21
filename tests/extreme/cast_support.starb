@@ -1,0 +1,49 @@
+class Animal {
+    decl name:String = "animal"
+}
+
+class Dog : Animal {
+    new(){
+        self.name = "dog"
+    }
+}
+
+class Cat : Animal {
+    new(){
+        self.name = "cat"
+    }
+}
+
+decl dog = new Dog()
+decl upAnimal = Animal(dog)
+print(upAnimal is Animal)
+
+secure(decl castDog = Dog(upAnimal)) catch {
+    print("DOWNCAST-UNEXPECTED-CATCH")
+}
+print(castDog is Dog)
+
+decl cat = new Cat()
+decl catAnimal:Animal = Animal(cat)
+secure(decl badDog = Dog(catAnimal)) catch (err:String) {
+    print("DOWNCAST-CATCH")
+    print(err)
+}
+
+decl anyDog:Any = dog
+secure(decl fromAnyDog = Dog(anyDog)) catch {
+    print("ANY-DOWNCAST-UNEXPECTED-CATCH")
+}
+print(fromAnyDog is Dog)
+
+decl intValue:Int = Int(4.75)
+decl floatValue:Float = Float("5.5")
+decl boolValue:Bool = Bool("   ")
+decl stringValue:String = String(123)
+
+if(intValue == 4 && floatValue > 5 && boolValue == false && stringValue == "123"){
+    print("CAST-OK")
+}
+else {
+    print("CAST-FAIL")
+}

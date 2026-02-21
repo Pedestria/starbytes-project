@@ -244,7 +244,7 @@ namespace starbytes::Syntax {
                    literal_expr->floatValue = val;
                 }
                 else {
-                    starbytes_int_t val = std::stoi(tokRef.content);
+                    starbytes_int_t val = static_cast<starbytes_int_t>(std::stoll(tokRef.content));
                     literal_expr->intValue = val;
                 };
                 expr = literal_expr;

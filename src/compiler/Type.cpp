@@ -11,9 +11,12 @@ namespace starbytes {
     ASTType * STRING_TYPE = ASTType::Create("String",nullptr,false);
     ASTType * ARRAY_TYPE = ASTType::Create("Array",nullptr,false);
     ASTType * DICTIONARY_TYPE = ASTType::Create("Dict",nullptr,false);
+    ASTType * MAP_TYPE = ASTType::Create("Map",nullptr,false);
     ASTType * BOOL_TYPE  = ASTType::Create("Bool",nullptr,false);
     ASTType * INT_TYPE = ASTType::Create("Int",nullptr,false);
     ASTType * FLOAT_TYPE = ASTType::Create("Float",nullptr,false);
+    ASTType * LONG_TYPE = ASTType::Create("Long",nullptr,false);
+    ASTType * DOUBLE_TYPE = ASTType::Create("Double",nullptr,false);
     ASTType * REGEX_TYPE = ASTType::Create("Regex",nullptr,false);
     ASTType * ANY_TYPE = ASTType::Create("Any",nullptr,false);
     ASTType * TASK_TYPE = ASTType::Create("Task",nullptr,false);
@@ -56,6 +59,9 @@ namespace starbytes {
         }
         bool first_m = name == other->name;
         if(name == "Any" || other->name == "Any"){
+            return true;
+        }
+        if(name == DICTIONARY_TYPE->getName() && other->name == MAP_TYPE->getName()){
             return true;
         }
         if(!first_m){

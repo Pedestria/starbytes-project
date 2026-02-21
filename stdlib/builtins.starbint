@@ -2,7 +2,7 @@
 // This file is documentation metadata for editor tooling and language reference.
 // It mirrors behavior implemented in semantic analysis/runtime.
 
-def DictKey = Int | Float | String
+def DictKey = Int | Long | Float | Double | String
 
 // Intrinsic global function.
 func print(object:Any) Void
@@ -64,9 +64,25 @@ interface Dict {
     func copy() Dict
 }
 
+// Builtin type: Map<K,V>
+// Type-strict dictionary surface. Key/value types are tracked by the compiler.
+interface Map<K,V> {
+    decl length:Int
+
+    func isEmpty() Bool
+    func has(key:K) Bool
+    func get(key:K) V?
+    func set(key:K,value:V) Bool
+    func remove(key:K) V?
+    func keys() Array<K>
+    func values() Array<V>
+    func clear() Bool
+    func copy() Map<K,V>
+}
+
 // Builtin type: Task<T>
 // No direct methods yet. Produced by lazy functions and consumed by `await`.
 interface Task<T> {}
 
 // Builtin scalar types currently expose operators/type-checking only:
-// Void, Bool, Int, Float, Regex, Any
+// Void, Bool, Int, Long, Float, Double, Regex, Any

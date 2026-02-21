@@ -1,4 +1,4 @@
-version: 0.7.0-a{build}
+version: 0.8.0-a{build}
 
 
 branches:
@@ -33,5 +33,4 @@ configuration: Release
 build_script:
 - cmd: "%MakeProgram% -C ./build"
 - sh: "$MakeProgram -C ./build"
-
 

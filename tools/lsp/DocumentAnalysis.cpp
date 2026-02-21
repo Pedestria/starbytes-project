@@ -493,6 +493,34 @@ void collectSymbolsFromDecl(ASTDecl *decl,
                  !containerName.empty());
       break;
     }
+    case SECURE_DECL: {
+      auto *secureDecl = static_cast<ASTSecureDecl *>(decl);
+      if (secureDecl->guardedDecl) {
+        collectSymbolsFromDecl(secureDecl->guardedDecl, lines, symbols, containerName);
+      }
+      if (secureDecl->catchErrorId) {
+        std::string signature = "catch ";
+        signature += secureDecl->catchErrorId->val;
+        if (secureDecl->catchErrorType) {
+          signature += ":";
+          signature += typeToString(secureDecl->catchErrorType);
+        }
+        pushSymbol(symbols,
+                   secureDecl->catchErrorId,
+                   SYMBOL_KIND_VARIABLE,
+                   "catch error",
+                   signature,
+                   lines,
+                   containerName,
+                   !containerName.empty());
+      }
+      if (secureDecl->catchBlock) {
+        for (auto *stmt : secureDecl->catchBlock->body) {
+          collectSymbolsFromStmt(stmt, lines, symbols, containerName);
+        }
+      }
+      break;
+    }
     default:
       break;
   }

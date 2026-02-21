@@ -1,0 +1,1 @@
+decl badMap:Map<String,Long> = {"a":"nope"}

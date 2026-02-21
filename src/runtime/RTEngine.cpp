@@ -10,10 +10,13 @@
 #include <cmath>
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <cstdlib>
 #include <sstream>
 #include <set>
 #include <vector>
 #include <deque>
+#include <limits>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
@@ -206,6 +209,39 @@ static std::string stringTrim(const std::string &input){
         --end;
     }
     return input.substr(begin,end - begin);
+}
+
+static bool parseIntStrict(const std::string &text,int &outValue){
+    auto trimmed = stringTrim(text);
+    if(trimmed.empty()){
+        return false;
+    }
+    errno = 0;
+    char *endPtr = nullptr;
+    long parsed = std::strtol(trimmed.c_str(),&endPtr,10);
+    if(errno != 0 || endPtr == nullptr || *endPtr != '\0'){
+        return false;
+    }
+    if(parsed < std::numeric_limits<int>::min() || parsed > std::numeric_limits<int>::max()){
+        return false;
+    }
+    outValue = (int)parsed;
+    return true;
+}
+
+static bool parseFloatStrict(const std::string &text,float &outValue){
+    auto trimmed = stringTrim(text);
+    if(trimmed.empty()){
+        return false;
+    }
+    errno = 0;
+    char *endPtr = nullptr;
+    float parsed = std::strtof(trimmed.c_str(),&endPtr);
+    if(errno != 0 || endPtr == nullptr || *endPtr != '\0'){
+        return false;
+    }
+    outValue = parsed;
+    return true;
 }
 
 
@@ -1179,6 +1215,22 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             StarbytesObjectReference(value);
             return value;
         }
+        case CODE_RTARRAY_LITERAL: {
+            unsigned elementCount = 0;
+            in.read((char *)&elementCount,sizeof(elementCount));
+            auto array = StarbytesArrayNew();
+            while(elementCount > 0){
+                auto element = evalExpr(in);
+                if(!element){
+                    StarbytesObjectRelease(array);
+                    return nullptr;
+                }
+                StarbytesArrayPush(array,element);
+                StarbytesObjectRelease(element);
+                --elementCount;
+            }
+            return array;
+        }
         case CODE_RTDICT_LITERAL: {
             unsigned pairCount = 0;
             in.read((char *)&pairCount,sizeof(pairCount));
@@ -1221,6 +1273,9 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 else if(targetType == "Dict"){
                     matches = StarbytesObjectTypecheck(object,StarbytesDictType());
                 }
+                else if(targetType == "Map"){
+                    matches = StarbytesObjectTypecheck(object,StarbytesDictType());
+                }
                 else if(targetType == "Regex"){
                     matches = StarbytesObjectTypecheck(object,StarbytesRegexType());
                 }
@@ -1235,6 +1290,14 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                         && StarbytesNumGetType(object) == NumTypeInt;
                 }
                 else if(targetType == "Float"){
+                    matches = StarbytesObjectTypecheck(object,StarbytesNumType())
+                        && StarbytesNumGetType(object) == NumTypeFloat;
+                }
+                else if(targetType == "Long"){
+                    matches = StarbytesObjectTypecheck(object,StarbytesNumType())
+                        && StarbytesNumGetType(object) == NumTypeInt;
+                }
+                else if(targetType == "Double"){
                     matches = StarbytesObjectTypecheck(object,StarbytesNumType())
                         && StarbytesNumGetType(object) == NumTypeFloat;
                 }
@@ -1264,6 +1327,139 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 StarbytesObjectRelease(object);
             }
             return StarbytesBoolNew((StarbytesBoolVal)matches);
+        }
+        case CODE_RTCAST: {
+            auto object = evalExpr(in);
+            RTID typeId;
+            in >> &typeId;
+            std::string targetType = rtidToString(typeId);
+            if(!object){
+                return nullptr;
+            }
+
+            if(targetType == "Long"){
+                targetType = "Int";
+            }
+            else if(targetType == "Double"){
+                targetType = "Float";
+            }
+
+            auto failCast = [&](const std::string &message) -> StarbytesObject {
+                lastRuntimeError = message;
+                StarbytesObjectRelease(object);
+                return nullptr;
+            };
+
+            if(targetType == "Any"){
+                return object;
+            }
+            if(targetType == "String"){
+                auto text = objectToString(object);
+                StarbytesObjectRelease(object);
+                return StarbytesStrNewWithData(text.c_str());
+            }
+            if(targetType == "Bool"){
+                bool value = true;
+                if(StarbytesObjectTypecheck(object,StarbytesBoolType())){
+                    value = (bool)StarbytesBoolValue(object);
+                }
+                else if(StarbytesObjectTypecheck(object,StarbytesNumType())){
+                    if(StarbytesNumGetType(object) == NumTypeFloat){
+                        value = StarbytesNumGetFloatValue(object) != 0.0f;
+                    }
+                    else {
+                        value = StarbytesNumGetIntValue(object) != 0;
+                    }
+                }
+                else if(StarbytesObjectTypecheck(object,StarbytesStrType())){
+                    auto text = stringTrim(StarbytesStrGetBuffer(object));
+                    value = !text.empty();
+                }
+                StarbytesObjectRelease(object);
+                return StarbytesBoolNew((StarbytesBoolVal)value);
+            }
+            if(targetType == "Int"){
+                int value = 0;
+                if(StarbytesObjectTypecheck(object,StarbytesNumType())){
+                    if(StarbytesNumGetType(object) == NumTypeFloat){
+                        value = (int)StarbytesNumGetFloatValue(object);
+                    }
+                    else {
+                        value = StarbytesNumGetIntValue(object);
+                    }
+                    StarbytesObjectRelease(object);
+                    return StarbytesNumNew(NumTypeInt,value);
+                }
+                if(StarbytesObjectTypecheck(object,StarbytesBoolType())){
+                    value = (bool)StarbytesBoolValue(object)? 1 : 0;
+                    StarbytesObjectRelease(object);
+                    return StarbytesNumNew(NumTypeInt,value);
+                }
+                if(StarbytesObjectTypecheck(object,StarbytesStrType())){
+                    auto text = StarbytesStrGetBuffer(object);
+                    if(!parseIntStrict(text? text : "",value)){
+                        return failCast("Int cast failed: string is not a valid integer");
+                    }
+                    StarbytesObjectRelease(object);
+                    return StarbytesNumNew(NumTypeInt,value);
+                }
+                return failCast("Int cast failed: unsupported source type");
+            }
+            if(targetType == "Float"){
+                float value = 0.0f;
+                if(StarbytesObjectTypecheck(object,StarbytesNumType())){
+                    if(StarbytesNumGetType(object) == NumTypeFloat){
+                        value = StarbytesNumGetFloatValue(object);
+                    }
+                    else {
+                        value = (float)StarbytesNumGetIntValue(object);
+                    }
+                    StarbytesObjectRelease(object);
+                    return StarbytesNumNew(NumTypeFloat,value);
+                }
+                if(StarbytesObjectTypecheck(object,StarbytesBoolType())){
+                    value = (bool)StarbytesBoolValue(object)? 1.0f : 0.0f;
+                    StarbytesObjectRelease(object);
+                    return StarbytesNumNew(NumTypeFloat,value);
+                }
+                if(StarbytesObjectTypecheck(object,StarbytesStrType())){
+                    auto text = StarbytesStrGetBuffer(object);
+                    if(!parseFloatStrict(text? text : "",value)){
+                        return failCast("Float cast failed: string is not a valid float");
+                    }
+                    StarbytesObjectRelease(object);
+                    return StarbytesNumNew(NumTypeFloat,value);
+                }
+                return failCast("Float cast failed: unsupported source type");
+            }
+
+            if(!StarbytesObjectIs(object)){
+                auto classType = StarbytesClassObjectGetClass(object);
+                auto *classMeta = findClassByType(classType);
+                string_set visited;
+                while(classMeta){
+                    auto className = rtidToString(classMeta->name);
+                    if(visited.find(className) != visited.end()){
+                        break;
+                    }
+                    visited.insert(className);
+                    if(className == targetType){
+                        return object;
+                    }
+                    if(!classMeta->hasSuperClass){
+                        break;
+                    }
+                    auto superName = rtidToString(classMeta->superClassName);
+                    classMeta = findClassByName(string_ref(superName));
+                }
+                std::ostringstream ss;
+                ss << "Class cast failed: object is not compatible with `" << targetType << "`";
+                return failCast(ss.str());
+            }
+
+            std::ostringstream ss;
+            ss << "Class cast failed: source value is not a class object for target `" << targetType << "`";
+            return failCast(ss.str());
         }
         case CODE_RTTERNARY: {
             auto condition = evalExpr(in);
@@ -1998,7 +2194,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                             return failWithArgs("Dict method expects 1 argument");
                         }
                         if(!isDictKeyObject(args[0])){
-                            return failWithArgs("Dict key must be String/Int/Float");
+                            return failWithArgs("Dict key must be String/Int/Long/Float/Double");
                         }
                         if(methodName == "has"){
                             auto value = StarbytesDictGet(object,args[0]);
@@ -2049,7 +2245,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                             return failWithArgs("Dict.set expects 2 arguments");
                         }
                         if(!isDictKeyObject(args[0])){
-                            return failWithArgs("Dict key must be String/Int/Float");
+                            return failWithArgs("Dict key must be String/Int/Long/Float/Double");
                         }
                         StarbytesDictSet(object,args[0],args[1]);
                         releaseArgs(args);
@@ -2290,6 +2486,15 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             skipExpr(in);
             break;
         }
+        case CODE_RTARRAY_LITERAL: {
+            unsigned elementCount = 0;
+            in.read((char *)&elementCount,sizeof(elementCount));
+            while(elementCount > 0){
+                skipExpr(in);
+                --elementCount;
+            }
+            break;
+        }
         case CODE_RTDICT_LITERAL: {
             unsigned pairCount = 0;
             in.read((char *)&pairCount,sizeof(pairCount));
@@ -2310,6 +2515,12 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             skipExpr(in);
             skipExpr(in);
             skipExpr(in);
+            break;
+        }
+        case CODE_RTCAST: {
+            skipExpr(in);
+            RTID typeId;
+            in >> &typeId;
             break;
         }
         default:
@@ -2602,12 +2813,14 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
          || code == CODE_BINARY_OPERATOR
          || code == CODE_RTTYPECHECK
          || code == CODE_RTTERNARY
+         || code == CODE_RTCAST
          || code == CODE_RTMEMBER_SET
          || code == CODE_RTMEMBER_IVK
          || code == CODE_RTMEMBER_GET
          || code == CODE_RTNEWOBJ
          || code == CODE_RTREGEX_LITERAL
          || code == CODE_RTVAR_SET
+         || code == CODE_RTARRAY_LITERAL
          || code == CODE_RTINDEX_GET
          || code == CODE_RTINDEX_SET
          || code == CODE_RTDICT_LITERAL){

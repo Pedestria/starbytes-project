@@ -91,4 +91,16 @@ add_starbytes_test(
     DEPENDENCIES
     ${STARBYTES_ALL_LIBS})
 
+add_starbytes_test(
+    NAME
+    "lsp-cache-regression-test"
+    INCLUDE_LIB
+    FILES
+    "LspCacheRegressionTest.cpp"
+    "${CMAKE_SOURCE_DIR}/tools/lsp/ServerMain.cpp"
+    "${CMAKE_SOURCE_DIR}/tools/lsp/DocumentAnalysis.cpp"
+    "${CMAKE_SOURCE_DIR}/tools/lsp/SymbolCache.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
 configure_file("test.starb" "${CMAKE_CURRENT_BINARY_DIR}/test.starb" COPYONLY)

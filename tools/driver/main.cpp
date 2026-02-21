@@ -3,6 +3,7 @@
 #include "starbytes/compiler/AST.h"
 #include "starbytes/compiler/Parser.h"
 #include "starbytes/compiler/Gen.h"
+#include "starbytes/compiler/RTCode.h"
 #include "starbytes/interop.h"
 #include "starbytes/runtime/RTEngine.h"
 #include "profile/CompileProfile.h"
@@ -24,6 +25,10 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <future>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
 
 #define STARBYTES_STRINGIFY_IMPL(x) #x
 #define STARBYTES_STRINGIFY(x) STARBYTES_STRINGIFY_IMPL(x)
@@ -55,6 +60,7 @@ struct DriverOptions {
     bool autoLoadNative = true;
     std::vector<std::string> nativeModules;
     std::vector<std::string> nativeSearchDirs;
+    unsigned jobs = 1;
 };
 
 struct ParseResult {
@@ -89,6 +95,7 @@ struct ModuleBuildUnit {
     std::filesystem::path moduleDir;
     std::vector<ModuleSource> sources;
     std::vector<std::string> imports;
+    std::vector<std::string> dependencyKeys;
     bool hasMainSource = false;
     bool hasInterfaceSource = false;
 };
@@ -110,6 +117,21 @@ struct ModuleAnalysisEntry {
 
 struct ModuleAnalysisCache {
     std::unordered_map<std::string, ModuleAnalysisEntry> entriesBySourcePath;
+    bool dirty = false;
+};
+
+struct ModuleBuildCacheEntry {
+    uint64_t moduleHash = 0;
+    uint64_t fingerprint = 0;
+    uint64_t flagsHash = 0;
+    std::string compilerVersion;
+    std::string segmentPath;
+    std::string symbolPath;
+    std::string interfacePath;
+};
+
+struct ModuleBuildCache {
+    std::unordered_map<std::string, ModuleBuildCacheEntry> entriesByModuleKey;
     bool dirty = false;
 };
 
@@ -270,6 +292,158 @@ bool saveModuleAnalysisCache(const std::filesystem::path &cachePath,
             out << " " << std::quoted(importName);
         }
         out << "\n";
+    }
+    return true;
+}
+
+uint64_t combineHash64(uint64_t seed,uint64_t value){
+    uint64_t mixed = value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+    return seed ^ mixed;
+}
+
+uint64_t hashPath64(const std::filesystem::path &path){
+    return hashString64(makeAbsolutePathString(path));
+}
+
+uint64_t computeModuleSourceHash(const ModuleBuildUnit &unit){
+    uint64_t hash = 1469598103934665603ULL;
+    hash = combineHash64(hash,hashPath64(unit.moduleDir));
+    for(const auto &source : unit.sources){
+        hash = combineHash64(hash,hashPath64(source.filePath));
+        hash = combineHash64(hash,source.contentHash);
+        hash = combineHash64(hash,source.isInterfaceFile ? 1ULL : 0ULL);
+    }
+    return hash;
+}
+
+std::unordered_map<std::string,uint64_t> computeModuleFingerprints(const ModuleGraph &graph){
+    std::unordered_map<std::string,uint64_t> fingerprints;
+    fingerprints.reserve(graph.unitsByKey.size());
+    for(const auto &moduleKey : graph.buildOrder){
+        auto unitIt = graph.unitsByKey.find(moduleKey);
+        if(unitIt == graph.unitsByKey.end()){
+            continue;
+        }
+        uint64_t hash = computeModuleSourceHash(unitIt->second);
+        for(const auto &depKey : unitIt->second.dependencyKeys){
+            auto depIt = fingerprints.find(depKey);
+            if(depIt == fingerprints.end()){
+                continue;
+            }
+            hash = combineHash64(hash,hashString64(depKey));
+            hash = combineHash64(hash,depIt->second);
+        }
+        fingerprints[moduleKey] = hash;
+    }
+    return fingerprints;
+}
+
+bool loadModuleBuildCache(const std::filesystem::path &cachePath,
+                          ModuleBuildCache &cache,
+                          std::string &warning){
+    cache.entriesByModuleKey.clear();
+    cache.dirty = false;
+
+    std::ifstream in(cachePath,std::ios::in);
+    if(!in.is_open()){
+        return true;
+    }
+
+    std::string header;
+    if(!std::getline(in,header)){
+        return true;
+    }
+    if(header != "STARBYTES_MODULE_BUILD_CACHE_V1"){
+        warning = "Ignoring incompatible module build cache file: " + cachePath.string();
+        return true;
+    }
+
+    while(in){
+        std::string tag;
+        in >> tag;
+        if(!in){
+            break;
+        }
+        if(tag != "ENTRY"){
+            std::string discard;
+            std::getline(in,discard);
+            continue;
+        }
+
+        std::string moduleKey;
+        ModuleBuildCacheEntry entry;
+        in >> std::quoted(moduleKey)
+           >> entry.moduleHash
+           >> entry.fingerprint
+           >> std::quoted(entry.compilerVersion)
+           >> entry.flagsHash
+           >> std::quoted(entry.segmentPath)
+           >> std::quoted(entry.symbolPath)
+           >> std::quoted(entry.interfacePath);
+        if(!in){
+            warning = "Ignoring malformed module build cache file: " + cachePath.string();
+            cache.entriesByModuleKey.clear();
+            return true;
+        }
+        cache.entriesByModuleKey[moduleKey] = std::move(entry);
+    }
+    return true;
+}
+
+void pruneStaleModuleBuildCacheEntries(ModuleBuildCache &cache){
+    std::vector<std::string> staleKeys;
+    staleKeys.reserve(cache.entriesByModuleKey.size());
+    for(const auto &entry : cache.entriesByModuleKey){
+        std::error_code ec;
+        auto artifactPath = std::filesystem::path(entry.second.segmentPath);
+        if(entry.second.segmentPath.empty() ||
+           !std::filesystem::exists(artifactPath,ec) || ec ||
+           !std::filesystem::is_regular_file(artifactPath,ec) || ec){
+            staleKeys.push_back(entry.first);
+        }
+    }
+    if(staleKeys.empty()){
+        return;
+    }
+    for(const auto &key : staleKeys){
+        cache.entriesByModuleKey.erase(key);
+    }
+    cache.dirty = true;
+}
+
+bool saveModuleBuildCache(const std::filesystem::path &cachePath,
+                          const ModuleBuildCache &cache,
+                          std::string &error){
+    auto parent = cachePath.parent_path();
+    if(!parent.empty()){
+        std::error_code dirErr;
+        std::filesystem::create_directories(parent,dirErr);
+        if(dirErr){
+            error = "Failed to create module build cache directory '" + parent.string() + "': " + dirErr.message();
+            return false;
+        }
+    }
+
+    std::ofstream out(cachePath,std::ios::out | std::ios::trunc);
+    if(!out.is_open()){
+        error = "Failed to write module build cache file: " + cachePath.string();
+        return false;
+    }
+
+    out << "STARBYTES_MODULE_BUILD_CACHE_V1\n";
+    for(const auto &pair : cache.entriesByModuleKey){
+        const auto &moduleKey = pair.first;
+        const auto &entry = pair.second;
+        out << "ENTRY "
+            << std::quoted(moduleKey) << " "
+            << entry.moduleHash << " "
+            << entry.fingerprint << " "
+            << std::quoted(entry.compilerVersion) << " "
+            << entry.flagsHash << " "
+            << std::quoted(entry.segmentPath) << " "
+            << std::quoted(entry.symbolPath) << " "
+            << std::quoted(entry.interfacePath)
+            << "\n";
     }
     return true;
 }
@@ -724,6 +898,10 @@ bool discoverModuleGraphByDirectory(const std::filesystem::path &moduleDir,
             stack.pop_back();
             return false;
         }
+        auto dependencyKey = makeAbsolutePathString(*resolvedDir);
+        if(std::find(unit.dependencyKeys.begin(),unit.dependencyKeys.end(),dependencyKey) == unit.dependencyKeys.end()){
+            unit.dependencyKeys.push_back(dependencyKey);
+        }
         if(!discoverModuleGraphByDirectory(*resolvedDir,
                                            workspaceRoot,
                                            resolverContext,
@@ -781,6 +959,10 @@ bool discoverModuleGraphBySingleFile(const std::filesystem::path &sourceFile,
         if(!resolvedDir.has_value()) {
             error = "Failed to resolve imported module `" + importName + "` from `" + sourceFile.string() + "`.";
             return false;
+        }
+        auto dependencyKey = makeAbsolutePathString(*resolvedDir);
+        if(std::find(rootUnit.dependencyKeys.begin(),rootUnit.dependencyKeys.end(),dependencyKey) == rootUnit.dependencyKeys.end()){
+            rootUnit.dependencyKeys.push_back(dependencyKey);
         }
         if(!discoverModuleGraphByDirectory(*resolvedDir,
                                            workspaceRoot,
@@ -983,6 +1165,237 @@ std::vector<std::filesystem::path> collectAutoNativeModulePaths(const DriverOpti
     return paths;
 }
 
+std::string artifactNameForModuleKey(const std::string &moduleKey){
+    std::ostringstream out;
+    out << std::hex << hashString64(moduleKey);
+    return out.str();
+}
+
+struct ModuleCompileTaskResult {
+    bool success = false;
+    bool rebuilt = false;
+    std::string moduleKey;
+    std::string diagnostics;
+    std::string error;
+    std::filesystem::path segmentPath;
+    std::filesystem::path symbolPath;
+    std::filesystem::path interfacePath;
+    std::shared_ptr<starbytes::Semantics::SymbolTable> symbols;
+    starbytes::Parser::ProfileData parserProfile;
+    uint64_t genFinishNs = 0;
+};
+
+class TaskLimiter {
+    std::mutex mutex;
+    std::condition_variable cv;
+    unsigned maxActive = 1;
+    unsigned active = 0;
+public:
+    explicit TaskLimiter(unsigned maxActive):maxActive(std::max(1u,maxActive)){}
+
+    void acquire(){
+        std::unique_lock<std::mutex> lock(mutex);
+        cv.wait(lock,[&](){ return active < maxActive; });
+        ++active;
+    }
+
+    void release(){
+        std::unique_lock<std::mutex> lock(mutex);
+        if(active > 0){
+            --active;
+        }
+        lock.unlock();
+        cv.notify_one();
+    }
+};
+
+ModuleCompileTaskResult compileModuleSymbolsOnly(const std::string &moduleKey,
+                                                 const ModuleBuildUnit &unit,
+                                                 const std::unordered_map<std::string,std::shared_ptr<starbytes::Semantics::SymbolTable>> &depTables,
+                                                 bool profileEnabled){
+    ModuleCompileTaskResult result;
+    result.moduleKey = moduleKey;
+
+    std::ostringstream diagSink;
+    auto diagnostics = starbytes::DiagnosticHandler::createDefault(diagSink);
+    NullASTConsumer consumer;
+    starbytes::Parser parser(consumer,std::move(diagnostics));
+    parser.setProfilingEnabled(profileEnabled);
+    if(profileEnabled){
+        parser.resetProfileData();
+    }
+
+    auto parseContext = starbytes::ModuleParseContext::Create(moduleKey);
+    for(const auto &depKey : unit.dependencyKeys){
+        auto depIt = depTables.find(depKey);
+        if(depIt != depTables.end() && depIt->second){
+            parseContext.sTableContext.otherTables.push_back(depIt->second);
+        }
+    }
+
+    std::string parseError;
+    for(const auto &source : unit.sources){
+        parseContext.name = makeAbsolutePathString(source.filePath);
+        std::istringstream in(source.fileText);
+        parser.parseFromStream(in,parseContext);
+    }
+
+    auto ok = parser.finish();
+    result.parserProfile = parser.getProfileData();
+    result.diagnostics = diagSink.str();
+    if(!ok){
+        result.success = false;
+        if(result.diagnostics.empty()){
+            result.error = "semantic analysis failed";
+        }
+        return result;
+    }
+
+    result.symbols = std::shared_ptr<starbytes::Semantics::SymbolTable>(parseContext.sTableContext.main.release());
+    result.success = (result.symbols != nullptr);
+    if(!result.success){
+        result.error = "failed to materialize symbol table";
+    }
+    return result;
+}
+
+ModuleCompileTaskResult compileModuleToSegment(const std::string &moduleKey,
+                                               const std::string &moduleName,
+                                               const ModuleBuildUnit &unit,
+                                               const std::unordered_map<std::string,std::shared_ptr<starbytes::Semantics::SymbolTable>> &depTables,
+                                               const std::filesystem::path &artifactDir,
+                                               bool profileEnabled,
+                                               bool generateInterface,
+                                               const std::unordered_set<std::string> &interfaceAllowlist){
+    ModuleCompileTaskResult result;
+    result.moduleKey = moduleKey;
+    result.rebuilt = true;
+
+    std::error_code dirErr;
+    std::filesystem::create_directories(artifactDir,dirErr);
+    if(dirErr){
+        result.error = "failed to create module artifact directory `" + artifactDir.string() + "`: " + dirErr.message();
+        return result;
+    }
+
+    auto segmentPath = artifactDir / (moduleName + ".segment");
+    std::ofstream moduleOut(segmentPath,std::ios::out | std::ios::binary);
+    if(!moduleOut.is_open()){
+        result.error = "failed to open module segment for writing: " + segmentPath.string();
+        return result;
+    }
+
+    std::ostringstream diagSink;
+    auto diagnostics = starbytes::DiagnosticHandler::createDefault(diagSink);
+    starbytes::Gen gen;
+    auto outputPathForGen = artifactDir;
+    auto genContext = starbytes::ModuleGenContext::Create(moduleName,moduleOut,outputPathForGen);
+    genContext.generateInterface = generateInterface;
+    if(generateInterface){
+        genContext.interfaceSourceAllowlist = interfaceAllowlist;
+    }
+    gen.setContext(&genContext);
+
+    starbytes::Parser parser(gen,std::move(diagnostics));
+    parser.setProfilingEnabled(profileEnabled);
+    if(profileEnabled){
+        parser.resetProfileData();
+    }
+
+    auto parseContext = starbytes::ModuleParseContext::Create(moduleKey);
+    for(const auto &depKey : unit.dependencyKeys){
+        auto depIt = depTables.find(depKey);
+        if(depIt != depTables.end() && depIt->second){
+            parseContext.sTableContext.otherTables.push_back(depIt->second);
+        }
+    }
+
+    for(const auto &source : unit.sources){
+        parseContext.name = makeAbsolutePathString(source.filePath);
+        std::istringstream in(source.fileText);
+        parser.parseFromStream(in,parseContext);
+    }
+
+    auto ok = parser.finish();
+    result.parserProfile = parser.getProfileData();
+    result.diagnostics = diagSink.str();
+    if(!ok){
+        moduleOut.close();
+        std::filesystem::remove(segmentPath,dirErr);
+        result.success = false;
+        if(result.diagnostics.empty()){
+            result.error = "module compile failed";
+        }
+        return result;
+    }
+
+    auto genFinishStart = std::chrono::steady_clock::now();
+    gen.finish();
+    auto genFinishEnd = std::chrono::steady_clock::now();
+    result.genFinishNs = std::chrono::duration_cast<std::chrono::nanoseconds>(genFinishEnd - genFinishStart).count();
+    moduleOut.close();
+
+    result.symbols = std::shared_ptr<starbytes::Semantics::SymbolTable>(parseContext.sTableContext.main.release());
+    result.segmentPath = segmentPath;
+    result.symbolPath = artifactDir / (moduleName + ".starbsymtb");
+    result.interfacePath = artifactDir / (moduleName + "." STARBYTES_INTERFACEFILE_EXT);
+    result.success = true;
+    return result;
+}
+
+bool concatenateModuleSegments(const std::vector<std::string> &buildOrder,
+                               const std::unordered_map<std::string,ModuleCompileTaskResult> &resultsByModule,
+                               const std::filesystem::path &outputPath,
+                               std::string &error){
+    std::ofstream out(outputPath,std::ios::out | std::ios::binary | std::ios::trunc);
+    if(!out.is_open()){
+        error = "Failed to open linked output module for writing: " + outputPath.string();
+        return false;
+    }
+
+    std::vector<char> buffer(64 * 1024);
+    for(size_t i = 0;i < buildOrder.size();++i){
+        auto it = resultsByModule.find(buildOrder[i]);
+        if(it == resultsByModule.end()){
+            error = "Internal driver error: missing build artifact for module `" + buildOrder[i] + "`.";
+            return false;
+        }
+        auto segmentPath = it->second.segmentPath;
+        std::ifstream in(segmentPath,std::ios::in | std::ios::binary);
+        if(!in.is_open()){
+            error = "Failed to open module segment `" + segmentPath.string() + "`.";
+            return false;
+        }
+
+        std::error_code fileErr;
+        auto fileSize = std::filesystem::file_size(segmentPath,fileErr);
+        if(fileErr){
+            error = "Failed to read module segment size `" + segmentPath.string() + "`: " + fileErr.message();
+            return false;
+        }
+        std::streamsize bytesToCopy = static_cast<std::streamsize>(fileSize);
+        if(i + 1 < buildOrder.size() && bytesToCopy >= static_cast<std::streamsize>(sizeof(starbytes::Runtime::RTCode))){
+            bytesToCopy -= static_cast<std::streamsize>(sizeof(starbytes::Runtime::RTCode));
+        }
+
+        while(bytesToCopy > 0){
+            auto chunk = static_cast<std::streamsize>(std::min<std::streamsize>(bytesToCopy,static_cast<std::streamsize>(buffer.size())));
+            if(!in.read(buffer.data(),chunk)){
+                error = "Failed to read module segment `" + segmentPath.string() + "`.";
+                return false;
+            }
+            out.write(buffer.data(),chunk);
+            if(!out.good()){
+                error = "Failed to write linked module output `" + outputPath.string() + "`.";
+                return false;
+            }
+            bytesToCopy -= chunk;
+        }
+    }
+
+    return true;
+}
+
 void printUsage(std::ostream &out) {
     out << "Usage:\n";
     out << "  starbytes [command] <script." << STARBYTES_SRCFILE_EXT << "|module_dir> [options] [-- <script args...>]\n";
@@ -1015,6 +1428,7 @@ void printHelp(std::ostream &out) {
     out << "      --no-diagnostics       Do not print diagnostics buffered by runtime handlers.\n";
     out << "  -n, --native <path>        Load a native module binary before runtime execution (repeatable).\n";
     out << "  -L, --native-dir <dir>     Add a search directory for auto native module resolution (repeatable).\n";
+    out << "  -j, --jobs <count>         Parallel module build jobs (default: CPU count).\n";
     out << "      --no-native-auto       Disable automatic native module resolution from imports.\n";
     out << "      -- <args...>           Forward remaining arguments to script runtime (CmdLine module).\n";
 
@@ -1064,6 +1478,7 @@ ParseResult parseArgs(int argc, const char *argv[], DriverOptions &opts) {
     parser.addValueOption("out-dir",{"d"});
     parser.addMultiValueOption("native",{"n"});
     parser.addMultiValueOption("native-dir",{"L"});
+    parser.addValueOption("jobs",{"j"});
     parser.addFlagOption("run");
     parser.addFlagOption("no-run");
     parser.addFlagOption("clean");
@@ -1119,6 +1534,23 @@ ParseResult parseArgs(int argc, const char *argv[], DriverOptions &opts) {
     }
     opts.nativeModules.assign(parsed.values("native").begin(),parsed.values("native").end());
     opts.nativeSearchDirs.assign(parsed.values("native-dir").begin(),parsed.values("native-dir").end());
+    const auto &jobsValues = parsed.values("jobs");
+    if(!jobsValues.empty()) {
+        try {
+            auto parsedJobs = std::stoul(jobsValues.back());
+            if(parsedJobs == 0) {
+                return {false, 1, "Invalid --jobs value: must be >= 1."};
+            }
+            opts.jobs = static_cast<unsigned>(parsedJobs);
+        }
+        catch(...) {
+            return {false, 1, "Invalid --jobs value: expected unsigned integer."};
+        }
+    }
+    else {
+        auto hw = std::thread::hardware_concurrency();
+        opts.jobs = hw == 0 ? 1 : hw;
+    }
 
     bool forceRun = parsed.hasFlag("run");
     bool forceNoRun = parsed.hasFlag("no-run");
@@ -1387,106 +1819,303 @@ int main(int argc, const char *argv[]) {
         std::cerr << outputDirError << std::endl;
         return finishWith(1);
     }
+    auto moduleBuildCachePath = analysisCacheRoot / ".cache" / "module_build_cache.v1";
+    ModuleBuildCache moduleBuildCache;
+    std::string buildCacheWarning;
+    loadModuleBuildCache(moduleBuildCachePath,moduleBuildCache,buildCacheWarning);
+    if(!buildCacheWarning.empty()){
+        std::cerr << "Warning: " << buildCacheWarning << std::endl;
+    }
+    pruneStaleModuleBuildCacheEntries(moduleBuildCache);
 
-    std::ofstream moduleOut(compiledModulePath, std::ios::out | std::ios::binary);
-    if(!moduleOut.is_open()) {
-        std::cerr << "Failed to open output module for writing: " << compiledModulePath << std::endl;
+    auto moduleFingerprints = computeModuleFingerprints(graph);
+    std::unordered_map<std::string,bool> moduleNeedsRebuild;
+    moduleNeedsRebuild.reserve(graph.unitsByKey.size());
+    std::unordered_map<std::string,std::filesystem::path> cachedSegmentPaths;
+    cachedSegmentPaths.reserve(graph.unitsByKey.size());
+    std::unordered_map<std::string,std::filesystem::path> cachedSymbolPaths;
+    cachedSymbolPaths.reserve(graph.unitsByKey.size());
+    std::unordered_map<std::string,std::filesystem::path> cachedInterfacePaths;
+    cachedInterfacePaths.reserve(graph.unitsByKey.size());
+
+    for(const auto &moduleKey : graph.buildOrder){
+        auto unitIt = graph.unitsByKey.find(moduleKey);
+        if(unitIt == graph.unitsByKey.end()){
+            moduleNeedsRebuild[moduleKey] = true;
+            continue;
+        }
+        auto moduleHash = computeModuleSourceHash(unitIt->second);
+        auto fpIt = moduleFingerprints.find(moduleKey);
+        auto moduleFingerprint = fpIt != moduleFingerprints.end() ? fpIt->second : moduleHash;
+
+        bool rebuild = true;
+        auto cacheIt = moduleBuildCache.entriesByModuleKey.find(moduleKey);
+        if(cacheIt != moduleBuildCache.entriesByModuleKey.end()){
+            const auto &entry = cacheIt->second;
+            std::error_code segErr;
+            auto segmentPath = std::filesystem::path(entry.segmentPath);
+            bool segmentOk = !entry.segmentPath.empty()
+                && std::filesystem::exists(segmentPath,segErr) && !segErr
+                && std::filesystem::is_regular_file(segmentPath,segErr) && !segErr;
+            if(segmentOk
+               && entry.moduleHash == moduleHash
+               && entry.fingerprint == moduleFingerprint
+               && entry.compilerVersion == compilerVersion
+               && entry.flagsHash == analysisFlagsHash){
+                rebuild = false;
+                cachedSegmentPaths[moduleKey] = segmentPath;
+                if(!entry.symbolPath.empty()){
+                    cachedSymbolPaths[moduleKey] = std::filesystem::path(entry.symbolPath);
+                }
+                if(!entry.interfacePath.empty()){
+                    cachedInterfacePaths[moduleKey] = std::filesystem::path(entry.interfacePath);
+                }
+            }
+        }
+        moduleNeedsRebuild[moduleKey] = rebuild;
+        if(profile.enabled){
+            if(rebuild){
+                profile.moduleCacheMisses += 1;
+            }
+            else {
+                profile.moduleCacheHits += 1;
+            }
+        }
+    }
+
+    auto moduleArtifactDir = analysisCacheRoot / ".cache" / "module_artifacts";
+    std::error_code artifactDirErr;
+    std::filesystem::create_directories(moduleArtifactDir,artifactDirErr);
+    if(artifactDirErr){
+        std::cerr << "Failed to create module artifact cache directory `" << moduleArtifactDir
+                  << "`: " << artifactDirErr.message() << std::endl;
         return finishWith(1);
     }
 
-    auto outputDirForGen = compiledModulePath.parent_path();
-    if(outputDirForGen.empty()) {
-        outputDirForGen = std::filesystem::current_path();
-    }
+    std::unordered_map<std::string,std::shared_future<ModuleCompileTaskResult>> futuresByModule;
+    futuresByModule.reserve(graph.unitsByKey.size());
+    std::mutex moduleBuildCacheMutex;
+    TaskLimiter limiter(opts.jobs);
+    auto moduleBuildStart = std::chrono::steady_clock::now();
 
-    starbytes::Gen gen;
-    auto moduleGenContext = starbytes::ModuleGenContext::Create(opts.moduleName, moduleOut, outputDirForGen);
-    auto rootUnitIt = graph.unitsByKey.find(graph.rootKey);
-    auto shouldGenerateInterface = graph.rootIsDirectory && !graph.rootHasMainSource;
-    moduleGenContext.generateInterface = shouldGenerateInterface;
-    if(shouldGenerateInterface && rootUnitIt != graph.unitsByKey.end()) {
-        const auto &rootUnit = rootUnitIt->second;
-        bool hasConcreteSources = false;
-        for(const auto &source : rootUnit.sources) {
-            if(!source.isInterfaceFile) {
-                hasConcreteSources = true;
-                break;
+    for(const auto &moduleKey : graph.buildOrder){
+        std::vector<std::pair<std::string,std::shared_future<ModuleCompileTaskResult>>> depFutures;
+        bool missingDependencyFuture = false;
+        std::string missingDependencyKey;
+        auto unitIt = graph.unitsByKey.find(moduleKey);
+        if(unitIt != graph.unitsByKey.end()){
+            depFutures.reserve(unitIt->second.dependencyKeys.size());
+            for(const auto &depKey : unitIt->second.dependencyKeys){
+                auto depFutureIt = futuresByModule.find(depKey);
+                if(depFutureIt == futuresByModule.end()){
+                    missingDependencyFuture = true;
+                    missingDependencyKey = depKey;
+                    break;
+                }
+                depFutures.emplace_back(depKey,depFutureIt->second);
             }
         }
-        for(const auto &source : rootUnit.sources) {
-            if(hasConcreteSources && source.isInterfaceFile) {
+
+        if(missingDependencyFuture){
+            futuresByModule[moduleKey] = std::async(std::launch::deferred,[moduleKey,missingDependencyKey]() -> ModuleCompileTaskResult {
+                ModuleCompileTaskResult result;
+                result.moduleKey = moduleKey;
+                result.error = "Internal driver error: missing dependency future `" + missingDependencyKey + "`.";
+                return result;
+            }).share();
+            continue;
+        }
+
+        futuresByModule[moduleKey] = std::async(std::launch::async,[&,moduleKey,depFutures = std::move(depFutures)]() -> ModuleCompileTaskResult {
+            ModuleCompileTaskResult result;
+            result.moduleKey = moduleKey;
+
+            auto unitIt = graph.unitsByKey.find(moduleKey);
+            if(unitIt == graph.unitsByKey.end()){
+                result.error = "Internal driver error: missing module build unit `" + moduleKey + "`.";
+                return result;
+            }
+            const auto &unit = unitIt->second;
+
+            std::unordered_map<std::string,std::shared_ptr<starbytes::Semantics::SymbolTable>> depTables;
+            depTables.reserve(depFutures.size());
+            for(const auto &depFuture : depFutures){
+                auto depResult = depFuture.second.get();
+                if(!depResult.success){
+                    result.error = "Dependency build failed for `" + depFuture.first + "`.";
+                    return result;
+                }
+                depTables[depFuture.first] = depResult.symbols;
+            }
+
+            limiter.acquire();
+            auto releaseGuard = std::shared_ptr<void>(nullptr,[&](void *){ limiter.release(); });
+
+            bool rebuild = true;
+            auto rebuildIt = moduleNeedsRebuild.find(moduleKey);
+            if(rebuildIt != moduleNeedsRebuild.end()){
+                rebuild = rebuildIt->second;
+            }
+            if(!rebuild){
+                auto symbolOnly = compileModuleSymbolsOnly(moduleKey,unit,depTables,profile.enabled);
+                symbolOnly.segmentPath = cachedSegmentPaths[moduleKey];
+                auto symIt = cachedSymbolPaths.find(moduleKey);
+                if(symIt != cachedSymbolPaths.end()){
+                    symbolOnly.symbolPath = symIt->second;
+                }
+                auto ifaceIt = cachedInterfacePaths.find(moduleKey);
+                if(ifaceIt != cachedInterfacePaths.end()){
+                    symbolOnly.interfacePath = ifaceIt->second;
+                }
+                return symbolOnly;
+            }
+
+            auto moduleArtifactName = artifactNameForModuleKey(moduleKey);
+            bool shouldGenerateInterface = (moduleKey == graph.rootKey && graph.rootIsDirectory && !graph.rootHasMainSource);
+            std::unordered_set<std::string> interfaceAllowlist;
+            if(shouldGenerateInterface){
+                bool hasConcreteSources = false;
+                for(const auto &source : unit.sources){
+                    if(!source.isInterfaceFile){
+                        hasConcreteSources = true;
+                        break;
+                    }
+                }
+                for(const auto &source : unit.sources){
+                    if(hasConcreteSources && source.isInterfaceFile){
+                        continue;
+                    }
+                    interfaceAllowlist.insert(makeAbsolutePathString(source.filePath));
+                }
+            }
+
+            auto compiled = compileModuleToSegment(moduleKey,
+                                                   moduleArtifactName,
+                                                   unit,
+                                                   depTables,
+                                                   moduleArtifactDir,
+                                                   profile.enabled,
+                                                   shouldGenerateInterface,
+                                                   interfaceAllowlist);
+            if(compiled.success){
+                auto moduleHash = computeModuleSourceHash(unit);
+                auto fpIt = moduleFingerprints.find(moduleKey);
+                auto moduleFingerprint = fpIt != moduleFingerprints.end() ? fpIt->second : moduleHash;
+                ModuleBuildCacheEntry entry;
+                entry.moduleHash = moduleHash;
+                entry.fingerprint = moduleFingerprint;
+                entry.flagsHash = analysisFlagsHash;
+                entry.compilerVersion = compilerVersion;
+                entry.segmentPath = makeAbsolutePathString(compiled.segmentPath);
+                entry.symbolPath = makeAbsolutePathString(compiled.symbolPath);
+                std::error_code ifaceErr;
+                if(!compiled.interfacePath.empty()
+                   && std::filesystem::exists(compiled.interfacePath,ifaceErr) && !ifaceErr
+                   && std::filesystem::is_regular_file(compiled.interfacePath,ifaceErr) && !ifaceErr){
+                    entry.interfacePath = makeAbsolutePathString(compiled.interfacePath);
+                }
+                {
+                    std::lock_guard<std::mutex> lock(moduleBuildCacheMutex);
+                    moduleBuildCache.entriesByModuleKey[moduleKey] = std::move(entry);
+                    moduleBuildCache.dirty = true;
+                }
+            }
+            return compiled;
+        }).share();
+    }
+
+    std::unordered_map<std::string,ModuleCompileTaskResult> moduleResults;
+    moduleResults.reserve(graph.unitsByKey.size());
+    bool moduleBuildFailed = false;
+    for(const auto &moduleKey : graph.buildOrder){
+        auto result = futuresByModule[moduleKey].get();
+        moduleResults[moduleKey] = result;
+        if(profile.enabled){
+            profile.parseTotalNs += result.parserProfile.totalNs;
+            profile.lexNs += result.parserProfile.lexNs;
+            profile.syntaxNs += result.parserProfile.syntaxNs;
+            profile.semanticNs += result.parserProfile.semanticNs;
+            profile.consumerNs += result.parserProfile.consumerNs;
+            profile.parserSourceBytes += result.parserProfile.sourceBytes;
+            profile.parserTokenCount += result.parserProfile.tokenCount;
+            profile.parserStatementCount += result.parserProfile.statementCount;
+            profile.parserFileCount += result.parserProfile.fileCount;
+            profile.genFinishNs += result.genFinishNs;
+        }
+        if(!result.success){
+            moduleBuildFailed = true;
+        }
+    }
+
+    if(profile.enabled){
+        auto moduleBuildEnd = std::chrono::steady_clock::now();
+        profile.moduleBuildNs = std::chrono::duration_cast<std::chrono::nanoseconds>(moduleBuildEnd - moduleBuildStart).count();
+    }
+
+    if(moduleBuildFailed){
+        for(const auto &moduleKey : graph.buildOrder){
+            auto it = moduleResults.find(moduleKey);
+            if(it == moduleResults.end() || it->second.success){
                 continue;
             }
-            moduleGenContext.interfaceSourceAllowlist.insert(makeAbsolutePathString(source.filePath));
-        }
-    }
-    auto parseContext = starbytes::ModuleParseContext::Create(opts.moduleName);
-    gen.setContext(&moduleGenContext);
-
-    starbytes::Parser parser(gen);
-    parser.setProfilingEnabled(profile.enabled);
-    if(profile.enabled) {
-        parser.resetProfileData();
-    }
-    std::string parseError;
-    if(!parseModuleGraphSources(parser, parseContext, graph, parseError)) {
-        moduleOut.close();
-        removeGeneratedOutputArtifacts(compiledModulePath);
-        std::cerr << parseError << std::endl;
-        if(profile.enabled) {
-            const auto &parserProfile = parser.getProfileData();
-            profile.parseTotalNs = parserProfile.totalNs;
-            profile.lexNs = parserProfile.lexNs;
-            profile.syntaxNs = parserProfile.syntaxNs;
-            profile.semanticNs = parserProfile.semanticNs;
-            profile.consumerNs = parserProfile.consumerNs;
-            profile.parserSourceBytes = parserProfile.sourceBytes;
-            profile.parserTokenCount = parserProfile.tokenCount;
-            profile.parserStatementCount = parserProfile.statementCount;
-            profile.parserFileCount = parserProfile.fileCount;
-        }
-        maybeLogRuntimeDiagnostics(opts);
-        return finishWith(1);
-    }
-    if(!parser.finish()) {
-        moduleOut.close();
-        removeGeneratedOutputArtifacts(compiledModulePath);
-        if(profile.enabled) {
-            const auto &parserProfile = parser.getProfileData();
-            profile.parseTotalNs = parserProfile.totalNs;
-            profile.lexNs = parserProfile.lexNs;
-            profile.syntaxNs = parserProfile.syntaxNs;
-            profile.semanticNs = parserProfile.semanticNs;
-            profile.consumerNs = parserProfile.consumerNs;
-            profile.parserSourceBytes = parserProfile.sourceBytes;
-            profile.parserTokenCount = parserProfile.tokenCount;
-            profile.parserStatementCount = parserProfile.statementCount;
-            profile.parserFileCount = parserProfile.fileCount;
+            if(!it->second.error.empty()){
+                std::cerr << "Error in module `" << moduleKey << "`: " << it->second.error << std::endl;
+            }
+            if(!it->second.diagnostics.empty()){
+                std::cerr << it->second.diagnostics;
+            }
         }
         maybeLogRuntimeDiagnostics(opts);
         return finishWith(1);
     }
 
-    if(profile.enabled) {
-        const auto &parserProfile = parser.getProfileData();
-        profile.parseTotalNs = parserProfile.totalNs;
-        profile.lexNs = parserProfile.lexNs;
-        profile.syntaxNs = parserProfile.syntaxNs;
-        profile.semanticNs = parserProfile.semanticNs;
-        profile.consumerNs = parserProfile.consumerNs;
-        profile.parserSourceBytes = parserProfile.sourceBytes;
-        profile.parserTokenCount = parserProfile.tokenCount;
-        profile.parserStatementCount = parserProfile.statementCount;
-        profile.parserFileCount = parserProfile.fileCount;
+    if(moduleBuildCache.dirty){
+        std::string saveError;
+        if(!saveModuleBuildCache(moduleBuildCachePath,moduleBuildCache,saveError)){
+            std::cerr << "Warning: " << saveError << std::endl;
+        }
     }
 
-    auto genFinishStart = std::chrono::steady_clock::now();
-    gen.finish();
-    if(profile.enabled) {
-        auto genFinishEnd = std::chrono::steady_clock::now();
-        profile.genFinishNs = std::chrono::duration_cast<std::chrono::nanoseconds>(genFinishEnd - genFinishStart).count();
+    auto linkStart = std::chrono::steady_clock::now();
+    std::string linkError;
+    if(!concatenateModuleSegments(graph.buildOrder,moduleResults,compiledModulePath,linkError)){
+        std::cerr << linkError << std::endl;
+        removeGeneratedOutputArtifacts(compiledModulePath);
+        maybeLogRuntimeDiagnostics(opts);
+        return finishWith(1);
     }
-    moduleOut.close();
+    if(profile.enabled){
+        auto linkEnd = std::chrono::steady_clock::now();
+        profile.moduleLinkNs = std::chrono::duration_cast<std::chrono::nanoseconds>(linkEnd - linkStart).count();
+    }
+
+    auto rootResultIt = moduleResults.find(graph.rootKey);
+    if(rootResultIt != moduleResults.end()){
+        auto finalSymPath = compiledModulePath;
+        finalSymPath.replace_extension(".starbsymtb");
+        if(!rootResultIt->second.symbolPath.empty()){
+            std::error_code copyErr;
+            std::filesystem::copy_file(rootResultIt->second.symbolPath,finalSymPath,std::filesystem::copy_options::overwrite_existing,copyErr);
+            if(copyErr){
+                std::cerr << "Warning: failed to copy root symbol table to `" << finalSymPath
+                          << "`: " << copyErr.message() << std::endl;
+            }
+        }
+
+        auto finalInterfacePath = compiledModulePath;
+        finalInterfacePath.replace_extension("." STARBYTES_INTERFACEFILE_EXT);
+        std::error_code ifaceErr;
+        if(!rootResultIt->second.interfacePath.empty()
+           && std::filesystem::exists(rootResultIt->second.interfacePath,ifaceErr) && !ifaceErr
+           && std::filesystem::is_regular_file(rootResultIt->second.interfacePath,ifaceErr) && !ifaceErr){
+            std::error_code copyErr;
+            std::filesystem::copy_file(rootResultIt->second.interfacePath,finalInterfacePath,std::filesystem::copy_options::overwrite_existing,copyErr);
+            if(copyErr){
+                std::cerr << "Warning: failed to copy root interface file to `" << finalInterfacePath
+                          << "`: " << copyErr.message() << std::endl;
+            }
+        }
+    }
 
     if(opts.printModulePath) {
         std::cout << compiledModulePath << std::endl;

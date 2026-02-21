@@ -201,6 +201,15 @@ namespace Runtime {
                 skipExpr(is);
                 skipExpr(is);
                 break;
+            case CODE_RTARRAY_LITERAL: {
+                unsigned elementCount = 0;
+                is.read((char *)&elementCount,sizeof(elementCount));
+                while(elementCount > 0){
+                    skipExpr(is);
+                    --elementCount;
+                }
+                break;
+            }
             case CODE_RTDICT_LITERAL: {
                 unsigned pairCount = 0;
                 is.read((char *)&pairCount,sizeof(pairCount));
@@ -219,6 +228,10 @@ namespace Runtime {
                 skipExpr(is);
                 skipExpr(is);
                 skipExpr(is);
+                break;
+            case CODE_RTCAST:
+                skipExpr(is);
+                skipRTIDPayload(is);
                 break;
             default:
                 break;

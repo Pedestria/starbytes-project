@@ -1,0 +1,7 @@
+class Root {}
+class A : Root {}
+class B : Root {}
+
+decl a = new A()
+decl b = B(a)
+print(b)

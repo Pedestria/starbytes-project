@@ -196,12 +196,24 @@ void SyntaxA::consumeCurrentTok(){
                 baseType = DICTIONARY_TYPE;
                 isBuiltinType = true;
             }
+            else if(tok_id == "Map"){
+                baseType = MAP_TYPE;
+                isBuiltinType = true;
+            }
             else if(tok_id == "Int"){
                 baseType = INT_TYPE;
                 isBuiltinType = true;
             }
             else if(tok_id == "Float"){
                 baseType = FLOAT_TYPE;
+                isBuiltinType = true;
+            }
+            else if(tok_id == "Long"){
+                baseType = LONG_TYPE;
+                isBuiltinType = true;
+            }
+            else if(tok_id == "Double"){
+                baseType = DOUBLE_TYPE;
                 isBuiltinType = true;
             }
             else if(tok_id == "Regex"){

@@ -1,0 +1,25 @@
+decl counts:Map<String,Long> = {"alpha":1,"beta":2}
+counts.set("gamma",3)
+counts["beta"] = 6
+
+decl hasAlpha:Bool = counts.has("alpha")
+decl keys:Array<String> = counts.keys()
+decl vals:Array<Long> = counts.values()
+decl copied:Map<String,Long> = counts.copy()
+decl asDict:Dict = counts
+
+decl pi:Double = 3.25
+decl big:Long = 900000
+decl castedLong = Long(12.0)
+decl castedDouble = Double("4.5")
+
+print(hasAlpha)
+print(keys.length)
+print(vals.length)
+print(copied.length)
+print(asDict.length)
+print(pi + 1.0)
+print(big + 1)
+print(castedLong is Long)
+print(castedDouble is Double)
+print("MAP-LONG-DOUBLE-OK")

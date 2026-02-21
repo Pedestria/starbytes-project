@@ -31,7 +31,9 @@ void printCompileProfile(std::ostream &out,const CompileProfileData &profile,boo
     out << "    \"parser_files\": " << profile.parserFileCount << ",\n";
     out << "    \"parser_tokens\": " << profile.parserTokenCount << ",\n";
     out << "    \"parser_statements\": " << profile.parserStatementCount << ",\n";
-    out << "    \"parser_source_bytes\": " << profile.parserSourceBytes << "\n";
+    out << "    \"parser_source_bytes\": " << profile.parserSourceBytes << ",\n";
+    out << "    \"module_cache_hits\": " << profile.moduleCacheHits << ",\n";
+    out << "    \"module_cache_misses\": " << profile.moduleCacheMisses << "\n";
     out << "  },\n";
     out << "  \"timings_ms\": {\n";
     out << "    \"total\": " << nsToMs(profile.totalNs) << ",\n";
@@ -44,6 +46,8 @@ void printCompileProfile(std::ostream &out,const CompileProfileData &profile,boo
     out << "    \"syntax\": " << nsToMs(profile.syntaxNs) << ",\n";
     out << "    \"semantic\": " << nsToMs(profile.semanticNs) << ",\n";
     out << "    \"consumer\": " << nsToMs(profile.consumerNs) << ",\n";
+    out << "    \"module_build\": " << nsToMs(profile.moduleBuildNs) << ",\n";
+    out << "    \"module_link\": " << nsToMs(profile.moduleLinkNs) << ",\n";
     out << "    \"gen_finish\": " << nsToMs(profile.genFinishNs) << ",\n";
     out << "    \"runtime_exec\": " << nsToMs(profile.runtimeExecNs) << "\n";
     out << "  }\n";

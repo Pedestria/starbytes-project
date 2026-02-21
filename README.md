@@ -1,60 +1,79 @@
-<img src="./public/STD Logo.png">
+# Starbytes
 
+Starbytes is a strongly typed interpreted language and toolchain.
 
-<!-- ##### AppVeyor:
+This repository includes:
+- `starbytes` driver (check/compile/run)
+- compiler, parser, semantic analysis, runtime
+- native stdlib modules (for example `IO`, `Time`, `Threading`, `Unicode`)
+- `starbytes-lsp` language server
+- VS Code extension sources under `editors/VSCode`
 
-[![Build status](https://ci.appveyor.com/api/projects/status/83o4yjlju2fh93nf?svg=true)](https://ci.appveyor.com/project/Pedestria/starbytes-project) -->
+## Prerequisites
 
+- `python3`
+- `git`
+- `cmake` (3.18+)
+- `ninja`
+- a C++17 compiler toolchain
 
+## Bootstrap Dependencies
 
+Run the bootstrap script from repo root:
 
-# Starbytes Project/Toolchain
-## New Expressive/Simple/Strongly Typed Interpreted Language.
----
-
-##### Travis CI (macOS X):
-![](https://travis-ci.com/Pedestria/starbytes-project.svg?token=5K8gmsoNtkbUcnKi4R5v&branch=master)
-
-### NOTE: The starbytes repo is being redone... Come back later..
-<!-- ### Main Directory Contents (`starbytes-lang` Directory):
-- #### Libraries:
-- `AST` - The AST Library
-- `Base` - Provides macros and standard functions used throughout the toolchain.
-- `ByteCode` - Bytecode parsing and generation.
-- `Core` - Central library for starbytes.
-- `Semantics` - A collection of libraries for semantic analysis for Starbytes.
-- `Gen` - Code generator
-- `Parser` - Main parser and Lexer.
-- `Project` - Starbytes Project File management.
-- `Interpreter` - The Interpreter to run the bytecode.
-- `LangDevKit` - Starbytes internal IDE language features provider. (Used by `starbytes-lsp`)
-- #### Tools:
-- `starbytes-b` - The Compiler.
-- `starbytes-r` - The Interpreter.
-### Language Server Protocol (`starbytes-lsp` Directory)
-- The Language Server Protocol Implementation for Starbytes
-### Extra (`starbytes-extra` Directory)
-- #### VSCode
-- starbytes-grammar - The Textmate Syntax Grammar for Starbytes.
-- starbytes-vscode - The VSCode extension for Starbytes Language. (Provides Grammar ONLY. Executable `starbytes-lsp` must be externally provided!) -->
-
-### Dev/Build Instructions (With CMake)
-
-- ### To Setup:
-Run
-
-```shell
+```bash
 python3 init.py
 ```
 
-Run
-```shell
-cmake -DCMAKE_BUILD_TYPE:STRING="Debug" -S ./starbytes-lang -B ./build
+This fetches third-party dependencies into `deps/` (RapidJSON, PCRE2, ICU).
+
+## Configure (CMake + Ninja)
+
+From repo root:
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
 ```
-(This will create a build directory where the toolchain libs/exectuables will be outputed to.)
-- ### To build:
-Run
-```shell
-cmake --build ./build
+
+For release builds:
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 ```
-(This will build the entire toolchain and output it to build!)
+
+## Build
+
+```bash
+cmake --build build
+```
+
+Main binaries are emitted under `build/bin/`:
+- `starbytes`
+- `starbytes-lsp`
+- `starbytes-disasm`
+
+## Quick Verification
+
+```bash
+./build/bin/starbytes --version
+ctest --test-dir build --output-on-failure
+```
+
+## Basic Driver Usage
+
+```bash
+# Parse + semantic checks only
+./build/bin/starbytes check ./tests/test.starb
+
+# Compile
+./build/bin/starbytes compile ./tests/test.starb -o ./build/test.starbmod
+
+# Compile and run (default command is run)
+./build/bin/starbytes run ./tests/test.starb
+```
+
+For full CLI options:
+
+```bash
+./build/bin/starbytes --help
+```

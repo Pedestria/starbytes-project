@@ -188,6 +188,17 @@ class Disassembler {
             in.read((char *)&code,sizeof(RTCode));
             _disasm_expr(code);
         }
+        else if(code == CODE_RTARRAY_LITERAL){
+            unsigned elementCount = 0;
+            in.read((char *)&elementCount,sizeof(elementCount));
+            out << "CODE_RTARRAY_LITERAL " << elementCount << " ";
+            while(elementCount > 0){
+                in.read((char *)&code,sizeof(RTCode));
+                _disasm_expr(code);
+                out << " ";
+                --elementCount;
+            }
+        }
         else if(code == CODE_RTDICT_LITERAL){
             unsigned pairCount = 0;
             in.read((char *)&pairCount,sizeof(pairCount));
@@ -221,6 +232,15 @@ class Disassembler {
             out << " ";
             in.read((char *)&code,sizeof(RTCode));
             _disasm_expr(code);
+        }
+        else if(code == CODE_RTCAST){
+            out << "CODE_RTCAST ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            RTID typeId;
+            in >> &typeId;
+            out << " " << typeId.len << " ";
+            out.write(typeId.value,sizeof(char) * typeId.len);
         }
         else if(code == CODE_CONDITIONAL){
             unsigned count;
@@ -266,8 +286,9 @@ public:
             if(code == CODE_RTIVKFUNC || code == CODE_CONDITIONAL || code == CODE_RTREGEX_LITERAL
                || code == CODE_UNARY_OPERATOR || code == CODE_BINARY_OPERATOR
                || code == CODE_RTVAR_SET || code == CODE_RTINDEX_GET || code == CODE_RTINDEX_SET
+               || code == CODE_RTARRAY_LITERAL
                || code == CODE_RTDICT_LITERAL || code == CODE_RTTYPECHECK
-               || code == CODE_RTTERNARY){
+               || code == CODE_RTTERNARY || code == CODE_RTCAST){
                 _disasm_expr(code);
             }
             else {

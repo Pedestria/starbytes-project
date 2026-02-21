@@ -5,7 +5,7 @@ interface Named {
 class User : Named {
     decl name:String = "alex"
 
-    func getName() String! {
+    func getName() String {
         return self.name
     }
 }

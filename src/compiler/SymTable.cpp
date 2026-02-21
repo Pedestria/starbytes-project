@@ -1,6 +1,7 @@
 #include "starbytes/compiler/SymTable.h"
 #include "starbytes/compiler/SemanticA.h"
 #include <algorithm>
+#include <cstdlib>
 #include <sstream>
 
 typedef uint8_t SymbolTableCode;
@@ -20,6 +21,21 @@ typedef uint8_t SymbolTableCode;
 
 
 namespace starbytes {
+
+namespace {
+
+bool useLegacyLinearSymbolLookup() {
+    static bool initialized = false;
+    static bool useLegacy = false;
+    if(!initialized) {
+        const char *env = std::getenv("STARBYTES_DISABLE_SYMBOL_INDEX");
+        useLegacy = env && env[0] != '\0' && env[0] != '0';
+        initialized = true;
+    }
+    return useLegacy;
+}
+
+}
 
 struct SymTableID {
     std::string id;
@@ -186,6 +202,16 @@ const std::vector<Semantics::SymbolTable::Entry *> *Semantics::SymbolTable::find
 }
 
 bool Semantics::SymbolTable::symbolExists(string_ref symbolName,std::shared_ptr<ASTScope> scope){
+    if(useLegacyLinearSymbolLookup()){
+        for (auto s = scope; s != nullptr; s = s->parentScope) {
+            for (auto & sym : body) {
+                if (sym.first->name == symbolName && sym.second == s) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
     for (auto s = scope; s != nullptr; s = s->parentScope) {
         auto *entries = findEntriesInExactScope(symbolName,s);
         if(entries && !entries->empty()){
@@ -196,6 +222,11 @@ bool Semantics::SymbolTable::symbolExists(string_ref symbolName,std::shared_ptr<
 }
 
 auto Semantics::SymbolTable::indexOf(string_ref symbolName,std::shared_ptr<ASTScope> scope) -> decltype(body)::iterator {
+    if(useLegacyLinearSymbolLookup()){
+        return std::find_if(body.begin(),body.end(),[&](decltype(body)::value_type it){
+            return it.first->name == symbolName && it.second == scope;
+        });
+    }
     auto *entries = findEntriesInExactScope(symbolName,scope);
     if(entries && !entries->empty()){
         auto it = body.find(entries->front());
@@ -207,6 +238,47 @@ auto Semantics::SymbolTable::indexOf(string_ref symbolName,std::shared_ptr<ASTSc
 }
 
 Semantics::SymbolTable::Entry * Semantics::STableContext::findEntry(string_ref symbolName,SemanticsContext & ctxt,std::shared_ptr<ASTScope> scope){
+    if(useLegacyLinearSymbolLookup()){
+        for(auto currentScope = scope; currentScope != nullptr; currentScope = currentScope->parentScope){
+            unsigned entryCount = 0;
+            Semantics::SymbolTable::Entry *ent = nullptr;
+
+            if(main){
+                for(auto &pair : main->body){
+                    if(pair.first->name == symbolName && pair.second == currentScope){
+                        ent = pair.first;
+                        ++entryCount;
+                    }
+                }
+            }
+            for(auto &table : otherTables){
+                for(auto &pair : table->body){
+                    if(pair.first->name == symbolName && pair.second == currentScope){
+                        ent = pair.first;
+                        ++entryCount;
+                    }
+                }
+            }
+
+            if(entryCount > 1){
+                std::ostringstream out;
+                out <<"Multiple symbol defined with the same name (`" << symbolName << "`) in a scope.";
+                auto res = out.str();
+                ctxt.errStream.push(SemanticADiagnostic::create(res,ctxt.currentStmt,Diagnostic::Error));
+                return nullptr;
+            }
+            if(entryCount == 1){
+                return ent;
+            }
+        }
+
+        std::ostringstream out;
+        out <<"Undefined symbol `" << symbolName << "`";
+        auto res = out.str();
+        ctxt.errStream.push(SemanticADiagnostic::create(res,ctxt.currentStmt,Diagnostic::Error));
+        return nullptr;
+    }
+
     for(auto currentScope = scope; currentScope != nullptr; currentScope = currentScope->parentScope){
         std::vector<Semantics::SymbolTable::Entry *> matches;
         matches.reserve(4);
@@ -244,6 +316,26 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntry(string_ref s
 }
 
 Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope){
+    if(useLegacyLinearSymbolLookup()){
+        for(auto currentScope = scope; currentScope != nullptr; currentScope = currentScope->parentScope){
+            if(main){
+                for(auto &pair : main->body){
+                    if(pair.first->name == symbolName && pair.second == currentScope){
+                        return pair.first;
+                    }
+                }
+            }
+            for(auto &table : otherTables){
+                for(auto &pair : table->body){
+                    if(pair.first->name == symbolName && pair.second == currentScope){
+                        return pair.first;
+                    }
+                }
+            }
+        }
+        return nullptr;
+    }
+
     for(auto currentScope = scope; currentScope != nullptr; currentScope = currentScope->parentScope){
         if(main){
             auto *entries = main->findEntriesInExactScope(symbolName,currentScope);
@@ -262,6 +354,24 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryNoDiag(string
 }
 
 Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryInExactScopeNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope){
+    if(useLegacyLinearSymbolLookup()){
+        if(main){
+            for(auto &pair : main->body){
+                if(pair.first->name == symbolName && pair.second == scope){
+                    return pair.first;
+                }
+            }
+        }
+        for(auto &table : otherTables){
+            for(auto &pair : table->body){
+                if(pair.first->name == symbolName && pair.second == scope){
+                    return pair.first;
+                }
+            }
+        }
+        return nullptr;
+    }
+
     if(main){
         auto *entries = main->findEntriesInExactScope(symbolName,scope);
         if(entries && !entries->empty()){
@@ -278,6 +388,24 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryInExactScopeN
 }
 
 Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryByEmittedNoDiag(string_ref emittedName){
+    if(useLegacyLinearSymbolLookup()){
+        if(main){
+            for(auto &pair : main->body){
+                if(pair.first->emittedName == emittedName){
+                    return pair.first;
+                }
+            }
+        }
+        for(auto &table : otherTables){
+            for(auto &pair : table->body){
+                if(pair.first->emittedName == emittedName){
+                    return pair.first;
+                }
+            }
+        }
+        return nullptr;
+    }
+
     if(main){
         auto *entries = main->findEntriesByEmittedName(emittedName);
         if(entries && !entries->empty()){

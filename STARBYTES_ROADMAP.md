@@ -1,19 +1,29 @@
 # Starbytes Completion Roadmap
 
-Last updated: February 19, 2026
+Last updated: February 20, 2026
 
 This roadmap turns Starbytes from a promising prototype into a complete interpreted language with a usable toolchain.
 
 ## My Proposed Features/Fixes
-
+-- FINISHED
+- Type casting, down and up, and conversion (Downcasting is a throwable return)
+    example usage:
+    ```starbytes
+    decl a: Float = 4.0
+    decl b = Int(a)
+    ```
+    (For type conversion on custom classes, use conversion functions. `func <type-name> (){}`)
 - Maps (Maps are type-strict dictionaries. Dict vs. Map<T,U>)
 - Long, Double number support
 - Fix symbol resolution inside secure/catch decls (Visible in LSP)
-- Full Type inference. (decl name = "name")
-- LSP shows class/interface inheritance (superclasses: A,B, interfaces: IFace)
-- Implement full doxygen parsing
-- Buitlin types have full doxygen documentation of every class and method.
+--UNFINISHED
 
+- Add helper classes/functions to `interop.h` to help with native module building (remove NativeArgsLayout,readIntArg, readStringArg, skipOptionalModuleReceiver from stdlib modules)
+- Fix stability issues for stdlib modules, and document with doxygen documentation.
+- Full type inference capabilities, even for generic types (decl name = "name")
+- LSP hover shows class/interface inheritance below declaration (superclasses: A,B, interfaces: IFace)
+- Implement full doxygen spec parsing
+- Buitlin types have full doxygen documentation of every class and method.
 
 ## Guiding Principles
 
@@ -60,13 +70,16 @@ Implemented language/runtime/tooling features include:
   - advanced driver flags (`run`/`compile`/`check`, native loading flags, output controls, help/version, compile profiling output).
   - compile-time optimization track:
     - phase 1 instrumentation complete
-    - phase 2 import/module analysis caching complete (content-hash + compiler-version + flags keyed).
+    - phase 2 import/module analysis caching complete (content-hash + compiler-version + flags keyed)
+    - phase 3 symbol resolution indexing complete (scope-aware lookup paths + stress coverage)
+    - phase 4 allocation path consolidation complete for semantic symbol table objects.
 - Native stdlib integration:
   - module baselines for `IO`, `Time`, `Threading`, and `Unicode` with auto-load and explicit `--native` support.
 - Tooling baseline:
   - LSP protocol surface implemented for core editor loop.
   - semantic highlighting generated from compiler pipeline.
   - richer hover details including declaration-adjacent comments.
+  - modularized LSP analysis pipeline (`DocumentAnalysis`) to reduce server coupling and duplicate parsing logic.
   - VSCode extension integration path for LSP workflow.
 - Packaging/dev workflow:
   - `tools/starbpkg` package manager baseline in Starbytes with `.starbmodpath` generation.
@@ -85,14 +98,14 @@ Known gaps and stability risks:
 - M3 Modules and Imports: complete baseline with `.starbmodpath` and cache-backed import analysis.
 - M4 Standard Library Baseline: baseline implemented, stabilization in progress.
 - M5 Diagnostics: partial-to-moderate progress; richer messaging exists but full standardization is pending.
-- M6 LSP Maturity: mid-stage (semantic tokens + richer hovers + broad protocol support) with stability/refactor depth pending.
+- M6 LSP Maturity: mid-to-late stage (semantic tokens + richer hovers + compiler-backed symbols + modular analysis split), with stability hardening and refactor ergonomics pending.
 - M7 Syntax Surface Completion: mostly complete for currently documented syntax, with lambda ergonomics still the main unresolved area.
 - M8 Tooling/Release Readiness: in progress with package manager baseline and expanded test coverage.
 
 ## Version Status
 
-- Current project version target: `0.7.0`.
-- Rationale: substantial feature expansion across language surface, LSP capabilities, and compiler-time optimization phases 1-2.
+- Current project version target: `0.8.0`.
+- Rationale: language/tooling baseline is substantially broader, compile-time optimization phases 1-4 are complete, and LSP architecture has moved into a more maintainable modular shape.
 
 ---
 

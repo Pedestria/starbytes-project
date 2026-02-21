@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
 
     appendMessage(input, R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})");
     appendMessage(input, R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    appendMessage(input, R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb","languageId":"starbytes","version":1,"text":"/// Adds two integers.\nfunc add(a:Int,b:Int) Int {\n  return a + b\n}\n/* Primary counter for calls. */\ndecl alpha:Int = 1\ndecl greeting:String = \" Hello \"\ndecl numbers:Array<Int> = [1,2,3]\nadd(alpha, 2)\nalpha\ngreeting.trim()\nnumbers.push(4)\n/// Computes square.\n/// @param value Input value.\n/// @returns Squared value.\nfunc square(value:Int) Int {\n  return value * value\n}\nsquare(4)\n"}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb","languageId":"starbytes","version":1,"text":"/// Adds two integers.\nfunc add(a:Int,b:Int) Int {\n  return a + b\n}\n/* Primary counter for calls. */\ndecl alpha:Int = 1\ndecl greeting:String = \" Hello \"\ndecl numbers:Array<Int> = [1,2,3]\nadd(alpha, 2)\nalpha\ngreeting.trim()\nnumbers.push(4)\n/// Computes square.\n/// @param value Input value.\n/// @returns Squared value.\nfunc square(value:Int) Int {\n  return value * value\n}\nsquare(4)\nsecure(decl captured:String? = \"ok\") catch (err:String) {\n  print(err)\n}\n"}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":5,"character":4}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":9,"character":1}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":4,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":9,"character":1}}})");
@@ -39,6 +39,8 @@ int main(int argc, char *argv[]) {
     appendMessage(input, R"({"jsonrpc":"2.0","id":13,"method":"completionItem/resolve","params":{"label":"trim","kind":2}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":14,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":15,"method":"workspace/diagnostic","params":{}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":17,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":20,"character":8}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":18,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":20,"character":8}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":16,"method":"shutdown","params":null})");
     appendMessage(input, R"({"jsonrpc":"2.0","method":"exit"})");
 
@@ -71,6 +73,8 @@ int main(int argc, char *argv[]) {
     if(!requireContains("\"id\":13","completion-resolve-id") || !requireContains("func trim() String","completion-resolve-signature")) return 1;
     if(!requireContains("\"id\":14","text-document-diagnostic-id") || !requireContains("\"kind\":\"full\"","text-document-diagnostic-kind")) return 1;
     if(!requireContains("\"id\":15","workspace-diagnostic-id") || !requireContains("\"items\"","workspace-diagnostic-items")) return 1;
+    if(!requireContains("\"id\":17","catch-hover-id") || !requireContains("catch err:String","catch-hover-signature")) return 1;
+    if(!requireContains("\"id\":18","catch-definition-id") || !requireContains("\"uri\":\"file:///tmp/lsp-test.starb\"","catch-definition-uri")) return 1;
     if(!requireContains("\"id\":16","shutdown-id") || !requireContains("\"result\":null","shutdown-null")) return 1;
 
     return 0;

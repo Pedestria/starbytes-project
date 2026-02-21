@@ -1,0 +1,6 @@
+class Base {}
+class Child : Base {}
+
+decl base:Base = Base(new Child())
+decl child = Child(base)
+print(child)

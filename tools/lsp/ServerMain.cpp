@@ -51,6 +51,20 @@ std::string toLower(std::string value) {
   return value;
 }
 
+std::vector<SemanticTokenEntry> filterSemanticTokensByLineRange(const std::vector<SemanticTokenEntry> &tokens,
+                                                                unsigned startLine,
+                                                                unsigned endLine) {
+  std::vector<SemanticTokenEntry> filtered;
+  filtered.reserve(tokens.size());
+  for (const auto &token : tokens) {
+    if (token.line < startLine || token.line > endLine) {
+      continue;
+    }
+    filtered.push_back(token);
+  }
+  return filtered;
+}
+
 std::string idToKey(const rapidjson::Value &id) {
   if (id.IsString()) {
     return std::string("s:") + id.GetString();
@@ -94,6 +108,15 @@ bool Server::isIdentifierChar(char c) {
 
 bool Server::isIdentifierStart(char c) {
   return std::isalpha(static_cast<unsigned char>(c)) != 0 || c == '_';
+}
+
+uint64_t Server::hashText(const std::string &text) {
+  uint64_t hash = 1469598103934665603ULL;
+  for (unsigned char c : text) {
+    hash ^= static_cast<uint64_t>(c);
+    hash *= 1099511628211ULL;
+  }
+  return hash;
 }
 
 bool Server::parseUriToPath(const std::string &uri, std::string &pathOut) {
@@ -427,7 +450,13 @@ void Server::loadWorkspaceDocuments() {
         continue;
       }
 
-      documents[uri] = {buffer.str(), 0, false};
+      auto text = buffer.str();
+      DocumentState state;
+      state.text = text;
+      state.version = 0;
+      state.isOpen = false;
+      state.textHash = hashText(text);
+      documents[uri] = std::move(state);
     }
   }
 }
@@ -503,7 +532,12 @@ bool Server::getDocumentTextByUri(const std::string &uri, std::string &textOut) 
   std::ostringstream buffer;
   buffer << file.rdbuf();
   textOut = buffer.str();
-  documents[uri] = {textOut, 0, false};
+  DocumentState state;
+  state.text = textOut;
+  state.version = 0;
+  state.isOpen = false;
+  state.textHash = hashText(textOut);
+  documents[uri] = std::move(state);
   return true;
 }
 
@@ -516,6 +550,62 @@ void Server::configureSymbolCache() {
     }
   }
   symbolCache.setCachePath(cacheRoot / ".cache" / "lsp_symbols_cache.v1");
+}
+
+const std::vector<CompilerDiagnosticEntry> &Server::getCompilerDiagnosticsForDocument(const std::string &uri,
+                                                                                       DocumentState &state) {
+  if (state.analysis.version != state.version || state.analysis.textHash != state.textHash) {
+    state.analysis = {};
+    state.analysis.version = state.version;
+    state.analysis.textHash = state.textHash;
+  }
+  if (!state.analysis.diagnosticsReady) {
+    state.analysis.diagnostics = collectCompilerDiagnosticsForText(uri, state.text);
+    state.analysis.diagnosticsReady = true;
+  }
+  return state.analysis.diagnostics;
+}
+
+const std::vector<SemanticTokenEntry> &Server::getSemanticTokensForDocument(const std::string &uri, DocumentState &state) {
+  if (state.analysis.version != state.version || state.analysis.textHash != state.textHash) {
+    state.analysis = {};
+    state.analysis.version = state.version;
+    state.analysis.textHash = state.textHash;
+  }
+  if (!state.analysis.semanticTokensReady) {
+    state.analysis.semanticTokens = collectSemanticTokenEntries(state.text, 0, 0, false);
+    state.analysis.semanticTokensReady = true;
+  }
+  (void)uri;
+  return state.analysis.semanticTokens;
+}
+
+const BuiltinApiIndex *Server::getBuiltinsApiIndex() {
+  std::string builtinsUri;
+  std::string builtinsText;
+  if (!getBuiltinsDocument(builtinsUri, builtinsText)) {
+    return nullptr;
+  }
+
+  auto it = documents.find(builtinsUri);
+  int version = 0;
+  uint64_t textHash = hashText(builtinsText);
+  if (it != documents.end()) {
+    version = it->second.version;
+    textHash = it->second.textHash;
+  }
+
+  if (builtinsIndexCache.valid && builtinsIndexCache.uri == builtinsUri &&
+      builtinsIndexCache.version == version && builtinsIndexCache.textHash == textHash) {
+    return &builtinsIndexCache.index;
+  }
+
+  builtinsIndexCache.valid = true;
+  builtinsIndexCache.uri = builtinsUri;
+  builtinsIndexCache.version = version;
+  builtinsIndexCache.textHash = textHash;
+  builtinsIndexCache.index = buildBuiltinApiIndex(builtinsUri, builtinsText);
+  return &builtinsIndexCache.index;
 }
 
 std::vector<SymbolEntry> Server::collectSymbolsForUri(const std::string &uri, const std::string &text) {
@@ -533,9 +623,17 @@ void Server::invalidateSymbolCacheForUri(const std::string &uri) {
 }
 
 void Server::setDocumentTextByUri(const std::string &uri, const std::string &text, int version, bool isOpen) {
-  documents[uri] = {text, version, isOpen};
+  DocumentState state;
+  state.text = text;
+  state.version = version;
+  state.isOpen = isOpen;
+  state.textHash = hashText(text);
+  documents[uri] = std::move(state);
   semanticSnapshots.erase(uri);
   invalidateSymbolCacheForUri(uri);
+  if (isBuiltinsInterfaceUri(uri) || (builtinsIndexCache.valid && builtinsIndexCache.uri == uri)) {
+    builtinsIndexCache.valid = false;
+  }
 }
 
 void Server::removeOpenDocumentByUri(const std::string &uri) {
@@ -553,8 +651,13 @@ void Server::removeOpenDocumentByUri(const std::string &uri) {
       it->second.text = buffer.str();
       it->second.version = 0;
       it->second.isOpen = false;
+      it->second.textHash = hashText(it->second.text);
+      it->second.analysis = {};
       semanticSnapshots.erase(uri);
       invalidateSymbolCacheForUri(uri);
+      if (isBuiltinsInterfaceUri(uri) || (builtinsIndexCache.valid && builtinsIndexCache.uri == uri)) {
+        builtinsIndexCache.valid = false;
+      }
       return;
     }
   }
@@ -562,6 +665,9 @@ void Server::removeOpenDocumentByUri(const std::string &uri) {
   documents.erase(it);
   semanticSnapshots.erase(uri);
   invalidateSymbolCacheForUri(uri);
+  if (isBuiltinsInterfaceUri(uri) || (builtinsIndexCache.valid && builtinsIndexCache.uri == uri)) {
+    builtinsIndexCache.valid = false;
+  }
 }
 
 void Server::publishDiagnostics(const std::string &uri) {
@@ -573,27 +679,30 @@ void Server::publishDiagnostics(const std::string &uri) {
 
   std::string text;
   if (getDocumentTextByUri(uri, text)) {
-    auto compilerDiagnostics = collectCompilerDiagnosticsForText(uri, text);
-    for (const auto &entry : compilerDiagnostics) {
-      rapidjson::Value diag(rapidjson::kObjectType);
-      rapidjson::Value range(rapidjson::kObjectType);
-      rapidjson::Value start(rapidjson::kObjectType);
-      rapidjson::Value end(rapidjson::kObjectType);
-      unsigned startLine = entry.region.startLine > 0 ? entry.region.startLine - 1 : 0;
-      unsigned endLine = entry.region.endLine > 0 ? entry.region.endLine - 1 : startLine;
-      unsigned startCol = entry.region.startCol;
-      unsigned endCol = entry.region.endCol > entry.region.startCol ? entry.region.endCol : (entry.region.startCol + 1);
-      start.AddMember("line", startLine, alloc);
-      start.AddMember("character", startCol, alloc);
-      end.AddMember("line", endLine, alloc);
-      end.AddMember("character", endCol, alloc);
-      range.AddMember("start", start, alloc);
-      range.AddMember("end", end, alloc);
-      diag.AddMember("range", range, alloc);
-      diag.AddMember("severity", entry.severity, alloc);
-      diag.AddMember("source", rapidjson::Value("starbytes-compiler", alloc), alloc);
-      diag.AddMember("message", rapidjson::Value(entry.message.c_str(), alloc), alloc);
-      diagnostics.PushBack(diag, alloc);
+    auto docIt = documents.find(uri);
+    if (docIt != documents.end()) {
+      const auto &compilerDiagnostics = getCompilerDiagnosticsForDocument(uri, docIt->second);
+      for (const auto &entry : compilerDiagnostics) {
+        rapidjson::Value diag(rapidjson::kObjectType);
+        rapidjson::Value range(rapidjson::kObjectType);
+        rapidjson::Value start(rapidjson::kObjectType);
+        rapidjson::Value end(rapidjson::kObjectType);
+        unsigned startLine = entry.region.startLine > 0 ? entry.region.startLine - 1 : 0;
+        unsigned endLine = entry.region.endLine > 0 ? entry.region.endLine - 1 : startLine;
+        unsigned startCol = entry.region.startCol;
+        unsigned endCol = entry.region.endCol > entry.region.startCol ? entry.region.endCol : (entry.region.startCol + 1);
+        start.AddMember("line", startLine, alloc);
+        start.AddMember("character", startCol, alloc);
+        end.AddMember("line", endLine, alloc);
+        end.AddMember("character", endCol, alloc);
+        range.AddMember("start", start, alloc);
+        range.AddMember("end", end, alloc);
+        diag.AddMember("range", range, alloc);
+        diag.AddMember("severity", entry.severity, alloc);
+        diag.AddMember("source", rapidjson::Value("starbytes-compiler", alloc), alloc);
+        diag.AddMember("message", rapidjson::Value(entry.message.c_str(), alloc), alloc);
+        diagnostics.PushBack(diag, alloc);
+      }
     }
   }
 
@@ -748,7 +857,7 @@ void Server::handleInitialize(rapidjson::Document &request) {
 
   rapidjson::Value serverInfo(rapidjson::kObjectType);
   serverInfo.AddMember("name", rapidjson::Value("Starbytes LSP", alloc), alloc);
-  serverInfo.AddMember("version", rapidjson::Value("0.7.0", alloc), alloc);
+  serverInfo.AddMember("version", rapidjson::Value("0.8.0", alloc), alloc);
 
   rapidjson::Value result(rapidjson::kObjectType);
   result.AddMember("capabilities", capabilities, alloc);
@@ -938,11 +1047,9 @@ void Server::handleCompletion(rapidjson::Document &request) {
   auto prefix = extractPrefixAtPosition(text, line, character);
   auto loweredPrefix = toLower(prefix);
 
-  std::string builtinsUri;
-  std::string builtinsText;
   BuiltinApiIndex builtinsIndex;
-  if (getBuiltinsDocument(builtinsUri, builtinsText)) {
-    builtinsIndex = buildBuiltinApiIndex(builtinsUri, builtinsText);
+  if (const auto *cachedBuiltins = getBuiltinsApiIndex()) {
+    builtinsIndex = *cachedBuiltins;
   }
 
   std::string memberReceiver;
@@ -1053,11 +1160,9 @@ void Server::handleCompletionResolve(rapidjson::Document &request) {
   }
 
   std::optional<SymbolEntry> resolvedSymbol;
-  std::string builtinsUri;
-  std::string builtinsText;
   BuiltinApiIndex builtinsIndex;
-  if(getBuiltinsDocument(builtinsUri, builtinsText)) {
-    builtinsIndex = buildBuiltinApiIndex(builtinsUri, builtinsText);
+  if(const auto *cachedBuiltins = getBuiltinsApiIndex()) {
+    builtinsIndex = *cachedBuiltins;
   }
   if(!label.empty()) {
     auto top = builtinsIndex.topLevelByName.find(label);
@@ -1157,11 +1262,9 @@ void Server::handleHover(rapidjson::Document &request) {
     return;
   }
 
-  std::string builtinsUri;
-  std::string builtinsText;
   BuiltinApiIndex builtinsIndex;
-  if (getBuiltinsDocument(builtinsUri, builtinsText)) {
-    builtinsIndex = buildBuiltinApiIndex(builtinsUri, builtinsText);
+  if (const auto *cachedBuiltins = getBuiltinsApiIndex()) {
+    builtinsIndex = *cachedBuiltins;
   }
 
   std::optional<SymbolEntry> bestSymbol;
@@ -1326,11 +1429,9 @@ void Server::handleDefinition(rapidjson::Document &request) {
     return;
   }
 
-  std::string builtinsUri;
-  std::string builtinsText;
   BuiltinApiIndex builtinsIndex;
-  if (getBuiltinsDocument(builtinsUri, builtinsText)) {
-    builtinsIndex = buildBuiltinApiIndex(builtinsUri, builtinsText);
+  if (const auto *cachedBuiltins = getBuiltinsApiIndex()) {
+    builtinsIndex = *cachedBuiltins;
   }
 
   rapidjson::Document payloadDoc(rapidjson::kObjectType);
@@ -1819,11 +1920,9 @@ void Server::handleSignatureHelp(rapidjson::Document &request) {
 
   auto functionName = text.substr(nameStart, nameEnd - nameStart);
 
-  std::string builtinsUri;
-  std::string builtinsText;
   BuiltinApiIndex builtinsIndex;
-  if (getBuiltinsDocument(builtinsUri, builtinsText)) {
-    builtinsIndex = buildBuiltinApiIndex(builtinsUri, builtinsText);
+  if (const auto *cachedBuiltins = getBuiltinsApiIndex()) {
+    builtinsIndex = *cachedBuiltins;
   }
 
   std::string signatureParams;
@@ -2161,8 +2260,15 @@ void Server::handleSemanticTokens(rapidjson::Document &request) {
   std::string text;
   getDocumentTextByUri(uri, text);
 
-  auto entries = collectSemanticTokenEntries(text, 0, 0, false);
-  auto encoded = encodeSemanticTokens(entries);
+  std::vector<unsigned> encoded;
+  auto docIt = documents.find(uri);
+  if (docIt != documents.end()) {
+    const auto &entries = getSemanticTokensForDocument(uri, docIt->second);
+    encoded = encodeSemanticTokens(entries);
+  } else {
+    auto entries = collectSemanticTokenEntries(text, 0, 0, false);
+    encoded = encodeSemanticTokens(entries);
+  }
 
   rapidjson::Document payloadDoc(rapidjson::kObjectType);
   auto &alloc = payloadDoc.GetAllocator();
@@ -2203,8 +2309,16 @@ void Server::handleSemanticTokensRange(rapidjson::Document &request) {
 
   std::string text;
   getDocumentTextByUri(uri, text);
-  auto entries = collectSemanticTokenEntries(text, startLine, endLine, true);
-  auto encoded = encodeSemanticTokens(entries);
+  std::vector<unsigned> encoded;
+  auto docIt = documents.find(uri);
+  if (docIt != documents.end()) {
+    const auto &fullEntries = getSemanticTokensForDocument(uri, docIt->second);
+    auto rangedEntries = filterSemanticTokensByLineRange(fullEntries, startLine, endLine);
+    encoded = encodeSemanticTokens(rangedEntries);
+  } else {
+    auto entries = collectSemanticTokenEntries(text, startLine, endLine, true);
+    encoded = encodeSemanticTokens(entries);
+  }
 
   rapidjson::Document payloadDoc(rapidjson::kObjectType);
   auto &alloc = payloadDoc.GetAllocator();
@@ -2236,8 +2350,15 @@ void Server::handleSemanticTokensDelta(rapidjson::Document &request) {
 
   std::string text;
   getDocumentTextByUri(uri, text);
-  auto entries = collectSemanticTokenEntries(text, 0, 0, false);
-  auto encoded = encodeSemanticTokens(entries);
+  std::vector<unsigned> encoded;
+  auto docIt = documents.find(uri);
+  if (docIt != documents.end()) {
+    const auto &entries = getSemanticTokensForDocument(uri, docIt->second);
+    encoded = encodeSemanticTokens(entries);
+  } else {
+    auto entries = collectSemanticTokenEntries(text, 0, 0, false);
+    encoded = encodeSemanticTokens(entries);
+  }
 
   std::vector<unsigned> oldData;
   bool hasPrevious = false;
@@ -2423,7 +2544,11 @@ void Server::processRequest(rapidjson::Document &request) {
     auto uri = std::string(request["params"]["textDocument"]["uri"].GetString());
     std::string text;
     getDocumentTextByUri(uri, text);
-    auto compilerDiagnostics = collectCompilerDiagnosticsForText(uri, text);
+    std::vector<CompilerDiagnosticEntry> compilerDiagnostics;
+    auto docIt = documents.find(uri);
+    if (docIt != documents.end()) {
+      compilerDiagnostics = getCompilerDiagnosticsForDocument(uri, docIt->second);
+    }
 
     rapidjson::Document payloadDoc(rapidjson::kObjectType);
     auto &alloc = payloadDoc.GetAllocator();
@@ -2462,8 +2587,8 @@ void Server::processRequest(rapidjson::Document &request) {
     auto &alloc = payloadDoc.GetAllocator();
     rapidjson::Value result(rapidjson::kObjectType);
     rapidjson::Value items(rapidjson::kArrayType);
-    for (const auto &doc : documents) {
-      auto compilerDiagnostics = collectCompilerDiagnosticsForText(doc.first, doc.second.text);
+    for (auto &doc : documents) {
+      auto compilerDiagnostics = getCompilerDiagnosticsForDocument(doc.first, doc.second);
       rapidjson::Value report(rapidjson::kObjectType);
       report.AddMember("uri", rapidjson::Value(doc.first.c_str(), alloc), alloc);
       report.AddMember("kind", rapidjson::Value("full", alloc), alloc);

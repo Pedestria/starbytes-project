@@ -23,10 +23,14 @@ struct CompileProfileData {
     uint64_t parserTokenCount = 0;
     uint64_t parserStatementCount = 0;
     uint64_t parserFileCount = 0;
+    uint64_t moduleBuildNs = 0;
+    uint64_t moduleLinkNs = 0;
     uint64_t genFinishNs = 0;
     uint64_t runtimeExecNs = 0;
     uint64_t moduleCount = 0;
     uint64_t sourceCount = 0;
+    uint64_t moduleCacheHits = 0;
+    uint64_t moduleCacheMisses = 0;
     std::string command;
     std::string input;
     std::string moduleName;

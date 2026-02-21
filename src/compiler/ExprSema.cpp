@@ -51,6 +51,27 @@ static Semantics::SymbolTable::Entry *findTypeEntryNoDiag(Semantics::STableConte
     return nullptr;
 }
 
+static ASTType *canonicalizeBuiltinAliasType(ASTType *type){
+    if(!type){
+        return nullptr;
+    }
+    if(type->nameMatches(LONG_TYPE)){
+        auto *canonical = ASTType::Create(INT_TYPE->getName(),type->getParentNode(),false,false);
+        canonical->isOptional = type->isOptional;
+        canonical->isThrowable = type->isThrowable;
+        canonical->isGenericParam = type->isGenericParam;
+        return canonical;
+    }
+    if(type->nameMatches(DOUBLE_TYPE)){
+        auto *canonical = ASTType::Create(FLOAT_TYPE->getName(),type->getParentNode(),false,false);
+        canonical->isOptional = type->isOptional;
+        canonical->isThrowable = type->isThrowable;
+        canonical->isGenericParam = type->isGenericParam;
+        return canonical;
+    }
+    return type;
+}
+
 static ASTType *cloneTypeNode(ASTType *type,ASTStmt *parent){
     if(!type){
         return nullptr;
@@ -113,10 +134,18 @@ static ASTType *resolveAliasType(ASTType *type,
     if(!resolved){
         return nullptr;
     }
+    for(size_t i = 0;i < resolved->typeParams.size();++i){
+        auto *param = resolved->typeParams[i];
+        auto *resolvedParam = resolveAliasType(param,symbolTableContext,scope,genericTypeParams,visiting);
+        if(resolvedParam){
+            resolved->typeParams[i] = resolvedParam;
+        }
+    }
     if(isGenericParamName(genericTypeParams,resolved->getName()) || resolved->isGenericParam){
         resolved->isGenericParam = true;
         return resolved;
     }
+    resolved = canonicalizeBuiltinAliasType(resolved);
     auto *entry = findTypeEntryNoDiag(symbolTableContext,resolved->getName(),scope);
     if(!entry || entry->type != Semantics::SymbolTable::Entry::TypeAlias){
         return resolved;
@@ -436,11 +465,14 @@ static ASTType *cloneTypeWithQualifiers(ASTType *baseType,ASTStmt *parentNode,bo
 }
 
 static bool isNumericType(ASTType *type){
-    return type && (type->nameMatches(INT_TYPE) || type->nameMatches(FLOAT_TYPE));
+    return type && (type->nameMatches(INT_TYPE)
+                    || type->nameMatches(FLOAT_TYPE)
+                    || type->nameMatches(LONG_TYPE)
+                    || type->nameMatches(DOUBLE_TYPE));
 }
 
 static bool isIntType(ASTType *type){
-    return type && type->nameMatches(INT_TYPE);
+    return type && (type->nameMatches(INT_TYPE) || type->nameMatches(LONG_TYPE));
 }
 
 static bool isStringType(ASTType *type){
@@ -453,6 +485,10 @@ static bool isBoolType(ASTType *type){
 
 static bool isDictType(ASTType *type){
     return type && type->nameMatches(DICTIONARY_TYPE);
+}
+
+static bool isMapType(ASTType *type){
+    return type && type->nameMatches(MAP_TYPE);
 }
 
 static bool isArrayType(ASTType *type){
@@ -469,6 +505,105 @@ static bool isTaskType(ASTType *type){
 
 static bool isFunctionType(ASTType *type){
     return type && type->nameMatches(FUNCTION_TYPE);
+}
+
+static bool isBuiltinCastTargetName(string_ref name){
+    return name == INT_TYPE->getName()
+        || name == FLOAT_TYPE->getName()
+        || name == LONG_TYPE->getName()
+        || name == DOUBLE_TYPE->getName()
+        || name == STRING_TYPE->getName()
+        || name == BOOL_TYPE->getName()
+        || name == ANY_TYPE->getName();
+}
+
+static bool isBuiltinCastTargetType(ASTType *type){
+    return type && isBuiltinCastTargetName(type->getName());
+}
+
+static std::optional<std::string> resolveRuntimeTypeNameFromType(ASTType *candidateType,
+                                                                  Semantics::STableContext &symbolTableContext,
+                                                                  std::shared_ptr<ASTScope> scope,
+                                                                  const string_set *genericTypeParams,
+                                                                  DiagnosticHandler &errStream,
+                                                                  ASTStmt *diagNode){
+    if(!candidateType){
+        return std::nullopt;
+    }
+    auto *resolved = resolveAliasType(candidateType,symbolTableContext,scope,genericTypeParams);
+    if(!resolved){
+        return std::nullopt;
+    }
+    if(resolved->nameMatches(STRING_TYPE) || resolved->nameMatches(ARRAY_TYPE)
+       || resolved->nameMatches(DICTIONARY_TYPE) || resolved->nameMatches(MAP_TYPE) || resolved->nameMatches(BOOL_TYPE)
+       || resolved->nameMatches(INT_TYPE) || resolved->nameMatches(FLOAT_TYPE)
+       || resolved->nameMatches(LONG_TYPE) || resolved->nameMatches(DOUBLE_TYPE)
+       || resolved->nameMatches(REGEX_TYPE) || resolved->nameMatches(ANY_TYPE)
+       || resolved->nameMatches(TASK_TYPE) || resolved->nameMatches(FUNCTION_TYPE)){
+        return resolved->getName().str();
+    }
+
+    auto *entry = findTypeEntryNoDiag(symbolTableContext,resolved->getName(),scope);
+    if(!entry){
+        std::ostringstream ss;
+        ss << "Unknown type `" << resolved->getName() << "` in runtime type check.";
+        errStream.push(SemanticADiagnostic::create(ss.str(),diagNode,Diagnostic::Error));
+        return std::nullopt;
+    }
+    if(entry->type == Semantics::SymbolTable::Entry::Interface){
+        errStream.push(SemanticADiagnostic::create("Runtime `is` does not support interface types.",diagNode,Diagnostic::Error));
+        return std::nullopt;
+    }
+    if(entry->type == Semantics::SymbolTable::Entry::Class){
+        if(!entry->emittedName.empty()){
+            return entry->emittedName;
+        }
+        return entry->name;
+    }
+    if(entry->type == Semantics::SymbolTable::Entry::TypeAlias){
+        auto *aliasData = (Semantics::SymbolTable::TypeAlias *)entry->data;
+        if(!aliasData || !aliasData->aliasType){
+            errStream.push(SemanticADiagnostic::create("Type alias symbol is missing target type.",diagNode,Diagnostic::Error));
+            return std::nullopt;
+        }
+        return resolveRuntimeTypeNameFromType(aliasData->aliasType,symbolTableContext,scope,genericTypeParams,errStream,diagNode);
+    }
+    errStream.push(SemanticADiagnostic::create("Right side of `is` must be a runtime type.",diagNode,Diagnostic::Error));
+    return std::nullopt;
+}
+
+static bool classExtendsOrEqualsRecursive(Semantics::STableContext &symbolTableContext,
+                                          string_ref className,
+                                          string_ref expectedAncestor,
+                                          std::shared_ptr<ASTScope> scope,
+                                          string_set &visited){
+    auto *entry = findClassEntry(symbolTableContext,className,scope);
+    if(!entry){
+        return false;
+    }
+    auto *classData = (Semantics::SymbolTable::Class *)entry->data;
+    string_ref currentName = classData && classData->classType? classData->classType->getName() : string_ref(entry->name);
+    auto visitedKey = currentName.str();
+    if(visited.find(visitedKey) != visited.end()){
+        return false;
+    }
+    visited.insert(visitedKey);
+    if(currentName == expectedAncestor || entry->name == expectedAncestor
+       || (!entry->emittedName.empty() && entry->emittedName == expectedAncestor)){
+        return true;
+    }
+    if(!classData || !classData->superClassType){
+        return false;
+    }
+    return classExtendsOrEqualsRecursive(symbolTableContext,classData->superClassType->getName(),expectedAncestor,scope,visited);
+}
+
+static bool classExtendsOrEquals(Semantics::STableContext &symbolTableContext,
+                                 string_ref className,
+                                 string_ref expectedAncestor,
+                                 std::shared_ptr<ASTScope> scope){
+    string_set visited;
+    return classExtendsOrEqualsRecursive(symbolTableContext,className,expectedAncestor,scope,visited);
 }
 
 static ASTType *makeFunctionType(ASTType *returnType,
@@ -636,6 +771,38 @@ static ASTType *arrayElementType(ASTType *arrayType,ASTStmt *node,bool optional)
             elementType->isOptional = true;
         }
         return elementType;
+    }
+    return cloneTypeWithQualifiers(ANY_TYPE,node,optional,false);
+}
+
+static ASTType *makeMapType(ASTType *keyType,ASTType *valueType,ASTStmt *node){
+    auto *mapType = ASTType::Create(MAP_TYPE->getName(),node,false,false);
+    if(keyType){
+        mapType->addTypeParam(cloneTypeNode(keyType,node));
+    }
+    if(valueType){
+        mapType->addTypeParam(cloneTypeNode(valueType,node));
+    }
+    return mapType;
+}
+
+static ASTType *mapKeyType(ASTType *mapType,ASTStmt *node){
+    if(mapType && mapType->nameMatches(MAP_TYPE) && mapType->typeParams.size() == 2 && mapType->typeParams[0]){
+        return canonicalizeBuiltinAliasType(cloneTypeNode(mapType->typeParams[0],node));
+    }
+    return cloneTypeWithQualifiers(ANY_TYPE,node,false,false);
+}
+
+static ASTType *mapValueType(ASTType *mapType,ASTStmt *node,bool optional){
+    if(mapType && mapType->nameMatches(MAP_TYPE) && mapType->typeParams.size() == 2 && mapType->typeParams[1]){
+        auto *valueType = canonicalizeBuiltinAliasType(cloneTypeNode(mapType->typeParams[1],node));
+        if(!valueType){
+            return nullptr;
+        }
+        if(optional){
+            valueType->isOptional = true;
+        }
+        return valueType;
     }
     return cloneTypeWithQualifiers(ANY_TYPE,node,optional,false);
 }
@@ -834,6 +1001,9 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 break;
             }
             case DICT_EXPR : {
+                ASTType *inferredKeyType = nullptr;
+                ASTType *inferredValueType = nullptr;
+                bool canInferStrictMap = !expr_to_eval->dictExpr.empty();
                 for(auto &entry : expr_to_eval->dictExpr){
                     auto *keyType = evalExprForTypeId(entry.first,symbolTableContext,scopeContext);
                     if(!keyType){
@@ -841,7 +1011,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     }
                     keyType = normalizeType(keyType);
                     if(!(isNumericType(keyType) || isStringType(keyType))){
-                        errStream.push(SemanticADiagnostic::create("Dictionary keys must be String/Int/Float.",entry.first,Diagnostic::Error));
+                        errStream.push(SemanticADiagnostic::create("Dictionary keys must be String/Int/Long/Float/Double.",entry.first,Diagnostic::Error));
                         return nullptr;
                     }
                     auto *valueType = evalExprForTypeId(entry.second,symbolTableContext,scopeContext);
@@ -849,8 +1019,33 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         return nullptr;
                     }
                     valueType = normalizeType(valueType);
+
+                    if(canInferStrictMap){
+                        if(!inferredKeyType){
+                            inferredKeyType = cloneTypeNode(keyType,expr_to_eval);
+                        }
+                        else if(!inferredKeyType->match(keyType,[&](std::string){
+                            canInferStrictMap = false;
+                        })){
+                            canInferStrictMap = false;
+                        }
+
+                        if(!inferredValueType){
+                            inferredValueType = cloneTypeNode(valueType,expr_to_eval);
+                        }
+                        else if(!inferredValueType->match(valueType,[&](std::string){
+                            canInferStrictMap = false;
+                        })){
+                            canInferStrictMap = false;
+                        }
+                    }
                 }
-                type = DICTIONARY_TYPE;
+                if(canInferStrictMap && inferredKeyType && inferredValueType){
+                    type = makeMapType(inferredKeyType,inferredValueType,expr_to_eval);
+                }
+                else {
+                    type = DICTIONARY_TYPE;
+                }
                 break;
             }
             case INLINE_FUNC_EXPR : {
@@ -947,13 +1142,26 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 }
                 if(isDictType(baseType)){
                     if(!(isStringType(indexType) || isNumericType(indexType))){
-                        errStream.push(SemanticADiagnostic::create("Dictionary indexing requires String/Int/Float key.",expr_to_eval,Diagnostic::Error));
+                        errStream.push(SemanticADiagnostic::create("Dictionary indexing requires String/Int/Long/Float/Double key.",expr_to_eval,Diagnostic::Error));
                         return nullptr;
                     }
                     type = cloneTypeWithQualifiers(ANY_TYPE,expr_to_eval,true,false);
                     break;
                 }
-                errStream.push(SemanticADiagnostic::create("Index expression requires Array or Dict base.",expr_to_eval,Diagnostic::Error));
+                if(isMapType(baseType)){
+                    auto *expectedKeyType = mapKeyType(baseType,expr_to_eval);
+                    if(!expectedKeyType){
+                        return nullptr;
+                    }
+                    if(!expectedKeyType->match(indexType,[&](std::string){
+                        errStream.push(SemanticADiagnostic::create("Map indexing key type mismatch.",expr_to_eval,Diagnostic::Error));
+                    })){
+                        return nullptr;
+                    }
+                    type = mapValueType(baseType,expr_to_eval,true);
+                    break;
+                }
+                errStream.push(SemanticADiagnostic::create("Index expression requires Array, Dict, or Map base.",expr_to_eval,Diagnostic::Error));
                 return nullptr;
             }
             case UNARY_EXPR : {
@@ -1026,60 +1234,14 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         return nullptr;
                     }
 
-                    auto resolveRuntimeTypeNameFromType = [&](auto &&self,ASTType *candidateType) -> std::optional<std::string> {
-                        if(!candidateType){
-                            return std::nullopt;
-                        }
-                        auto *resolved = normalizeType(candidateType);
-                        if(!resolved){
-                            return std::nullopt;
-                        }
-                        auto resolvedName = resolved->getName();
-                        if(resolved->nameMatches(STRING_TYPE) || resolved->nameMatches(ARRAY_TYPE)
-                           || resolved->nameMatches(DICTIONARY_TYPE) || resolved->nameMatches(BOOL_TYPE)
-                           || resolved->nameMatches(INT_TYPE) || resolved->nameMatches(FLOAT_TYPE)
-                           || resolved->nameMatches(REGEX_TYPE) || resolved->nameMatches(ANY_TYPE)
-                           || resolved->nameMatches(TASK_TYPE) || resolved->nameMatches(FUNCTION_TYPE)){
-                            return resolvedName.str();
-                        }
-
-                        auto *entry = findTypeEntryNoDiag(symbolTableContext,resolved->getName(),scopeContext.scope);
-                        if(!entry){
-                            std::ostringstream ss;
-                            ss << "Unknown type `" << resolved->getName() << "` in runtime type check.";
-                            errStream.push(SemanticADiagnostic::create(ss.str(),expr_to_eval,Diagnostic::Error));
-                            return std::nullopt;
-                        }
-                        if(entry->type == Semantics::SymbolTable::Entry::Interface){
-                            errStream.push(SemanticADiagnostic::create("Runtime `is` does not support interface types.",expr_to_eval,Diagnostic::Error));
-                            return std::nullopt;
-                        }
-                        if(entry->type == Semantics::SymbolTable::Entry::Class){
-                            if(!entry->emittedName.empty()){
-                                return entry->emittedName;
-                            }
-                            return entry->name;
-                        }
-                        if(entry->type == Semantics::SymbolTable::Entry::TypeAlias){
-                            auto *aliasData = (Semantics::SymbolTable::TypeAlias *)entry->data;
-                            if(!aliasData || !aliasData->aliasType){
-                                errStream.push(SemanticADiagnostic::create("Type alias symbol is missing target type.",expr_to_eval,Diagnostic::Error));
-                                return std::nullopt;
-                            }
-                            auto *aliasResolved = resolveAliasType(aliasData->aliasType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
-                            return self(self,aliasResolved);
-                        }
-                        errStream.push(SemanticADiagnostic::create("Right side of `is` must be a runtime type.",expr_to_eval,Diagnostic::Error));
-                        return std::nullopt;
-                    };
-
                     std::optional<std::string> runtimeTypeName;
                     auto *rhsExpr = expr_to_eval->rightExpr;
                     if(rhsExpr->type == ID_EXPR && rhsExpr->id){
                         string_ref rawName = rhsExpr->id->val;
                         if(rawName == STRING_TYPE->getName() || rawName == ARRAY_TYPE->getName()
-                           || rawName == DICTIONARY_TYPE->getName() || rawName == BOOL_TYPE->getName()
+                           || rawName == DICTIONARY_TYPE->getName() || rawName == MAP_TYPE->getName() || rawName == BOOL_TYPE->getName()
                            || rawName == INT_TYPE->getName() || rawName == FLOAT_TYPE->getName()
+                           || rawName == LONG_TYPE->getName() || rawName == DOUBLE_TYPE->getName()
                            || rawName == REGEX_TYPE->getName() || rawName == ANY_TYPE->getName()
                            || rawName == TASK_TYPE->getName() || rawName == FUNCTION_TYPE->getName()){
                             runtimeTypeName = rawName.str();
@@ -1112,7 +1274,12 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                                     errStream.push(SemanticADiagnostic::create("Type alias symbol is missing target type.",rhsExpr,Diagnostic::Error));
                                     return nullptr;
                                 }
-                                runtimeTypeName = resolveRuntimeTypeNameFromType(resolveRuntimeTypeNameFromType,aliasData->aliasType);
+                                runtimeTypeName = resolveRuntimeTypeNameFromType(aliasData->aliasType,
+                                                                                 symbolTableContext,
+                                                                                 scopeContext.scope,
+                                                                                 scopeContext.genericTypeParams,
+                                                                                 errStream,
+                                                                                 rhsExpr);
                             }
                             else {
                                 errStream.push(SemanticADiagnostic::create("Right side of `is` must be a type.",rhsExpr,Diagnostic::Error));
@@ -1131,7 +1298,12 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             errStream.push(SemanticADiagnostic::create("Right side of `is` must be a class or builtin type.",rhsExpr,Diagnostic::Error));
                             return nullptr;
                         }
-                        runtimeTypeName = resolveRuntimeTypeNameFromType(resolveRuntimeTypeNameFromType,rhsType);
+                        runtimeTypeName = resolveRuntimeTypeNameFromType(rhsType,
+                                                                         symbolTableContext,
+                                                                         scopeContext.scope,
+                                                                         scopeContext.genericTypeParams,
+                                                                         errStream,
+                                                                         rhsExpr);
                     }
                     else {
                         errStream.push(SemanticADiagnostic::create("Right side of `is` must be a type identifier.",rhsExpr,Diagnostic::Error));
@@ -1309,6 +1481,20 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         break;
                     }
                     errStream.push(SemanticADiagnostic::create("Unknown Dict member.",expr_to_eval,Diagnostic::Error));
+                    return nullptr;
+                }
+                if(isMapType(leftType)){
+                    if(memberName == "length"){
+                        setBuiltinProperty(INT_TYPE);
+                        break;
+                    }
+                    if(memberName == "isEmpty" || memberName == "has" || memberName == "get" ||
+                       memberName == "set" || memberName == "remove" || memberName == "keys" ||
+                       memberName == "values" || memberName == "clear" || memberName == "copy"){
+                        setBuiltinMethod();
+                        break;
+                    }
+                    errStream.push(SemanticADiagnostic::create("Unknown Map member.",expr_to_eval,Diagnostic::Error));
                     return nullptr;
                 }
 
@@ -1527,7 +1713,18 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     }
                     else if(isDictType(baseType)){
                         if(!(isStringType(indexType) || isNumericType(indexType))){
-                            errStream.push(SemanticADiagnostic::create("Dictionary assignment key must be String/Int/Float.",expr_to_eval,Diagnostic::Error));
+                            errStream.push(SemanticADiagnostic::create("Dictionary assignment key must be String/Int/Long/Float/Double.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                    }
+                    else if(isMapType(baseType)){
+                        auto *expectedKeyType = mapKeyType(baseType,expr_to_eval);
+                        if(!expectedKeyType){
+                            return nullptr;
+                        }
+                        if(!expectedKeyType->match(indexType,[&](std::string){
+                            errStream.push(SemanticADiagnostic::create("Map assignment key type mismatch.",expr_to_eval,Diagnostic::Error));
+                        })){
                             return nullptr;
                         }
                     }
@@ -1548,11 +1745,163 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 if(!expr_to_eval->callee){
                     return nullptr;
                 }
+                expr_to_eval->runtimeCastTargetName.reset();
+
+                auto evaluateTypeCastInvocation = [&](ASTType *targetType) -> ASTType * {
+                    if(!targetType){
+                        errStream.push(SemanticADiagnostic::create("Cast target type is invalid.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    if(!expr_to_eval->genericTypeArgs.empty()){
+                        errStream.push(SemanticADiagnostic::create("Cast invocation does not support generic type arguments.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    if(expr_to_eval->exprArrayData.size() != 1){
+                        errStream.push(SemanticADiagnostic::create("Type cast expects exactly one argument.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    auto *sourceType = evalExprForTypeId(expr_to_eval->exprArrayData.front(),symbolTableContext,scopeContext);
+                    if(!sourceType){
+                        return nullptr;
+                    }
+                    sourceType = normalizeType(sourceType);
+                    auto *resolvedTargetType = normalizeType(targetType);
+                    if(!resolvedTargetType){
+                        return nullptr;
+                    }
+                    if(resolvedTargetType->nameMatches(VOID_TYPE)){
+                        errStream.push(SemanticADiagnostic::create("Cannot cast values to Void.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+
+                    bool castIsThrowable = false;
+                    if(resolvedTargetType->nameMatches(ANY_TYPE)){
+                        castIsThrowable = false;
+                    }
+                    else if(isBuiltinCastTargetType(resolvedTargetType)){
+                        bool conversionIsValid = false;
+                        if(resolvedTargetType->nameMatches(INT_TYPE) || resolvedTargetType->nameMatches(FLOAT_TYPE)){
+                            conversionIsValid = isNumericType(sourceType)
+                                || isBoolType(sourceType)
+                                || isStringType(sourceType)
+                                || sourceType->nameMatches(ANY_TYPE);
+                        }
+                        else if(resolvedTargetType->nameMatches(BOOL_TYPE)){
+                            conversionIsValid = isBoolType(sourceType)
+                                || isNumericType(sourceType)
+                                || isStringType(sourceType)
+                                || sourceType->nameMatches(ANY_TYPE);
+                        }
+                        else if(resolvedTargetType->nameMatches(STRING_TYPE)){
+                            conversionIsValid = true;
+                        }
+                        if(!conversionIsValid){
+                            errStream.push(SemanticADiagnostic::create("Invalid builtin conversion for cast target type.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                    }
+                    else {
+                        auto *targetEntry = findTypeEntryNoDiag(symbolTableContext,resolvedTargetType->getName(),scopeContext.scope);
+                        if(!targetEntry){
+                            std::ostringstream ss;
+                            ss << "Unknown cast target type `" << resolvedTargetType->getName() << "`.";
+                            errStream.push(SemanticADiagnostic::create(ss.str(),expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                        if(targetEntry->type == Semantics::SymbolTable::Entry::Interface){
+                            errStream.push(SemanticADiagnostic::create("Casting to interface types is not currently supported.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                        if(targetEntry->type != Semantics::SymbolTable::Entry::Class){
+                            errStream.push(SemanticADiagnostic::create("Cast target must resolve to a builtin or class type.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                        if(sourceType->nameMatches(ANY_TYPE)){
+                            castIsThrowable = true;
+                        }
+                        else {
+                            auto *sourceEntry = findTypeEntryNoDiag(symbolTableContext,sourceType->getName(),scopeContext.scope);
+                            if(!sourceEntry || sourceEntry->type != Semantics::SymbolTable::Entry::Class){
+                                errStream.push(SemanticADiagnostic::create("Class casts require a class-typed source value.",expr_to_eval->exprArrayData.front(),Diagnostic::Error));
+                                return nullptr;
+                            }
+
+                            bool sourceIsTarget = classExtendsOrEquals(symbolTableContext,sourceType->getName(),resolvedTargetType->getName(),scopeContext.scope);
+                            bool targetIsSource = classExtendsOrEquals(symbolTableContext,resolvedTargetType->getName(),sourceType->getName(),scopeContext.scope);
+                            if(sourceIsTarget){
+                                castIsThrowable = false;
+                            }
+                            else if(targetIsSource){
+                                castIsThrowable = true;
+                            }
+                            else {
+                                errStream.push(SemanticADiagnostic::create("Class cast source and target types are unrelated.",expr_to_eval,Diagnostic::Error));
+                                return nullptr;
+                            }
+                        }
+                    }
+
+                    auto runtimeCastName = resolveRuntimeTypeNameFromType(resolvedTargetType,
+                                                                          symbolTableContext,
+                                                                          scopeContext.scope,
+                                                                          scopeContext.genericTypeParams,
+                                                                          errStream,
+                                                                          expr_to_eval);
+                    if(!runtimeCastName.has_value() || runtimeCastName->empty()){
+                        return nullptr;
+                    }
+
+                    auto *castResultType = cloneTypeNode(resolvedTargetType,expr_to_eval);
+                    if(!castResultType){
+                        return nullptr;
+                    }
+                    castResultType->isOptional = sourceType->isOptional;
+                    castResultType->isThrowable = sourceType->isThrowable || castIsThrowable;
+                    expr_to_eval->runtimeCastTargetName = runtimeCastName;
+                    return normalizeType(castResultType);
+                };
+
+                if(!expr_to_eval->isConstructorCall
+                   && expr_to_eval->callee->type == ID_EXPR
+                   && expr_to_eval->callee->id
+                   && isBuiltinCastTargetName(expr_to_eval->callee->id->val)){
+                    auto *entry = symbolTableContext.findEntryNoDiag(expr_to_eval->callee->id->val,scopeContext.scope);
+                    if(!entry){
+                        expr_to_eval->callee->id->type = ASTIdentifier::Class;
+                        auto *builtinTargetType = ASTType::Create(expr_to_eval->callee->id->val,expr_to_eval,false,false);
+                        type = evaluateTypeCastInvocation(builtinTargetType);
+                        if(!type){
+                            return nullptr;
+                        }
+                        break;
+                    }
+                }
+
                 ASTType *funcType = evalExprForTypeId(expr_to_eval->callee, symbolTableContext,scopeContext);
                 if(!funcType){
                     return nullptr;
                 }
                 funcType = normalizeType(funcType);
+
+                if(!expr_to_eval->isConstructorCall){
+                    bool calleeRepresentsType = false;
+                    if(expr_to_eval->callee->type == ID_EXPR && expr_to_eval->callee->id
+                       && expr_to_eval->callee->id->type == ASTIdentifier::Class){
+                        calleeRepresentsType = true;
+                    }
+                    else if(expr_to_eval->callee->type == MEMBER_EXPR
+                            && expr_to_eval->callee->rightExpr && expr_to_eval->callee->rightExpr->id
+                            && expr_to_eval->callee->rightExpr->id->type == ASTIdentifier::Class){
+                        calleeRepresentsType = true;
+                    }
+                    if(calleeRepresentsType){
+                        type = evaluateTypeCastInvocation(funcType);
+                        if(!type){
+                            return nullptr;
+                        }
+                        break;
+                    }
+                }
 
                 if(!expr_to_eval->isConstructorCall && isFunctionType(funcType)){
                     if(funcType->typeParams.empty()){
@@ -1684,9 +2033,41 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         }
                         return true;
                     };
+                    auto requireMapKeyArg = [&](size_t index) -> bool {
+                        auto *argType = evalArgType(index);
+                        if(!argType){
+                            return false;
+                        }
+                        auto *expectedKeyType = mapKeyType(baseType,expr_to_eval);
+                        if(!expectedKeyType){
+                            return false;
+                        }
+                        if(!expectedKeyType->match(argType,[&](std::string){
+                            errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",expr_to_eval->exprArrayData[index],Diagnostic::Error));
+                        })){
+                            return false;
+                        }
+                        return true;
+                    };
                     auto requireAnyArg = [&](size_t index) -> bool {
                         auto *argType = evalArgType(index);
                         return argType != nullptr;
+                    };
+                    auto requireMapValueArg = [&](size_t index) -> bool {
+                        auto *argType = evalArgType(index);
+                        if(!argType){
+                            return false;
+                        }
+                        auto *expectedValueType = mapValueType(baseType,expr_to_eval,false);
+                        if(!expectedValueType){
+                            return false;
+                        }
+                        if(!expectedValueType->match(argType,[&](std::string){
+                            errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",expr_to_eval->exprArrayData[index],Diagnostic::Error));
+                        })){
+                            return false;
+                        }
+                        return true;
                     };
                     auto requireArrayElementArg = [&](size_t index) -> bool {
                         auto *argType = evalArgType(index);
@@ -1869,6 +2250,55 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             break;
                         }
                         errStream.push(SemanticADiagnostic::create("Unknown Dict method.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    if(isMapType(baseType)){
+                        if(memberName == "isEmpty"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "has"){
+                            if(!requireArgCount(1) || !requireMapKeyArg(0)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "get"){
+                            if(!requireArgCount(1) || !requireMapKeyArg(0)) return nullptr;
+                            type = mapValueType(baseType,expr_to_eval,true);
+                            break;
+                        }
+                        if(memberName == "set"){
+                            if(!requireArgCount(2) || !requireMapKeyArg(0) || !requireMapValueArg(1)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "remove"){
+                            if(!requireArgCount(1) || !requireMapKeyArg(0)) return nullptr;
+                            type = mapValueType(baseType,expr_to_eval,true);
+                            break;
+                        }
+                        if(memberName == "keys"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = makeArrayType(mapKeyType(baseType,expr_to_eval),expr_to_eval);
+                            break;
+                        }
+                        if(memberName == "values"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = makeArrayType(mapValueType(baseType,expr_to_eval,false),expr_to_eval);
+                            break;
+                        }
+                        if(memberName == "clear"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = BOOL_TYPE;
+                            break;
+                        }
+                        if(memberName == "copy"){
+                            if(!requireArgCount(0)) return nullptr;
+                            type = cloneTypeNode(baseType,expr_to_eval);
+                            break;
+                        }
+                        errStream.push(SemanticADiagnostic::create("Unknown Map method.",expr_to_eval,Diagnostic::Error));
                         return nullptr;
                     }
 
