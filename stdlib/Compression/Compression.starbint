@@ -1,0 +1,22 @@
+/// @brief StdLib Compression module.
+/// @details zlib-backed compression utilities with hex payload surfaces.
+
+/// @brief Deflates hex payload with zlib format and returns hex.
+@native(name="compression_deflateHex")
+func deflateHex(inputHex:String,level:Int) String!
+
+/// @brief Inflates zlib-compressed hex payload and returns raw hex.
+@native(name="compression_inflateHex")
+func inflateHex(compressedHex:String) String!
+
+/// @brief Gzips UTF-8 text and returns lowercase hex payload.
+@native(name="compression_gzipTextHex")
+func gzipTextHex(text:String,level:Int) String!
+
+/// @brief Gunzips hex payload and returns UTF-8 text.
+@native(name="compression_gunzipText")
+func gunzipText(compressedHex:String) String!
+
+/// @brief Computes CRC32 of UTF-8 text and returns 8-char lowercase hex.
+@native(name="compression_crc32Hex")
+func crc32Hex(text:String) String!

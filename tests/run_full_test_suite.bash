@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 STARBYTES_BIN="$ROOT_DIR/build/bin/starbytes"
-LOG_DIR="$ROOT_DIR/.starbytes/extreme-logs"
+LOG_DIR="$ROOT_DIR/.starbytes/full-test-logs"
 mkdir -p "$LOG_DIR"
 
 if [[ ! -x "$STARBYTES_BIN" ]]; then
@@ -109,6 +109,13 @@ assert_log_contains "typed-nested-map-array-invalid-check" 'Context: Type `Array
 run_expect_success "generic-inference-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_inference_extreme.starb"
 run_expect_success "generic-inference-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/generic_inference_extreme.starb"
 assert_log_contains "generic-inference-run" "GENERIC-INFERENCE-OK"
+run_expect_success "generic-edge-hardening-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_edge_hardening.starb"
+run_expect_success "generic-edge-hardening-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/generic_edge_hardening.starb"
+assert_log_contains "generic-edge-hardening-run" "GENERIC-EDGE-HARDENING-OK"
+run_expect_failure "generic-edge-hardening-invalid-map-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_edge_hardening_invalid_map.starb"
+assert_log_contains "generic-edge-hardening-invalid-map-check" 'Context: Type `Map` was implied from var initializer'
+run_expect_failure "generic-edge-hardening-invalid-ternary-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_edge_hardening_invalid_ternary.starb"
+assert_log_contains "generic-edge-hardening-invalid-ternary-check" 'Context: Type `Array` was implied from var initializer'
 run_expect_success "numeric-inference-default-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/numeric_inference_modes.starb"
 assert_log_contains "numeric-inference-default-run" "INFER-32BIT-OK"
 run_expect_success "numeric-inference-64bit-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/numeric_inference_modes.starb" --infer-64bit-numbers
@@ -242,18 +249,40 @@ assert_log_contains "ternary-invalid-branches" "Ternary branch type mismatch"
 run_expect_failure "operators-invalid-bitwise" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/operators_invalid.starb"
 assert_log_contains "operators-invalid-bitwise" "Bitwise and shift operators require Int operands"
 
-run_expect_success "expected-io-stream-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/expected_fail/io_stream_methods.starb"
-assert_log_contains "expected-io-stream-run" "IO-STREAM-READABLE-OK"
-assert_log_contains "expected-io-stream-run" "IO-STREAM-LINE-OK"
-assert_log_contains "expected-io-stream-run" "IO-STREAM-CLOSED-OK"
-assert_log_contains "expected-io-stream-run" "IO-STREAM-METHODS-OK"
-run_expect_success "expected-unicode-advanced-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/expected_fail/unicode_advanced.starb"
-assert_log_contains "expected-unicode-advanced-run" "UNICODE-FOLD-OK"
-assert_log_contains "expected-unicode-advanced-run" "UNICODE-CONTAINS-OK"
-assert_log_contains "expected-unicode-advanced-run" "UNICODE-ADVANCED-OK"
+run_expect_success "io-stream-stability-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/io_stream_stability.starb"
+assert_log_contains "io-stream-stability-run" "IO-STREAM-READABLE-OK"
+assert_log_contains "io-stream-stability-run" "IO-STREAM-LINE-OK"
+assert_log_contains "io-stream-stability-run" "IO-STREAM-EOF-CATCH"
+assert_log_contains "io-stream-stability-run" "IO-STREAM-CLOSE-OK"
+assert_log_contains "io-stream-stability-run" "IO-STREAM-RECLOSE-OK"
+assert_log_contains "io-stream-stability-run" "IO-STREAM-AFTER-CLOSE-CATCH"
+assert_log_contains "io-stream-stability-run" "IO-STREAM-CLOSED-OK"
+assert_log_contains "io-stream-stability-run" "IO-STREAM-STABILITY-OK"
+run_expect_success "unicode-advanced-stability-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/unicode_advanced_stability.starb"
+assert_log_contains "unicode-advanced-stability-run" "UNICODE-FOLD-OK"
+assert_log_contains "unicode-advanced-stability-run" "UNICODE-CONTAINS-OK"
+assert_log_contains "unicode-advanced-stability-run" "UNICODE-CONTAINS-ROOT-OK"
+assert_log_contains "unicode-advanced-stability-run" "UNICODE-ISNORM-BADFORM-CATCH"
+assert_log_contains "unicode-advanced-stability-run" "UNICODE-LOCALE-BAD-CATCH"
+assert_log_contains "unicode-advanced-stability-run" "UNICODE-ADVANCED-OK"
+assert_log_contains "unicode-advanced-stability-run" "UNICODE-ADVANCED-STABILITY-OK"
+run_expect_success "expected-phase3-invalid-runtime-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/expected_fail/phase3_invalid_runtime.starb"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-RANDOM-NEG-BYTES-CATCH"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-RANDOM-NEG-HEX-CATCH"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-CRYPTO-BAD-SALT-CATCH"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-CRYPTO-BAD-ITER-CATCH"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-CRYPTO-BAD-HEX-BOOL-OK"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-COMP-BAD-HEX-CATCH"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-COMP-BAD-INFLATE-CATCH"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-COMP-BAD-GUNZIP-CATCH"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-ARCHIVE-BAD-PACK-CATCH"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-ARCHIVE-BAD-UNPACK-CATCH"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-ARCHIVE-BAD-LIST-CATCH"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-ARCHIVE-ISVALID-OK"
+assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-INVALID-CASE-OK"
 
 echo
-echo "Extreme suite finished: pass=$PASS_COUNT fail=$FAIL_COUNT"
+echo "Full test suite finished: pass=$PASS_COUNT fail=$FAIL_COUNT"
 if [[ $FAIL_COUNT -ne 0 ]]; then
   exit 1
 fi

@@ -1,6 +1,6 @@
 import IO
 
-decl root = ".starbytes/extreme-suite-fail"
+decl root = ".starbytes/io-stream-stability"
 decl textPath = root + "/sample.txt"
 
 secure(decl mk = createDirectory(root,true)) catch {}
@@ -9,25 +9,52 @@ secure(decl tf = openText(textPath,"r+","utf-8","\n",-1)) catch (error:String) {
     print("IO-STREAM-OPEN-CATCH")
     print(error)
 }
+
 if(tf.readable()){
     print("IO-STREAM-READABLE-OK")
 }
 else {
     print("IO-STREAM-READABLE-BAD")
 }
-secure(decl line = tf.readLine()) catch {
+
+secure(decl line1 = tf.readLine()) catch {
     print("IO-STREAM-READLINE-CATCH")
 }
-print(line)
-if(line.contains("alpha")){
+if(line1.contains("alpha")){
     print("IO-STREAM-LINE-OK")
 }
 else {
     print("IO-STREAM-LINE-BAD")
 }
+
+secure(decl eofLine = tf.readLine()) catch {
+    print("IO-STREAM-EOF-CATCH")
+}
+
 secure(decl closeTextOk = tf.close()) catch {
     print("IO-STREAM-CLOSE-CATCH")
 }
+if(closeTextOk){
+    print("IO-STREAM-CLOSE-OK")
+}
+else {
+    print("IO-STREAM-CLOSE-BAD")
+}
+
+secure(decl closeAgain = tf.close()) catch {
+    print("IO-STREAM-RECLOSE-CATCH")
+}
+if(closeAgain){
+    print("IO-STREAM-RECLOSE-OK")
+}
+else {
+    print("IO-STREAM-RECLOSE-BAD")
+}
+
+secure(decl afterClose = tf.readLine()) catch {
+    print("IO-STREAM-AFTER-CLOSE-CATCH")
+}
+
 decl closed = tf.isClosed()
 if(closed){
     print("IO-STREAM-CLOSED-OK")
@@ -35,4 +62,8 @@ if(closed){
 else {
     print("IO-STREAM-CLOSED-BAD")
 }
-print("IO-STREAM-METHODS-OK")
+
+secure(decl rmText = remove(textPath)) catch {}
+secure(decl rmRoot = remove(root)) catch {}
+
+print("IO-STREAM-STABILITY-OK")

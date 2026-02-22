@@ -1,0 +1,16 @@
+decl rowsA:Map<String,Int>[] = [{}]
+decl rowsB:Map<String,Int>[] = [{"v":1}, {}]
+decl rowsC:Map<String,Int>[] = true ? [{}] : [{"v":2}]
+
+decl nested:Int[][] = [[], [1,2], true ? [] : [3,4]]
+decl payloads:Map<String,Int[]> = {"a":[], "b":[1], "c": true ? [] : [2,3]}
+decl payloadsFromTernary:Map<String,Int[]> = true ? {"x":[]} : {"x":[9]}
+
+print(rowsA.length)
+print(rowsB[0].get("v"))
+print(rowsC.length)
+print(nested[1].length)
+print(payloads.get("b").length)
+print(payloadsFromTernary.get("x").length)
+
+print("GENERIC-EDGE-HARDENING-OK")

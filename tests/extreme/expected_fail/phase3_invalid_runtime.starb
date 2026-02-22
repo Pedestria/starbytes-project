@@ -1,0 +1,58 @@
+import Random
+import Crypto
+import Compression
+import Archive
+
+secure(decl randomNeg = secureBytes(-1)) catch (error:String) {
+    print("PH3-RANDOM-NEG-BYTES-CATCH")
+    print(error)
+}
+secure(decl randomNegHex = secureHex(-4)) catch {
+    print("PH3-RANDOM-NEG-HEX-CATCH")
+}
+
+secure(decl badKdfSalt = pbkdf2Sha256Hex("password","abc",1000,16)) catch {
+    print("PH3-CRYPTO-BAD-SALT-CATCH")
+}
+secure(decl badKdfIter = pbkdf2Sha256Hex("password","73616c74",0,16)) catch {
+    print("PH3-CRYPTO-BAD-ITER-CATCH")
+}
+
+decl badHexCompare = constantTimeHexEquals("zz","00")
+if(badHexCompare == false){
+    print("PH3-CRYPTO-BAD-HEX-BOOL-OK")
+}
+else {
+    print("PH3-CRYPTO-BAD-HEX-BOOL-BAD")
+}
+
+secure(decl badDeflate = deflateHex("zz",6)) catch {
+    print("PH3-COMP-BAD-HEX-CATCH")
+}
+secure(decl badInflate = inflateHex("00010203")) catch {
+    print("PH3-COMP-BAD-INFLATE-CATCH")
+}
+secure(decl badGunzip = gunzipText("1f8b")) catch {
+    print("PH3-COMP-BAD-GUNZIP-CATCH")
+}
+
+decl invalidEntries:Dict = {"a":1}
+secure(decl badPack = packTextMapHex(invalidEntries,true)) catch {
+    print("PH3-ARCHIVE-BAD-PACK-CATCH")
+}
+secure(decl badUnpack = unpackTextMapHex("00")) catch {
+    print("PH3-ARCHIVE-BAD-UNPACK-CATCH")
+}
+secure(decl badList = listEntries("00")) catch {
+    print("PH3-ARCHIVE-BAD-LIST-CATCH")
+}
+
+decl validCheck = isValid("00")
+if(validCheck == false){
+    print("PH3-ARCHIVE-ISVALID-OK")
+}
+else {
+    print("PH3-ARCHIVE-ISVALID-BAD")
+}
+
+print("PH3-INVALID-CASE-OK")

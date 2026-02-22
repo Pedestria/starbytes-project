@@ -1,0 +1,1 @@
+decl badRows:Map<String,Int>[] = true ? [{}] : [{"v":"x"}]

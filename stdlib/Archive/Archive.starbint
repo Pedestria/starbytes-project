@@ -1,0 +1,18 @@
+/// @brief StdLib Archive module.
+/// @details In-memory archive packing/unpacking with optional compression.
+
+/// @brief Packs Dict<String,String> entries into archive hex payload.
+@native(name="archive_packTextMapHex")
+func packTextMapHex(entries:Dict,compress:Bool) String!
+
+/// @brief Unpacks archive hex payload into Dict<String,String>.
+@native(name="archive_unpackTextMapHex")
+func unpackTextMapHex(archiveHex:String) Dict!
+
+/// @brief Lists entry names from archive hex payload.
+@native(name="archive_listEntries")
+func listEntries(archiveHex:String) Array<String>!
+
+/// @brief Returns whether archive hex payload is valid.
+@native(name="archive_isValid")
+func isValid(archiveHex:String) Bool

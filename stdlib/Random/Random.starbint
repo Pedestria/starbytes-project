@@ -1,0 +1,30 @@
+/// @brief StdLib Random module.
+/// @details Deterministic and secure random helpers.
+
+/// @brief Sets deterministic generator seed.
+@native(name="random_setSeed")
+func setSeed(seed:Int) Bool
+
+/// @brief Returns random integer in inclusive range.
+@native(name="random_int")
+func int(min:Int,max:Int) Int!
+
+/// @brief Returns random floating value in [0, 1].
+@native(name="random_float")
+func float() Float
+
+/// @brief Returns deterministic pseudo-random bytes.
+@native(name="random_bytes")
+func bytes(count:Int) Array<Int>!
+
+/// @brief Returns cryptographically secure random bytes.
+@native(name="random_secureBytes")
+func secureBytes(count:Int) Array<Int>!
+
+/// @brief Returns cryptographically secure random bytes as lowercase hex.
+@native(name="random_secureHex")
+func secureHex(byteCount:Int) String!
+
+/// @brief Returns RFC-4122 UUIDv4 string.
+@native(name="random_uuid4")
+func uuid4() String!

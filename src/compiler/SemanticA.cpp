@@ -1105,6 +1105,135 @@ static ASTType *substituteTypeParams(ASTType *type,
             }
         }
 
+        // Recursive contextual matching for collection literals:
+        // handles nested empty literals in arrays/maps and ternary branches.
+        auto silentTypeMatch = [&](ASTType *lhs,ASTType *rhs) -> bool {
+            if(!lhs || !rhs){
+                return false;
+            }
+            return lhs->match(rhs,[&](std::string){});
+        };
+
+        auto literalMatchesExpected = [&](auto &&self,ASTType *expectedType,ASTExpr *expr) -> bool {
+            if(!expectedType || !expr){
+                return false;
+            }
+            auto *resolvedExpectedType = resolveAliasType(expectedType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+            if(!resolvedExpectedType){
+                return false;
+            }
+
+            if(expr->type == ARRAY_EXPR){
+                if(!resolvedExpectedType->nameMatches(ARRAY_TYPE) || resolvedExpectedType->typeParams.size() != 1){
+                    return false;
+                }
+                auto *expectedElementType = resolveAliasType(resolvedExpectedType->typeParams.front(),symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+                if(!expectedElementType){
+                    return false;
+                }
+                if(expr->exprArrayData.empty()){
+                    return true;
+                }
+                for(auto *elementExpr : expr->exprArrayData){
+                    if(!elementExpr){
+                        return false;
+                    }
+                    if(self(self,expectedElementType,elementExpr)){
+                        continue;
+                    }
+                    auto *elementType = evalExprForTypeId(elementExpr,symbolTableContext,scopeContext);
+                    if(!elementType){
+                        return false;
+                    }
+                    auto *resolvedElementType = resolveAliasType(elementType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+                    if(!resolvedElementType || !silentTypeMatch(expectedElementType,resolvedElementType)){
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            if(expr->type == DICT_EXPR){
+                if(!resolvedExpectedType->nameMatches(MAP_TYPE) || resolvedExpectedType->typeParams.size() != 2){
+                    return false;
+                }
+                auto *expectedKeyType = resolveAliasType(resolvedExpectedType->typeParams[0],symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+                auto *expectedValueType = resolveAliasType(resolvedExpectedType->typeParams[1],symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+                if(!expectedKeyType || !expectedValueType){
+                    return false;
+                }
+                if(expr->dictExpr.empty()){
+                    return true;
+                }
+                for(auto &entry : expr->dictExpr){
+                    if(!entry.first || !entry.second){
+                        return false;
+                    }
+
+                    if(self(self,expectedKeyType,entry.first)){
+                        // Nested collection keys are unusual but keep recursion symmetric.
+                    }
+                    else {
+                        auto *keyType = evalExprForTypeId(entry.first,symbolTableContext,scopeContext);
+                        if(!keyType){
+                            return false;
+                        }
+                        auto *resolvedKeyType = resolveAliasType(keyType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+                        if(!resolvedKeyType || !silentTypeMatch(expectedKeyType,resolvedKeyType)){
+                            return false;
+                        }
+                    }
+
+                    if(self(self,expectedValueType,entry.second)){
+                        continue;
+                    }
+                    auto *valueType = evalExprForTypeId(entry.second,symbolTableContext,scopeContext);
+                    if(!valueType){
+                        return false;
+                    }
+                    auto *resolvedValueType = resolveAliasType(valueType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+                    if(!resolvedValueType || !silentTypeMatch(expectedValueType,resolvedValueType)){
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            if(expr->type == TERNARY_EXPR){
+                if(!expr->leftExpr || !expr->middleExpr || !expr->rightExpr){
+                    return false;
+                }
+                auto *conditionType = evalExprForTypeId(expr->leftExpr,symbolTableContext,scopeContext);
+                if(!conditionType){
+                    return false;
+                }
+                auto *resolvedConditionType = resolveAliasType(conditionType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+                if(!resolvedConditionType || !resolvedConditionType->nameMatches(BOOL_TYPE)){
+                    return false;
+                }
+
+                auto branchMatches = [&](ASTExpr *branch) -> bool {
+                    if(self(self,resolvedExpectedType,branch)){
+                        return true;
+                    }
+                    auto *branchType = evalExprForTypeId(branch,symbolTableContext,scopeContext);
+                    if(!branchType){
+                        return false;
+                    }
+                    auto *resolvedBranchType = resolveAliasType(branchType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+                    return resolvedBranchType && silentTypeMatch(resolvedExpectedType,resolvedBranchType);
+                };
+
+                return branchMatches(expr->middleExpr) && branchMatches(expr->rightExpr);
+            }
+
+            return false;
+        };
+
+        if(expr_to_eval && literalMatchesExpected(literalMatchesExpected,resolvedType,expr_to_eval)){
+            return true;
+        }
+
         if(resolvedType->nameMatches(FUNCTION_TYPE) && expr_to_eval){
             Semantics::SymbolTable::Entry *funcEntry = nullptr;
             if(expr_to_eval->type == ID_EXPR && expr_to_eval->id){

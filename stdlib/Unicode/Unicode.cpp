@@ -76,6 +76,27 @@ bool readIntArg(StarbytesFuncArgs args,int &outValue) {
     return true;
 }
 
+bool readLocaleArg(StarbytesFuncArgs args,std::string &outLocaleId) {
+    auto localeObj = StarbytesFuncArgsGetArg(args);
+    if(!localeObj) {
+        return false;
+    }
+    auto it = g_localeRegistry.find(localeObj);
+    if(it == g_localeRegistry.end()) {
+        return false;
+    }
+    outLocaleId = it->second;
+    return true;
+}
+
+bool validNormalizationForm(int form) {
+    return form >= 0 && form <= 3;
+}
+
+bool validBreakKind(int kind) {
+    return kind >= 0 && kind <= 3;
+}
+
 void skipOptionalModuleReceiver(StarbytesFuncArgs args,unsigned expectedUserArgs) {
     auto *raw = reinterpret_cast<NativeArgsLayout *>(args);
     if(!raw || raw->argc < raw->index) {
@@ -292,8 +313,10 @@ STARBYTES_FUNC(Unicode_Locale_id) {
 STARBYTES_FUNC(Unicode_Collator_create) {
     skipOptionalModuleReceiver(args,1);
 
-    auto localeObj = StarbytesFuncArgsGetArg(args);
-    auto localeId = localeIdFromObject(localeObj);
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
 
 #ifdef STARBYTES_HAS_ICU
     UErrorCode status = U_ZERO_ERROR;
@@ -393,7 +416,13 @@ STARBYTES_FUNC(Unicode_BreakIterator_create) {
     if(!readIntArg(args,kind)) {
         return nullptr;
     }
-    auto localeObj = StarbytesFuncArgsGetArg(args);
+    if(!validBreakKind(kind)) {
+        return nullptr;
+    }
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
     std::string text;
     if(!readStringArg(args,text)) {
         return nullptr;
@@ -402,7 +431,7 @@ STARBYTES_FUNC(Unicode_BreakIterator_create) {
 #ifdef STARBYTES_HAS_ICU
     UErrorCode status = U_ZERO_ERROR;
     std::unique_ptr<icu::BreakIterator> iterator;
-    auto locale = localeFromId(localeIdFromObject(localeObj));
+    auto locale = localeFromId(localeId);
     switch(kind) {
         case 3:
             iterator.reset(icu::BreakIterator::createCharacterInstance(locale,status));
@@ -429,7 +458,6 @@ STARBYTES_FUNC(Unicode_BreakIterator_create) {
     g_breakRegistry[object] = std::move(state);
     return object;
 #else
-    (void)localeObj;
     (void)kind;
     auto object = StarbytesObjectNew(StarbytesMakeClass("BreakIterator"));
     return object;
@@ -466,6 +494,9 @@ STARBYTES_FUNC(Unicode_normalize) {
     if(!readStringArg(args,text) || !readIntArg(args,form)) {
         return nullptr;
     }
+    if(!validNormalizationForm(form)) {
+        return nullptr;
+    }
 
 #ifdef STARBYTES_HAS_ICU
     UErrorCode status = U_ZERO_ERROR;
@@ -481,7 +512,6 @@ STARBYTES_FUNC(Unicode_normalize) {
     }
     return makeString(toUtf8(out));
 #else
-    (void)form;
     return makeString(text);
 #endif
 }
@@ -492,6 +522,9 @@ STARBYTES_FUNC(Unicode_isNormalized) {
     std::string text;
     int form = 0;
     if(!readStringArg(args,text) || !readIntArg(args,form)) {
+        return nullptr;
+    }
+    if(!validNormalizationForm(form)) {
         return nullptr;
     }
 
@@ -507,7 +540,6 @@ STARBYTES_FUNC(Unicode_isNormalized) {
     }
     return makeBool(isNorm);
 #else
-    (void)form;
     return makeBool(true);
 #endif
 }
@@ -535,14 +567,16 @@ STARBYTES_FUNC(Unicode_toUpper) {
     if(!readStringArg(args,text)) {
         return nullptr;
     }
-    auto localeObj = StarbytesFuncArgsGetArg(args);
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
 
 #ifdef STARBYTES_HAS_ICU
     auto unicode = toUnicode(text);
-    unicode.toUpper(localeFromId(localeIdFromObject(localeObj)));
+    unicode.toUpper(localeFromId(localeId));
     return makeString(toUtf8(unicode));
 #else
-    (void)localeObj;
     std::transform(text.begin(),text.end(),text.begin(),[](unsigned char c) {
         return (char)std::toupper(c);
     });
@@ -557,14 +591,16 @@ STARBYTES_FUNC(Unicode_toLower) {
     if(!readStringArg(args,text)) {
         return nullptr;
     }
-    auto localeObj = StarbytesFuncArgsGetArg(args);
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
 
 #ifdef STARBYTES_HAS_ICU
     auto unicode = toUnicode(text);
-    unicode.toLower(localeFromId(localeIdFromObject(localeObj)));
+    unicode.toLower(localeFromId(localeId));
     return makeString(toUtf8(unicode));
 #else
-    (void)localeObj;
     std::transform(text.begin(),text.end(),text.begin(),[](unsigned char c) {
         return (char)std::tolower(c);
     });
@@ -579,14 +615,16 @@ STARBYTES_FUNC(Unicode_toTitle) {
     if(!readStringArg(args,text)) {
         return nullptr;
     }
-    auto localeObj = StarbytesFuncArgsGetArg(args);
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
 
 #ifdef STARBYTES_HAS_ICU
     auto unicode = toUnicode(text);
-    unicode.toTitle(nullptr,localeFromId(localeIdFromObject(localeObj)));
+    unicode.toTitle(nullptr,localeFromId(localeId));
     return makeString(toUtf8(unicode));
 #else
-    (void)localeObj;
     if(!text.empty()) {
         text[0] = (char)std::toupper((unsigned char)text[0]);
     }
@@ -601,11 +639,13 @@ STARBYTES_FUNC(Unicode_graphemes) {
     if(!readStringArg(args,text)) {
         return nullptr;
     }
-    auto localeObj = StarbytesFuncArgsGetArg(args);
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
 #ifdef STARBYTES_HAS_ICU
-    return makeStringArray(splitWithBreakIterator(text,localeIdFromObject(localeObj),3,false));
+    return makeStringArray(splitWithBreakIterator(text,localeId,3,false));
 #else
-    (void)localeObj;
     std::vector<std::string> chars;
     for(char c : text) {
         chars.push_back(std::string(1,c));
@@ -621,11 +661,13 @@ STARBYTES_FUNC(Unicode_words) {
     if(!readStringArg(args,text)) {
         return nullptr;
     }
-    auto localeObj = StarbytesFuncArgsGetArg(args);
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
 #ifdef STARBYTES_HAS_ICU
-    return makeStringArray(splitWithBreakIterator(text,localeIdFromObject(localeObj),0,true));
+    return makeStringArray(splitWithBreakIterator(text,localeId,0,true));
 #else
-    (void)localeObj;
     std::vector<std::string> out;
     std::string current;
     for(char c : text) {
@@ -653,11 +695,13 @@ STARBYTES_FUNC(Unicode_sentences) {
     if(!readStringArg(args,text)) {
         return nullptr;
     }
-    auto localeObj = StarbytesFuncArgsGetArg(args);
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
 #ifdef STARBYTES_HAS_ICU
-    return makeStringArray(splitWithBreakIterator(text,localeIdFromObject(localeObj),1,true));
+    return makeStringArray(splitWithBreakIterator(text,localeId,1,true));
 #else
-    (void)localeObj;
     return makeStringArray({text});
 #endif
 }
@@ -669,11 +713,13 @@ STARBYTES_FUNC(Unicode_lines) {
     if(!readStringArg(args,text)) {
         return nullptr;
     }
-    auto localeObj = StarbytesFuncArgsGetArg(args);
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
 #ifdef STARBYTES_HAS_ICU
-    return makeStringArray(splitWithBreakIterator(text,localeIdFromObject(localeObj),2,false));
+    return makeStringArray(splitWithBreakIterator(text,localeId,2,false));
 #else
-    (void)localeObj;
     std::vector<std::string> out;
     std::string line;
     for(char c : text) {
@@ -847,7 +893,11 @@ STARBYTES_FUNC(Unicode_containsFolded) {
     if(!readStringArg(args,haystack) || !readStringArg(args,needle)) {
         return nullptr;
     }
-    (void)StarbytesFuncArgsGetArg(args);
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
+    (void)localeId;
     auto lhs = foldedUtf8(haystack);
     auto rhs = foldedUtf8(needle);
     return makeBool(lhs.find(rhs) != std::string::npos);
@@ -861,7 +911,11 @@ STARBYTES_FUNC(Unicode_startsWithFolded) {
     if(!readStringArg(args,text) || !readStringArg(args,prefix)) {
         return nullptr;
     }
-    (void)StarbytesFuncArgsGetArg(args);
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
+    (void)localeId;
     auto lhs = foldedUtf8(text);
     auto rhs = foldedUtf8(prefix);
     if(lhs.size() < rhs.size()) {
@@ -878,7 +932,11 @@ STARBYTES_FUNC(Unicode_endsWithFolded) {
     if(!readStringArg(args,text) || !readStringArg(args,suffix)) {
         return nullptr;
     }
-    (void)StarbytesFuncArgsGetArg(args);
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
+    (void)localeId;
     auto lhs = foldedUtf8(text);
     auto rhs = foldedUtf8(suffix);
     if(lhs.size() < rhs.size()) {
@@ -894,7 +952,11 @@ STARBYTES_FUNC(Unicode_displayWidth) {
     if(!readStringArg(args,text)) {
         return nullptr;
     }
-    (void)StarbytesFuncArgsGetArg(args);
+    std::string localeId;
+    if(!readLocaleArg(args,localeId)) {
+        return nullptr;
+    }
+    (void)localeId;
 
 #ifdef STARBYTES_HAS_ICU
     auto unicode = toUnicode(text);

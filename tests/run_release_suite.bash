@@ -10,8 +10,8 @@ cmake --build "$BUILD_DIR" --target all
 echo "[release] Running ctest"
 ctest --test-dir "$BUILD_DIR" --output-on-failure
 
-echo "[release] Running extreme suite"
-bash "$ROOT_DIR/tests/run_extreme_suite.bash"
+echo "[release] Running full test suite"
+bash "$ROOT_DIR/tests/run_full_test_suite.bash"
 
 echo
 echo "[release] Release suite passed"

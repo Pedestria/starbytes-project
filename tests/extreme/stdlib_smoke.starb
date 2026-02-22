@@ -3,6 +3,10 @@ import FS
 import Time
 import Threading
 import Unicode
+import Random
+import Crypto
+import Compression
+import Archive
 
 decl root = ".starbytes/extreme-suite"
 decl textPath = root + "/sample.txt"
@@ -143,6 +147,70 @@ secure(decl folded = caseFold("Straße")) catch {
     print("UNI-FOLD-CATCH")
 }
 print(folded)
+
+decl seeded = setSeed(42)
+secure(decl roll = int(1,6)) catch {
+    print("RND-INT-CATCH")
+}
+print(roll)
+secure(decl randHex = secureHex(8)) catch {
+    print("RND-HEX-CATCH")
+}
+print(randHex)
+secure(decl uuid = uuid4()) catch {
+    print("RND-UUID-CATCH")
+}
+print(uuid)
+
+secure(decl sha = sha256Hex("starbytes")) catch {
+    print("CRYPTO-SHA-CATCH")
+}
+print(sha)
+secure(decl hmac = hmacSha256Hex("key","starbytes")) catch {
+    print("CRYPTO-HMAC-CATCH")
+}
+print(hmac)
+secure(decl kdf = pbkdf2Sha256Hex("password","73616c74",1000,16)) catch {
+    print("CRYPTO-KDF-CATCH")
+}
+print(kdf)
+print(constantTimeHexEquals(sha,sha))
+
+secure(decl gz = gzipTextHex("hello-zlib",6)) catch {
+    print("CMP-GZIP-CATCH")
+}
+secure(decl gun = gunzipText(gz)) catch {
+    print("CMP-GUNZIP-CATCH")
+}
+print(gun)
+secure(decl zdef = deflateHex("68656c6c6f2d686578",6)) catch {
+    print("CMP-DEF-CATCH")
+}
+secure(decl inf = inflateHex(zdef)) catch {
+    print("CMP-INF-CATCH")
+}
+print(inf)
+secure(decl csum = crc32Hex("hello-zlib")) catch {
+    print("CMP-CRC-CATCH")
+}
+print(csum)
+
+decl files:Dict = {"a.txt":"alpha","b.txt":"beta"}
+secure(decl packed = packTextMapHex(files,true)) catch {
+    print("ARC-PACK-CATCH")
+}
+print(isValid(packed))
+secure(decl names = listEntries(packed)) catch {
+    print("ARC-LIST-CATCH")
+}
+print(names.length)
+secure(decl unpacked = unpackTextMapHex(packed)) catch {
+    print("ARC-UNPACK-CATCH")
+}
+secure(decl alpha = unpacked.get("a.txt")) catch {
+    print("ARC-GET-CATCH")
+}
+print(alpha)
 
 secure(decl rmText = remove(textPath)) catch {
     print("IO-RM-TEXT-CATCH")

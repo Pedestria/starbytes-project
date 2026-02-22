@@ -1,0 +1,26 @@
+/// @brief StdLib Crypto module.
+/// @details Digest, HMAC, KDF, and constant-time hex helpers.
+
+/// @brief Returns MD5 digest as lowercase hex.
+@native(name="crypto_md5Hex")
+func md5Hex(text:String) String!
+
+/// @brief Returns SHA-1 digest as lowercase hex.
+@native(name="crypto_sha1Hex")
+func sha1Hex(text:String) String!
+
+/// @brief Returns SHA-256 digest as lowercase hex.
+@native(name="crypto_sha256Hex")
+func sha256Hex(text:String) String!
+
+/// @brief Returns HMAC-SHA256 digest as lowercase hex.
+@native(name="crypto_hmacSha256Hex")
+func hmacSha256Hex(key:String,message:String) String!
+
+/// @brief Derives key bytes with PBKDF2-HMAC-SHA256 and returns lowercase hex.
+@native(name="crypto_pbkdf2Sha256Hex")
+func pbkdf2Sha256Hex(password:String,saltHex:String,iterations:Int,keyBytes:Int) String!
+
+/// @brief Constant-time compare for decoded hex byte values.
+@native(name="crypto_constantTimeHexEquals")
+func constantTimeHexEquals(lhsHex:String,rhsHex:String) Bool

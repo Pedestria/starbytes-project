@@ -82,28 +82,55 @@ std::ios::openmode parseOpenMode(const std::string &modeText,bool binary,bool &o
 
     std::ios::openmode mode = static_cast<std::ios::openmode>(0);
     bool hasPrimaryMode = false;
+    char primaryMode = '\0';
+    bool sawPlus = false;
 
     for(char c : modeText) {
         switch(c) {
             case 'r':
+                if(primaryMode != '\0' && primaryMode != 'r') {
+                    ok = false;
+                    return static_cast<std::ios::openmode>(0);
+                }
                 mode |= std::ios::in;
                 hasPrimaryMode = true;
+                primaryMode = 'r';
                 break;
             case 'w':
+                if(primaryMode != '\0' && primaryMode != 'w') {
+                    ok = false;
+                    return static_cast<std::ios::openmode>(0);
+                }
                 mode |= (std::ios::out | std::ios::trunc);
                 hasPrimaryMode = true;
+                primaryMode = 'w';
                 break;
             case 'a':
+                if(primaryMode != '\0' && primaryMode != 'a') {
+                    ok = false;
+                    return static_cast<std::ios::openmode>(0);
+                }
                 mode |= (std::ios::out | std::ios::app);
                 hasPrimaryMode = true;
+                primaryMode = 'a';
                 break;
             case 'x':
+                if(primaryMode != '\0' && primaryMode != 'x') {
+                    ok = false;
+                    return static_cast<std::ios::openmode>(0);
+                }
                 mode |= std::ios::out;
                 hasPrimaryMode = true;
                 exclusiveCreate = true;
+                primaryMode = 'x';
                 break;
             case '+':
+                if(sawPlus) {
+                    ok = false;
+                    return static_cast<std::ios::openmode>(0);
+                }
                 mode |= (std::ios::in | std::ios::out);
+                sawPlus = true;
                 break;
             case 'b':
                 mode |= std::ios::binary;
@@ -199,7 +226,8 @@ StarbytesObject streamClose(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream) {
-        return nullptr;
+        // Closing an already-closed/unknown native stream is a no-op.
+        return makeBool(true);
     }
 
     if(!stream->closed && stream->file.is_open()) {
@@ -256,8 +284,12 @@ StarbytesObject streamSeek(StarbytesFuncArgs args) {
     }
 
     stream->file.clear();
-    stream->file.seekg(offset,dir);
-    stream->file.seekp(offset,dir);
+    if(streamReadable(stream)) {
+        stream->file.seekg(offset,dir);
+    }
+    if(streamWritable(stream)) {
+        stream->file.seekp(offset,dir);
+    }
     if(stream->file.fail()) {
         return nullptr;
     }
@@ -293,6 +325,9 @@ StarbytesObject streamTruncate(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream || stream->closed || !stream->file.is_open()) {
+        return nullptr;
+    }
+    if(!streamWritable(stream)) {
         return nullptr;
     }
 
@@ -361,6 +396,9 @@ StarbytesObject textReadLine(StarbytesFuncArgs args) {
     stream->file.clear();
     std::string line;
     if(!std::getline(stream->file,line)) {
+        if(stream->file.eof()) {
+            stream->file.clear();
+        }
         return nullptr;
     }
 

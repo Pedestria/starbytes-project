@@ -5,6 +5,11 @@ secure(decl loc = localeCurrent()) catch {
 }
 print(loc.id())
 
+secure(decl rootLoc = localeRoot()) catch {
+    print("UNICODE-ROOT-CATCH")
+}
+print(rootLoc.id())
+
 secure(decl folded = caseFold("Straße")) catch {
     print("UNICODE-FOLD-CATCH")
 }
@@ -19,7 +24,6 @@ else {
 secure(decl contains = containsFolded("StarBytes","star",loc)) catch {
     print("UNICODE-CONTAINS-CATCH")
 }
-print(contains)
 if(contains){
     print("UNICODE-CONTAINS-OK")
 }
@@ -37,9 +41,28 @@ secure(decl norm = isNormalized("abc",0)) catch {
     print("UNICODE-ISNORM-CATCH")
 }
 
+secure(decl containsRoot = containsFolded("Straße","STR",rootLoc)) catch {
+    print("UNICODE-CONTAINS-ROOT-CATCH")
+}
+if(containsRoot){
+    print("UNICODE-CONTAINS-ROOT-OK")
+}
+else {
+    print("UNICODE-CONTAINS-ROOT-BAD")
+}
+
+secure(decl badNorm = isNormalized("abc",99)) catch {
+    print("UNICODE-ISNORM-BADFORM-CATCH")
+}
+secure(decl badLocale = localeFrom("")) catch {
+    print("UNICODE-LOCALE-BAD-CATCH")
+}
+
 if(starts && ends && norm){
     print("UNICODE-ADVANCED-OK")
 }
 else {
     print("UNICODE-ADVANCED-BAD")
 }
+
+print("UNICODE-ADVANCED-STABILITY-OK")
