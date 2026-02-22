@@ -1,0 +1,20 @@
+/// @brief StdLib JSON module.
+/// @details RapidJSON-backed parser/serializer for Starbytes values.
+
+/// @brief Parses JSON text into Starbytes values.
+/// @return Any / Array / Dict / scalar / null.
+@native(name="json_parse")
+func parse(text:String) Any!
+
+/// @brief Returns whether JSON text parses successfully.
+@native(name="json_isValid")
+func isValid(text:String) Bool
+
+/// @brief Serializes Starbytes value to compact JSON text.
+@native(name="json_stringify")
+func stringify(value:Any) String!
+
+/// @brief Serializes Starbytes value to pretty JSON text.
+/// @param indent Space indentation width.
+@native(name="json_pretty")
+func pretty(value:Any,indent:Int) String!

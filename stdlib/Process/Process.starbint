@@ -1,0 +1,31 @@
+/// @brief StdLib Process module.
+/// @details Synchronous subprocess execution with captured output and exit status.
+
+def StringList = Array<String>
+
+/// @brief Result value from process execution.
+class ProcessResult {
+    /// @brief Exit code reported by the command.
+    decl exitCode:Int
+
+    /// @brief Captured merged stdout/stderr output.
+    decl output:String
+
+    /// @brief Convenience success flag (`exitCode == 0`).
+    decl success:Bool
+}
+
+/// @brief Runs a shell command string.
+/// @param command Raw shell command.
+@native(name="process_run")
+func run(command:String) ProcessResult!
+
+/// @brief Runs a program with argument vector.
+/// @param program Program/binary path.
+/// @param args Program argument vector.
+@native(name="process_runArgs")
+func runArgs(program:String,args:StringList) ProcessResult!
+
+/// @brief Returns shell-escaped argument text.
+@native(name="process_shellQuote")
+func shellQuote(value:String) String

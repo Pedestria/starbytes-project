@@ -80,16 +80,43 @@ Implemented:
   - LSP diagnostics collection uses machine mode in `/Users/alextopper/Documents/GitHub/starbytes-project/tools/lsp/DocumentAnalysis.cpp`.
 
 ## Phase 4: Deduplication and Cascade Control
+Status: Implemented
+
 Scope:
 - Add diagnostic aggregation with duplicate suppression.
 - Collapse repetitive cascades under root-cause diagnostics.
 - Keep deterministic ordering.
 
+Implemented:
+- Aggregation and normalization pipeline in `/Users/alextopper/Documents/GitHub/starbytes-project/src/base/Diagnostic.cpp`:
+  - duplicate suppression keyed by source/phase/severity/code/location/message.
+  - cascade collapse of `Context:` / `Related:` diagnostics into root diagnostic notes.
+  - deterministic ordering by source and span coordinates.
+- Phase 4 controls and metrics in `/Users/alextopper/Documents/GitHub/starbytes-project/include/starbytes/base/Diagnostic.h`:
+  - `setDeduplicationEnabled`, `setCascadeCollapseEnabled`.
+  - `deduplicatedCount`, `cascadeSuppressedCount`.
+- Data-oriented accessors in diagnostics API:
+  - `collectRecords(...)` and `collectLspRecords(...)`.
+
 ## Phase 5: Renderer Split and Output Modes
+Status: Implemented
+
 Scope:
 - Separate diagnostic data from rendering.
 - Add terminal human renderer, compact machine JSON renderer, and direct LSP renderer.
 - Keep formatting lazy until sink emission.
+
+Implemented:
+- Renderer split in `/Users/alextopper/Documents/GitHub/starbytes-project/src/base/Diagnostic.cpp`:
+  - `renderHumanDiagnosticRecord(...)`
+  - `renderMachineJsonDiagnosticRecord(...)`
+- Output mode expansion in `/Users/alextopper/Documents/GitHub/starbytes-project/include/starbytes/base/Diagnostic.h`:
+  - `OutputMode::{Human, MachineJson, Lsp}` (+ `Machine` alias).
+- LSP direct diagnostic record integration in `/Users/alextopper/Documents/GitHub/starbytes-project/tools/lsp/DocumentAnalysis.cpp`:
+  - compiler diagnostics mapped from `collectLspRecords()` records, without legacy pointer snapshot shaping.
+- Regression coverage in `/Users/alextopper/Documents/GitHub/starbytes-project/tests/DiagnosticBaselineTest.cpp`:
+  - dedup/cascade behavior and deterministic order checks.
+  - machine JSON output and phase 4/5 metrics assertions.
 
 ## Phase 6: LSP Incremental Diagnostics
 Scope:

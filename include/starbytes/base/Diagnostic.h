@@ -90,6 +90,23 @@ struct Diagnostic {
 
 typedef std::shared_ptr<Diagnostic> DiagnosticPtr;
 
+struct DiagnosticRecord {
+    std::string message;
+    optional<Region> location;
+    std::string id;
+    std::string code;
+    Diagnostic::Phase phase = Diagnostic::Phase::Unknown;
+    std::vector<Diagnostic::RelatedSpan> relatedSpans;
+    std::vector<std::string> notes;
+    std::vector<Diagnostic::FixIt> fixits;
+    std::string sourceName;
+    Diagnostic::Type severity = Diagnostic::Error;
+
+    bool isError() const {
+        return severity == Diagnostic::Error;
+    }
+};
+
 struct StandardDiagnostic : public Diagnostic {
     static DiagnosticPtr createError(string_ref message);
     static DiagnosticPtr createError(string_ref message,const Region &region);
@@ -102,7 +119,9 @@ class DiagnosticHandler {
 public:
     enum class OutputMode : int {
         Human,
-        Machine
+        MachineJson,
+        Machine = MachineJson,
+        Lsp
     };
 
     struct Metrics {
@@ -116,6 +135,8 @@ public:
         uint64_t renderTimeNs = 0;
         uint64_t hasErroredTimeNs = 0;
         uint64_t maxBufferedCount = 0;
+        uint64_t deduplicatedCount = 0;
+        uint64_t cascadeSuppressedCount = 0;
     };
 
     protected:
@@ -125,6 +146,8 @@ public:
     std::string defaultSourceName;
     Diagnostic::Phase defaultPhase = Diagnostic::Phase::Unknown;
     OutputMode outputMode = OutputMode::Human;
+    bool deduplicationEnabled = true;
+    bool cascadeCollapseEnabled = true;
     Metrics metrics;
 
     using SELF = DiagnosticHandler;
@@ -142,9 +165,15 @@ public:
     Diagnostic::Phase getDefaultPhase() const;
     void setOutputMode(OutputMode mode);
     OutputMode getOutputMode() const;
+    void setDeduplicationEnabled(bool enabled);
+    bool getDeduplicationEnabled() const;
+    void setCascadeCollapseEnabled(bool enabled);
+    bool getCascadeCollapseEnabled() const;
     bool empty();
     bool hasErrored();
     std::vector<DiagnosticPtr> snapshot(bool includeResolved = false) const;
+    std::vector<DiagnosticRecord> collectRecords(bool includeResolved = false,bool applyAggregation = true) const;
+    std::vector<DiagnosticRecord> collectLspRecords(bool includeResolved = false) const;
     void clear();
     void logAll();
     Metrics getMetrics() const;

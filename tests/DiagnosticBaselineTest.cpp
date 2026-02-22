@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -105,8 +106,83 @@ int main() {
     machineHandler->push(starbytes::StandardDiagnostic::createError("bad beta", region));
     machineHandler->logAll();
     auto machineText = machineOut.str();
+    if(machineText.find("\"message\":\"bad beta\"") == std::string::npos) {
+        return fail("machine mode should emit compact json diagnostics");
+    }
     if(machineText.find(" --> ") != std::string::npos) {
         return fail("machine mode should skip code-view rendering");
+    }
+
+    std::ostringstream aggregateOut;
+    auto aggregateHandler = starbytes::DiagnosticHandler::createDefault(aggregateOut);
+    if(!aggregateHandler) {
+        return fail("unable to create aggregate DiagnosticHandler");
+    }
+    aggregateHandler->setDefaultPhase(starbytes::Diagnostic::Phase::Parser);
+    aggregateHandler->setDefaultSourceName("DiagAggregate.starb");
+
+    starbytes::Region rootRegion;
+    rootRegion.startLine = 10;
+    rootRegion.endLine = 10;
+    rootRegion.startCol = 2;
+    rootRegion.endCol = 8;
+
+    starbytes::Region earlyRegion;
+    earlyRegion.startLine = 2;
+    earlyRegion.endLine = 2;
+    earlyRegion.startCol = 1;
+    earlyRegion.endCol = 4;
+
+    aggregateHandler->push(starbytes::StandardDiagnostic::createError("root failure", rootRegion));
+    aggregateHandler->push(starbytes::StandardDiagnostic::createError("root failure", rootRegion));
+    aggregateHandler->push(starbytes::StandardDiagnostic::createError("Context: while checking expression", rootRegion));
+    aggregateHandler->push(starbytes::StandardDiagnostic::createError("Related: previous declaration", rootRegion));
+    aggregateHandler->push(starbytes::StandardDiagnostic::createWarning("warning on earlier line", earlyRegion));
+
+    auto aggregatedRecords = aggregateHandler->collectRecords();
+    if(aggregatedRecords.size() != 2) {
+        return fail("dedup/cascade aggregation should collapse to two diagnostics");
+    }
+    if(!aggregatedRecords[0].location.has_value() || aggregatedRecords[0].location->startLine != 2) {
+        return fail("aggregated diagnostics should be deterministically sorted by location");
+    }
+    if(aggregatedRecords[1].notes.size() < 2) {
+        return fail("root diagnostic should capture suppressed cascade notes");
+    }
+    bool hasContextSuppression = false;
+    bool hasRelatedSuppression = false;
+    for(const auto &note : aggregatedRecords[1].notes) {
+        if(note.find("suppressed cascade: Context: while checking expression") != std::string::npos) {
+            hasContextSuppression = true;
+        }
+        if(note.find("suppressed cascade: Related: previous declaration") != std::string::npos) {
+            hasRelatedSuppression = true;
+        }
+    }
+    if(!hasContextSuppression || !hasRelatedSuppression) {
+        return fail("suppressed cascade notes missing expected detail");
+    }
+
+    auto lspRecords = aggregateHandler->collectLspRecords();
+    if(lspRecords.size() != aggregatedRecords.size()) {
+        return fail("collectLspRecords should respect phase 4 aggregation");
+    }
+
+    aggregateHandler->logAll();
+    auto aggregateMetrics = aggregateHandler->getMetrics();
+    if(aggregateMetrics.deduplicatedCount != 1) {
+        return fail("expected one deduplicated diagnostic");
+    }
+    if(aggregateMetrics.cascadeSuppressedCount != 2) {
+        return fail("expected two cascade-suppressed diagnostics");
+    }
+    if(aggregateMetrics.renderedCount != 2) {
+        return fail("aggregated render count mismatch");
+    }
+
+    auto aggregateText = aggregateOut.str();
+    if(aggregateText.find("note: suppressed cascade: Context: while checking expression") == std::string::npos) {
+        return fail("suppressed cascade context note should be attached to root output");
     }
 
     handler->resetMetrics();

@@ -62,6 +62,22 @@ bool startsWith(const std::string &value, const std::string &prefix) {
   return value.rfind(prefix, 0) == 0;
 }
 
+std::string diagnosticPhaseToString(Diagnostic::Phase phase) {
+  switch (phase) {
+    case Diagnostic::Phase::Parser:
+      return "parser";
+    case Diagnostic::Phase::Semantic:
+      return "semantic";
+    case Diagnostic::Phase::Runtime:
+      return "runtime";
+    case Diagnostic::Phase::Lsp:
+      return "lsp";
+    case Diagnostic::Phase::Unknown:
+    default:
+      return "unknown";
+  }
+}
+
 bool endsWith(const std::string &value, const std::string &suffix) {
   if (suffix.size() > value.size()) {
     return false;
@@ -774,7 +790,7 @@ std::vector<CompilerDiagnosticEntry> collectCompilerDiagnosticsForText(const std
   std::vector<CompilerDiagnosticEntry> diagnosticsOut;
   std::ostringstream sink;
   auto diagnostics = DiagnosticHandler::createDefault(sink);
-  diagnostics->setOutputMode(DiagnosticHandler::OutputMode::Machine);
+  diagnostics->setOutputMode(DiagnosticHandler::OutputMode::Lsp);
   diagnostics->setDefaultSourceName(sourceName);
   auto *handler = diagnostics.get();
 
@@ -786,26 +802,23 @@ std::vector<CompilerDiagnosticEntry> collectCompilerDiagnosticsForText(const std
   parser.parseFromStream(in, parseContext);
 
   if (handler) {
-    auto buffered = handler->snapshot();
+    auto buffered = handler->collectLspRecords();
     diagnosticsOut.reserve(buffered.size());
     for (const auto &diag : buffered) {
-      if (!diag) {
-        continue;
-      }
       CompilerDiagnosticEntry mapped;
-      if (diag->location.has_value()) {
-        mapped.region = *diag->location;
+      if (diag.location.has_value()) {
+        mapped.region = *diag.location;
       }
-      mapped.severity = diag->isError() ? 1 : 2;
-      mapped.message = diag->message;
-      mapped.id = diag->id;
-      mapped.code = diag->code;
-      mapped.phase = diag->phaseString();
+      mapped.severity = diag.isError() ? 1 : 2;
+      mapped.message = diag.message;
+      mapped.id = diag.id;
+      mapped.code = diag.code;
+      mapped.phase = diagnosticPhaseToString(diag.phase);
       mapped.source = "starbytes-compiler";
-      mapped.producerSource = diag->sourceName;
-      mapped.relatedSpans = diag->relatedSpans;
-      mapped.notes = diag->notes;
-      mapped.fixits = diag->fixits;
+      mapped.producerSource = diag.sourceName;
+      mapped.relatedSpans = diag.relatedSpans;
+      mapped.notes = diag.notes;
+      mapped.fixits = diag.fixits;
       diagnosticsOut.push_back(std::move(mapped));
     }
     handler->clear();

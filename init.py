@@ -14,3 +14,5 @@ def git_lib(repo_url, dst_path):
 git_lib("https://github.com/Tencent/rapidjson.git", "deps/rapidjson")
 git_lib("https://github.com/PCRE2Project/pcre2.git", "deps/pcre2")
 git_lib("https://github.com/unicode-org/icu.git", "deps/icu")
+git_lib("https://github.com/chriskohlhoff/asio.git", "deps/asio")
+git_lib("https://github.com/curl/curl.git", "deps/libcurl")

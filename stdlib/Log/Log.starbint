@@ -1,0 +1,44 @@
+/// @brief StdLib Log module.
+/// @details Structured logging with levels and optional dictionary fields.
+
+decl imut TRACE:Int = 0
+decl imut DEBUG:Int = 1
+decl imut INFO:Int = 2
+decl imut WARN:Int = 3
+decl imut ERROR:Int = 4
+
+/// @brief Sets minimum log level to emit.
+@native(name="log_setMinLevel")
+func setMinLevel(level:Int) Bool
+
+/// @brief Returns current minimum log level.
+@native(name="log_minLevel")
+func minLevel() Int
+
+/// @brief Writes a log line when level passes filter.
+@native(name="log_log")
+func log(level:Int,message:String) Bool
+
+/// @brief Writes a log line with structured dictionary fields.
+@native(name="log_logWithFields")
+func logWithFields(level:Int,message:String,fields:Dict) Bool
+
+/// @brief Convenience trace-level logger.
+@native(name="log_trace")
+func trace(message:String) Bool
+
+/// @brief Convenience debug-level logger.
+@native(name="log_debug")
+func debug(message:String) Bool
+
+/// @brief Convenience info-level logger.
+@native(name="log_info")
+func info(message:String) Bool
+
+/// @brief Convenience warn-level logger.
+@native(name="log_warn")
+func warn(message:String) Bool
+
+/// @brief Convenience error-level logger.
+@native(name="log_error")
+func error(message:String) Bool

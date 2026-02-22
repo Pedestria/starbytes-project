@@ -1,0 +1,32 @@
+/// @brief StdLib Text module.
+/// @details Advanced text transforms built on builtin Regex and Unicode semantics.
+
+def StringList = Array<String>
+
+/// @brief Returns whether regex matches text.
+@native(name="text_regexMatch")
+func regexMatch(pattern:Regex,text:String) Bool!
+
+/// @brief Returns all regex matches.
+@native(name="text_regexFindAll")
+func regexFindAll(pattern:Regex,text:String) StringList!
+
+/// @brief Replaces all regex matches with replacement.
+@native(name="text_regexReplace")
+func regexReplace(pattern:Regex,text:String,replacement:String) String!
+
+/// @brief Returns case-folded text using locale rules when available.
+@native(name="text_caseFold")
+func caseFold(text:String,locale:String) String!
+
+/// @brief Case-insensitive equality compare.
+@native(name="text_equalsFold")
+func equalsFold(lhs:String,rhs:String,locale:String) Bool
+
+/// @brief Splits text into words.
+@native(name="text_words")
+func words(text:String,locale:String) StringList!
+
+/// @brief Splits text into line segments.
+@native(name="text_lines")
+func lines(text:String,locale:String) StringList!

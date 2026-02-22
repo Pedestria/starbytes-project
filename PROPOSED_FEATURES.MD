@@ -20,4 +20,4 @@
 - Variable type inference is surfaced in LSP for inferred declarations (builtins/custom classes/invocations), with optional `--infer-64bit-numbers` compiler mode for Long/Double literal inference defaults.
 
 ## UNFINISHED
-
+starbpkg bundles all library modules it uses puts them in

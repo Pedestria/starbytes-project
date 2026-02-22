@@ -1,0 +1,52 @@
+/// @brief StdLib Net module.
+/// @details ASIO-backed low-level TCP and DNS helpers.
+
+def Bytes = Array<Int>
+def StringList = Array<String>
+
+/// @brief Stateful TCP client socket.
+class TcpSocket {
+    /// @brief Connects to remote endpoint.
+    @native(name="Net_TcpSocket_connect")
+    func connect(host:String,port:Int) Bool!
+
+    /// @brief Reads up to maxBytes bytes.
+    @native(name="Net_TcpSocket_read")
+    func read(maxBytes:Int) Bytes!
+
+    /// @brief Writes raw bytes.
+    @native(name="Net_TcpSocket_write")
+    func write(data:Bytes) Int!
+
+    /// @brief Writes UTF-8 text bytes.
+    @native(name="Net_TcpSocket_writeText")
+    func writeText(text:String) Int!
+
+    /// @brief Closes socket.
+    @native(name="Net_TcpSocket_close")
+    func close() Bool!
+
+    /// @brief Returns whether socket is open.
+    @native(name="Net_TcpSocket_isOpen")
+    func isOpen() Bool
+
+    /// @brief Returns connected remote address.
+    @native(name="Net_TcpSocket_remoteAddress")
+    func remoteAddress() String
+
+    /// @brief Returns connected remote port.
+    @native(name="Net_TcpSocket_remotePort")
+    func remotePort() Int
+}
+
+/// @brief Creates TCP socket object.
+@native(name="net_tcpSocket")
+func tcpSocket() TcpSocket!
+
+/// @brief Resolves host/service to endpoint text list.
+@native(name="net_resolve")
+func resolve(host:String,service:String) StringList!
+
+/// @brief Returns whether value is a parseable IP address.
+@native(name="net_isIPAddress")
+func isIPAddress(value:String) Bool

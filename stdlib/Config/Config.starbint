@@ -1,0 +1,29 @@
+/// @brief StdLib Config module.
+/// @details Layered configuration helpers (JSON object parsing, merge, env overlays).
+
+def StringList = Array<String>
+
+/// @brief Parses JSON text and requires object root.
+@native(name="config_parseJsonObject")
+func parseJsonObject(text:String) Dict!
+
+/// @brief Deep-merges overlay over base dictionary.
+@native(name="config_merge")
+func merge(base:Dict,overlay:Dict) Dict!
+
+/// @brief Builds dictionary from environment variables that match prefix.
+/// @note Prefix is removed from output keys.
+@native(name="config_fromEnv")
+func fromEnv(prefix:String) Dict
+
+/// @brief Verifies all required keys exist.
+@native(name="config_requireKeys")
+func requireKeys(config:Dict,keys:StringList) Bool
+
+/// @brief Reads string config value with default fallback.
+@native(name="config_getString")
+func getString(config:Dict,key:String,defaultValue:String) String
+
+/// @brief Reads int config value with default fallback.
+@native(name="config_getInt")
+func getInt(config:Dict,key:String,defaultValue:Int) Int

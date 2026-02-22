@@ -1,0 +1,31 @@
+/// @brief StdLib HTTP module.
+/// @details libcurl-backed HTTP client.
+
+def StringList = Array<String>
+
+/// @brief HTTP response value.
+class HttpResponse {
+    /// @brief HTTP status code.
+    decl status:Int
+
+    /// @brief Response body text.
+    decl body:String
+
+    /// @brief Response headers (string map semantics via Dict).
+    decl headers:Dict
+
+    /// @brief Whether request completed with 2xx status.
+    decl ok:Bool
+}
+
+/// @brief Performs GET request.
+@native(name="http_get")
+func get(url:String,timeoutMillis:Int,headers:StringList) HttpResponse!
+
+/// @brief Performs POST request.
+@native(name="http_post")
+func post(url:String,body:String,timeoutMillis:Int,headers:StringList) HttpResponse!
+
+/// @brief Performs custom HTTP request.
+@native(name="http_request")
+func request(method:String,url:String,body:String,timeoutMillis:Int,headers:StringList) HttpResponse!
