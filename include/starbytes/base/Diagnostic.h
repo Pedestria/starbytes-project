@@ -1,3 +1,4 @@
+#include <array>
 #include <deque>
 #include <cstdint>
 #include <iostream>

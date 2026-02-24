@@ -95,7 +95,7 @@ StarbytesClassType StarbytesClassObjectGetClass(StarbytesObject);
 /// @{
 ///
 
-typedef enum : int {
+typedef enum {
     StrEncodingUTF8,
     StrEncodingUTF16,
     StrEncodingUTF32,
@@ -125,7 +125,7 @@ void StarbytesArraySet(StarbytesArray array,unsigned int index,StarbytesObject o
 
 /// @name Starbytes Number Methods
 
-typedef enum : int {
+typedef enum {
     NumTypeFloat,
     NumTypeInt
 } StarbytesNumT;
@@ -154,7 +154,7 @@ StarbytesObject StarbytesDictGet(StarbytesDict dict,StarbytesObject key);
 ///@name Starbytes Boolean Methods
 ///
 
-typedef enum : uint8_t {
+typedef enum {
     StarbytesBoolTrue = 0x0,
     StarbytesBoolFalse = 0x1
 } StarbytesBoolVal;
@@ -173,7 +173,7 @@ StarbytesFuncTemplate * StarbytesFuncRefGetPtr(StarbytesFuncRef);
 ///@}
 
 /// @name Starbytes Task Methods
-typedef enum : uint8_t {
+typedef enum {
     StarbytesTaskPending = 0x0,
     StarbytesTaskResolved = 0x1,
     StarbytesTaskRejected = 0x2
