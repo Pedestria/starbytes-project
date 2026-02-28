@@ -4,6 +4,7 @@ This file now serves as an index to the canonical Starbytes language docs.
 
 ## Canonical References
 
+- ISO-style consolidated user guide and language spec: `docs/StarbytesUserGuideISO.md`
 - Syntax reference: `docs/StarbytesSyntax.md`
 - Compiler and driver workflow: `docs/StarbytesCompilerWorkflow.md`
 - Static and runtime semantics: `docs/StarbytesSemantics.md`
@@ -18,4 +19,4 @@ To keep specification quality high, the detailed documentation was split by conc
 2. compiler/driver workflow
 3. semantic rules
 
-Use the three files above as the source of truth for current implementation.
+Use `docs/StarbytesUserGuideISO.md` as the primary consolidated source of truth for 0.11.x behavior.

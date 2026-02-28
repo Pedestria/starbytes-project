@@ -72,6 +72,78 @@ add_starbytes_test(
 
 add_starbytes_test(
     NAME
+    "linguist-cmdline-test"
+    INCLUDE_LIB
+    FILES
+    "LinguistCmdLineTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "linguistics-phase1-test"
+    INCLUDE_LIB
+    FILES
+    "LinguisticsPhase1Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "linguistics-phase3-lint-test"
+    INCLUDE_LIB
+    FILES
+    "LinguisticsPhase3LintTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "linguistics-phase4-suggestion-action-test"
+    INCLUDE_LIB
+    FILES
+    "LinguisticsPhase4SuggestionActionTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "linguist-workspace-phase6-test"
+    INCLUDE_LIB
+    FILES
+    "LinguistWorkspacePhase6Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "linguistics-phase7-golden-test"
+    INCLUDE_LIB
+    FILES
+    "LinguisticsPhase7GoldenTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "linguistics-phase7-regression-test"
+    INCLUDE_LIB
+    FILES
+    "LinguisticsPhase7RegressionTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "linguistics-phase7-performance-test"
+    INCLUDE_LIB
+    FILES
+    "LinguisticsPhase7PerformanceTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
     "doxygen-doc-test"
     INCLUDE_LIB
     FILES

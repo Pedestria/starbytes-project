@@ -1,6 +1,6 @@
 # Starbytes Completion Roadmap
 
-Last updated: February 22, 2026
+Last updated: February 28, 2026
 
 This roadmap turns Starbytes from a promising prototype into a complete interpreted language with a usable toolchain.
 
@@ -20,13 +20,14 @@ Implemented language/runtime/tooling features include:
   - `decl` / `imut`
   - `func`, `return`
   - `if` / `elif` / `else`, `while`, `for`
-  - arithmetic/comparison/logical operators, ternary, and compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`).
+  - arithmetic/comparison/logical/bitwise/shift operators, ternary, and compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`).
   - inline functions and function type syntax.
 - Type and error model:
   - optional (`?`) and throwable (`!`) qualifiers
   - `secure(... ) catch` handling
   - type aliases (`def`)
-  - runtime type checking via `is` (supports aliases; interface targets are intentionally rejected).
+  - runtime type checking via `is` (supports aliases; interface targets are intentionally rejected)
+  - numeric conversion/casting surface, including `Long`/`Double` inference mode support.
 - Object model:
   - classes, inheritance, constructors, fields/methods, attributes (`@native`, `@readonly`, `@deprecated`)
   - interfaces
@@ -38,6 +39,7 @@ Implemented language/runtime/tooling features include:
   - `Task<T>` type flow in semantic/codegen/runtime paths (single-threaded execution model).
 - Data/collections:
   - array and dictionary literals
+  - `Map<K,V>` strict map support
   - typed arrays (`T[]`) and implied array typing
   - inferred variable typing surfaced for literals, constructor calls, and invocation returns
   - configurable numeric literal inference mode (`--infer-64bit-numbers` for Long/Double defaults)
@@ -66,8 +68,12 @@ Implemented language/runtime/tooling features include:
   - semantic highlighting generated from compiler pipeline.
   - richer hover details including declaration-adjacent comments.
   - inferred declaration types shown in LSP by using compiler-backed semantic symbol extraction (with syntax fallback merge for invalid code paths).
+  - formatter + range formatter + code actions + semantic tokens (`full`/`range`/`delta`) wired in LSP.
   - modularized LSP analysis pipeline (`DocumentAnalysis`) to reduce server coupling and duplicate parsing logic.
   - VSCode extension integration path for LSP workflow.
+- Linguistics subsystem:
+  - shared `src/linguistics` library consumed by both `starbytes-ling` and `starbytes-lsp`.
+  - phases 1-7 baseline implemented: formatter, linting, suggestions, code actions, workspace traversal, caching, and performance/regression coverage.
 - Packaging/dev workflow:
   - `tools/starbpkg` package manager baseline in Starbytes with `.starbmodpath` generation.
   - library compile flow now emits `.starbint` interfaces with doc preservation; compile `--clean` removes module artifacts and local `.starbytes/.cache` outputs.
@@ -75,25 +81,26 @@ Implemented language/runtime/tooling features include:
 Known gaps and stability risks:
 
 - Typed collection enforcement/inference is stabilized for current generic literal and typed-context surfaces; remaining work is concentrated in high-complexity nested generic/callable interactions.
-- Advanced native `IO` stream methods and advanced `Unicode` operations are now stabilized with dedicated full-suite regression coverage (including former crash repro paths).
-- LSP supports core features and semantic tokens, but reliability hardening and advanced refactor ergonomics are still pending.
-- Diagnostics optimization phases 1-5 are complete (schema unification, source indexing/lazy rendering, dedup/cascade control, and renderer split), but full parser/sema/runtime error-code governance and incremental LSP diagnostic identity work are still pending.
+- LSP covers the core editing loop and semantic tokens, but semantic-symbol identity hardening is still pending for rename/references and for splitting declaration/typeDefinition/implementation into dedicated resolvers.
+- Diagnostics optimization phases 1-5 are complete (schema unification, source indexing/lazy rendering, dedup/cascade control, and renderer split), but phases 6-8 (incremental identity, fix-it framework, and hardening gates) remain open.
+- Stdlib expansion phase 4 modules (`Test`, `DB.SQLite`, `Metrics`) are not yet complete.
+- `starbpkg` module bundling/publish flow remains unfinished.
 
 ## Phase Progress Snapshot
 
 - M1 Core Language Closure: complete for current documented operator/control-flow surface.
 - M2 Type System/Data Model: late stage; collection/generic hardening is broad, with only high-complexity edge interactions still open.
-- M3 Modules and Imports: complete baseline with `.starbmodpath` and cache-backed import analysis.
+- M3 Modules and Imports: complete baseline with `.starbmodpath`, cache-backed import analysis, and interface emission/cleanup flow.
 - M4 Standard Library Baseline: expanded through phase 3 roadmap modules (network + security/compression/archive); phase 4 release-tooling modules remain.
 - M5 Diagnostics: advanced progress with phases 1-5 completed; phases 6-8 (incremental identity, fix-it framework, hardening gates) remain.
-- M6 LSP Maturity: late-mid stage (semantic tokens + richer hovers + compiler-backed symbols + inferred type surfacing + modular analysis split), with stability hardening and refactor ergonomics pending.
+- M6 LSP Maturity: advanced baseline (semantic tokens + richer hovers + compiler-backed symbols + inferred type surfacing + linguistics-backed formatting/actions + modular analysis split), with semantic identity hardening and optional advanced protocol families still pending.
 - M7 Syntax Surface Completion: mostly complete for currently documented syntax, with lambda ergonomics still the main unresolved area.
-- M8 Tooling/Release Readiness: in progress with package manager baseline, full-suite regression expansion, compile profiling/benchmark support, and remaining CI/release hardening tasks.
+- M8 Tooling/Release Readiness: in progress with package manager baseline, full/extreme suite expansion, compile profiling/benchmark support, and remaining CI/release hardening tasks.
 
 ## Version Status
 
-- Current project version target: `0.10.0`.
-- Rationale: Starbytes now includes complete compile-time optimization phases 1-7, diagnostics optimization phases 1-5, expanded stdlib modules through phase 3, stabilized IO/Unicode advanced paths with full-suite regression coverage, and stronger library/interface build workflows.
+- Current project version target: `0.11.0`.
+- Rationale: Starbytes now includes complete compile-time optimization phases 1-7, diagnostics optimization phases 1-5, expanded stdlib modules through phase 3, linguistics phases 1-7 with shared CLI/LSP integration, and broader LSP feature coverage with semantic-token and code-action workflows.
 
 ---
 
@@ -360,13 +367,14 @@ Sprint objective: close release-hardening gaps in diagnostics/LSP/tooling (M5/M6
 
 1. Implement diagnostics optimization phase 6 (incremental LSP diagnostics with stable diagnostic identities per URI/version).
 2. Standardize parser/sema/runtime error-code families and enforce a shared registry policy.
-3. Add LSP reliability hardening for advanced rename/references workflows, with dedicated regression coverage.
+3. Upgrade LSP rename/references to semantic symbol identity and split `declaration`/`typeDefinition`/`implementation` into dedicated resolvers.
 4. Complete stdlib expansion phase 4 modules (`Test`, `DB.SQLite`, `Metrics`) without overlapping existing builtin/module surfaces.
-5. Finalize release hardening work: CI matrix coverage (macOS/Linux + sanitizer lanes), bootstrap reproducibility checks, and RC checklist docs.
+5. Close packaging/release hardening: finish `starbpkg` module-bundle flow, CI matrix coverage (macOS/Linux + sanitizer lanes), bootstrap reproducibility checks, and RC checklist docs.
 
 ### Sprint Done Definition
 
 - LSP diagnostics publish incrementally with stable identities and no stale-cache regressions in integration tests.
 - Parser/sema/runtime diagnostics use standardized, documented error-code families.
+- LSP rename/references behavior is semantic-safe and declaration/type/implementation requests are distinct.
 - Full suite remains green while adding phase 4 stdlib modules and new LSP/diagnostics regressions.
 - Release checklist and CI matrix are executable end-to-end from a clean bootstrap environment.

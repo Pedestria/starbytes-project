@@ -1699,7 +1699,6 @@ int main(int argc, const char *argv[]) {
         std::cerr << "Input path not found: " << opts.scriptPath << std::endl;
         return finishWith(1);
     }
-
     auto workspaceRoot = std::filesystem::current_path();
     auto absoluteInputPath = std::filesystem::path(makeAbsolutePathString(inputPath));
     profile.input = absoluteInputPath.string();

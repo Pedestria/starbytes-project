@@ -10,6 +10,11 @@
 
 #include "DocumentAnalysis.h"
 #include "SymbolCache.h"
+#include "starbytes/linguistics/CodeActionEngine.h"
+#include "starbytes/linguistics/Config.h"
+#include "starbytes/linguistics/FormatterEngine.h"
+#include "starbytes/linguistics/LintEngine.h"
+#include "starbytes/linguistics/SuggestionEngine.h"
 
 #ifndef STARBYTES_LSP_SERVERMAIN_H
 #define STARBYTES_LSP_SERVERMAIN_H
@@ -32,6 +37,17 @@ class Server {
     std::vector<CompilerDiagnosticEntry> diagnostics;
     bool semanticTokensReady = false;
     std::vector<SemanticTokenEntry> semanticTokens;
+    bool lintReady = false;
+    std::vector<starbytes::linguistics::LintFinding> lintFindings;
+    bool suggestionsReady = false;
+    std::vector<starbytes::linguistics::Suggestion> suggestions;
+    bool safeActionsReady = false;
+    std::vector<starbytes::linguistics::CodeAction> safeActions;
+    bool allActionsReady = false;
+    std::vector<starbytes::linguistics::CodeAction> allActions;
+    bool formatReady = false;
+    bool formatOk = false;
+    std::string formattedText;
   };
 
   struct DocumentState {
@@ -70,6 +86,19 @@ class Server {
   std::unordered_set<std::string> canceledRequestIds;
   SymbolCache symbolCache;
   BuiltinsIndexCache builtinsIndexCache;
+  starbytes::linguistics::LinguisticsConfig linguisticsConfig = starbytes::linguistics::LinguisticsConfig::defaults();
+  starbytes::linguistics::FormatterEngine formatterEngine;
+  starbytes::linguistics::LintEngine lintEngine;
+  starbytes::linguistics::SuggestionEngine suggestionEngine;
+  starbytes::linguistics::CodeActionEngine codeActionEngine;
+  bool linguisticsProfilingEnabled = false;
+  uint64_t lspProfileLintNs = 0;
+  uint64_t lspProfileSuggestionNs = 0;
+  uint64_t lspProfileActionNs = 0;
+  uint64_t lspProfileFormatNs = 0;
+  uint64_t lspProfileDiagnosticsNs = 0;
+  uint64_t lspProfileCodeActionNs = 0;
+  uint64_t lspProfileFormattingNs = 0;
 
   bool readMessage(std::string &body);
   void writeMessage(rapidjson::Document &doc);
@@ -104,11 +133,25 @@ class Server {
   void setDocumentTextByUri(const std::string &uri, const std::string &text, int version, bool isOpen);
   void removeOpenDocumentByUri(const std::string &uri);
   void publishDiagnostics(const std::string &uri);
+  void appendLinguisticsDiagnosticsJson(const std::string &uri,
+                                        const std::string &text,
+                                        rapidjson::Value &diagnostics,
+                                        rapidjson::Document::AllocatorType &alloc);
   void maybeApplyIncrementalChange(std::string &text, const rapidjson::Value &change);
   void configureSymbolCache();
   const std::vector<CompilerDiagnosticEntry> &getCompilerDiagnosticsForDocument(const std::string &uri,
                                                                                 DocumentState &state);
   const std::vector<SemanticTokenEntry> &getSemanticTokensForDocument(const std::string &uri, DocumentState &state);
+  const std::vector<starbytes::linguistics::LintFinding> &getLintFindingsForDocument(const std::string &uri,
+                                                                                      DocumentState &state);
+  const std::vector<starbytes::linguistics::Suggestion> &getSuggestionsForDocument(const std::string &uri,
+                                                                                     DocumentState &state);
+  const std::vector<starbytes::linguistics::CodeAction> &getCodeActionsForDocument(const std::string &uri,
+                                                                                     DocumentState &state,
+                                                                                     bool safeOnly);
+  bool getFormattedTextForDocument(const std::string &uri, DocumentState &state, std::string &formattedTextOut);
+  void maybeLogLspProfileSample(const char *label, uint64_t elapsedNs, size_t itemCount = 0);
+  void maybeLogLspProfileSummary();
   const BuiltinApiIndex *getBuiltinsApiIndex();
   std::vector<SymbolEntry> collectSymbolsForUri(const std::string &uri, const std::string &text);
   void invalidateSymbolCacheForUri(const std::string &uri);

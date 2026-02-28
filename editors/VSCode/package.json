@@ -2,7 +2,7 @@
     "name": "starbytes",
     "publisher": "topperalex",
     "displayName": "Starbytes Extension For VSCode",
-    "version": "0.9.0",
+    "version": "0.11.0",
     "activationEvents": [
         "onLanguage:starbytes",
         "onLanguage:starbytes-project",
@@ -34,7 +34,7 @@
         "types": "tsc -p ./tsconfig.json",
         "build": "npm run types",
         "watch": "tsc -w -p ./tsconfig.json",
-        "tmbundle":"node ./dist/tmbundle.js",
+        "tmbundle": "node ./dist/tmbundle.js",
         "package": "vsce package --no-yarn -o starbytes-lsp.vsix"
     },
     "contributes": {

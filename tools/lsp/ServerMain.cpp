@@ -7,8 +7,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -61,6 +64,14 @@ std::string trimCopy(std::string value) {
     --end;
   }
   return value.substr(start, end - start);
+}
+
+bool envTruthy(const char *value) {
+  if(value == nullptr) {
+    return false;
+  }
+  auto text = toLower(trimCopy(value));
+  return !(text.empty() || text == "0" || text == "false" || text == "off" || text == "no");
 }
 
 std::vector<std::string> splitCommaList(const std::string &text) {
@@ -252,6 +263,199 @@ void appendCompilerDiagnosticJson(rapidjson::Value &diag,
   }
 }
 
+int lspSeverityFromFinding(starbytes::linguistics::FindingSeverity severity) {
+  using starbytes::linguistics::FindingSeverity;
+  switch (severity) {
+    case FindingSeverity::Error:
+      return 1;
+    case FindingSeverity::Warning:
+      return 2;
+    case FindingSeverity::Information:
+      return 3;
+    case FindingSeverity::Hint:
+      return 4;
+  }
+  return 2;
+}
+
+const char *suggestionKindName(starbytes::linguistics::SuggestionKind kind) {
+  using starbytes::linguistics::SuggestionKind;
+  switch (kind) {
+    case SuggestionKind::Style:
+      return "style";
+    case SuggestionKind::Correctness:
+      return "correctness";
+    case SuggestionKind::Performance:
+      return "performance";
+    case SuggestionKind::Safety:
+      return "safety";
+    case SuggestionKind::Docs:
+      return "docs";
+    case SuggestionKind::Refactor:
+      return "refactor";
+  }
+  return "style";
+}
+
+rapidjson::Value buildRangeFromTextSpan(const starbytes::linguistics::TextSpan &span,
+                                        rapidjson::Document::AllocatorType &alloc) {
+  rapidjson::Value range(rapidjson::kObjectType);
+  rapidjson::Value start(rapidjson::kObjectType);
+  rapidjson::Value end(rapidjson::kObjectType);
+  start.AddMember("line", span.start.line, alloc);
+  start.AddMember("character", span.start.character, alloc);
+  end.AddMember("line", span.end.line, alloc);
+  end.AddMember("character", span.end.character, alloc);
+  range.AddMember("start", start, alloc);
+  range.AddMember("end", end, alloc);
+  return range;
+}
+
+void appendLintDiagnosticJson(rapidjson::Value &diag,
+                              const starbytes::linguistics::LintFinding &finding,
+                              const std::string &uri,
+                              rapidjson::Document::AllocatorType &alloc) {
+  diag.AddMember("range", buildRangeFromTextSpan(finding.span, alloc), alloc);
+  diag.AddMember("severity", lspSeverityFromFinding(finding.severity), alloc);
+  diag.AddMember("source", rapidjson::Value("starbytes-linguistics", alloc), alloc);
+  diag.AddMember("message", rapidjson::Value(finding.message.c_str(), alloc), alloc);
+  if(!finding.code.empty()) {
+    diag.AddMember("code", rapidjson::Value(finding.code.c_str(), alloc), alloc);
+  }
+
+  if(!finding.related.empty()) {
+    rapidjson::Value relatedInfo(rapidjson::kArrayType);
+    for(const auto &span : finding.related) {
+      rapidjson::Value info(rapidjson::kObjectType);
+      rapidjson::Value location(rapidjson::kObjectType);
+      location.AddMember("uri", rapidjson::Value(uri.c_str(), alloc), alloc);
+      location.AddMember("range", buildRangeFromTextSpan(span, alloc), alloc);
+      info.AddMember("location", location, alloc);
+      info.AddMember("message", rapidjson::Value("Related location", alloc), alloc);
+      relatedInfo.PushBack(info, alloc);
+    }
+    if(!relatedInfo.Empty()) {
+      diag.AddMember("relatedInformation", relatedInfo, alloc);
+    }
+  }
+
+  rapidjson::Value data(rapidjson::kObjectType);
+  data.AddMember("id", rapidjson::Value(finding.id.c_str(), alloc), alloc);
+  data.AddMember("phase", rapidjson::Value("linguistics", alloc), alloc);
+  if(!finding.notes.empty()) {
+    rapidjson::Value notes(rapidjson::kArrayType);
+    for(const auto &note : finding.notes) {
+      notes.PushBack(rapidjson::Value(note.c_str(), alloc), alloc);
+    }
+    data.AddMember("notes", notes, alloc);
+  }
+  if(!finding.fixes.empty()) {
+    rapidjson::Value fixits(rapidjson::kArrayType);
+    for(const auto &fix : finding.fixes) {
+      for(const auto &edit : fix.edits) {
+        rapidjson::Value fixit(rapidjson::kObjectType);
+        fixit.AddMember("range", buildRangeFromTextSpan(edit.span, alloc), alloc);
+        fixit.AddMember("replacement", rapidjson::Value(edit.replacement.c_str(), alloc), alloc);
+        if(!fix.title.empty()) {
+          fixit.AddMember("message", rapidjson::Value(fix.title.c_str(), alloc), alloc);
+        }
+        fixits.PushBack(fixit, alloc);
+      }
+    }
+    if(!fixits.Empty()) {
+      data.AddMember("fixits", fixits, alloc);
+    }
+  }
+  diag.AddMember("data", data, alloc);
+}
+
+void appendSuggestionDiagnosticJson(rapidjson::Value &diag,
+                                    const starbytes::linguistics::Suggestion &suggestion,
+                                    rapidjson::Document::AllocatorType &alloc) {
+  diag.AddMember("range", buildRangeFromTextSpan(suggestion.span, alloc), alloc);
+  diag.AddMember("severity", 4, alloc);
+  diag.AddMember("source", rapidjson::Value("starbytes-linguistics", alloc), alloc);
+  diag.AddMember("message", rapidjson::Value(suggestion.message.c_str(), alloc), alloc);
+  diag.AddMember("code", rapidjson::Value(suggestion.id.c_str(), alloc), alloc);
+
+  rapidjson::Value tags(rapidjson::kArrayType);
+  diag.AddMember("tags", tags, alloc);
+
+  rapidjson::Value data(rapidjson::kObjectType);
+  data.AddMember("id", rapidjson::Value(suggestion.id.c_str(), alloc), alloc);
+  data.AddMember("phase", rapidjson::Value("linguistics", alloc), alloc);
+  data.AddMember("kind", rapidjson::Value(suggestionKindName(suggestion.kind), alloc), alloc);
+  data.AddMember("confidence", suggestion.confidence, alloc);
+  diag.AddMember("data", data, alloc);
+}
+
+int compareTextPosition(const starbytes::linguistics::TextPosition &lhs,
+                        const starbytes::linguistics::TextPosition &rhs) {
+  if(lhs.line < rhs.line) {
+    return -1;
+  }
+  if(lhs.line > rhs.line) {
+    return 1;
+  }
+  if(lhs.character < rhs.character) {
+    return -1;
+  }
+  if(lhs.character > rhs.character) {
+    return 1;
+  }
+  return 0;
+}
+
+bool spansIntersect(const starbytes::linguistics::TextSpan &lhs, const starbytes::linguistics::TextSpan &rhs) {
+  if(compareTextPosition(lhs.end, rhs.start) < 0) {
+    return false;
+  }
+  if(compareTextPosition(rhs.end, lhs.start) < 0) {
+    return false;
+  }
+  return true;
+}
+
+bool parseLspRange(const rapidjson::Value &rangeValue, starbytes::linguistics::TextSpan &rangeOut) {
+  if(!rangeValue.IsObject() || !rangeValue.HasMember("start") || !rangeValue.HasMember("end")
+      || !rangeValue["start"].IsObject() || !rangeValue["end"].IsObject()) {
+    return false;
+  }
+  const auto &start = rangeValue["start"];
+  const auto &end = rangeValue["end"];
+  if(!start.HasMember("line") || !start.HasMember("character")
+      || !end.HasMember("line") || !end.HasMember("character")
+      || !start["line"].IsUint() || !start["character"].IsUint()
+      || !end["line"].IsUint() || !end["character"].IsUint()) {
+    return false;
+  }
+
+  rangeOut.start.line = start["line"].GetUint();
+  rangeOut.start.character = start["character"].GetUint();
+  rangeOut.end.line = end["line"].GetUint();
+  rangeOut.end.character = end["character"].GetUint();
+  return rangeOut.isValid();
+}
+
+rapidjson::Value buildLspTextEdit(const starbytes::linguistics::TextEdit &edit, rapidjson::Document::AllocatorType &alloc) {
+  rapidjson::Value output(rapidjson::kObjectType);
+  output.AddMember("range", buildRangeFromTextSpan(edit.span, alloc), alloc);
+  output.AddMember("newText", rapidjson::Value(edit.replacement.c_str(), alloc), alloc);
+  return output;
+}
+
+bool actionTouchesRange(const starbytes::linguistics::CodeAction &action, const starbytes::linguistics::TextSpan &range) {
+  if(action.edits.empty()) {
+    return false;
+  }
+  for(const auto &edit : action.edits) {
+    if(spansIntersect(edit.span, range)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string idToKey(const rapidjson::Value &id) {
   if (id.IsString()) {
     return std::string("s:") + id.GetString();
@@ -274,7 +478,61 @@ std::string idToKey(const rapidjson::Value &id) {
 
 } // namespace
 
-Server::Server(starbytes::lsp::ServerOptions &options) : in(options.in), out(options.os) {}
+Server::Server(starbytes::lsp::ServerOptions &options) : in(options.in), out(options.os) {
+  linguisticsProfilingEnabled = envTruthy(std::getenv("STARBYTES_LSP_PROFILE"));
+}
+
+void Server::maybeLogLspProfileSample(const char *label, uint64_t elapsedNs, size_t itemCount) {
+  if(!linguisticsProfilingEnabled || !label) {
+    return;
+  }
+  std::cerr << "[starbytes-lsp-profile] op=" << label
+            << " ns=" << elapsedNs
+            << " items=" << itemCount
+            << "\n";
+}
+
+void Server::maybeLogLspProfileSummary() {
+  if(!linguisticsProfilingEnabled) {
+    return;
+  }
+
+  size_t cachedLintFindings = 0;
+  size_t cachedSuggestions = 0;
+  size_t cachedSafeActions = 0;
+  size_t cachedAllActions = 0;
+  size_t cachedFormattedDocs = 0;
+  for(const auto &doc : documents) {
+    cachedLintFindings += doc.second.analysis.lintFindings.size();
+    cachedSuggestions += doc.second.analysis.suggestions.size();
+    cachedSafeActions += doc.second.analysis.safeActions.size();
+    cachedAllActions += doc.second.analysis.allActions.size();
+    if(doc.second.analysis.formatReady) {
+      ++cachedFormattedDocs;
+    }
+  }
+
+  size_t estimatedCacheBytes =
+      cachedLintFindings * sizeof(starbytes::linguistics::LintFinding) +
+      cachedSuggestions * sizeof(starbytes::linguistics::Suggestion) +
+      (cachedSafeActions + cachedAllActions) * sizeof(starbytes::linguistics::CodeAction);
+
+  std::cerr << "[starbytes-lsp-profile] summary"
+            << " lint_ns=" << lspProfileLintNs
+            << " suggest_ns=" << lspProfileSuggestionNs
+            << " actions_ns=" << lspProfileActionNs
+            << " format_ns=" << lspProfileFormatNs
+            << " diagnostics_ns=" << lspProfileDiagnosticsNs
+            << " formatting_handler_ns=" << lspProfileFormattingNs
+            << " code_action_handler_ns=" << lspProfileCodeActionNs
+            << " cached_lint_findings=" << cachedLintFindings
+            << " cached_suggestions=" << cachedSuggestions
+            << " cached_safe_actions=" << cachedSafeActions
+            << " cached_all_actions=" << cachedAllActions
+            << " cached_formatted_docs=" << cachedFormattedDocs
+            << " cache_estimated_bytes=" << estimatedCacheBytes
+            << "\n";
+}
 
 std::string Server::trim(const std::string &inValue) {
   size_t start = 0;
@@ -767,6 +1025,103 @@ const std::vector<SemanticTokenEntry> &Server::getSemanticTokensForDocument(cons
   return state.analysis.semanticTokens;
 }
 
+const std::vector<starbytes::linguistics::LintFinding> &Server::getLintFindingsForDocument(const std::string &uri,
+                                                                                            DocumentState &state) {
+  if (state.analysis.version != state.version || state.analysis.textHash != state.textHash) {
+    state.analysis = {};
+    state.analysis.version = state.version;
+    state.analysis.textHash = state.textHash;
+  }
+  if (!state.analysis.lintReady) {
+    auto start = std::chrono::steady_clock::now();
+    starbytes::linguistics::LinguisticsSession session(uri, state.text);
+    auto lintResult = lintEngine.run(session, linguisticsConfig);
+    state.analysis.lintFindings = std::move(lintResult.findings);
+    state.analysis.lintReady = true;
+    auto elapsed = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+    lspProfileLintNs += elapsed;
+    maybeLogLspProfileSample("lint", elapsed, state.analysis.lintFindings.size());
+  }
+  return state.analysis.lintFindings;
+}
+
+const std::vector<starbytes::linguistics::Suggestion> &Server::getSuggestionsForDocument(const std::string &uri,
+                                                                                          DocumentState &state) {
+  if (state.analysis.version != state.version || state.analysis.textHash != state.textHash) {
+    state.analysis = {};
+    state.analysis.version = state.version;
+    state.analysis.textHash = state.textHash;
+  }
+  if (!state.analysis.suggestionsReady) {
+    auto start = std::chrono::steady_clock::now();
+    starbytes::linguistics::LinguisticsSession session(uri, state.text);
+    starbytes::linguistics::SuggestionRequest request;
+    request.includeLowConfidence = false;
+    auto suggestionResult = suggestionEngine.run(session, linguisticsConfig, request);
+    state.analysis.suggestions = std::move(suggestionResult.suggestions);
+    state.analysis.suggestionsReady = true;
+    auto elapsed = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+    lspProfileSuggestionNs += elapsed;
+    maybeLogLspProfileSample("suggest", elapsed, state.analysis.suggestions.size());
+  }
+  return state.analysis.suggestions;
+}
+
+const std::vector<starbytes::linguistics::CodeAction> &Server::getCodeActionsForDocument(const std::string &uri,
+                                                                                          DocumentState &state,
+                                                                                          bool safeOnly) {
+  if (state.analysis.version != state.version || state.analysis.textHash != state.textHash) {
+    state.analysis = {};
+    state.analysis.version = state.version;
+    state.analysis.textHash = state.textHash;
+  }
+
+  auto &ready = safeOnly ? state.analysis.safeActionsReady : state.analysis.allActionsReady;
+  auto &actions = safeOnly ? state.analysis.safeActions : state.analysis.allActions;
+  if (!ready) {
+    auto start = std::chrono::steady_clock::now();
+    const auto &findings = getLintFindingsForDocument(uri, state);
+    const auto &suggestions = getSuggestionsForDocument(uri, state);
+    starbytes::linguistics::CodeActionRequest request;
+    request.safeOnly = safeOnly;
+    auto actionResult = codeActionEngine.build(findings, suggestions, linguisticsConfig, request);
+    actions = std::move(actionResult.actions);
+    ready = true;
+    auto elapsed = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+    lspProfileActionNs += elapsed;
+    maybeLogLspProfileSample(safeOnly ? "actions.safe" : "actions.all", elapsed, actions.size());
+  }
+  return actions;
+}
+
+bool Server::getFormattedTextForDocument(const std::string &uri, DocumentState &state, std::string &formattedTextOut) {
+  if (state.analysis.version != state.version || state.analysis.textHash != state.textHash) {
+    state.analysis = {};
+    state.analysis.version = state.version;
+    state.analysis.textHash = state.textHash;
+  }
+
+  if(!state.analysis.formatReady) {
+    auto start = std::chrono::steady_clock::now();
+    starbytes::linguistics::LinguisticsSession session(uri, state.text);
+    starbytes::linguistics::FormatRequest request;
+    auto formatResult = formatterEngine.format(session, linguisticsConfig, request);
+    state.analysis.formatOk = formatResult.ok;
+    state.analysis.formattedText = std::move(formatResult.formattedText);
+    state.analysis.formatReady = true;
+    auto elapsed = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+    lspProfileFormatNs += elapsed;
+    maybeLogLspProfileSample("format", elapsed, state.analysis.formattedText.empty() ? 0 : 1);
+  }
+
+  formattedTextOut = state.analysis.formattedText;
+  return state.analysis.formatOk;
+}
+
 const BuiltinApiIndex *Server::getBuiltinsApiIndex() {
   std::string builtinsUri;
   std::string builtinsText;
@@ -857,6 +1212,53 @@ void Server::removeOpenDocumentByUri(const std::string &uri) {
   }
 }
 
+void Server::appendLinguisticsDiagnosticsJson(const std::string &uri,
+                                              const std::string &text,
+                                              rapidjson::Value &diagnostics,
+                                              rapidjson::Document::AllocatorType &alloc) {
+  auto start = std::chrono::steady_clock::now();
+
+  auto docIt = documents.find(uri);
+  if(docIt != documents.end()) {
+    const auto &findings = getLintFindingsForDocument(uri, docIt->second);
+    for(const auto &finding : findings) {
+      rapidjson::Value diag(rapidjson::kObjectType);
+      appendLintDiagnosticJson(diag, finding, uri, alloc);
+      diagnostics.PushBack(diag, alloc);
+    }
+
+    const auto &suggestions = getSuggestionsForDocument(uri, docIt->second);
+    for(const auto &suggestion : suggestions) {
+      rapidjson::Value diag(rapidjson::kObjectType);
+      appendSuggestionDiagnosticJson(diag, suggestion, alloc);
+      diagnostics.PushBack(diag, alloc);
+    }
+  }
+  else {
+    starbytes::linguistics::LinguisticsSession session(uri, text);
+    auto lintResult = lintEngine.run(session, linguisticsConfig);
+    for(const auto &finding : lintResult.findings) {
+      rapidjson::Value diag(rapidjson::kObjectType);
+      appendLintDiagnosticJson(diag, finding, uri, alloc);
+      diagnostics.PushBack(diag, alloc);
+    }
+
+    starbytes::linguistics::SuggestionRequest suggestionRequest;
+    suggestionRequest.includeLowConfidence = false;
+    auto suggestionResult = suggestionEngine.run(session, linguisticsConfig, suggestionRequest);
+    for(const auto &suggestion : suggestionResult.suggestions) {
+      rapidjson::Value diag(rapidjson::kObjectType);
+      appendSuggestionDiagnosticJson(diag, suggestion, alloc);
+      diagnostics.PushBack(diag, alloc);
+    }
+  }
+
+  auto elapsed = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count());
+  lspProfileDiagnosticsNs += elapsed;
+  maybeLogLspProfileSample("diagnostics.append", elapsed, diagnostics.Size());
+}
+
 void Server::publishDiagnostics(const std::string &uri) {
   rapidjson::Document paramsDoc(rapidjson::kObjectType);
   auto &alloc = paramsDoc.GetAllocator();
@@ -874,6 +1276,10 @@ void Server::publishDiagnostics(const std::string &uri) {
         appendCompilerDiagnosticJson(diag, entry, uri, alloc);
         diagnostics.PushBack(diag, alloc);
       }
+      appendLinguisticsDiagnosticsJson(uri, docIt->second.text, diagnostics, alloc);
+    }
+    else {
+      appendLinguisticsDiagnosticsJson(uri, text, diagnostics, alloc);
     }
   }
 
@@ -1028,7 +1434,7 @@ void Server::handleInitialize(rapidjson::Document &request) {
 
   rapidjson::Value serverInfo(rapidjson::kObjectType);
   serverInfo.AddMember("name", rapidjson::Value("Starbytes LSP", alloc), alloc);
-  serverInfo.AddMember("version", rapidjson::Value("0.10.0", alloc), alloc);
+  serverInfo.AddMember("version", rapidjson::Value("0.11.0", alloc), alloc);
 
   rapidjson::Value result(rapidjson::kObjectType);
   result.AddMember("capabilities", capabilities, alloc);
@@ -1045,6 +1451,7 @@ void Server::handleShutdown(rapidjson::Document &request) {
     return;
   }
   shutdownRequested = true;
+  maybeLogLspProfileSummary();
   symbolCache.save();
   rapidjson::Document payloadDoc(rapidjson::kObjectType);
   rapidjson::Value result;
@@ -2259,7 +2666,60 @@ void Server::handleFormatting(rapidjson::Document &request) {
   if (!request.HasMember("id")) {
     return;
   }
+  auto handlerStart = std::chrono::steady_clock::now();
+  if (!request.HasMember("params") || !request["params"].IsObject() ||
+      !request["params"].HasMember("textDocument") || !request["params"]["textDocument"].IsObject() ||
+      !request["params"]["textDocument"].HasMember("uri") || !request["params"]["textDocument"]["uri"].IsString()) {
+    writeError(request["id"], JSONRPC_INVALID_PARAMS, "Invalid formatting params");
+    return;
+  }
+
+  auto uri = std::string(request["params"]["textDocument"]["uri"].GetString());
+  std::string text;
+  if(!getDocumentTextByUri(uri, text)) {
+    rapidjson::Value edits(rapidjson::kArrayType);
+    writeResult(request["id"], edits);
+    return;
+  }
+
+  rapidjson::Document payloadDoc(rapidjson::kObjectType);
+  auto &alloc = payloadDoc.GetAllocator();
   rapidjson::Value edits(rapidjson::kArrayType);
+
+  std::string formattedText;
+  bool formattedOk = false;
+  auto docIt = documents.find(uri);
+  if(docIt != documents.end()) {
+    formattedOk = getFormattedTextForDocument(uri, docIt->second, formattedText);
+  }
+  else {
+    starbytes::linguistics::LinguisticsSession session(uri, text);
+    starbytes::linguistics::FormatRequest formatRequest;
+    auto formatResult = formatterEngine.format(session, linguisticsConfig, formatRequest);
+    formattedOk = formatResult.ok;
+    formattedText = std::move(formatResult.formattedText);
+  }
+
+  if(formattedOk && formattedText != text) {
+    unsigned endLine = 0;
+    unsigned endCharacter = 0;
+    positionFromOffset(text, text.size(), endLine, endCharacter);
+
+    starbytes::linguistics::TextSpan fullSpan;
+    fullSpan.start = {0, 0};
+    fullSpan.end = {endLine, endCharacter};
+
+    starbytes::linguistics::TextEdit edit;
+    edit.span = fullSpan;
+    edit.replacement = formattedText;
+    edits.PushBack(buildLspTextEdit(edit, alloc), alloc);
+  }
+
+  auto elapsed = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - handlerStart).count());
+  lspProfileFormattingNs += elapsed;
+  maybeLogLspProfileSample("handler.formatting", elapsed, edits.Size());
+
   writeResult(request["id"], edits);
 }
 
@@ -2267,7 +2727,69 @@ void Server::handleRangeFormatting(rapidjson::Document &request) {
   if (!request.HasMember("id")) {
     return;
   }
+  auto handlerStart = std::chrono::steady_clock::now();
+  if (!request.HasMember("params") || !request["params"].IsObject() ||
+      !request["params"].HasMember("textDocument") || !request["params"]["textDocument"].IsObject() ||
+      !request["params"]["textDocument"].HasMember("uri") || !request["params"]["textDocument"]["uri"].IsString() ||
+      !request["params"].HasMember("range")) {
+    writeError(request["id"], JSONRPC_INVALID_PARAMS, "Invalid range formatting params");
+    return;
+  }
+
+  starbytes::linguistics::TextSpan requestedRange;
+  if(!parseLspRange(request["params"]["range"], requestedRange)) {
+    writeError(request["id"], JSONRPC_INVALID_PARAMS, "Invalid range formatting range");
+    return;
+  }
+
+  auto uri = std::string(request["params"]["textDocument"]["uri"].GetString());
+  std::string text;
+  if(!getDocumentTextByUri(uri, text)) {
+    rapidjson::Value edits(rapidjson::kArrayType);
+    writeResult(request["id"], edits);
+    return;
+  }
+
+  rapidjson::Document payloadDoc(rapidjson::kObjectType);
+  auto &alloc = payloadDoc.GetAllocator();
   rapidjson::Value edits(rapidjson::kArrayType);
+
+  std::string formattedText;
+  bool formattedOk = false;
+  auto docIt = documents.find(uri);
+  if(docIt != documents.end()) {
+    formattedOk = getFormattedTextForDocument(uri, docIt->second, formattedText);
+  }
+  else {
+    starbytes::linguistics::LinguisticsSession session(uri, text);
+    starbytes::linguistics::FormatRequest formatRequest;
+    auto formatResult = formatterEngine.format(session, linguisticsConfig, formatRequest);
+    formattedOk = formatResult.ok;
+    formattedText = std::move(formatResult.formattedText);
+  }
+
+  if(formattedOk && formattedText != text) {
+    // Current formatter emits full-document canonical output.
+    unsigned endLine = 0;
+    unsigned endCharacter = 0;
+    positionFromOffset(text, text.size(), endLine, endCharacter);
+    starbytes::linguistics::TextSpan fullSpan;
+    fullSpan.start = {0, 0};
+    fullSpan.end = {endLine, endCharacter};
+
+    if(spansIntersect(fullSpan, requestedRange) || (requestedRange.start.line == 0 && requestedRange.start.character == 0)) {
+      starbytes::linguistics::TextEdit edit;
+      edit.span = fullSpan;
+      edit.replacement = formattedText;
+      edits.PushBack(buildLspTextEdit(edit, alloc), alloc);
+    }
+  }
+
+  auto elapsed = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - handlerStart).count());
+  lspProfileFormattingNs += elapsed;
+  maybeLogLspProfileSample("handler.rangeFormatting", elapsed, edits.Size());
+
   writeResult(request["id"], edits);
 }
 
@@ -2413,7 +2935,115 @@ void Server::handleCodeAction(rapidjson::Document &request) {
   if (!request.HasMember("id")) {
     return;
   }
+  auto handlerStart = std::chrono::steady_clock::now();
+  if (!request.HasMember("params") || !request["params"].IsObject() ||
+      !request["params"].HasMember("textDocument") || !request["params"]["textDocument"].IsObject() ||
+      !request["params"]["textDocument"].HasMember("uri") || !request["params"]["textDocument"]["uri"].IsString()) {
+    writeError(request["id"], JSONRPC_INVALID_PARAMS, "Invalid code action params");
+    return;
+  }
+
+  std::optional<starbytes::linguistics::TextSpan> requestedRange;
+  if(request["params"].HasMember("range")) {
+    starbytes::linguistics::TextSpan parsedRange;
+    if(!parseLspRange(request["params"]["range"], parsedRange)) {
+      writeError(request["id"], JSONRPC_INVALID_PARAMS, "Invalid code action range");
+      return;
+    }
+    requestedRange = parsedRange;
+  }
+
+  auto uri = std::string(request["params"]["textDocument"]["uri"].GetString());
+  std::string text;
+  if(!getDocumentTextByUri(uri, text)) {
+    rapidjson::Value actions(rapidjson::kArrayType);
+    writeResult(request["id"], actions);
+    return;
+  }
+
+  std::vector<starbytes::linguistics::LintFinding> lintFindings;
+  std::vector<starbytes::linguistics::CodeAction> builtActions;
+
+  auto docIt = documents.find(uri);
+  if(docIt != documents.end()) {
+    lintFindings = getLintFindingsForDocument(uri, docIt->second);
+    auto safeOnly = linguisticsConfig.actions.preferSafeActions;
+    builtActions = getCodeActionsForDocument(uri, docIt->second, safeOnly);
+  }
+  else {
+    starbytes::linguistics::LinguisticsSession session(uri, text);
+    auto lintResult = lintEngine.run(session, linguisticsConfig);
+    lintFindings = lintResult.findings;
+    starbytes::linguistics::SuggestionRequest suggestionRequest;
+    suggestionRequest.includeLowConfidence = false;
+    auto suggestionResult = suggestionEngine.run(session, linguisticsConfig, suggestionRequest);
+    starbytes::linguistics::CodeActionRequest actionRequest;
+    actionRequest.safeOnly = linguisticsConfig.actions.preferSafeActions;
+    auto actionsResult = codeActionEngine.build(lintResult.findings, suggestionResult.suggestions, linguisticsConfig, actionRequest);
+    builtActions = std::move(actionsResult.actions);
+  }
+
+  rapidjson::Document payloadDoc(rapidjson::kObjectType);
+  auto &alloc = payloadDoc.GetAllocator();
   rapidjson::Value actions(rapidjson::kArrayType);
+
+  auto appendDiagnosticsForRefs = [&](rapidjson::Value &diagnosticsOut,
+                                      const std::vector<std::string> &refs) {
+    for(const auto &ref : refs) {
+      for(const auto &finding : lintFindings) {
+        if(ref != finding.id && ref != finding.code) {
+          continue;
+        }
+        rapidjson::Value diag(rapidjson::kObjectType);
+        appendLintDiagnosticJson(diag, finding, uri, alloc);
+        diagnosticsOut.PushBack(diag, alloc);
+        break;
+      }
+    }
+  };
+
+  for(const auto &action : builtActions) {
+    if(action.edits.empty()) {
+      continue;
+    }
+    if(requestedRange.has_value() && !actionTouchesRange(action, *requestedRange)) {
+      continue;
+    }
+
+    rapidjson::Value item(rapidjson::kObjectType);
+    item.AddMember("title", rapidjson::Value(action.title.c_str(), alloc), alloc);
+    item.AddMember("kind", rapidjson::Value(action.kind.c_str(), alloc), alloc);
+    item.AddMember("isPreferred", action.preferred, alloc);
+
+    rapidjson::Value diagnostics(rapidjson::kArrayType);
+    appendDiagnosticsForRefs(diagnostics, action.diagnosticRefs);
+    if(!diagnostics.Empty()) {
+      item.AddMember("diagnostics", diagnostics, alloc);
+    }
+
+    rapidjson::Value workspaceEdit(rapidjson::kObjectType);
+    rapidjson::Value changes(rapidjson::kObjectType);
+    rapidjson::Value textEdits(rapidjson::kArrayType);
+    for(const auto &edit : action.edits) {
+      textEdits.PushBack(buildLspTextEdit(edit, alloc), alloc);
+    }
+    changes.AddMember(rapidjson::Value(uri.c_str(), alloc), textEdits, alloc);
+    workspaceEdit.AddMember("changes", changes, alloc);
+    item.AddMember("edit", workspaceEdit, alloc);
+
+    rapidjson::Value data(rapidjson::kObjectType);
+    data.AddMember("id", rapidjson::Value(action.id.c_str(), alloc), alloc);
+    data.AddMember("isSafe", action.isSafe, alloc);
+    item.AddMember("data", data, alloc);
+
+    actions.PushBack(item, alloc);
+  }
+
+  auto elapsed = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - handlerStart).count());
+  lspProfileCodeActionNs += elapsed;
+  maybeLogLspProfileSample("handler.codeAction", elapsed, actions.Size());
+
   writeResult(request["id"], actions);
 }
 
@@ -2720,6 +3350,7 @@ void Server::processRequest(rapidjson::Document &request) {
     auto docIt = documents.find(uri);
     if (docIt != documents.end()) {
       compilerDiagnostics = getCompilerDiagnosticsForDocument(uri, docIt->second);
+      text = docIt->second.text;
     }
 
     rapidjson::Document payloadDoc(rapidjson::kObjectType);
@@ -2732,6 +3363,7 @@ void Server::processRequest(rapidjson::Document &request) {
       appendCompilerDiagnosticJson(diag, entry, uri, alloc);
       items.PushBack(diag, alloc);
     }
+    appendLinguisticsDiagnosticsJson(uri, text, items, alloc);
     result.AddMember("items", items, alloc);
     result.AddMember("resultId", rapidjson::Value("0", alloc), alloc);
     writeResult(request["id"], result);
@@ -2754,6 +3386,7 @@ void Server::processRequest(rapidjson::Document &request) {
         appendCompilerDiagnosticJson(diag, entry, doc.first, alloc);
         diags.PushBack(diag, alloc);
       }
+      appendLinguisticsDiagnosticsJson(doc.first, doc.second.text, diags, alloc);
       report.AddMember("items", diags, alloc);
       report.AddMember("resultId", rapidjson::Value("0", alloc), alloc);
       items.PushBack(report, alloc);
