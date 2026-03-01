@@ -21,6 +21,7 @@ cmake-build-release
 .starbytes
 deps
 *.sh
+!scripts/wsl-cross-win-clangcl.sh
 tools/starbpkg/.request/
 Test.starbsymtb
 module_test_output.stbxm

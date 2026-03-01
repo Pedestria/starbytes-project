@@ -106,14 +106,18 @@ add_starbytes_test(
     DEPENDENCIES
     ${STARBYTES_ALL_LIBS})
 
-add_starbytes_test(
-    NAME
-    "linguist-workspace-phase6-test"
-    INCLUDE_LIB
-    FILES
-    "LinguistWorkspacePhase6Test.cpp"
-    DEPENDENCIES
-    ${STARBYTES_ALL_LIBS})
+if(NOT WIN32)
+    add_starbytes_test(
+        NAME
+        "linguist-workspace-phase6-test"
+        INCLUDE_LIB
+        FILES
+        "LinguistWorkspacePhase6Test.cpp"
+        DEPENDENCIES
+        ${STARBYTES_ALL_LIBS})
+else()
+    message(STATUS "Skipping linguist-workspace-phase6-test on Windows targets (requires sys/wait.h).")
+endif()
 
 add_starbytes_test(
     NAME

@@ -50,6 +50,17 @@ For release builds:
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 ```
 
+### WSL Cross-Compile (Windows Target with `clang-cl`)
+
+If you are in WSL and have LLVM `clang-cl` on `PATH`, use:
+
+```bash
+./scripts/wsl-cross-win-clangcl.sh
+```
+
+This script auto-detects Visual Studio/MSVC and Windows SDK paths from `/mnt/c`
+and configures/builds `build-wsl-cross-clangcl`.
+
 ## Build
 
 ```bash
