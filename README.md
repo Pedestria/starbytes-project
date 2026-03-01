@@ -27,6 +27,15 @@ python3 init.py
 
 This fetches third-party dependencies into `deps/` (RapidJSON, PCRE2, ICU).
 
+On Windows (Developer Command Prompt), OpenSSL bootstrap requires Perl. If Perl
+is not already on `PATH`, set `AUTOMDEPS` so `init.py` can auto-download a
+portable Perl build:
+
+```bat
+set AUTOMDEPS=%CD%\deps\automdeps
+python init.py
+```
+
 ## Configure (CMake + Ninja)
 
 From repo root:

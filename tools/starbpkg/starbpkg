@@ -6,7 +6,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 REQUEST_DIR="$REPO_ROOT/tools/starbpkg/.request"
 
 PROJECT_DIR="$PWD"
-STARBYTES_BIN="${STARBYTES_BIN:-$REPO_ROOT/build/bin/starbytes}"
+DEFAULT_BUILD_DIR="${STARBYTES_BUILD_DIR:-$REPO_ROOT/build}"
+STARBYTES_BIN="${STARBYTES_BIN:-$DEFAULT_BUILD_DIR/bin/starbytes}"
+if [[ ! -x "$STARBYTES_BIN" && -x "${STARBYTES_BIN}.exe" ]]; then
+  STARBYTES_BIN="${STARBYTES_BIN}.exe"
+fi
 VERBOSE=0
 
 print_help() {
@@ -31,6 +35,15 @@ EOF_HELP
 fail() {
   echo "starbpkg: $*" >&2
   exit 1
+}
+
+to_native_path() {
+  local input_path="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -m "$input_path"
+    return
+  fi
+  printf '%s' "$input_path"
 }
 
 ensure_state_files() {
@@ -122,6 +135,7 @@ if [[ ! -d "$PROJECT_DIR" ]]; then
   fail "project directory not found: $PROJECT_DIR"
 fi
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+PROJECT_DIR_NATIVE="$(to_native_path "$PROJECT_DIR")"
 
 if [[ ! -x "$STARBYTES_BIN" ]]; then
   fail "starbytes binary is not executable: $STARBYTES_BIN"
@@ -132,7 +146,7 @@ if [[ ! -f "$CORE_SCRIPT" ]]; then
 fi
 
 mkdir -p "$REQUEST_DIR"
-printf '%s' "$PROJECT_DIR" > "$REQUEST_DIR/project.txt"
+printf '%s' "$PROJECT_DIR_NATIVE" > "$REQUEST_DIR/project.txt"
 printf '%s' "$ARG1" > "$REQUEST_DIR/arg1.txt"
 
 if [[ "$VERBOSE" -eq 1 ]]; then

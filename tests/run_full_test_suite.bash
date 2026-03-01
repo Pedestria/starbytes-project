@@ -2,18 +2,32 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-STARBYTES_BIN="$ROOT_DIR/build/bin/starbytes"
+BUILD_DIR="${STARBYTES_BUILD_DIR:-$ROOT_DIR/build}"
+STARBYTES_BIN="$BUILD_DIR/bin/starbytes"
+if [[ ! -x "$STARBYTES_BIN" && -x "${STARBYTES_BIN}.exe" ]]; then
+  STARBYTES_BIN="${STARBYTES_BIN}.exe"
+fi
 LOG_DIR="$ROOT_DIR/.starbytes/full-test-logs"
 mkdir -p "$LOG_DIR"
 
 if [[ ! -x "$STARBYTES_BIN" ]]; then
   echo "Missing binary: $STARBYTES_BIN"
-  echo "Build first: cmake --build build --target starbytes"
+  echo "Build first: cmake --build ${BUILD_DIR#$ROOT_DIR/} --target starbytes"
   exit 1
 fi
 
 PASS_COUNT=0
 FAIL_COUNT=0
+
+contains_pattern() {
+  local pattern="$1"
+  local file="$2"
+  if command -v rg >/dev/null 2>&1; then
+    rg -q -- "$pattern" "$file"
+  else
+    grep -q -- "$pattern" "$file"
+  fi
+}
 
 run_expect_success() {
   local name="$1"
@@ -57,7 +71,7 @@ assert_log_contains() {
   local name="$1"
   local pattern="$2"
   local log="$LOG_DIR/${name}.log"
-  if rg -q -- "$pattern" "$log"; then
+  if contains_pattern "$pattern" "$log"; then
     echo "[PASS] $name contains '$pattern'"
     PASS_COUNT=$((PASS_COUNT + 1))
   else
@@ -76,7 +90,7 @@ assert_file_contains() {
     FAIL_COUNT=$((FAIL_COUNT + 1))
     return
   fi
-  if rg -q -- "$pattern" "$file"; then
+  if contains_pattern "$pattern" "$file"; then
     echo "[PASS] $name file contains '$pattern'"
     PASS_COUNT=$((PASS_COUNT + 1))
   else
@@ -228,7 +242,11 @@ run_expect_success "no-native-auto-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/ex
 assert_log_contains "no-native-auto-run" "NO-NATIVE-CATCH"
 assert_log_contains "no-native-auto-run" "native callback"
 
-run_expect_success "explicit-native-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/explicit_native.starb" --no-native-auto -n "$ROOT_DIR/build/stdlib/libTime.ntstarbmod"
+TIME_NATIVE_MODULE="$BUILD_DIR/stdlib/libTime.ntstarbmod"
+if [[ ! -f "$TIME_NATIVE_MODULE" && -f "$BUILD_DIR/stdlib/Time.ntstarbmod" ]]; then
+  TIME_NATIVE_MODULE="$BUILD_DIR/stdlib/Time.ntstarbmod"
+fi
+run_expect_success "explicit-native-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/explicit_native.starb" --no-native-auto -n "$TIME_NATIVE_MODULE"
 assert_log_contains "explicit-native-run" "UTC"
 
 run_expect_failure "rttc-non-type" "$STARBYTES_BIN" check "$ROOT_DIR/tests/rttc_non_type_rhs.starb"

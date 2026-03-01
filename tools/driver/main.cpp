@@ -1116,6 +1116,7 @@ std::vector<std::filesystem::path> collectAutoNativeModulePaths(const DriverOpti
                                                                 const ModuleGraph &graph,
                                                                 const std::filesystem::path &compiledModulePath,
                                                                 const std::filesystem::path &workspaceRoot,
+                                                                const std::filesystem::path &executableDir,
                                                                 const ResolverContext &resolverContext,
                                                                 std::vector<std::string> &warnings) {
     std::vector<std::filesystem::path> paths;
@@ -1129,6 +1130,9 @@ std::vector<std::filesystem::path> collectAutoNativeModulePaths(const DriverOpti
     }
     baseSearchDirs.push_back(std::filesystem::current_path());
     baseSearchDirs.push_back(std::filesystem::current_path() / "stdlib");
+    baseSearchDirs.push_back(executableDir);
+    baseSearchDirs.push_back(executableDir / "stdlib");
+    baseSearchDirs.push_back(executableDir.parent_path() / "stdlib");
     baseSearchDirs.push_back(compiledModulePath.parent_path());
     baseSearchDirs.push_back(workspaceRoot / "stdlib");
     baseSearchDirs.push_back(workspaceRoot / "build" / "stdlib");
@@ -2180,7 +2184,13 @@ int main(int argc, const char *argv[]) {
         }
 
         std::vector<std::string> autoNativeWarnings;
-        auto autoNativePaths = collectAutoNativeModulePaths(opts, graph, compiledModulePath, workspaceRoot, resolverContext, autoNativeWarnings);
+        auto autoNativePaths = collectAutoNativeModulePaths(opts,
+                                                            graph,
+                                                            compiledModulePath,
+                                                            workspaceRoot,
+                                                            executableDirectoryFromArgv0((argc > 0) ? argv[0] : nullptr),
+                                                            resolverContext,
+                                                            autoNativeWarnings);
         for(const auto &warning : autoNativeWarnings) {
             std::cerr << "Warning: " << warning << std::endl;
         }
