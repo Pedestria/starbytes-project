@@ -105,6 +105,12 @@ run_expect_success "core-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/core
 assert_log_contains "core-run" "EXTREME-CORE-OK"
 assert_log_contains "core-run" "OPS-BITWISE-OK"
 assert_log_contains "core-run" "OPS-SHORTCIRCUIT-OK"
+run_expect_success "recursive-typed-locals-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/recursive_typed_locals_edge.starb"
+run_expect_success "recursive-typed-locals-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/recursive_typed_locals_edge.starb"
+assert_log_contains "recursive-typed-locals-run" "RECURSIVE-TYPED-LOCALS-OK"
+run_expect_success "self-referential-class-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/self_referential_class_edge.starb"
+run_expect_success "self-referential-class-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/self_referential_class_edge.starb"
+assert_log_contains "self-referential-class-run" "SELF-REFERENTIAL-CLASS-OK"
 
 run_expect_success "adt-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/adt_extreme.starb"
 run_expect_success "adt-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/adt_extreme.starb"

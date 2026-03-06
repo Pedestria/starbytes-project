@@ -1,0 +1,19 @@
+{
+  "phase": 1,
+  "track": "A",
+  "status": "foundation-slice",
+  "languages": ["starbytes", "python", "go", "rust"],
+  "implemented_workloads": [
+    "binary-trees",
+    "n-body",
+    "spectral-norm"
+  ],
+  "planned_workloads": [
+    "fasta",
+    "k-nucleotide",
+    "regex-redux"
+  ],
+  "run_modes": ["ttfr", "steady-state"],
+  "shared_input_file": "benchmark/data/track_a/track_a_inputs.json",
+  "output_schema": "benchmark/results/summaries/track_a_summary.schema.json"
+}

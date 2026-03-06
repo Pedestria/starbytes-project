@@ -1,0 +1,41 @@
+decl minDepth:Int = 4
+decl maxDepth:Int = 12
+
+decl checksum:Int = 0
+decl depth:Int = minDepth
+decl iterations:Int = 0
+decl shift:Int = 0
+decl k:Int = 0
+decl i:Int = 0
+
+decl left:Int = 0
+decl right:Int = 0
+decl negLeft:Int = 0
+decl negRight:Int = 0
+
+while(depth <= maxDepth){
+    iterations = 1
+    shift = maxDepth - depth + minDepth
+    k = 0
+    while(k < shift){
+        iterations *= 2
+        k += 1
+    }
+
+    i = 1
+    while(i <= iterations){
+        left = (i * 2) - 1
+        right = i * 2
+        checksum += i + left - right
+
+        negLeft = ((-i) * 2) - 1
+        negRight = (-i) * 2
+        checksum += (-i) + negLeft - negRight
+
+        i += 1
+    }
+
+    depth += 2
+}
+
+print(checksum)

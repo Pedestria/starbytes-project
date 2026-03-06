@@ -1,5 +1,6 @@
 #include "RTStdlib.h"
 
+#include <cmath>
 #include <ctime>
 #include <iomanip>
 #include <iostream>

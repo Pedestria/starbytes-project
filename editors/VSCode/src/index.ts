@@ -6,6 +6,7 @@ import {
   LanguageClient,
   LanguageClientOptions,
   ServerOptions,
+  TransportKind,
   Trace,
 } from "vscode-languageclient";
 
@@ -29,14 +30,52 @@ function existingPath(candidate: string): string | undefined {
   return fs.existsSync(candidate) ? candidate : undefined;
 }
 
+function expandWorkspaceVariables(inputPath: string): string {
+  const primaryWorkspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!primaryWorkspace) {
+    return inputPath;
+  }
+  return inputPath
+    .replace(/\$\{workspaceFolder\}/g, primaryWorkspace)
+    .replace(/\$\{workspaceRoot\}/g, primaryWorkspace);
+}
+
+function isExecutablePath(candidate: string): boolean {
+  if (!existingPath(candidate)) {
+    return false;
+  }
+  if (process.platform === "win32") {
+    return true;
+  }
+  try {
+    fs.accessSync(candidate, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveConfiguredServerPath(configuredPath: string): string {
+  const expanded = expandWorkspaceVariables(expandHome(configuredPath));
+  if (path.isAbsolute(expanded)) {
+    return expanded;
+  }
+
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    const candidate = path.join(folder.uri.fsPath, expanded);
+    if (existingPath(candidate)) {
+      return candidate;
+    }
+  }
+
+  return path.resolve(expanded);
+}
+
 function resolveServerCommand(context: vscode.ExtensionContext): string {
   const cfg = vscode.workspace.getConfiguration("starbytes.lsp");
   const configuredPath = cfg.get<string>("serverPath", "").trim();
   if (configuredPath.length > 0) {
-    const expanded = expandHome(configuredPath);
-    const absolute = path.isAbsolute(expanded) ? expanded : path.resolve(expanded);
-    const found = existingPath(absolute);
-    return found ?? absolute;
+    return resolveConfiguredServerPath(configuredPath);
   }
 
   const binaryName = process.platform === "win32" ? "starbytes-lsp.exe" : "starbytes-lsp";
@@ -44,6 +83,7 @@ function resolveServerCommand(context: vscode.ExtensionContext): string {
   for (const folder of folderCandidates) {
     const workspaceRoot = folder.uri.fsPath;
     const candidates = [
+      path.join(workspaceRoot, "build-ninja", "bin", binaryName),
       path.join(workspaceRoot, "build", "bin", binaryName),
       path.join(workspaceRoot, "bin", binaryName),
       path.join(workspaceRoot, "tools", "bin", binaryName),
@@ -81,6 +121,13 @@ function mapTraceSetting(raw: string): Trace {
   }
 }
 
+function asErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+  return String(error);
+}
+
 async function startLanguageClient(context: vscode.ExtensionContext): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("starbytes.lsp");
   const command = resolveServerCommand(context);
@@ -91,7 +138,19 @@ async function startLanguageClient(context: vscode.ExtensionContext): Promise<vo
   outputChannel = outputChannel ?? vscode.window.createOutputChannel("Starbytes LSP");
   outputChannel.appendLine(`[starbytes] launching LSP: ${command} ${(args ?? []).join(" ")}`);
 
-  const serverOptions: ServerOptions = { command, args };
+  const explicitPath = command.includes(path.sep) || command.startsWith(".");
+  if (explicitPath && !existingPath(command)) {
+    throw new Error(`Language server binary was not found at: ${command}`);
+  }
+  if (explicitPath && !isExecutablePath(command)) {
+    throw new Error(`Language server is not executable: ${command}`);
+  }
+
+  const serverOptions: ServerOptions = {
+    command,
+    args,
+    transport: TransportKind.stdio,
+  };
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "starbytes" }],
     synchronize: {
@@ -106,7 +165,9 @@ async function startLanguageClient(context: vscode.ExtensionContext): Promise<vo
 
   langClient = new LanguageClient("starbytesLSP", "Starbytes LSP", serverOptions, clientOptions);
   langClient.trace = mapTraceSetting(trace);
-  await langClient.start();
+  langClient.start();
+  await langClient.onReady();
+  outputChannel.appendLine("[starbytes] LSP initialized successfully.");
 }
 
 async function stopLanguageClient(): Promise<void> {
@@ -130,12 +191,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!event.affectsConfiguration("starbytes.lsp")) {
         return;
       }
-      await stopLanguageClient();
-      await startLanguageClient(context);
+      try {
+        await stopLanguageClient();
+        await startLanguageClient(context);
+      } catch (error) {
+        const message = asErrorMessage(error);
+        outputChannel = outputChannel ?? vscode.window.createOutputChannel("Starbytes LSP");
+        outputChannel.appendLine(`[starbytes] failed to restart LSP: ${message}`);
+        vscode.window.showErrorMessage(`Starbytes LSP restart failed: ${message}`);
+      }
     })
   );
 
-  await startLanguageClient(context);
+  try {
+    await startLanguageClient(context);
+  } catch (error) {
+    const message = asErrorMessage(error);
+    outputChannel = outputChannel ?? vscode.window.createOutputChannel("Starbytes LSP");
+    outputChannel.appendLine(`[starbytes] failed to start LSP: ${message}`);
+    vscode.window.showErrorMessage(`Starbytes LSP failed to start: ${message}`);
+  }
 }
 
 export async function deactivate(): Promise<void> {

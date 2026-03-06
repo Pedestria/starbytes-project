@@ -6,6 +6,7 @@
 #include <sstream>
 #include <algorithm>
 #include <set>
+#include <memory>
 
 namespace starbytes {
 
@@ -552,6 +553,201 @@ namespace starbytes {
             }
             data->paramMap.insert(std::make_pair(param_pair.first->val,param_pair.second));
             data->orderedParams.push_back(std::make_pair(param_pair.first->val,param_pair.second));
+        }
+    }
+
+    struct ScopedAdditionalSymbolTable {
+        Semantics::STableContext &context;
+        bool active = false;
+
+        ScopedAdditionalSymbolTable(Semantics::STableContext &contextRef,
+                                    std::shared_ptr<Semantics::SymbolTable> table):
+            context(contextRef){
+            if(table){
+                context.otherTables.push_back(std::move(table));
+                active = true;
+            }
+        }
+
+        ~ScopedAdditionalSymbolTable(){
+            if(active && !context.otherTables.empty()){
+                context.otherTables.pop_back();
+            }
+        }
+    };
+
+    static void addTempDeclEntryForSelfReference(ASTDecl *decl,Semantics::SymbolTable *tablePtr){
+        if(!decl || !tablePtr){
+            return;
+        }
+        switch(decl->type){
+            case FUNC_DECL: {
+                auto *funcDecl = (ASTFuncDecl *)decl;
+                if(!funcDecl->funcId){
+                    return;
+                }
+                auto sourceName = funcDecl->funcId->val;
+                auto emittedName = buildEmittedName(decl->scope,sourceName);
+                auto *entry = tablePtr->allocate<Semantics::SymbolTable::Entry>();
+                auto *data = tablePtr->allocate<Semantics::SymbolTable::Function>();
+                data->name = sourceName;
+                data->returnType = funcDecl->returnType ? funcDecl->returnType : VOID_TYPE;
+                data->funcType = funcDecl->funcType;
+                data->isLazy = funcDecl->isLazy;
+                fillFunctionParamsFromDecl(data,funcDecl->params);
+                data->funcType = buildFunctionTypeFromFunctionData(data,funcDecl);
+                entry->name = sourceName;
+                entry->emittedName = emittedName;
+                entry->type = Semantics::SymbolTable::Entry::Function;
+                entry->data = data;
+                tablePtr->addSymbolInScope(entry,decl->scope);
+                return;
+            }
+            case CLASS_DECL: {
+                auto *classDecl = (ASTClassDecl *)decl;
+                if(!classDecl->id){
+                    return;
+                }
+                auto sourceName = classDecl->id->val;
+                auto emittedName = buildEmittedName(decl->scope,sourceName);
+                auto *entry = tablePtr->allocate<Semantics::SymbolTable::Entry>();
+                auto *data = tablePtr->allocate<Semantics::SymbolTable::Class>();
+                entry->name = sourceName;
+                entry->emittedName = emittedName;
+                entry->type = Semantics::SymbolTable::Entry::Class;
+                entry->data = data;
+                data->classType = classDecl->classType ? classDecl->classType : ASTType::Create(sourceName,classDecl,false,false);
+                data->superClassType = classDecl->superClass;
+                data->interfaces = classDecl->interfaces;
+                for(auto *genericParam : classDecl->genericTypeParams){
+                    if(genericParam){
+                        data->genericParams.push_back(genericParam->val);
+                    }
+                }
+                for(auto *fieldDecl : classDecl->fields){
+                    if(!fieldDecl){
+                        continue;
+                    }
+                    bool readonlyField = fieldDecl->isConst;
+                    for(auto &attr : fieldDecl->attributes){
+                        if(attr.name == "readonly"){
+                            readonlyField = true;
+                            break;
+                        }
+                    }
+                    for(auto &spec : fieldDecl->specs){
+                        if(!spec.id){
+                            continue;
+                        }
+                        auto *field = tablePtr->allocate<Semantics::SymbolTable::Var>();
+                        field->name = spec.id->val;
+                        field->type = spec.type;
+                        field->isReadonly = readonlyField;
+                        data->fields.push_back(field);
+                    }
+                }
+                for(auto *methodDecl : classDecl->methods){
+                    if(!methodDecl || !methodDecl->funcId){
+                        continue;
+                    }
+                    auto *method = tablePtr->allocate<Semantics::SymbolTable::Function>();
+                    method->name = methodDecl->funcId->val;
+                    method->returnType = methodDecl->returnType;
+                    method->funcType = methodDecl->funcType;
+                    method->isLazy = methodDecl->isLazy;
+                    fillFunctionParamsFromDecl(method,methodDecl->params);
+                    method->funcType = buildFunctionTypeFromFunctionData(method,methodDecl);
+                    data->instMethods.push_back(method);
+                }
+                for(auto *ctorDecl : classDecl->constructors){
+                    if(!ctorDecl){
+                        continue;
+                    }
+                    auto *ctor = tablePtr->allocate<Semantics::SymbolTable::Function>();
+                    ctor->name = "__ctor__" + std::to_string(ctorDecl->params.size());
+                    ctor->returnType = VOID_TYPE;
+                    ctor->funcType = data->classType;
+                    fillFunctionParamsFromDecl(ctor,ctorDecl->params);
+                    data->constructors.push_back(ctor);
+                }
+                tablePtr->addSymbolInScope(entry,decl->scope);
+                return;
+            }
+            case INTERFACE_DECL: {
+                auto *interfaceDecl = (ASTInterfaceDecl *)decl;
+                if(!interfaceDecl->id){
+                    return;
+                }
+                auto sourceName = interfaceDecl->id->val;
+                auto emittedName = buildEmittedName(decl->scope,sourceName);
+                auto *entry = tablePtr->allocate<Semantics::SymbolTable::Entry>();
+                auto *data = tablePtr->allocate<Semantics::SymbolTable::Interface>();
+                entry->name = sourceName;
+                entry->emittedName = emittedName;
+                entry->type = Semantics::SymbolTable::Entry::Interface;
+                entry->data = data;
+                data->interfaceType = interfaceDecl->interfaceType ? interfaceDecl->interfaceType
+                                                                    : ASTType::Create(sourceName,interfaceDecl,false,false);
+                for(auto *genericParam : interfaceDecl->genericTypeParams){
+                    if(genericParam){
+                        data->genericParams.push_back(genericParam->val);
+                    }
+                }
+                for(auto *fieldDecl : interfaceDecl->fields){
+                    if(!fieldDecl){
+                        continue;
+                    }
+                    for(auto &spec : fieldDecl->specs){
+                        if(!spec.id){
+                            continue;
+                        }
+                        auto *field = tablePtr->allocate<Semantics::SymbolTable::Var>();
+                        field->name = spec.id->val;
+                        field->type = spec.type;
+                        field->isReadonly = fieldDecl->isConst;
+                        data->fields.push_back(field);
+                    }
+                }
+                for(auto *methodDecl : interfaceDecl->methods){
+                    if(!methodDecl || !methodDecl->funcId){
+                        continue;
+                    }
+                    auto *method = tablePtr->allocate<Semantics::SymbolTable::Function>();
+                    method->name = methodDecl->funcId->val;
+                    method->returnType = methodDecl->returnType;
+                    method->funcType = methodDecl->funcType;
+                    method->isLazy = methodDecl->isLazy;
+                    fillFunctionParamsFromDecl(method,methodDecl->params);
+                    method->funcType = buildFunctionTypeFromFunctionData(method,methodDecl);
+                    data->methods.push_back(method);
+                }
+                tablePtr->addSymbolInScope(entry,decl->scope);
+                return;
+            }
+            case TYPE_ALIAS_DECL: {
+                auto *aliasDecl = (ASTTypeAliasDecl *)decl;
+                if(!aliasDecl->id){
+                    return;
+                }
+                auto sourceName = aliasDecl->id->val;
+                auto emittedName = buildEmittedName(decl->scope,sourceName);
+                auto *entry = tablePtr->allocate<Semantics::SymbolTable::Entry>();
+                auto *data = tablePtr->allocate<Semantics::SymbolTable::TypeAlias>();
+                entry->name = sourceName;
+                entry->emittedName = emittedName;
+                entry->type = Semantics::SymbolTable::Entry::TypeAlias;
+                entry->data = data;
+                data->aliasType = aliasDecl->aliasedType;
+                for(auto *genericParam : aliasDecl->genericTypeParams){
+                    if(genericParam){
+                        data->genericParams.push_back(genericParam->val);
+                    }
+                }
+                tablePtr->addSymbolInScope(entry,decl->scope);
+                return;
+            }
+            default:
+                return;
         }
     }
 
@@ -1329,6 +1525,10 @@ static ASTType *substituteTypeParams(ASTType *type,
                                 return false;
                             }
 
+                            auto recursionSymbols = std::make_shared<Semantics::SymbolTable>();
+                            addTempDeclEntryForSelfReference(funcNode,recursionSymbols.get());
+                            ScopedAdditionalSymbolTable recursionSymbolScope(symbolTableContext,recursionSymbols);
+
                             bool hasFailed = false;
                             ASTScopeSemanticsContext funcScopeContext {funcNode->blockStmt->parentScope,&funcNode->params};
                             ASTType *return_type_implied = evalBlockStmtForASTType(funcNode->blockStmt,symbolTableContext,&hasFailed,funcScopeContext,true);
@@ -1366,6 +1566,10 @@ static ASTType *substituteTypeParams(ASTType *type,
                         if(symEntry){
                             return false;
                         }
+
+                        auto classSelfSymbols = std::make_shared<Semantics::SymbolTable>();
+                        addTempDeclEntryForSelfReference(classDecl,classSelfSymbols.get());
+                        ScopedAdditionalSymbolTable classSelfSymbolScope(symbolTableContext,classSelfSymbols);
 
                         auto classGenericParams = genericParamSet(classDecl->genericTypeParams);
                         ASTType *resolvedSuperClass = nullptr;
@@ -1657,6 +1861,10 @@ static ASTType *substituteTypeParams(ASTType *type,
                             errStream.push(SemanticADiagnostic::create("Duplicate interface name in current scope.",decl,Diagnostic::Error));
                             return false;
                         }
+
+                        auto interfaceSelfSymbols = std::make_shared<Semantics::SymbolTable>();
+                        addTempDeclEntryForSelfReference(interfaceDecl,interfaceSelfSymbols.get());
+                        ScopedAdditionalSymbolTable interfaceSelfSymbolScope(symbolTableContext,interfaceSelfSymbols);
 
                         auto interfaceGenericParams = genericParamSet(interfaceDecl->genericTypeParams);
                         bool hasInterfaceError = false;

@@ -1,0 +1,95 @@
+decl x = [0.0, 4.84, 8.34, 12.89, 15.37]
+decl y = [0.0, -1.16, 4.12, -15.11, -25.91]
+decl z = [0.0, -0.10, -0.40, -0.22, 0.18]
+decl vx = [0.0, 0.0016, -0.0027, 0.0029, 0.0026]
+decl vy = [0.0, 0.0076, 0.0049, 0.0023, 0.0016]
+decl vz = [0.0, -0.00006, 0.00002, -0.00002, -0.00009]
+decl mass = [39.47, 0.037, 0.011, 0.0017, 0.002]
+
+decl dt:Float = 0.01
+decl steps:Int = 500
+
+decl energyBefore:Float = 0.0
+decl energyAfter:Float = 0.0
+
+decl i:Int = 0
+decl j:Int = 0
+
+decl dx:Float = 0.0
+decl dy:Float = 0.0
+decl dz:Float = 0.0
+decl dist2:Float = 0.0
+decl mag:Float = 0.0
+decl bim:Float = 0.0
+decl bjm:Float = 0.0
+
+i = 0
+while(i < x.length){
+    energyBefore += 0.5 * mass[i] * ((vx[i] * vx[i]) + (vy[i] * vy[i]) + (vz[i] * vz[i]))
+    j = i + 1
+    while(j < x.length){
+        dx = x[i] - x[j]
+        dy = y[i] - y[j]
+        dz = z[i] - z[j]
+        dist2 = (dx * dx) + (dy * dy) + (dz * dz) + 0.000001
+        energyBefore -= (mass[i] * mass[j]) / dist2
+        j += 1
+    }
+    i += 1
+}
+
+decl s:Int = 0
+while(s < steps){
+    i = 0
+    while(i < x.length - 1){
+        j = i + 1
+        while(j < x.length){
+            dx = x[i] - x[j]
+            dy = y[i] - y[j]
+            dz = z[i] - z[j]
+            dist2 = (dx * dx) + (dy * dy) + (dz * dz) + 0.000001
+            mag = dt / (dist2 * dist2)
+            bim = mass[i] * mag
+            bjm = mass[j] * mag
+
+            vx[i] -= dx * bjm
+            vy[i] -= dy * bjm
+            vz[i] -= dz * bjm
+
+            vx[j] += dx * bim
+            vy[j] += dy * bim
+            vz[j] += dz * bim
+
+            j += 1
+        }
+        i += 1
+    }
+
+    i = 0
+    while(i < x.length){
+        x[i] += dt * vx[i]
+        y[i] += dt * vy[i]
+        z[i] += dt * vz[i]
+        i += 1
+    }
+
+    s += 1
+}
+
+i = 0
+while(i < x.length){
+    energyAfter += 0.5 * mass[i] * ((vx[i] * vx[i]) + (vy[i] * vy[i]) + (vz[i] * vz[i]))
+    j = i + 1
+    while(j < x.length){
+        dx = x[i] - x[j]
+        dy = y[i] - y[j]
+        dz = z[i] - z[j]
+        dist2 = (dx * dx) + (dy * dy) + (dz * dz) + 0.000001
+        energyAfter -= (mass[i] * mass[j]) / dist2
+        j += 1
+    }
+    i += 1
+}
+
+print(energyBefore)
+print(energyAfter)

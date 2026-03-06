@@ -1,0 +1,68 @@
+func A(i:Int,j:Int) Float {
+    return 1.0 / (((i + j) * (i + j + 1) / 2) + i + 1)
+}
+
+decl n:Int = 120
+decl iterations:Int = 8
+
+decl u:Float[] = []
+decl v:Float[] = []
+decl tmp:Float[] = []
+
+decl i:Int = 0
+decl j:Int = 0
+decl sum:Float = 0.0
+
+i = 0
+while(i < n){
+    u.push(1.0)
+    v.push(0.0)
+    tmp.push(0.0)
+    i += 1
+}
+
+decl t:Int = 0
+while(t < iterations){
+    i = 0
+    while(i < n){
+        sum = 0.0
+        j = 0
+        while(j < n){
+            sum = Float(sum + (A(i,j) * u[j]))
+            j += 1
+        }
+        tmp[i] = sum
+        i += 1
+    }
+
+    i = 0
+    while(i < n){
+        sum = 0.0
+        j = 0
+        while(j < n){
+            sum = Float(sum + (A(j,i) * tmp[j]))
+            j += 1
+        }
+        v[i] = sum
+        i += 1
+    }
+
+    i = 0
+    while(i < n){
+        u[i] = v[i]
+        i += 1
+    }
+
+    t += 1
+}
+
+decl vBv:Float = 0.0
+decl vv:Float = 0.0
+i = 0
+while(i < n){
+    vBv = Float(vBv + (u[i] * v[i]))
+    vv = Float(vv + (v[i] * v[i]))
+    i += 1
+}
+
+print(vBv / vv)

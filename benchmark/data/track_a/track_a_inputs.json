@@ -1,0 +1,15 @@
+{
+  "binary-trees": {
+    "min_depth": 4,
+    "max_depth": 12,
+    "stretch_depth_offset": 1
+  },
+  "n-body": {
+    "steps": 5000,
+    "dt": 0.01
+  },
+  "spectral-norm": {
+    "n": 200,
+    "iterations": 10
+  }
+}

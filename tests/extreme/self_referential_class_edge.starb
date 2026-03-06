@@ -1,0 +1,23 @@
+class Node {
+    decl value:Int = 0
+    decl next:Node?
+
+    new(v:Int){
+        self.value = v
+    }
+
+    func link(other:Node) Node {
+        self.next = other
+        return self
+    }
+}
+
+decl head = new Node(1)
+decl tail = new Node(2)
+decl linked = head.link(tail)
+if(head.next is Node){
+    print("SELF-REFERENTIAL-CLASS-OK")
+}
+else {
+    print("SELF-REFERENTIAL-CLASS-FAIL")
+}

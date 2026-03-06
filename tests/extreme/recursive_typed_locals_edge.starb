@@ -1,0 +1,28 @@
+func fib(n:Int) Int {
+    if(n <= 1){
+        return n
+    }
+    decl left:Int = fib(n - 1)
+    decl right:Int = fib(n - 2)
+    decl total:Int = left + right
+    return total
+}
+
+func typedLocals(seed:Int) Int {
+    decl base:Int = seed + 1
+    decl next:Int = base + 2
+    if(next > 0){
+        decl inside:Int = next + base
+        return inside
+    }
+    return next
+}
+
+decl fib8:Int = fib(8)
+decl typed:Int = typedLocals(5)
+if(fib8 == 21 && typed == 14){
+    print("RECURSIVE-TYPED-LOCALS-OK")
+}
+else {
+    print("RECURSIVE-TYPED-LOCALS-FAIL")
+}

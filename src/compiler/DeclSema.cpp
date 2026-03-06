@@ -1,5 +1,6 @@
 #include "starbytes/compiler/SemanticA.h"
 #include <sstream>
+#include <memory>
 
 namespace starbytes {
 
@@ -278,6 +279,21 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
                                             ASTScopeSemanticsContext & scopeContext,
                                             bool inFuncContext){
         ASTType *returnType = VOID_TYPE;
+        ASTScopeSemanticsContext blockScopeContext = scopeContext;
+        if(stmt && stmt->parentScope){
+            blockScopeContext.scope = stmt->parentScope;
+        }
+
+        auto blockSymbols = std::make_shared<Semantics::SymbolTable>();
+        symbolTableContext.otherTables.push_back(blockSymbols);
+        struct ScopedBlockSymbolCleanup {
+            Semantics::STableContext &tableContext;
+            ~ScopedBlockSymbolCleanup(){
+                if(!tableContext.otherTables.empty()){
+                    tableContext.otherTables.pop_back();
+                }
+            }
+        } scopedBlockSymbolCleanup {symbolTableContext};
 
         #define RETURN() if(stmt->parentScope->type == ASTScope::Function)\
             return returnType;\
@@ -311,7 +327,7 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
                             mainReturnType = VOID_TYPE;
                             continue;
                         };
-                        auto rt = evalExprForTypeId(ret->expr,symbolTableContext,scopeContext);
+                        auto rt = evalExprForTypeId(ret->expr,symbolTableContext,blockScopeContext);
                         if(!rt){
                             *hasErrored = true;
                             return nullptr;
@@ -328,19 +344,21 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
                 else {;
                     
                     bool _hasErrored = false;
-                    auto declReturn = evalGenericDecl((ASTDecl *)node,symbolTableContext,scopeContext,&_hasErrored);
+                    auto declNode = (ASTDecl *)node;
+                    auto declReturn = evalGenericDecl(declNode,symbolTableContext,blockScopeContext,&_hasErrored);
                     if(_hasErrored)
                     {
                         *hasErrored = _hasErrored;
                         return nullptr;
                     }
+                    addSTableEntryForDecl(declNode,blockSymbols.get());
                     if(inFuncContext){
                         returnTypes.push_back(declReturn);
                     };
                 }
             }
             else{
-                ASTType *t = evalExprForTypeId((ASTExpr *)node,symbolTableContext,scopeContext);
+                ASTType *t = evalExprForTypeId((ASTExpr *)node,symbolTableContext,blockScopeContext);
                 if(!t){
                     *hasErrored = true;
                     return nullptr;
