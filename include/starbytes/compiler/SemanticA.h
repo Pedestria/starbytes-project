@@ -22,9 +22,15 @@ namespace starbytes {
     };
 
     struct ASTScopeSemanticsContext {
+        struct ScopedBinding {
+            std::shared_ptr<ASTScope> scope;
+            ASTIdentifier *id = nullptr;
+            ASTType *type = nullptr;
+        };
         std::shared_ptr<ASTScope> scope;
         std::map<ASTIdentifier *,ASTType *> *args = nullptr;
         const string_set *genericTypeParams = nullptr;
+        std::vector<ScopedBinding> scopedBindings;
     };
     /**
      * @brief The Semantics Analyzer
@@ -44,12 +50,14 @@ namespace starbytes {
         bool typeMatches(ASTType *type,
                          ASTExpr *expr_to_eval,
                          Semantics::STableContext & symbolTableContext,
-                         ASTScopeSemanticsContext & scopeContext);
+                         ASTScopeSemanticsContext & scopeContext,
+                         const char *contextLabel = "var initializer");
         
         ASTType * evalGenericDecl(ASTDecl *stmt,
                                   Semantics::STableContext & symbolTableContext,
                                   ASTScopeSemanticsContext & scopeContext,
-                                  bool* hasErrored);
+                                  bool* hasErrored,
+                                  ASTType *expectedReturnType = nullptr);
         /**
             @param args Used with BlockStmts embedded in Function Decls.
         */
@@ -57,7 +65,8 @@ namespace starbytes {
                                           Semantics::STableContext & symbolTableContext,
                                           bool * hasErrored,
                                           ASTScopeSemanticsContext & scopeContext,
-                                          bool inFuncContext = false);
+                                          bool inFuncContext = false,
+                                          ASTType *expectedReturnType = nullptr);
 
         bool checkSymbolsForStmtInScope(ASTStmt *stmt,
                                         Semantics::STableContext & symbolTableContext,

@@ -22,6 +22,11 @@ cmake-build-release
 deps
 *.sh
 !scripts/wsl-cross-win-clangcl.sh
+!benchmark/runners/run_track_a.sh
+!benchmark/runners/run_all.sh
+benchmark/results/raw/
+benchmark/results/summaries/track_a_*.summary.json
+benchmark/results/summaries/track_a_*.report.md
 tools/starbpkg/.request/
 Test.starbsymtb
 module_test_output.stbxm

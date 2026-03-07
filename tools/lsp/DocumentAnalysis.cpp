@@ -305,6 +305,7 @@ std::string functionSignature(ASTFuncDecl *funcDecl) {
   }
   signature += "func ";
   signature += funcDecl->funcId->val;
+  signature += genericParamsToString(funcDecl->genericTypeParams);
   signature += "(";
   for (size_t idx = 0; idx < params.size(); ++idx) {
     if (idx > 0) {

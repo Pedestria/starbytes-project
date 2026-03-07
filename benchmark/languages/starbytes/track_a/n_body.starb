@@ -1,3 +1,14 @@
+import CmdLine
+
+func intArg(args:String[],index:Int,fallback:Int) Int {
+    if(index < args.length){
+        return Int(args[index])
+    }
+    return fallback
+}
+
+decl args = positionals()
+
 decl x = [0.0, 4.84, 8.34, 12.89, 15.37]
 decl y = [0.0, -1.16, 4.12, -15.11, -25.91]
 decl z = [0.0, -0.10, -0.40, -0.22, 0.18]
@@ -7,7 +18,7 @@ decl vz = [0.0, -0.00006, 0.00002, -0.00002, -0.00009]
 decl mass = [39.47, 0.037, 0.011, 0.0017, 0.002]
 
 decl dt:Float = 0.01
-decl steps:Int = 500
+decl steps:Int = intArg(args,0,500)
 
 decl energyBefore:Float = 0.0
 decl energyAfter:Float = 0.0

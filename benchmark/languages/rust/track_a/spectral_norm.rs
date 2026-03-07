@@ -59,11 +59,11 @@ fn main() {
     let n = env::args()
         .nth(1)
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(200);
+        .unwrap_or(120);
     let iterations = env::args()
         .nth(2)
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(10);
+        .unwrap_or(8);
 
     println!("{:.9}", run(n, iterations));
 }

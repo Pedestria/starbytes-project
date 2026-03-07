@@ -1,0 +1,31 @@
+func identity<T>(value:T) T {
+    return value
+}
+
+func wrap<T>(value:T) T[] {
+    return [value]
+}
+
+scope Math {
+    func keep<T>(value:T) T {
+        return value
+    }
+}
+
+class Box<U> {
+    func pass(value:U) U {
+        return identity<U>(value)
+    }
+}
+
+decl direct:Int = identity<Int>(4)
+decl wrapped:Int[] = wrap<Int>(4)
+decl scoped:String = Math.keep<String>("ok")
+decl box = new Box<Int>()
+decl fromClass:Int = box.pass(9)
+
+print(direct)
+print(wrapped)
+print(scoped)
+print(fromClass)
+print("GENERIC-FREE-FUNCTION-PHASE3-OK")

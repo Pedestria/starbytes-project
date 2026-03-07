@@ -24,7 +24,8 @@ static bool shouldSuppressUnusedInvocationWarning(ASTStmt *stmt){
 ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
                                      Semantics::STableContext & symbolTableContext,
                                      ASTScopeSemanticsContext & scopeContext,
-                                     bool * hasErrored){
+                                     bool * hasErrored,
+                                     ASTType *expectedReturnType){
     ASTType *t = nullptr;
     switch (stmt->type) {
         /// VarDecl
@@ -139,13 +140,18 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
                 }
                /// 3. Eval Block
                 bool hasFailed = false;
-                ASTType *blockReturnType = evalBlockStmtForASTType(condSpec.blockStmt, symbolTableContext,&hasFailed,scopeContext,scopeContext.args != nullptr);
+                ASTType *blockReturnType = evalBlockStmtForASTType(condSpec.blockStmt,
+                                                                   symbolTableContext,
+                                                                   &hasFailed,
+                                                                   scopeContext,
+                                                                   scopeContext.args != nullptr,
+                                                                   expectedReturnType);
                 if(hasFailed){
                     *hasErrored = hasFailed;
                     return nullptr;
                 };
                 
-                if(scopeContext.scope->type == ASTScope::Function)
+                if(blockReturnType)
                     t = blockReturnType;
                 
             };
@@ -189,13 +195,18 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
             }
 
             bool hasFailed = false;
-            ASTType *blockReturnType = evalBlockStmtForASTType(loopBlock, symbolTableContext,&hasFailed,scopeContext,scopeContext.args != nullptr);
+            ASTType *blockReturnType = evalBlockStmtForASTType(loopBlock,
+                                                               symbolTableContext,
+                                                               &hasFailed,
+                                                               scopeContext,
+                                                               scopeContext.args != nullptr,
+                                                               expectedReturnType);
             if(hasFailed){
                 *hasErrored = true;
                 return nullptr;
             }
 
-            if(scopeContext.scope->type == ASTScope::Function){
+            if(blockReturnType){
                 t = blockReturnType;
             }
             break;
@@ -210,7 +221,7 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
             }
 
             bool guardedDeclErrored = false;
-            evalGenericDecl(secureDecl->guardedDecl,symbolTableContext,scopeContext,&guardedDeclErrored);
+            evalGenericDecl(secureDecl->guardedDecl,symbolTableContext,scopeContext,&guardedDeclErrored,expectedReturnType);
             if(guardedDeclErrored){
                 *hasErrored = true;
                 return nullptr;
@@ -240,25 +251,31 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
                 return nullptr;
             }
 
-            std::map<ASTIdentifier *,ASTType *> catchArgs;
-            ASTScopeSemanticsContext catchScopeContext {secureDecl->catchBlock->parentScope,scopeContext.args};
+            ASTScopeSemanticsContext catchScopeContext {secureDecl->catchBlock->parentScope,
+                                                        scopeContext.args,
+                                                        scopeContext.genericTypeParams,
+                                                        scopeContext.scopedBindings};
             if(secureDecl->catchErrorId){
-                if(scopeContext.args){
-                    catchArgs = *scopeContext.args;
-                }
-                auto *catchType = secureDecl->catchErrorType ? secureDecl->catchErrorType : STRING_TYPE;
-                catchArgs.insert(std::make_pair(secureDecl->catchErrorId,catchType));
-                catchScopeContext.args = &catchArgs;
+                catchScopeContext.scopedBindings.push_back({
+                    secureDecl->catchBlock->parentScope,
+                    secureDecl->catchErrorId,
+                    secureDecl->catchErrorType ? secureDecl->catchErrorType : STRING_TYPE
+                });
             }
 
             bool catchBlockFailed = false;
-            ASTType *catchBlockReturnType = evalBlockStmtForASTType(secureDecl->catchBlock,symbolTableContext,&catchBlockFailed,catchScopeContext,catchScopeContext.args != nullptr);
+            ASTType *catchBlockReturnType = evalBlockStmtForASTType(secureDecl->catchBlock,
+                                                                    symbolTableContext,
+                                                                    &catchBlockFailed,
+                                                                    catchScopeContext,
+                                                                    catchScopeContext.args != nullptr,
+                                                                    expectedReturnType);
             if(catchBlockFailed){
                 *hasErrored = true;
                 return nullptr;
             }
 
-            if(scopeContext.scope->type == ASTScope::Function){
+            if(catchBlockReturnType){
                 t = catchBlockReturnType;
             }
             break;
@@ -277,7 +294,8 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
                                             Semantics::STableContext & symbolTableContext,
                                             bool  * hasErrored,
                                             ASTScopeSemanticsContext & scopeContext,
-                                            bool inFuncContext){
+                                            bool inFuncContext,
+                                            ASTType *expectedReturnType){
         ASTType *returnType = VOID_TYPE;
         ASTScopeSemanticsContext blockScopeContext = scopeContext;
         if(stmt && stmt->parentScope){
@@ -295,7 +313,7 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
             }
         } scopedBlockSymbolCleanup {symbolTableContext};
 
-        #define RETURN() if(stmt->parentScope->type == ASTScope::Function)\
+        #define RETURN() if(inFuncContext)\
             return returnType;\
             else\
             return nullptr;
@@ -327,12 +345,21 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
                             mainReturnType = VOID_TYPE;
                             continue;
                         };
-                        auto rt = evalExprForTypeId(ret->expr,symbolTableContext,blockScopeContext);
-                        if(!rt){
-                            *hasErrored = true;
-                            return nullptr;
-                        };
-                        mainReturnType = rt;
+                        if(expectedReturnType){
+                            if(!typeMatches(expectedReturnType,ret->expr,symbolTableContext,blockScopeContext,"return value")){
+                                *hasErrored = true;
+                                return nullptr;
+                            }
+                            mainReturnType = expectedReturnType;
+                        }
+                        else {
+                            auto rt = evalExprForTypeId(ret->expr,symbolTableContext,blockScopeContext);
+                            if(!rt){
+                                *hasErrored = true;
+                                return nullptr;
+                            };
+                            mainReturnType = rt;
+                        }
                     }
                     else {
                         errStream.push(SemanticADiagnostic::create("Cannot declare a return outside of a func scope.",node,Diagnostic::Error));
@@ -345,7 +372,11 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
                     
                     bool _hasErrored = false;
                     auto declNode = (ASTDecl *)node;
-                    auto declReturn = evalGenericDecl(declNode,symbolTableContext,blockScopeContext,&_hasErrored);
+                    auto declReturn = evalGenericDecl(declNode,
+                                                      symbolTableContext,
+                                                      blockScopeContext,
+                                                      &_hasErrored,
+                                                      expectedReturnType);
                     if(_hasErrored)
                     {
                         *hasErrored = _hasErrored;
@@ -377,11 +408,22 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
         }
         /// If there is no main return type.
         if(!mainReturnType){
-            for(auto & retType : returnTypes){
-                if(!retType->nameMatches(VOID_TYPE)){
-                    break;
+            if(expectedReturnType){
+                for(auto & retType : returnTypes){
+                    if(retType && !retType->nameMatches(VOID_TYPE)){
+                        returnType = expectedReturnType;
+                        break;
+                    }
                 };
-            };
+            }
+            else {
+                for(auto & retType : returnTypes){
+                    if(retType && !retType->nameMatches(VOID_TYPE)){
+                        returnType = retType;
+                        break;
+                    }
+                };
+            }
         }
         else {
             returnType = mainReturnType;

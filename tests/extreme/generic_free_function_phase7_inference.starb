@@ -1,0 +1,19 @@
+func identity<T>(value:T) T {
+    return value
+}
+
+func wrap<T>(value:T) T[] {
+    return [value]
+}
+
+func pickRight<L,R>(left:L, right:R) R {
+    return right
+}
+
+decl number:Int = identity(4)
+decl words:String[] = wrap("item")
+decl picked:String = pickRight(1, "GENERIC-FREE-FUNCTION-PHASE7-OK")
+
+print(number)
+print(words)
+print(picked)

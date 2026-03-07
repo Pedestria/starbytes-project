@@ -1,0 +1,5 @@
+func pair<T,U>(left:T, right:U) U {
+    return right
+}
+
+pair<Int>(1, 2)

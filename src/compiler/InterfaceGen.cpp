@@ -383,7 +383,18 @@ void InterfaceGen::emitFuncDecl(ASTFuncDecl *node){
     if(node->isLazy){
         out << KW_LAZY << " ";
     }
-    out << KW_FUNC << " " << (node->funcId ? node->funcId->val : "_") << "(";
+    out << KW_FUNC << " " << (node->funcId ? node->funcId->val : "_");
+    if(!node->genericTypeParams.empty()){
+        out << "<";
+        for(size_t i = 0;i < node->genericTypeParams.size();++i){
+            if(i > 0){
+                out << ",";
+            }
+            out << (node->genericTypeParams[i] ? node->genericTypeParams[i]->val : "T");
+        }
+        out << ">";
+    }
+    out << "(";
     auto params = sortedParams(node->params);
     for(size_t i = 0;i < params.size();++i){
         auto *paramId = params[i].first;

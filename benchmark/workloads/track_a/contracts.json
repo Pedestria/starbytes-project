@@ -1,14 +1,12 @@
 {
   "phase": 1,
   "track": "A",
-  "status": "foundation-slice",
+  "status": "implemented",
   "languages": ["starbytes", "python", "go", "rust"],
   "implemented_workloads": [
     "binary-trees",
     "n-body",
-    "spectral-norm"
-  ],
-  "planned_workloads": [
+    "spectral-norm",
     "fasta",
     "k-nucleotide",
     "regex-redux"

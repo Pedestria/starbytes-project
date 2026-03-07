@@ -1,0 +1,15 @@
+func maybeMissing() String? {
+    decl missing:String?
+    return missing
+}
+
+func catchShadowsParam(error:Int) String {
+    secure(decl value = maybeMissing()) catch (error:String) {
+        print(error.upper())
+        return error
+    }
+    return "ok"
+}
+
+print(catchShadowsParam(4))
+print("SECURE-SCOPE-HARDENING-OK")

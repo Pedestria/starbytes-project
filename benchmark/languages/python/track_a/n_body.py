@@ -114,7 +114,7 @@ def make_bodies():
 
 
 def main() -> int:
-    steps = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
+    steps = int(sys.argv[1]) if len(sys.argv) > 1 else 500
     bodies = make_bodies()
     offset_momentum(bodies)
     before = energy(bodies)

@@ -1,0 +1,9 @@
+interface Mapper<T> {
+    func map<U>(left:T, value:U) U
+}
+
+class BadMapper<T> : Mapper<T> {
+    func map<V>(left:T, value:Int) V {
+        return value
+    }
+}

@@ -1,0 +1,8 @@
+class Box<T> {
+    func choose<U>(left:U, right:U) U {
+        return left
+    }
+}
+
+decl box = new Box<Int>()
+box.choose(1, "bad")

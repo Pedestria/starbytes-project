@@ -1,5 +1,15 @@
+import CmdLine
+
+func intArg(args:String[],index:Int,fallback:Int) Int {
+    if(index < args.length){
+        return Int(args[index])
+    }
+    return fallback
+}
+
+decl args = positionals()
 decl minDepth:Int = 4
-decl maxDepth:Int = 12
+decl maxDepth:Int = intArg(args,0,12)
 
 decl checksum:Int = 0
 decl depth:Int = minDepth

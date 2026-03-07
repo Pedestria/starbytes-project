@@ -1,0 +1,140 @@
+import CmdLine
+import IO
+
+func stringArg(args:String[],index:Int,fallback:String) String {
+    if(index < args.length){
+        return args[index]
+    }
+    return fallback
+}
+
+decl args = positionals()
+decl inputPath = stringArg(args,0,"benchmark/data/track_a/dna_input.fasta")
+
+secure(decl raw = readText(inputPath,"utf-8")) catch (error:String) {
+    print(error)
+}
+
+decl lines = raw.split("\n")
+decl parts:String[] = []
+decl lineIndex:Int = 0
+decl line:String = ""
+while(lineIndex < lines.length){
+    line = lines[lineIndex].trim()
+    if(line.length > 0 && line.startsWith(">") == false){
+        parts.push(line.upper())
+    }
+    lineIndex += 1
+}
+
+decl sequence = parts.join("")
+decl token:String = ""
+decl index:Int = 0
+
+decl seen1:String[] = []
+index = 0
+while(index < sequence.length){
+    token = sequence.slice(index,index + 1)
+    if(seen1.indexOf(token) < 0){
+        seen1.push(token)
+    }
+    index += 1
+}
+
+decl seen2:String[] = []
+index = 0
+while(index <= sequence.length - 2){
+    token = sequence.slice(index,index + 2)
+    if(seen2.indexOf(token) < 0){
+        seen2.push(token)
+    }
+    index += 1
+}
+
+decl seen3:String[] = []
+index = 0
+while(index <= sequence.length - 3){
+    token = sequence.slice(index,index + 3)
+    if(seen3.indexOf(token) < 0){
+        seen3.push(token)
+    }
+    index += 1
+}
+
+decl seen4:String[] = []
+index = 0
+while(index <= sequence.length - 4){
+    token = sequence.slice(index,index + 4)
+    if(seen4.indexOf(token) < 0){
+        seen4.push(token)
+    }
+    index += 1
+}
+
+decl seen6:String[] = []
+index = 0
+while(index <= sequence.length - 6){
+    token = sequence.slice(index,index + 6)
+    if(seen6.indexOf(token) < 0){
+        seen6.push(token)
+    }
+    index += 1
+}
+
+decl seen8:String[] = []
+index = 0
+while(index <= sequence.length - 8){
+    token = sequence.slice(index,index + 8)
+    if(seen8.indexOf(token) < 0){
+        seen8.push(token)
+    }
+    index += 1
+}
+
+decl ggtCount:Int = 0
+index = 0
+while(index <= sequence.length - 3){
+    if(sequence.slice(index,index + 3) == "GGT"){
+        ggtCount += 1
+    }
+    index += 1
+}
+
+decl ggtaCount:Int = 0
+index = 0
+while(index <= sequence.length - 4){
+    if(sequence.slice(index,index + 4) == "GGTA"){
+        ggtaCount += 1
+    }
+    index += 1
+}
+
+decl ggtattCount:Int = 0
+index = 0
+while(index <= sequence.length - 6){
+    if(sequence.slice(index,index + 6) == "GGTATT"){
+        ggtattCount += 1
+    }
+    index += 1
+}
+
+decl agggtaaaCount:Int = 0
+index = 0
+while(index <= sequence.length - 8){
+    if(sequence.slice(index,index + 8) == "AGGGTAAA"){
+        agggtaaaCount += 1
+    }
+    index += 1
+}
+
+print(sequence.length)
+print(seen1.length)
+print(seen2.length)
+print(seen3.length)
+print(seen4.length)
+print(seen6.length)
+print(seen8.length)
+print(ggtCount)
+print(ggtaCount)
+print(ggtattCount)
+print(agggtaaaCount)

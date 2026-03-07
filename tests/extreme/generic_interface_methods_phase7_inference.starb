@@ -1,0 +1,20 @@
+interface Mapper<T> {
+    func map<U>(left:T, value:U) U
+
+    func through<U>(left:T, value:U) U {
+        return self.map(left, value)
+    }
+}
+
+class EchoMapper<T> : Mapper<T> {
+    func map<V>(left:T, value:V) V {
+        return value
+    }
+
+    func through<V>(left:T, value:V) V {
+        return self.map(left, value)
+    }
+}
+
+decl mapper = new EchoMapper<Int>()
+print(mapper.through(4, "GENERIC-INTERFACE-METHODS-PHASE7-OK"))

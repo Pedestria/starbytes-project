@@ -69,6 +69,11 @@ void annotateDeclParentFile(ASTDecl *decl,const std::string &parentFile){
             if(funcDecl->funcId){
                 funcDecl->funcId->parentFile = parentFile;
             }
+            for(auto *genericParam : funcDecl->genericTypeParams){
+                if(genericParam){
+                    genericParam->parentFile = parentFile;
+                }
+            }
             for(auto &param : funcDecl->params){
                 if(param.first){
                     param.first->parentFile = parentFile;

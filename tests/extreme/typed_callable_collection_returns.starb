@@ -1,0 +1,43 @@
+def Producer = () Int[]
+def TableBuilder = () Map<String,Int[]>
+
+func makeEmpty() Int[] {
+    return []
+}
+
+func makeTable(flag:Bool) Map<String,Int[]> {
+    return flag ? {"rows": []} : {"rows": [1,2]}
+}
+
+class Collector {
+    func values(flag:Bool) Int[] {
+        if(flag){
+            return []
+        }
+        else {
+            return [3,4,5]
+        }
+    }
+}
+
+decl producer:Producer = func () Int[] {
+    return []
+}
+
+decl tableBuilder:TableBuilder = func () Map<String,Int[]> {
+    if(true){
+        return {"rows": []}
+    }
+    else {
+        return {"rows": [7]}
+    }
+}
+
+decl collector = new Collector()
+print(makeEmpty().length)
+print(makeTable(true).get("rows").length)
+print(collector.values(false).length)
+print(producer().length)
+print(tableBuilder().get("rows").length)
+
+print("TYPED-CALLABLE-COLLECTION-RETURNS-OK")

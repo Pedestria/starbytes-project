@@ -20,3 +20,14 @@
 - Variable type inference is surfaced in LSP for inferred declarations (builtins/custom classes/invocations), with optional `--infer-64bit-numbers` compiler mode for Long/Double literal inference defaults.
 
 ## UNFINISHED
+
+Expand/fix generics: 
+    Generic constructors as separate declarations
+    Generic enums/scopes/modules
+    Constraints / where clauses / trait bounds
+    Variance annotations
+    Defaults for generic parameters
+
+Explore the limitation around assigning/casting concrete class instances to interface-typed values. 
+
+Fix contextual expected-type inference

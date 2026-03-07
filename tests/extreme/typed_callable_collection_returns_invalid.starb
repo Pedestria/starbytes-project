@@ -1,0 +1,14 @@
+def Producer = () Int[]
+
+func badTable() Map<String,Int[]> {
+    return {"rows": ["x"]}
+}
+
+decl badProducer:Producer = func () Int[] {
+    if(true){
+        return ["bad"]
+    }
+    else {
+        return [1]
+    }
+}

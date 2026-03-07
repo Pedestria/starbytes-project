@@ -1,0 +1,17 @@
+class Box<T> {
+    func echo<U>(left:T, right:U) U {
+        return right
+    }
+
+    func wrap<U>(value:U) U[] {
+        return [value]
+    }
+}
+
+decl box = new Box<Int>()
+decl echoed:String = box.echo<String>(4, "ok")
+decl wrapped:String[] = box.wrap<String>("item")
+
+print(echoed)
+print(wrapped)
+print("GENERIC-METHODS-PHASE5-OK")

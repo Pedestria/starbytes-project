@@ -45,8 +45,10 @@ namespace starbytes {
             ASTExpr * evalArgExpr(const Tok & first_token,std::shared_ptr<ASTScope> parentScope);
             ASTExpr * evalExpr(const Tok & first_token,std::shared_ptr<ASTScope> parentScope);
             ASTDecl * evalDecl(const Tok & first_token,std::shared_ptr<ASTScope> parentScope);
+            const string_set * currentGenericTypeParams();
             ASTStmt * previousNode = nullptr;
             std::vector<string_set> genericTypeParamStack;
+            string_set mergedGenericTypeParamsScratch;
         public:
             void setTokenStream(array_ref<Tok> toks);
             size_t getTokenStreamWidth();

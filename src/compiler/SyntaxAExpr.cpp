@@ -88,13 +88,6 @@ namespace starbytes::Syntax {
         inlineExpr->type = INLINE_FUNC_EXPR;
         inlineExpr->codeRegion = regionFromToken(startedWithFuncKeyword ? first_token : tok);
 
-        auto currentGenericTypeParams = [&]() -> const string_set * {
-            if(genericTypeParamStack.empty()){
-                return nullptr;
-            }
-            return &genericTypeParamStack.back();
-        };
-
         tok = nextTok();
         while(tok.type != Tok::CloseParen){
             if(tok.type != Tok::Identifier){
@@ -105,7 +98,7 @@ namespace starbytes::Syntax {
             ASTType *paramType = nullptr;
             Tok lookahead = aheadTok();
             ASTTypeContext paramTypeContext;
-            paramTypeContext.genericTypeParams = currentGenericTypeParams();
+            paramTypeContext.genericTypeParams = this->currentGenericTypeParams();
             paramTypeContext.isPlaceholder = true;
             if(lookahead.type == Tok::Colon){
                 paramId = buildIdentifier(tok,false);
@@ -148,7 +141,7 @@ namespace starbytes::Syntax {
 
         tok = nextTok();
         ASTTypeContext returnTypeContext;
-        returnTypeContext.genericTypeParams = currentGenericTypeParams();
+        returnTypeContext.genericTypeParams = this->currentGenericTypeParams();
         returnTypeContext.isPlaceholder = true;
         inlineExpr->inlineFuncReturnType = buildTypeFromTokenStream(tok,inlineExpr,returnTypeContext);
         if(!inlineExpr->inlineFuncReturnType){
@@ -422,6 +415,54 @@ namespace starbytes::Syntax {
             return nullptr;
         }
         Tok tokRef = token_stream[privTokIndex];
+        auto tryParseExplicitGenericCallArgs = [&](ASTStmt *parentStmt,std::vector<ASTType *> &typeArgs,Tok &currentTokRef) -> bool {
+            if(currentTokRef.type != Tok::LessThan){
+                return false;
+            }
+            size_t savedTokIndex = privTokIndex;
+            Tok typeTok = nextTok();
+            if(typeTok.type == Tok::GreaterThan){
+                privTokIndex = savedTokIndex;
+                return false;
+            }
+
+            ASTTypeContext typeCtxt;
+            typeCtxt.genericTypeParams = this->currentGenericTypeParams();
+            typeCtxt.isPlaceholder = true;
+
+            std::vector<ASTType *> parsedTypeArgs;
+            while(true){
+                auto *typeArg = buildTypeFromTokenStream(typeTok,parentStmt,typeCtxt);
+                if(!typeArg){
+                    privTokIndex = savedTokIndex;
+                    return false;
+                }
+                parsedTypeArgs.push_back(typeArg);
+
+                Tok delimTok = aheadTok();
+                if(delimTok.type == Tok::Comma){
+                    gotoNextTok();
+                    typeTok = nextTok();
+                    continue;
+                }
+                if(delimTok.type == Tok::GreaterThan){
+                    gotoNextTok();
+                    break;
+                }
+                privTokIndex = savedTokIndex;
+                return false;
+            }
+
+            currentTokRef = nextTok();
+            if(currentTokRef.type != Tok::OpenParen){
+                privTokIndex = savedTokIndex;
+                return false;
+            }
+
+            typeArgs = std::move(parsedTypeArgs);
+            currentTokRef = nextTok();
+            return true;
+        };
         while(true){
             /// MemberExpr
             if(tokRef.type == Tok::Dot){
@@ -445,13 +486,23 @@ namespace starbytes::Syntax {
                 continue;
             }
             /// InvokeExpr
-            if(tokRef.type == Tok::OpenParen){
+            std::vector<ASTType *> explicitTypeArgs;
+            bool parsedExplicitTypeArgs = false;
+            if((expr->type == ID_EXPR || expr->type == MEMBER_EXPR) && tokRef.type == Tok::LessThan){
+                parsedExplicitTypeArgs = tryParseExplicitGenericCallArgs(expr,explicitTypeArgs,tokRef);
+                if(!parsedExplicitTypeArgs){
+                    tokRef = token_stream[privTokIndex];
+                }
+            }
+            if(parsedExplicitTypeArgs || tokRef.type == Tok::OpenParen){
                 auto node = new ASTExpr();
                 node->type = IVKE_EXPR;
                 node->callee = expr;
                 node->codeRegion = expr->codeRegion;
-                
-                tokRef = nextTok();
+                node->genericTypeArgs = std::move(explicitTypeArgs);
+                if(!parsedExplicitTypeArgs){
+                    tokRef = nextTok();
+                }
                 
                 while(tokRef.type != Tok::CloseParen){
                     ASTExpr *argExpr = evalExpr(tokRef,parentScope);

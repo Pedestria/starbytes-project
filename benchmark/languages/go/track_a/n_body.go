@@ -118,7 +118,7 @@ func energy(bodies []Body) float64 {
 }
 
 func main() {
-	steps := 5000
+	steps := 500
 	if len(os.Args) > 1 {
 		if parsed, err := strconv.Atoi(os.Args[1]); err == nil {
 			steps = parsed

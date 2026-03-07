@@ -1,0 +1,91 @@
+import CmdLine
+import IO
+import Text
+
+func stringArg(args:String[],index:Int,fallback:String) String {
+    if(index < args.length){
+        return args[index]
+    }
+    return fallback
+}
+
+decl args = positionals()
+decl inputPath = stringArg(args,0,"benchmark/data/track_a/dna_input.fasta")
+
+secure(decl raw = readText(inputPath,"utf-8")) catch (error:String) {
+    print(error)
+}
+
+decl rawLines = raw.split("\n")
+decl parts:String[] = []
+decl index:Int = 0
+decl line:String = ""
+while(index < rawLines.length){
+    line = rawLines[index].trim()
+    if(line.length > 0 && line.startsWith(">") == false){
+        parts.push(line.upper())
+    }
+    index += 1
+}
+
+decl cleaned = parts.join("")
+
+secure(decl pattern1 = /AGGGTAAA|TTTACCCT/g) catch (error:String) {
+    print(error)
+}
+secure(decl pattern2 = /[CGT]GGGTAAA|TTTACCC[ACG]/g) catch (error:String) {
+    print(error)
+}
+secure(decl pattern3 = /A[ACT]GGTAAA|TTTACC[AGT]T/g) catch (error:String) {
+    print(error)
+}
+secure(decl pattern4 = /AG[ACT]GTAAA|TTTAC[AGT]CT/g) catch (error:String) {
+    print(error)
+}
+secure(decl pattern5 = /AGG[ACT]TAAA|TTTA[AGT]CCT/g) catch (error:String) {
+    print(error)
+}
+secure(decl replacePatternA = /AGGGTAAA/g) catch (error:String) {
+    print(error)
+}
+secure(decl replacePatternB = /TTTACCCT/g) catch (error:String) {
+    print(error)
+}
+secure(decl replacePatternC = /CGGGTAAA/g) catch (error:String) {
+    print(error)
+}
+
+secure(decl matches1 = regexFindAll(pattern1,cleaned)) catch (error:String) {
+    print(error)
+}
+secure(decl matches2 = regexFindAll(pattern2,cleaned)) catch (error:String) {
+    print(error)
+}
+secure(decl matches3 = regexFindAll(pattern3,cleaned)) catch (error:String) {
+    print(error)
+}
+secure(decl matches4 = regexFindAll(pattern4,cleaned)) catch (error:String) {
+    print(error)
+}
+secure(decl matches5 = regexFindAll(pattern5,cleaned)) catch (error:String) {
+    print(error)
+}
+
+secure(decl replacedA = regexReplace(replacePatternA,cleaned,"<A>")) catch (error:String) {
+    print(error)
+}
+secure(decl replacedB = regexReplace(replacePatternB,replacedA,"<B>")) catch (error:String) {
+    print(error)
+}
+secure(decl replacedC = regexReplace(replacePatternC,replacedB,"<C>")) catch (error:String) {
+    print(error)
+}
+
+print(raw.length)
+print(cleaned.length)
+print(matches1.length)
+print(matches2.length)
+print(matches3.length)
+print(matches4.length)
+print(matches5.length)
+print(replacedC.length)

@@ -1,0 +1,7 @@
+interface Mapper<T> {
+    func makeArray<U>(left:T) U[]
+
+    func through<U>(left:T) U[] {
+        return self.makeArray(left)
+    }
+}

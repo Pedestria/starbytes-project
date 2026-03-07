@@ -1,0 +1,14 @@
+func maybeMissing() String? {
+    decl missing:String?
+    return missing
+}
+
+func nestedShadowInvalid() String {
+    secure(decl outer = maybeMissing()) catch (error:String) {
+        secure(decl inner = maybeMissing()) catch (error:Int) {
+            return error
+        }
+        return "ok"
+    }
+    return "done"
+}

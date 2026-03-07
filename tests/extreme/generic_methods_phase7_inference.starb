@@ -1,0 +1,23 @@
+class Box<T> {
+    func echo<U>(left:T, right:U) U {
+        return right
+    }
+
+    func wrap<U>(value:U) U[] {
+        return [value]
+    }
+
+    func choose<U>(left:U, right:U) U {
+        return left
+    }
+}
+
+decl box = new Box<Int>()
+decl echoed:String = box.echo(4, "ok")
+decl wrapped:String[] = box.wrap("item")
+decl chosen:Int = box.choose(3, 7)
+
+print(echoed)
+print(wrapped)
+print(chosen)
+print("GENERIC-METHODS-PHASE7-OK")

@@ -1,0 +1,11 @@
+func identity<T>(value:T) T {
+    decl copy:T = value
+    return copy
+}
+
+func wrap<T>(value:T) T[] {
+    decl values:T[] = [value]
+    return values
+}
+
+print("GENERIC-FREE-FUNCTION-PHASE1-OK")

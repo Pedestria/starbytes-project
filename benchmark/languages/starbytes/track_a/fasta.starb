@@ -1,0 +1,97 @@
+import CmdLine
+
+func intArg(args:String[],index:Int,fallback:Int) Int {
+    if(index < args.length){
+        return Int(args[index])
+    }
+    return fallback
+}
+
+func chooseBase(value:Int) String {
+    if(value < 270){
+        return "A"
+    }
+    elif(value < 390){
+        return "C"
+    }
+    elif(value < 510){
+        return "G"
+    }
+    elif(value < 780){
+        return "T"
+    }
+    return "N"
+}
+
+decl args = positionals()
+decl repeatLength:Int = intArg(args,0,4000)
+decl randomLength:Int = intArg(args,1,4000)
+decl state:Int = intArg(args,2,42)
+
+decl source = "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGG"
+decl sourceIndex:Int = 0
+decl base:String = ""
+
+decl repeatA:Int = 0
+decl repeatC:Int = 0
+decl repeatG:Int = 0
+decl repeatT:Int = 0
+
+decl randomA:Int = 0
+decl randomC:Int = 0
+decl randomG:Int = 0
+decl randomT:Int = 0
+decl randomN:Int = 0
+
+decl i:Int = 0
+while(i < repeatLength){
+    sourceIndex = i % source.length
+    base = source.slice(sourceIndex,sourceIndex + 1)
+    if(base == "A"){
+        repeatA += 1
+    }
+    elif(base == "C"){
+        repeatC += 1
+    }
+    elif(base == "G"){
+        repeatG += 1
+    }
+    else {
+        repeatT += 1
+    }
+    i += 1
+}
+
+i = 0
+while(i < randomLength){
+    state = ((state * 3877) + 29573) % 139968
+    base = chooseBase(state % 1000)
+    if(base == "A"){
+        randomA += 1
+    }
+    elif(base == "C"){
+        randomC += 1
+    }
+    elif(base == "G"){
+        randomG += 1
+    }
+    elif(base == "T"){
+        randomT += 1
+    }
+    else {
+        randomN += 1
+    }
+    i += 1
+}
+
+print(repeatLength)
+print(randomLength)
+print(repeatA)
+print(repeatC)
+print(repeatG)
+print(repeatT)
+print(randomA)
+print(randomC)
+print(randomG)
+print(randomT)
+print(randomN)

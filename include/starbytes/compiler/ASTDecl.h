@@ -60,6 +60,7 @@ namespace starbytes {
         ASTIdentifier *funcId;
         ASTType *funcType;
         ASTType *returnType;
+        std::vector<ASTIdentifier *> genericTypeParams;
         std::map<ASTIdentifier *,ASTType *> params;
         ASTBlockStmt *blockStmt = nullptr;
         bool declarationOnly = false;

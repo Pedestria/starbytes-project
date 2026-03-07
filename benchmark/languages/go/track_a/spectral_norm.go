@@ -63,8 +63,8 @@ func run(n, iterations int) float64 {
 }
 
 func main() {
-	n := 200
-	iterations := 10
+	n := 120
+	iterations := 8
 	if len(os.Args) > 1 {
 		if parsed, err := strconv.Atoi(os.Args[1]); err == nil {
 			n = parsed

@@ -45,6 +45,17 @@ void SyntaxA::consumeCurrentTok(){
     ++privTokIndex;
 }
 
+const string_set *SyntaxA::currentGenericTypeParams(){
+    mergedGenericTypeParamsScratch.clear();
+    for(auto &scopeParams : genericTypeParamStack){
+        mergedGenericTypeParamsScratch.insert(scopeParams.begin(),scopeParams.end());
+    }
+    if(mergedGenericTypeParamsScratch.empty()){
+        return nullptr;
+    }
+    return &mergedGenericTypeParamsScratch;
+}
+
  ASTStmt * SyntaxA::nextStatement(){
         TokRef t = token_stream[privTokIndex];
         if(t.type == Tok::EndOfFile){

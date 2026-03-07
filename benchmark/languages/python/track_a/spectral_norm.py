@@ -50,8 +50,8 @@ def run(n: int, iterations: int) -> float:
 
 
 def main() -> int:
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 200
-    iterations = int(sys.argv[2]) if len(sys.argv) > 2 else 10
+    n = int(sys.argv[1]) if len(sys.argv) > 1 else 120
+    iterations = int(sys.argv[2]) if len(sys.argv) > 2 else 8
     print(f"{run(n, iterations):.9f}")
     return 0
 

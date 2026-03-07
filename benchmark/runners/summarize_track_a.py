@@ -23,6 +23,17 @@ def _load_json(path: str) -> Any:
         return json.load(f)
 
 
+def _tool_version(command: str | None, version_args: list[str]) -> str:
+    if not command:
+        return "unavailable"
+    try:
+        out = subprocess.check_output([command, *version_args], text=True, stderr=subprocess.STDOUT)
+        first_line = out.strip().splitlines()[0] if out.strip() else ""
+        return first_line or "unknown"
+    except Exception:
+        return "unknown"
+
+
 def build_summary(args: argparse.Namespace) -> dict[str, Any]:
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     contracts = _load_json(args.contracts)
@@ -87,7 +98,19 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
         "machine": platform.machine(),
         "platform": platform.platform(),
         "processor": platform.processor(),
+        "system": platform.system(),
+        "release": platform.release(),
+        "version": platform.version(),
+        "cpu_count": os.cpu_count() or 0,
         "python": platform.python_version(),
+    }
+
+    toolchains = {
+        "starbytes": _tool_version(args.starbytes_bin, ["--version"]),
+        "python": _tool_version(args.python_bin, ["--version"]),
+        "go": _tool_version(args.go_bin, ["version"]),
+        "rustc": _tool_version(args.rustc_bin, ["--version"]),
+        "hyperfine": _tool_version(args.hyperfine_bin, ["--version"]),
     }
 
     summary: dict[str, Any] = {
@@ -100,17 +123,32 @@ def build_summary(args: argparse.Namespace) -> dict[str, Any]:
         "contracts": os.path.relpath(args.contracts, root),
         "inputs": inputs,
         "host": host,
+        "toolchains": toolchains,
         "workloads": workloads,
     }
 
-    rel_values: list[float] = []
+    if args.mode == "steady-state":
+        summary["mode_notes"] = {
+            "starbytes": "Uses warmed compile/run fallback until a standalone compiled-module executor exists."
+        }
+
+    per_language_rel: dict[str, list[float]] = {}
     for workload in workloads:
         for result in workload["results"]:
-            if result.get("language") == "starbytes" and result.get("runtime_rel_python"):
-                rel_values.append(result["runtime_rel_python"])
+            rel_value = result.get("runtime_rel_python")
+            language = result.get("language")
+            if language and rel_value:
+                per_language_rel.setdefault(language, []).append(rel_value)
 
-    if rel_values:
-        summary["starbytes_rel_python_geomean"] = statistics.geometric_mean(rel_values)
+    language_geo: dict[str, float] = {}
+    for language, values in per_language_rel.items():
+        if values:
+            language_geo[language] = statistics.geometric_mean(values)
+
+    if language_geo:
+        summary["language_rel_python_geomean"] = language_geo
+    if "starbytes" in language_geo:
+        summary["starbytes_rel_python_geomean"] = language_geo["starbytes"]
 
     return summary
 
@@ -124,7 +162,24 @@ def write_report(summary: dict[str, Any], report_path: str) -> None:
     lines.append(f"- mode: {summary.get('mode')}")
     lines.append(f"- commit: {summary.get('commit')}")
     lines.append(f"- generated_utc: {summary.get('generated_utc')}")
+    lines.append(f"- host: {summary.get('host', {}).get('platform', 'unknown')}")
     lines.append("")
+
+    toolchains = summary.get("toolchains", {})
+    if toolchains:
+        lines.append("## Toolchains")
+        lines.append("")
+        for name in ("starbytes", "python", "go", "rustc", "hyperfine"):
+            lines.append(f"- {name}: {toolchains.get(name, 'unknown')}")
+        lines.append("")
+
+    mode_notes = summary.get("mode_notes", {})
+    if mode_notes:
+        lines.append("## Mode Notes")
+        lines.append("")
+        for language, note in mode_notes.items():
+            lines.append(f"- {language}: {note}")
+        lines.append("")
 
     for workload in summary.get("workloads", []):
         lines.append(f"## {workload['workload']}")
@@ -149,6 +204,14 @@ def write_report(summary: dict[str, Any], report_path: str) -> None:
     geo = summary.get("starbytes_rel_python_geomean")
     if geo is not None:
         lines.append(f"Starbytes relative runtime geometric mean (python=1.0): {geo:.4f}")
+        lines.append("")
+
+    language_geo = summary.get("language_rel_python_geomean", {})
+    if language_geo:
+        lines.append("## Relative Runtime Geometric Means")
+        lines.append("")
+        for language in sorted(language_geo.keys()):
+            lines.append(f"- {language}: {language_geo[language]:.4f}")
 
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
@@ -162,6 +225,11 @@ def main() -> int:
     parser.add_argument("--raw-dir", required=True)
     parser.add_argument("--summary", required=True)
     parser.add_argument("--report", required=True)
+    parser.add_argument("--starbytes-bin", default="")
+    parser.add_argument("--python-bin", default="python3")
+    parser.add_argument("--go-bin", default="go")
+    parser.add_argument("--rustc-bin", default="rustc")
+    parser.add_argument("--hyperfine-bin", default="hyperfine")
     args = parser.parse_args()
 
     summary = build_summary(args)

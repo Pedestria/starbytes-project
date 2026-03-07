@@ -135,13 +135,6 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
             return nullptr;
         }
 
-        auto currentGenericTypeParams = [&]() -> const string_set * {
-            if(genericTypeParamStack.empty()){
-                return nullptr;
-            }
-            return &genericTypeParamStack.back();
-        };
-
         auto parseGenericTypeParamDecls = [&](Tok &tok,std::vector<ASTIdentifier *> &params) -> bool {
             if(tok.type != Tok::LessThan){
                 return true;
@@ -551,7 +544,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
 
                     Tok typeTok = nextTok();
                     ASTTypeContext typeCtxt;
-                    typeCtxt.genericTypeParams = currentGenericTypeParams();
+                    typeCtxt.genericTypeParams = this->currentGenericTypeParams();
                     typeCtxt.isPlaceholder = true;
                     secureDecl->catchErrorType = buildTypeFromTokenStream(typeTok,secureDecl,typeCtxt);
                     if(!secureDecl->catchErrorType){
@@ -623,7 +616,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                     }
                     tok1 = nextTok();
                     ASTTypeContext declTypeCtxt;
-                    declTypeCtxt.genericTypeParams = currentGenericTypeParams();
+                    declTypeCtxt.genericTypeParams = this->currentGenericTypeParams();
                     declTypeCtxt.isPlaceholder = true;
                     spec.type = buildTypeFromTokenStream(tok1,varDecl,declTypeCtxt);
                     if(!spec.type){
@@ -682,7 +675,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                         }
                         tok1 = nextTok();
                         ASTTypeContext type_ctxt;
-                        type_ctxt.genericTypeParams = currentGenericTypeParams();
+                        type_ctxt.genericTypeParams = this->currentGenericTypeParams();
                         type_ctxt.isPlaceholder = true;
                         ASTType *type = buildTypeFromTokenStream(tok1,varDecl,type_ctxt);
                         if(!type){
@@ -738,7 +731,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
 
                                 Tok typeTok = nextTok();
                                 ASTTypeContext typeCtxt;
-                                typeCtxt.genericTypeParams = currentGenericTypeParams();
+                                typeCtxt.genericTypeParams = this->currentGenericTypeParams();
                                 typeCtxt.isPlaceholder = true;
                                 secureDecl->catchErrorType = buildTypeFromTokenStream(typeTok,secureDecl,typeCtxt);
                                 if(!secureDecl->catchErrorType){
@@ -787,12 +780,26 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                 if(!(func_node->funcId = buildIdentifier(tok0,false))){
                     /// Throw Error
                 };
-                ASTTypeContext type_ctxt;
-                type_ctxt.genericTypeParams = currentGenericTypeParams();
-                type_ctxt.isPlaceholder = false;
-                func_node->funcType = buildTypeFromTokenStream(tok0,func_node,type_ctxt);
+                bool pushedFunctionGenericScope = false;
+                struct FunctionGenericScopeGuard {
+                    std::vector<string_set> &stack;
+                    bool &active;
+                    ~FunctionGenericScopeGuard(){
+                        if(active && !stack.empty()){
+                            stack.pop_back();
+                        }
+                    }
+                } functionGenericScopeGuard {genericTypeParamStack,pushedFunctionGenericScope};
+                func_node->funcType = ASTType::Create(func_node->funcId->val,func_node,false,false);
                 
                 tok0 = nextTok();
+                if(!parseGenericTypeParamDecls(tok0,func_node->genericTypeParams)){
+                    return nullptr;
+                }
+                if(!func_node->genericTypeParams.empty()){
+                    pushGenericTypeParamScope(func_node->genericTypeParams);
+                    pushedFunctionGenericScope = true;
+                }
                 
                 if(tok0.type == Tok::OpenParen){
                     tok0 = nextTok();
@@ -822,7 +829,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
 //                        std::cout << "no 3" << std::endl;
                         
                         ASTTypeContext type_ctxt;
-                        type_ctxt.genericTypeParams = currentGenericTypeParams();
+                        type_ctxt.genericTypeParams = this->currentGenericTypeParams();
                         type_ctxt.isPlaceholder = true;
                         
                         ASTType *param_type = buildTypeFromTokenStream(tok0,func_node,type_ctxt);
@@ -860,7 +867,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                     if(tok0.type == Tok::Identifier){
                         ASTType *type;
                         ASTTypeContext type_ctxt;
-                        type_ctxt.genericTypeParams = currentGenericTypeParams();
+                        type_ctxt.genericTypeParams = this->currentGenericTypeParams();
                         type_ctxt.isPlaceholder = true;
                         if(!(type = buildTypeFromTokenStream(tok0,func_node,type_ctxt))){
                             /// Throw Error.
@@ -923,7 +930,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                     }
                     tok0 = nextTok();
                     ASTTypeContext type_ctxt;
-                    type_ctxt.genericTypeParams = currentGenericTypeParams();
+                    type_ctxt.genericTypeParams = this->currentGenericTypeParams();
                     type_ctxt.isPlaceholder = true;
                     ASTType *param_type = buildTypeFromTokenStream(tok0,ctorNode,type_ctxt);
                     if(!param_type){
@@ -1044,7 +1051,7 @@ ASTBlockStmt *SyntaxA::evalBlockStmt(const Tok & first_token,std::shared_ptr<AST
                     while(true){
                         ASTTypeContext baseTypeCtxt;
                         baseTypeCtxt.isPlaceholder = true;
-                        baseTypeCtxt.genericTypeParams = currentGenericTypeParams();
+                        baseTypeCtxt.genericTypeParams = this->currentGenericTypeParams();
                         ASTType *baseType = buildTypeFromTokenStream(tok0,n,baseTypeCtxt);
                         if(!baseType){
                             genericTypeParamStack.pop_back();

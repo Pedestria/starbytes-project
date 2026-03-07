@@ -1,0 +1,5 @@
+func identity<T>(value:T) T {
+    return value
+}
+
+identity<Int>("oops")

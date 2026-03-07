@@ -1,0 +1,8 @@
+class Box<T> {
+    func makeArray<U>() U[] {
+        return []
+    }
+}
+
+decl box = new Box<Int>()
+box.makeArray()

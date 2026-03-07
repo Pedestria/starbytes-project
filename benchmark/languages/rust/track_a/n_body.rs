@@ -129,7 +129,7 @@ fn main() {
     let steps = env::args()
         .nth(1)
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(5000);
+        .unwrap_or(500);
 
     let mut bodies = make_bodies();
     offset_momentum(&mut bodies);

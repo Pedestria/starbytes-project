@@ -897,6 +897,158 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
         auto normalizeType = [&](ASTType *candidate) -> ASTType * {
             return resolveAliasType(candidate,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
         };
+        struct GenericInferenceFailure {
+            enum Kind {
+                None,
+                ArgMismatch,
+                Conflict
+            } kind = None;
+            std::string genericParam;
+        };
+        auto typesStructurallyEqual = [&](auto &&self, ASTType *lhs, ASTType *rhs) -> bool {
+            if(lhs == rhs){
+                return true;
+            }
+            if(!lhs || !rhs){
+                return false;
+            }
+            if(!(lhs->getName() == rhs->getName())){
+                return false;
+            }
+            if(lhs->isGenericParam != rhs->isGenericParam){
+                return false;
+            }
+            if(lhs->isOptional != rhs->isOptional){
+                return false;
+            }
+            if(lhs->isThrowable != rhs->isThrowable){
+                return false;
+            }
+            if(lhs->typeParams.size() != rhs->typeParams.size()){
+                return false;
+            }
+            for(size_t i = 0;i < lhs->typeParams.size();++i){
+                if(!self(self,lhs->typeParams[i],rhs->typeParams[i])){
+                    return false;
+                }
+            }
+            return true;
+        };
+        auto inferGenericBindingFromPattern = [&](auto &&self,
+                                                 ASTType *pattern,
+                                                 ASTType *actual,
+                                                 const string_set &inferableParams,
+                                                 string_map<ASTType *> &bindings,
+                                                 GenericInferenceFailure &failure) -> bool {
+            if(!pattern || !actual){
+                failure.kind = GenericInferenceFailure::ArgMismatch;
+                return false;
+            }
+
+            auto patternName = pattern->getName();
+            if(pattern->isGenericParam && inferableParams.find(patternName.view()) != inferableParams.end()){
+                auto *inferredType = cloneTypeNode(actual,expr_to_eval);
+                if(!inferredType){
+                    failure.kind = GenericInferenceFailure::ArgMismatch;
+                    return false;
+                }
+                if(pattern->isOptional && inferredType->isOptional){
+                    inferredType->isOptional = false;
+                }
+                if(pattern->isThrowable && inferredType->isThrowable){
+                    inferredType->isThrowable = false;
+                }
+                inferredType = normalizeType(inferredType);
+                auto existing = bindings.find(patternName.view());
+                if(existing != bindings.end()){
+                    auto *resolvedExisting = normalizeType(existing->second);
+                    if(!typesStructurallyEqual(typesStructurallyEqual,resolvedExisting,inferredType)){
+                        failure.kind = GenericInferenceFailure::Conflict;
+                        failure.genericParam = patternName.str();
+                        return false;
+                    }
+                    return true;
+                }
+                bindings[patternName.str()] = inferredType;
+                return true;
+            }
+
+            if(pattern->nameMatches(ANY_TYPE)){
+                return true;
+            }
+
+            if(!pattern->match(actual,[&](std::string){
+                return;
+            })){
+                failure.kind = GenericInferenceFailure::ArgMismatch;
+                return false;
+            }
+
+            if(pattern->typeParams.size() != actual->typeParams.size()){
+                return true;
+            }
+            for(size_t i = 0;i < pattern->typeParams.size();++i){
+                if(!self(self,pattern->typeParams[i],actual->typeParams[i],inferableParams,bindings,failure)){
+                    return false;
+                }
+            }
+            return true;
+        };
+        auto inferGenericInvocationBindings = [&](const std::vector<std::string> &genericParams,
+                                                  const std::vector<ASTType *> &expectedParams,
+                                                  const string_map<ASTType *> &seedBindings,
+                                                  const char *argMismatchMessage,
+                                                  string_map<ASTType *> &outBindings) -> bool {
+            outBindings = seedBindings;
+            string_set inferableParams;
+            for(auto &genericParam : genericParams){
+                inferableParams.insert(genericParam);
+                outBindings.erase(genericParam);
+            }
+
+            for(size_t i = 0;i < expr_to_eval->exprArrayData.size();++i){
+                auto *argExpr = expr_to_eval->exprArrayData[i];
+                auto *argType = evalExprForTypeId(argExpr,symbolTableContext,scopeContext);
+                if(!argType){
+                    return false;
+                }
+                argType = normalizeType(argType);
+
+                auto *expectedPattern = expectedParams[i];
+                if(!seedBindings.empty()){
+                    expectedPattern = substituteTypeParams(expectedPattern,seedBindings,expr_to_eval);
+                }
+                expectedPattern = normalizeType(expectedPattern);
+
+                GenericInferenceFailure failure;
+                if(!inferGenericBindingFromPattern(inferGenericBindingFromPattern,
+                                                  expectedPattern,
+                                                  argType,
+                                                  inferableParams,
+                                                  outBindings,
+                                                  failure)){
+                    if(failure.kind == GenericInferenceFailure::Conflict){
+                        std::ostringstream ss;
+                        ss << "Conflicting inferred types for generic parameter `" << failure.genericParam << "`.";
+                        errStream.push(SemanticADiagnostic::create(ss.str(),argExpr,Diagnostic::Error));
+                    }
+                    else {
+                        errStream.push(SemanticADiagnostic::create(argMismatchMessage,argExpr,Diagnostic::Error));
+                    }
+                    return false;
+                }
+            }
+
+            for(auto &genericParam : genericParams){
+                if(outBindings.find(genericParam) == outBindings.end()){
+                    std::ostringstream ss;
+                    ss << "Could not infer generic type parameter `" << genericParam << "` from invocation arguments.";
+                    errStream.push(SemanticADiagnostic::create(ss.str(),expr_to_eval,Diagnostic::Error));
+                    return false;
+                }
+            }
+            return true;
+        };
         switch (expr_to_eval->type) {
             case ID_EXPR : {
                 ASTIdentifier *id_ = expr_to_eval->id;
@@ -909,26 +1061,58 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     return _is_builtin_type;
                 };
 
-                /// 2. Check if scope context has args.. (In Function Context)
+                /// 2. Resolve lexical scoped symbols before synthetic arg bindings so
+                /// catch/local shadowing stays deterministic.
+                auto *symbol_ = static_cast<Semantics::SymbolTable::Entry *>(nullptr);
+                std::shared_ptr<ASTScope> outerScopeStart = nullptr;
+                for(auto currentScope = scopeContext.scope; currentScope != nullptr; currentScope = currentScope->parentScope){
+                    symbol_ = symbolTableContext.findEntryInExactScopeNoDiag(id_->val,currentScope);
+                    if(symbol_){
+                        break;
+                    }
+                    for(auto bindingIt = scopeContext.scopedBindings.rbegin();
+                        bindingIt != scopeContext.scopedBindings.rend();
+                        ++bindingIt){
+                        if(bindingIt->scope == currentScope &&
+                           bindingIt->id &&
+                           bindingIt->type &&
+                           bindingIt->id->match(id_)){
+                            id_->type = ASTIdentifier::Var;
+                            return normalizeType(bindingIt->type);
+                        }
+                    }
+                    if(currentScope->type == ASTScope::Function){
+                        outerScopeStart = currentScope->parentScope;
+                        break;
+                    }
+                }
 
-                if(scopeContext.args != nullptr){
+                /// 3. Fall back to synthetic function bindings (params/self) only if no
+                /// lexical symbol in the current function/catch/block chain matched.
+                if(!symbol_ && scopeContext.args != nullptr){
                     for(auto & __arg : *scopeContext.args){
                         if(__arg.first->match(id_)){
                             id_->type = ASTIdentifier::Var;
                             return normalizeType(__arg.second);
-                            break;
                         };
                     };
-                    
                 };
 
-                /// 3. Else, do normal symbol matching.
+                /// 4. Finally, continue lookup outside the current function boundary.
+                if(!symbol_ && outerScopeStart){
+                    symbol_ = symbolTableContext.findEntryNoDiag(id_->val,outerScopeStart);
+                }
 
-                auto symbol_ = symbolTableContext.findEntry(id_->val,ctxt,scopeContext.scope);
+                if(!symbol_ && !outerScopeStart){
+                    symbol_ = symbolTableContext.findEntryNoDiag(id_->val,scopeContext.scope);
+                }
+
                 // std::cout << "SYMBOL_PTR:" << symbol_ << std::endl;
                 if(!symbol_){
+                    std::ostringstream out;
+                    out <<"Undefined symbol `" << id_->val << "`";
+                    errStream.push(SemanticADiagnostic::create(out.str(),expr_to_eval,Diagnostic::Error));
                     return nullptr;
-                    break;
                 };
                 
                 if(symbol_->type == Semantics::SymbolTable::Entry::Var){
@@ -1077,7 +1261,12 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
 
                 bool hasFailed = false;
                 ASTScopeSemanticsContext inlineScopeContext {expr_to_eval->inlineFuncBlock->parentScope,&inlineArgs,scopeContext.genericTypeParams};
-                ASTType *impliedReturnType = evalBlockStmtForASTType(expr_to_eval->inlineFuncBlock,symbolTableContext,&hasFailed,inlineScopeContext,true);
+                ASTType *impliedReturnType = evalBlockStmtForASTType(expr_to_eval->inlineFuncBlock,
+                                                                     symbolTableContext,
+                                                                     &hasFailed,
+                                                                     inlineScopeContext,
+                                                                     true,
+                                                                     expr_to_eval->inlineFuncReturnType);
                 if(hasFailed || !impliedReturnType){
                     return nullptr;
                 }
@@ -1883,6 +2072,225 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 }
                 funcType = normalizeType(funcType);
 
+                auto rejectUnsupportedGenericInvocation = [&](const char *message) -> ASTType * {
+                    errStream.push(SemanticADiagnostic::create(message,expr_to_eval,Diagnostic::Error));
+                    return nullptr;
+                };
+                auto *namedFunctionEntry = static_cast<Semantics::SymbolTable::Entry *>(nullptr);
+                if(!expr_to_eval->isConstructorCall){
+                    if(expr_to_eval->callee->type == ID_EXPR && expr_to_eval->callee->id &&
+                       expr_to_eval->callee->id->type == ASTIdentifier::Function){
+                        namedFunctionEntry = symbolTableContext.findEntryByEmittedNoDiag(expr_to_eval->callee->id->val);
+                    }
+                    else if(expr_to_eval->callee->type == MEMBER_EXPR &&
+                            expr_to_eval->callee->isScopeAccess &&
+                            expr_to_eval->callee->resolvedScope &&
+                            expr_to_eval->callee->rightExpr &&
+                            expr_to_eval->callee->rightExpr->id){
+                        namedFunctionEntry = symbolTableContext.findEntryInExactScopeNoDiag(expr_to_eval->callee->rightExpr->id->val,
+                                                                                             expr_to_eval->callee->resolvedScope);
+                    }
+                }
+                auto *namedFunctionData = (namedFunctionEntry && namedFunctionEntry->type == Semantics::SymbolTable::Entry::Function)
+                                        ? (Semantics::SymbolTable::Function *)namedFunctionEntry->data
+                                        : nullptr;
+                bool resolvedInstanceMethod = false;
+                if(!expr_to_eval->isConstructorCall &&
+                   expr_to_eval->callee->type == MEMBER_EXPR &&
+                   !expr_to_eval->callee->isScopeAccess &&
+                   expr_to_eval->callee->rightExpr &&
+                   expr_to_eval->callee->rightExpr->id){
+                    auto *memberExpr = expr_to_eval->callee;
+                    auto *baseType = evalExprForTypeId(memberExpr->leftExpr,symbolTableContext,scopeContext);
+                    if(!baseType){
+                        return nullptr;
+                    }
+                    baseType = normalizeType(baseType);
+                    auto memberName = memberExpr->rightExpr->id->val;
+
+                    auto *classEntry = findClassEntry(symbolTableContext,baseType->getName(),scopeContext.scope);
+                    if(classEntry){
+                        auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
+                        auto classBindings = classBindingsFromInstanceType(classData,baseType);
+                        string_set visited;
+                        auto methodLookup = findClassMethodRecursive(symbolTableContext,classData,memberName,scopeContext.scope,visited);
+                        if(methodLookup.method){
+                            resolvedInstanceMethod = true;
+                            if(!methodLookup.method->genericParams.empty()){
+                                auto expectedParams = orderedFunctionParamTypes(methodLookup.method);
+                                string_map<ASTType *> methodBindings;
+                                if(expr_to_eval->genericTypeArgs.empty()){
+                                    if(expr_to_eval->exprArrayData.size() == expectedParams.size()){
+                                        if(!inferGenericInvocationBindings(methodLookup.method->genericParams,
+                                                                          expectedParams,
+                                                                          classBindings,
+                                                                          "Method argument type mismatch.",
+                                                                          methodBindings)){
+                                            return nullptr;
+                                        }
+                                    }
+                                }
+                                else {
+                                    if(expr_to_eval->genericTypeArgs.size() != methodLookup.method->genericParams.size()){
+                                        return rejectUnsupportedGenericInvocation("Generic method invocation type argument count does not match method generic parameter count.");
+                                    }
+
+                                    methodBindings = classBindings;
+                                    for(size_t i = 0;i < methodLookup.method->genericParams.size();++i){
+                                        auto *typeArg = expr_to_eval->genericTypeArgs[i];
+                                        if(!typeArg){
+                                            return rejectUnsupportedGenericInvocation("Invalid generic type argument in method invocation.");
+                                        }
+                                        if(!typeExists(typeArg,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams,expr_to_eval)){
+                                            return nullptr;
+                                        }
+                                        auto *resolvedTypeArg = normalizeType(typeArg);
+                                        if(!resolvedTypeArg){
+                                            return nullptr;
+                                        }
+                                        methodBindings[methodLookup.method->genericParams[i]] = resolvedTypeArg;
+                                    }
+                                }
+
+                                auto *baseMethodType = buildFunctionTypeFromFunctionData(methodLookup.method,expr_to_eval);
+                                if(!baseMethodType){
+                                    return rejectUnsupportedGenericInvocation("Malformed generic method type.");
+                                }
+                                auto *specializedMethodType = substituteTypeParams(baseMethodType,methodBindings,expr_to_eval);
+                                if(!specializedMethodType){
+                                    return rejectUnsupportedGenericInvocation("Failed to specialize generic method invocation.");
+                                }
+                                funcType = normalizeType(specializedMethodType);
+                            }
+                            else if(!expr_to_eval->genericTypeArgs.empty()){
+                                return rejectUnsupportedGenericInvocation("Explicit generic type arguments require a generic method.");
+                            }
+                        }
+                    }
+                    else {
+                        auto *typeEntry = findTypeEntryNoDiag(symbolTableContext,baseType->getName(),scopeContext.scope);
+                        if(typeEntry && typeEntry->type == Semantics::SymbolTable::Entry::Interface){
+                            auto *interfaceData = (Semantics::SymbolTable::Interface *)typeEntry->data;
+                            auto interfaceBindings = interfaceBindingsFromInstanceType(interfaceData,baseType);
+                            Semantics::SymbolTable::Function *method = nullptr;
+                            for(auto *candidate : interfaceData->methods){
+                                if(candidate && candidate->name == memberName){
+                                    method = candidate;
+                                    break;
+                                }
+                            }
+                            if(method){
+                                resolvedInstanceMethod = true;
+                                if(!method->genericParams.empty()){
+                                    auto expectedParams = orderedFunctionParamTypes(method);
+                                    string_map<ASTType *> methodBindings;
+                                    if(expr_to_eval->genericTypeArgs.empty()){
+                                        if(expr_to_eval->exprArrayData.size() == expectedParams.size()){
+                                            if(!inferGenericInvocationBindings(method->genericParams,
+                                                                              expectedParams,
+                                                                              interfaceBindings,
+                                                                              "Method argument type mismatch.",
+                                                                              methodBindings)){
+                                                return nullptr;
+                                            }
+                                        }
+                                    }
+                                    else {
+                                        if(expr_to_eval->genericTypeArgs.size() != method->genericParams.size()){
+                                            return rejectUnsupportedGenericInvocation("Generic method invocation type argument count does not match method generic parameter count.");
+                                        }
+
+                                        methodBindings = interfaceBindings;
+                                        for(size_t i = 0;i < method->genericParams.size();++i){
+                                            auto *typeArg = expr_to_eval->genericTypeArgs[i];
+                                            if(!typeArg){
+                                                return rejectUnsupportedGenericInvocation("Invalid generic type argument in method invocation.");
+                                            }
+                                            if(!typeExists(typeArg,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams,expr_to_eval)){
+                                                return nullptr;
+                                            }
+                                            auto *resolvedTypeArg = normalizeType(typeArg);
+                                            if(!resolvedTypeArg){
+                                                return nullptr;
+                                            }
+                                            methodBindings[method->genericParams[i]] = resolvedTypeArg;
+                                        }
+                                    }
+
+                                    auto *baseMethodType = buildFunctionTypeFromFunctionData(method,expr_to_eval);
+                                    if(!baseMethodType){
+                                        return rejectUnsupportedGenericInvocation("Malformed generic interface method type.");
+                                    }
+                                    auto *specializedMethodType = substituteTypeParams(baseMethodType,methodBindings,expr_to_eval);
+                                    if(!specializedMethodType){
+                                        return rejectUnsupportedGenericInvocation("Failed to specialize generic interface method invocation.");
+                                    }
+                                    funcType = normalizeType(specializedMethodType);
+                                }
+                                else if(!expr_to_eval->genericTypeArgs.empty()){
+                                    return rejectUnsupportedGenericInvocation("Explicit generic type arguments require a generic method.");
+                                }
+                            }
+                        }
+                    }
+                }
+                if(namedFunctionData){
+                    if(!namedFunctionData->genericParams.empty()){
+                        auto expectedParams = orderedFunctionParamTypes(namedFunctionData);
+                        string_map<ASTType *> genericBindings;
+                        if(expr_to_eval->genericTypeArgs.empty()){
+                            if(expr_to_eval->exprArrayData.size() == expectedParams.size()){
+                                if(!inferGenericInvocationBindings(namedFunctionData->genericParams,
+                                                                  expectedParams,
+                                                                  {},
+                                                                  "Function argument type mismatch.",
+                                                                  genericBindings)){
+                                    return nullptr;
+                                }
+                            }
+                        }
+                        else {
+                            if(expr_to_eval->genericTypeArgs.size() != namedFunctionData->genericParams.size()){
+                                return rejectUnsupportedGenericInvocation("Generic free-function invocation type argument count does not match function generic parameter count.");
+                            }
+
+                            for(size_t i = 0;i < namedFunctionData->genericParams.size();++i){
+                                auto *typeArg = expr_to_eval->genericTypeArgs[i];
+                                if(!typeArg){
+                                    return rejectUnsupportedGenericInvocation("Invalid generic type argument in free-function invocation.");
+                                }
+                                if(!typeExists(typeArg,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams,expr_to_eval)){
+                                    return nullptr;
+                                }
+                                auto *resolvedTypeArg = normalizeType(typeArg);
+                                if(!resolvedTypeArg){
+                                    return nullptr;
+                                }
+                                genericBindings.insert(std::make_pair(namedFunctionData->genericParams[i],resolvedTypeArg));
+                            }
+                        }
+
+                        auto *baseFuncType = buildFunctionTypeFromFunctionData(namedFunctionData,expr_to_eval);
+                        if(!baseFuncType){
+                            return rejectUnsupportedGenericInvocation("Malformed generic free-function type.");
+                        }
+                        auto *specializedFuncType = substituteTypeParams(baseFuncType,genericBindings,expr_to_eval);
+                        if(!specializedFuncType){
+                            return rejectUnsupportedGenericInvocation("Failed to specialize generic free-function invocation.");
+                        }
+                        funcType = normalizeType(specializedFuncType);
+                    }
+                    else if(!expr_to_eval->genericTypeArgs.empty()){
+                        return rejectUnsupportedGenericInvocation("Explicit generic type arguments require a generic free function.");
+                    }
+                }
+                else if(!resolvedInstanceMethod && !expr_to_eval->genericTypeArgs.empty() && !expr_to_eval->isConstructorCall){
+                    if(expr_to_eval->callee->type == MEMBER_EXPR){
+                        return rejectUnsupportedGenericInvocation("Explicit generic type arguments require a generic method.");
+                    }
+                    return rejectUnsupportedGenericInvocation("Explicit generic type arguments are only supported on named free functions.");
+                }
+
                 if(!expr_to_eval->isConstructorCall){
                     bool calleeRepresentsType = false;
                     if(expr_to_eval->callee->type == ID_EXPR && expr_to_eval->callee->id
@@ -2550,6 +2958,10 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     };
 
                     auto funcData = (Semantics::SymbolTable::Function *)entry->data;
+                    if(!funcData->genericParams.empty()){
+                        errStream.push(SemanticADiagnostic::create("Generic free-function invocation requires explicit type arguments.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
 
                     auto expectedParams = orderedFunctionParamTypes(funcData);
                     if(expr_to_eval->exprArrayData.size() != expectedParams.size()){

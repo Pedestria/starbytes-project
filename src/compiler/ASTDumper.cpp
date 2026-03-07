@@ -111,6 +111,15 @@ namespace starbytes {
             ASTFuncDecl *func_node = (ASTFuncDecl *)decl;
             auto & id = func_node->funcId;
             formatIdentifier(os,id,level + 1);
+            if(!func_node->genericTypeParams.empty()){
+                os << pad << "   generics:[\n";
+                for(auto *param : func_node->genericTypeParams){
+                    if(param){
+                        os << pad << "      " << param->val << "\n";
+                    }
+                }
+                os << pad << "   ]\n";
+            }
             os << pad <<"   params:[\n" << std::flush;
             auto __level = level + 1;
             auto _pad = padString(__level);
@@ -319,6 +328,15 @@ namespace starbytes {
             os << "InvokeExpr: {\n" << pad <<
                   "   callee:" << std::flush;
             printStmt(expr->callee,level + 1);
+            if(!expr->genericTypeArgs.empty()){
+                os << pad << "   genericArgs:[\n";
+                for(auto *typeArg : expr->genericTypeArgs){
+                    if(typeArg){
+                        os << pad << "      " << typeArg->getName() << "\n";
+                    }
+                }
+                os << pad << "   ]\n";
+            }
             os << pad << "   args:[\n" << std::flush;
             auto n_level = level + 1;
             auto _pad = padString(n_level);

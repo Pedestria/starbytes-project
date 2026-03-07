@@ -421,25 +421,50 @@ namespace starbytes {
         return findMethodByNameRecursive(superDecl,symbolTableContext,scope,methodName,visited);
     }
 
-    static bool methodParamsMatch(const std::map<ASTIdentifier *,ASTType *> &classParams,
-                                  const string_map<ASTType *> &interfaceParams){
-        if(classParams.size() != interfaceParams.size()){
+    static bool typesStructurallyEqual(ASTType *lhs,ASTType *rhs){
+        if(lhs == rhs){
+            return true;
+        }
+        if(!lhs || !rhs){
+            return false;
+        }
+        if(!(lhs->getName() == rhs->getName())){
+            return false;
+        }
+        if(lhs->isGenericParam != rhs->isGenericParam){
+            return false;
+        }
+        if(lhs->isOptional != rhs->isOptional){
+            return false;
+        }
+        if(lhs->isThrowable != rhs->isThrowable){
+            return false;
+        }
+        if(lhs->typeParams.size() != rhs->typeParams.size()){
+            return false;
+        }
+        for(size_t i = 0;i < lhs->typeParams.size();++i){
+            if(!typesStructurallyEqual(lhs->typeParams[i],rhs->typeParams[i])){
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static bool methodParamsStructurallyMatch(const std::map<ASTIdentifier *,ASTType *> &classParams,
+                                              const string_map<ASTType *> &requiredParams){
+        if(classParams.size() != requiredParams.size()){
             return false;
         }
         for(auto &classParam : classParams){
             if(!classParam.first || !classParam.second){
                 return false;
             }
-            auto it = interfaceParams.find(classParam.first->val);
-            if(it == interfaceParams.end()){
+            auto it = requiredParams.find(classParam.first->val);
+            if(it == requiredParams.end() || !it->second){
                 return false;
             }
-            if(!it->second){
-                return false;
-            }
-            if(!classParam.second->match(it->second,[&](std::string){
-                return;
-            })){
+            if(!typesStructurallyEqual(classParam.second,it->second)){
                 return false;
             }
         }
@@ -594,6 +619,11 @@ namespace starbytes {
                 data->returnType = funcDecl->returnType ? funcDecl->returnType : VOID_TYPE;
                 data->funcType = funcDecl->funcType;
                 data->isLazy = funcDecl->isLazy;
+                for(auto *genericParam : funcDecl->genericTypeParams){
+                    if(genericParam){
+                        data->genericParams.push_back(genericParam->val);
+                    }
+                }
                 fillFunctionParamsFromDecl(data,funcDecl->params);
                 data->funcType = buildFunctionTypeFromFunctionData(data,funcDecl);
                 entry->name = sourceName;
@@ -655,6 +685,11 @@ namespace starbytes {
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
+                    for(auto *genericParam : methodDecl->genericTypeParams){
+                        if(genericParam){
+                            method->genericParams.push_back(genericParam->val);
+                        }
+                    }
                     fillFunctionParamsFromDecl(method,methodDecl->params);
                     method->funcType = buildFunctionTypeFromFunctionData(method,methodDecl);
                     data->instMethods.push_back(method);
@@ -717,6 +752,11 @@ namespace starbytes {
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
+                    for(auto *genericParam : methodDecl->genericTypeParams){
+                        if(genericParam){
+                            method->genericParams.push_back(genericParam->val);
+                        }
+                    }
                     fillFunctionParamsFromDecl(method,methodDecl->params);
                     method->funcType = buildFunctionTypeFromFunctionData(method,methodDecl);
                     data->methods.push_back(method);
@@ -956,6 +996,11 @@ static ASTType *substituteTypeParams(ASTType *type,
             data->returnType = func->returnType;
             data->funcType = func->funcType;
             data->isLazy = func->isLazy;
+            for(auto *genericParam : func->genericTypeParams){
+                if(genericParam){
+                    data->genericParams.push_back(genericParam->val);
+                }
+            }
             fillFunctionParamsFromDecl(data,func->params);
             data->funcType = buildFunctionTypeFromFunctionData(data,func);
             
@@ -1026,6 +1071,11 @@ static ASTType *substituteTypeParams(ASTType *type,
                      method->returnType = m->returnType;
                      method->funcType = m->funcType;
                      method->isLazy = m->isLazy;
+                     for(auto *genericParam : m->genericTypeParams){
+                         if(genericParam){
+                             method->genericParams.push_back(genericParam->val);
+                         }
+                     }
                      fillFunctionParamsFromDecl(method,m->params);
                      method->funcType = buildFunctionTypeFromFunctionData(method,m);
                      data->instMethods.push_back(method);
@@ -1080,6 +1130,11 @@ static ASTType *substituteTypeParams(ASTType *type,
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
+                    for(auto *genericParam : methodDecl->genericTypeParams){
+                        if(genericParam){
+                            method->genericParams.push_back(genericParam->val);
+                        }
+                    }
                     fillFunctionParamsFromDecl(method,methodDecl->params);
                     method->funcType = buildFunctionTypeFromFunctionData(method,methodDecl);
                     data->methods.push_back(method);
@@ -1264,7 +1319,11 @@ static ASTType *substituteTypeParams(ASTType *type,
 
 
 
-    bool SemanticA::typeMatches(ASTType *type,ASTExpr *expr_to_eval,Semantics::STableContext & symbolTableContext,ASTScopeSemanticsContext & scopeContext){
+    bool SemanticA::typeMatches(ASTType *type,
+                                ASTExpr *expr_to_eval,
+                                Semantics::STableContext & symbolTableContext,
+                                ASTScopeSemanticsContext & scopeContext,
+                                const char *contextLabel){
         
         auto other_type_id = evalExprForTypeId(expr_to_eval,symbolTableContext,scopeContext);
         if(!other_type_id){
@@ -1449,7 +1508,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                 auto *funcExprType = buildFunctionTypeFromFunctionData(funcData,expr_to_eval);
                 if(funcExprType && resolvedType->match(funcExprType,[&](std::string message){
                     std::ostringstream ss;
-                    ss << message << "\nContext: Type `" << resolvedOtherType->getName() << "` was implied from var initializer";
+                    ss << message << "\nContext: Type `" << resolvedOtherType->getName() << "` was implied from " << contextLabel;
                     errStream.push(SemanticADiagnostic::create(ss.str(),expr_to_eval,Diagnostic::Error));
                 })){
                     return true;
@@ -1459,7 +1518,7 @@ static ASTType *substituteTypeParams(ASTType *type,
         
         return resolvedType->match(resolvedOtherType,[&](std::string message){
             std::ostringstream ss;
-            ss << message << "\nContext: Type `" << resolvedOtherType->getName() << "` was implied from var initializer";
+            ss << message << "\nContext: Type `" << resolvedOtherType->getName() << "` was implied from " << contextLabel;
             auto res = ss.str();
             errStream.push(SemanticADiagnostic::create(res,expr_to_eval,Diagnostic::Error));
         });
@@ -1485,6 +1544,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                         
 
                         ASTIdentifier *func_id = funcNode->funcId;
+                        auto funcGenericParams = genericParamSet(funcNode->genericTypeParams);
                         
                         /// Ensure that Function declared is unique within the current scope.
                         auto symEntry = symbolTableContext.main->symbolExists(func_id->val,scope);
@@ -1495,17 +1555,17 @@ static ASTType *substituteTypeParams(ASTType *type,
     //                    std::cout << "Func is Unique" << std::endl;
 
                         for(auto & paramPair : funcNode->params){
-                            if(!typeExists(paramPair.second,symbolTableContext,scope,nullptr,funcNode)){
+                            if(!typeExists(paramPair.second,symbolTableContext,scope,&funcGenericParams,funcNode)){
                                 return false;
                                 break;
                             };
-                            paramPair.second = resolveAliasType(paramPair.second,symbolTableContext,scope,nullptr);
+                            paramPair.second = resolveAliasType(paramPair.second,symbolTableContext,scope,&funcGenericParams);
                         };
                         if(funcNode->returnType != nullptr){
-                            if(!typeExists(funcNode->returnType,symbolTableContext,scope,nullptr,funcNode)){
+                            if(!typeExists(funcNode->returnType,symbolTableContext,scope,&funcGenericParams,funcNode)){
                                 return false;
                             }
-                            funcNode->returnType = resolveAliasType(funcNode->returnType,symbolTableContext,scope,nullptr);
+                            funcNode->returnType = resolveAliasType(funcNode->returnType,symbolTableContext,scope,&funcGenericParams);
                         };
 
                         bool isNativeFunc = hasAttributeNamed(funcNode->attributes,"native");
@@ -1530,14 +1590,19 @@ static ASTType *substituteTypeParams(ASTType *type,
                             ScopedAdditionalSymbolTable recursionSymbolScope(symbolTableContext,recursionSymbols);
 
                             bool hasFailed = false;
-                            ASTScopeSemanticsContext funcScopeContext {funcNode->blockStmt->parentScope,&funcNode->params};
-                            ASTType *return_type_implied = evalBlockStmtForASTType(funcNode->blockStmt,symbolTableContext,&hasFailed,funcScopeContext,true);
+                            ASTScopeSemanticsContext funcScopeContext {funcNode->blockStmt->parentScope,&funcNode->params,&funcGenericParams};
+                            ASTType *return_type_implied = evalBlockStmtForASTType(funcNode->blockStmt,
+                                                                                  symbolTableContext,
+                                                                                  &hasFailed,
+                                                                                  funcScopeContext,
+                                                                                  true,
+                                                                                  funcNode->returnType);
                             if(!return_type_implied && hasFailed){
                                 return false;
                             };
                             /// Implied Type and Declared Type Comparison.
                             if(funcNode->returnType != nullptr){
-                                auto *resolvedImplied = resolveAliasType(return_type_implied,symbolTableContext,scope,nullptr);
+                                auto *resolvedImplied = resolveAliasType(return_type_implied,symbolTableContext,scope,&funcGenericParams);
                                 if(!funcNode->returnType->match(resolvedImplied,[&](std::string message){
                                     std::ostringstream ss;
                                     ss << message << "\nContext: Declared return type of func `" << func_id->val << "` does not match implied return type.";
@@ -1671,17 +1736,20 @@ static ASTType *substituteTypeParams(ASTType *type,
                                 return false;
                             }
                             methodNames.insert(m->funcId->val);
+                            auto methodGenericParams = classGenericParams;
+                            auto ownMethodGenericParams = genericParamSet(m->genericTypeParams);
+                            methodGenericParams.insert(ownMethodGenericParams.begin(),ownMethodGenericParams.end());
                             for(auto &paramPair : m->params){
-                                if(!typeExists(paramPair.second,symbolTableContext,scope,&classGenericParams,m)){
+                                if(!typeExists(paramPair.second,symbolTableContext,scope,&methodGenericParams,m)){
                                     return false;
                                 }
-                                paramPair.second = resolveAliasType(paramPair.second,symbolTableContext,scope,&classGenericParams);
+                                paramPair.second = resolveAliasType(paramPair.second,symbolTableContext,scope,&methodGenericParams);
                             }
                             if(m->returnType){
-                                if(!typeExists(m->returnType,symbolTableContext,scope,&classGenericParams,m)){
+                                if(!typeExists(m->returnType,symbolTableContext,scope,&methodGenericParams,m)){
                                     return false;
                                 }
-                                m->returnType = resolveAliasType(m->returnType,symbolTableContext,scope,&classGenericParams);
+                                m->returnType = resolveAliasType(m->returnType,symbolTableContext,scope,&methodGenericParams);
                             }
                             bool methodIsNative = hasAttributeNamed(m->attributes,"native");
                             if(m->declarationOnly){
@@ -1704,13 +1772,18 @@ static ASTType *substituteTypeParams(ASTType *type,
                             selfId->val = "self";
                             methodParams.insert(std::make_pair(selfId,classDecl->classType));
                             bool methodHasFailed = false;
-                            ASTScopeSemanticsContext methodScopeContext {m->blockStmt->parentScope,&methodParams,&classGenericParams};
-                            ASTType *returnTypeImplied = evalBlockStmtForASTType(m->blockStmt,symbolTableContext,&methodHasFailed,methodScopeContext,true);
+                            ASTScopeSemanticsContext methodScopeContext {m->blockStmt->parentScope,&methodParams,&methodGenericParams};
+                            ASTType *returnTypeImplied = evalBlockStmtForASTType(m->blockStmt,
+                                                                                symbolTableContext,
+                                                                                &methodHasFailed,
+                                                                                methodScopeContext,
+                                                                                true,
+                                                                                m->returnType);
                             if(methodHasFailed || !returnTypeImplied){
                                 return false;
                             }
                             if(m->returnType != nullptr){
-                                auto *resolvedImplied = resolveAliasType(returnTypeImplied,symbolTableContext,scope,&classGenericParams);
+                                auto *resolvedImplied = resolveAliasType(returnTypeImplied,symbolTableContext,scope,&methodGenericParams);
                                 if(!m->returnType->match(resolvedImplied,[&](std::string message){
                                     std::ostringstream ss;
                                     ss << message << "\nContext: Declared return type of class method `" << m->funcId->val << "` does not match implied return type.";
@@ -1744,7 +1817,11 @@ static ASTType *substituteTypeParams(ASTType *type,
                             ctorParams.insert(std::make_pair(selfId,classDecl->classType));
                             bool ctorHasFailed = false;
                             ASTScopeSemanticsContext ctorScopeContext {c->blockStmt->parentScope,&ctorParams,&classGenericParams};
-                            ASTType *ctorReturnType = evalBlockStmtForASTType(c->blockStmt,symbolTableContext,&ctorHasFailed,ctorScopeContext,true);
+                            ASTType *ctorReturnType = evalBlockStmtForASTType(c->blockStmt,
+                                                                             symbolTableContext,
+                                                                             &ctorHasFailed,
+                                                                             ctorScopeContext,
+                                                                             true);
                             if(ctorHasFailed || !ctorReturnType){
                                 return false;
                             }
@@ -1819,26 +1896,50 @@ static ASTType *substituteTypeParams(ASTType *type,
                                     errStream.push(SemanticADiagnostic::create(ss.str(),classDecl,Diagnostic::Error));
                                     return false;
                                 }
+                                if(requiredMethod->genericParams.size() != classMethod->genericTypeParams.size()){
+                                    std::ostringstream ss;
+                                    ss << "Class method `" << classMethod->funcId->val
+                                       << "` generic parameter count does not match interface method declaration.";
+                                    errStream.push(SemanticADiagnostic::create(ss.str(),classMethod,Diagnostic::Error));
+                                    return false;
+                                }
+
+                                auto classMethodGenericParams = classGenericParams;
+                                string_map<ASTType *> requiredMethodBindings = interfaceBindings;
+                                for(size_t i = 0;i < classMethod->genericTypeParams.size();++i){
+                                    auto *classMethodGeneric = classMethod->genericTypeParams[i];
+                                    if(!classMethodGeneric){
+                                        errStream.push(SemanticADiagnostic::create("Malformed class method generic parameter.",classMethod,Diagnostic::Error));
+                                        return false;
+                                    }
+                                    classMethodGenericParams.insert(classMethodGeneric->val);
+                                    auto *boundGenericType = ASTType::Create(classMethodGeneric->val,classDecl,true,false);
+                                    boundGenericType->isGenericParam = true;
+                                    requiredMethodBindings[requiredMethod->genericParams[i]] = boundGenericType;
+                                }
                                 if(!classMethod->returnType || !requiredMethod->returnType){
                                     errStream.push(SemanticADiagnostic::create("Interface method return type could not be resolved.",classMethod,Diagnostic::Error));
                                     return false;
                                 }
-                                auto *requiredReturnType = substituteTypeParams(requiredMethod->returnType,interfaceBindings,classDecl);
-                                requiredReturnType = resolveAliasType(requiredReturnType,symbolTableContext,scope,&classGenericParams);
-                                auto *classReturnType = resolveAliasType(classMethod->returnType,symbolTableContext,scope,&classGenericParams);
-                                if(!requiredReturnType->match(classReturnType,[&](std::string message){
+                                auto *requiredReturnType = substituteTypeParams(requiredMethod->returnType,requiredMethodBindings,classDecl);
+                                requiredReturnType = resolveAliasType(requiredReturnType,symbolTableContext,scope,&classMethodGenericParams);
+                                auto *classReturnType = resolveAliasType(classMethod->returnType,symbolTableContext,scope,&classMethodGenericParams);
+                                if(!typesStructurallyEqual(requiredReturnType,classReturnType)){
                                     std::ostringstream ss;
-                                    ss << message << "\nContext: Interface method `" << requiredMethod->name << "` return type mismatch.";
+                                    ss << "Interface method `" << requiredMethod->name << "` return type mismatch.";
                                     errStream.push(SemanticADiagnostic::create(ss.str(),classMethod,Diagnostic::Error));
-                                })){
                                     return false;
                                 }
                                 string_map<ASTType *> requiredParamMap = requiredMethod->paramMap;
                                 for(auto &requiredParam : requiredParamMap){
-                                    auto *substituted = substituteTypeParams(requiredParam.second,interfaceBindings,classDecl);
-                                    requiredParam.second = resolveAliasType(substituted,symbolTableContext,scope,&classGenericParams);
+                                    auto *substituted = substituteTypeParams(requiredParam.second,requiredMethodBindings,classDecl);
+                                    requiredParam.second = resolveAliasType(substituted,symbolTableContext,scope,&classMethodGenericParams);
                                 }
-                                if(!methodParamsMatch(classMethod->params,requiredParamMap)){
+                                std::map<ASTIdentifier *,ASTType *> resolvedClassParams = classMethod->params;
+                                for(auto &classParam : resolvedClassParams){
+                                    classParam.second = resolveAliasType(classParam.second,symbolTableContext,scope,&classMethodGenericParams);
+                                }
+                                if(!methodParamsStructurallyMatch(resolvedClassParams,requiredParamMap)){
                                     std::ostringstream ss;
                                     ss << "Method `" << requiredMethod->name << "` does not match interface parameter signature.";
                                     errStream.push(SemanticADiagnostic::create(ss.str(),classMethod,Diagnostic::Error));
@@ -1891,17 +1992,21 @@ static ASTType *substituteTypeParams(ASTType *type,
                             }
                             methodNames.insert(methodDecl->funcId->val);
 
+                            auto methodGenericParams = interfaceGenericParams;
+                            auto ownMethodGenericParams = genericParamSet(methodDecl->genericTypeParams);
+                            methodGenericParams.insert(ownMethodGenericParams.begin(),ownMethodGenericParams.end());
+
                             for(auto &paramPair : methodDecl->params){
-                                if(!typeExists(paramPair.second,symbolTableContext,scope,&interfaceGenericParams,methodDecl)){
+                                if(!typeExists(paramPair.second,symbolTableContext,scope,&methodGenericParams,methodDecl)){
                                     return false;
                                 }
-                                paramPair.second = resolveAliasType(paramPair.second,symbolTableContext,scope,&interfaceGenericParams);
+                                paramPair.second = resolveAliasType(paramPair.second,symbolTableContext,scope,&methodGenericParams);
                             }
                             if(methodDecl->returnType){
-                                if(!typeExists(methodDecl->returnType,symbolTableContext,scope,&interfaceGenericParams,methodDecl)){
+                                if(!typeExists(methodDecl->returnType,symbolTableContext,scope,&methodGenericParams,methodDecl)){
                                     return false;
                                 }
-                                methodDecl->returnType = resolveAliasType(methodDecl->returnType,symbolTableContext,scope,&interfaceGenericParams);
+                                methodDecl->returnType = resolveAliasType(methodDecl->returnType,symbolTableContext,scope,&methodGenericParams);
                             }
 
                             if(methodDecl->declarationOnly || !methodDecl->blockStmt){
@@ -1920,13 +2025,18 @@ static ASTType *substituteTypeParams(ASTType *type,
                             methodParams.insert(std::make_pair(selfId,selfType));
 
                             bool methodHasFailed = false;
-                            ASTScopeSemanticsContext methodScopeContext {methodDecl->blockStmt->parentScope,&methodParams,&interfaceGenericParams};
-                            ASTType *returnTypeImplied = evalBlockStmtForASTType(methodDecl->blockStmt,symbolTableContext,&methodHasFailed,methodScopeContext,true);
+                            ASTScopeSemanticsContext methodScopeContext {methodDecl->blockStmt->parentScope,&methodParams,&methodGenericParams};
+                            ASTType *returnTypeImplied = evalBlockStmtForASTType(methodDecl->blockStmt,
+                                                                                symbolTableContext,
+                                                                                &methodHasFailed,
+                                                                                methodScopeContext,
+                                                                                true,
+                                                                                methodDecl->returnType);
                             if(methodHasFailed || !returnTypeImplied){
                                 return false;
                             }
                             if(methodDecl->returnType != nullptr){
-                                auto *resolvedImplied = resolveAliasType(returnTypeImplied,symbolTableContext,scope,&interfaceGenericParams);
+                                auto *resolvedImplied = resolveAliasType(returnTypeImplied,symbolTableContext,scope,&methodGenericParams);
                                 if(!methodDecl->returnType->match(resolvedImplied,[&](std::string message){
                                     std::ostringstream ss;
                                     ss << message << "\nContext: Declared return type of interface method `" << methodDecl->funcId->val << "` does not match implied return type.";

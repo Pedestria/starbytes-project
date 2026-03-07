@@ -10,8 +10,10 @@
     "track",
     "mode",
     "commit",
+    "contracts",
     "inputs",
     "host",
+    "toolchains",
     "workloads"
   ],
   "properties": {
@@ -23,8 +25,41 @@
     "commit": { "type": "string" },
     "contracts": { "type": "string" },
     "inputs": { "type": "object" },
-    "host": { "type": "object" },
+    "host": {
+      "type": "object",
+      "required": ["machine", "platform", "processor", "system", "release", "cpu_count"],
+      "properties": {
+        "machine": { "type": "string" },
+        "platform": { "type": "string" },
+        "processor": { "type": "string" },
+        "system": { "type": "string" },
+        "release": { "type": "string" },
+        "version": { "type": "string" },
+        "cpu_count": { "type": "integer" },
+        "python": { "type": "string" }
+      }
+    },
+    "toolchains": {
+      "type": "object",
+      "properties": {
+        "starbytes": { "type": "string" },
+        "python": { "type": "string" },
+        "go": { "type": "string" },
+        "rustc": { "type": "string" },
+        "hyperfine": { "type": "string" }
+      }
+    },
+    "mode_notes": {
+      "type": "object",
+      "properties": {
+        "starbytes": { "type": "string" }
+      }
+    },
     "starbytes_rel_python_geomean": { "type": "number" },
+    "language_rel_python_geomean": {
+      "type": "object",
+      "additionalProperties": { "type": "number" }
+    },
     "workloads": {
       "type": "array",
       "items": {

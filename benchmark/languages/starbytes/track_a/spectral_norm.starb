@@ -1,9 +1,19 @@
+import CmdLine
+
+func intArg(args:String[],index:Int,fallback:Int) Int {
+    if(index < args.length){
+        return Int(args[index])
+    }
+    return fallback
+}
+
 func A(i:Int,j:Int) Float {
     return 1.0 / (((i + j) * (i + j + 1) / 2) + i + 1)
 }
 
-decl n:Int = 120
-decl iterations:Int = 8
+decl args = positionals()
+decl n:Int = intArg(args,0,120)
+decl iterations:Int = intArg(args,1,8)
 
 decl u:Float[] = []
 decl v:Float[] = []

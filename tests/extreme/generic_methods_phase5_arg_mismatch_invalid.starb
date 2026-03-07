@@ -1,0 +1,8 @@
+class Box<T> {
+    func echo<U>(left:T, right:U) U {
+        return right
+    }
+}
+
+decl box = new Box<Int>()
+box.echo<Int>(4, "ok")

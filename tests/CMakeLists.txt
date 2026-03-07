@@ -188,4 +188,31 @@ add_starbytes_test(
     DEPENDENCIES
     ${STARBYTES_ALL_LIBS})
 
+add_starbytes_test(
+    NAME
+    "generic-free-function-phase1-test"
+    INCLUDE_LIB
+    FILES
+    "GenericFreeFunctionPhase1Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "generic-free-function-phase2-test"
+    INCLUDE_LIB
+    FILES
+    "GenericFreeFunctionPhase2Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "generic-method-phase5-test"
+    INCLUDE_LIB
+    FILES
+    "GenericMethodPhase5Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
 configure_file("test.starb" "${CMAKE_CURRENT_BINARY_DIR}/test.starb" COPYONLY)
