@@ -1,5 +1,6 @@
 import CmdLine
 import IO
+import Text
 
 func stringArg(args:String[],index:Int,fallback:String) String {
     if(index < args.length){
@@ -15,12 +16,15 @@ secure(decl raw = readText(inputPath,"utf-8")) catch (error:String) {
     print(error)
 }
 
-decl lines = raw.split("\n")
+secure(decl rawLines = lines(raw,"en")) catch (error:String) {
+    print(error)
+}
 decl parts:String[] = []
 decl lineIndex:Int = 0
 decl line:String = ""
-while(lineIndex < lines.length){
-    line = lines[lineIndex].trim()
+while(lineIndex < rawLines.length){
+    line = String(rawLines[lineIndex])
+    line = line.trim()
     if(line.length > 0 && line.startsWith(">") == false){
         parts.push(line.upper())
     }

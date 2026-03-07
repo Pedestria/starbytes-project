@@ -776,7 +776,7 @@ private:
         return rendered;
     }
 
-    std::string formatGenericParams(const std::vector<ASTIdentifier *> &params) const {
+    std::string formatGenericParams(const std::vector<ASTGenericParamDecl *> &params) const {
         if(params.empty()) {
             return "";
         }
@@ -785,7 +785,27 @@ private:
             if(i > 0) {
                 rendered += ", ";
             }
-            rendered += params[i] ? params[i]->val : "T";
+            auto *param = params[i];
+            if(param && param->variance == ASTGenericVariance::In) {
+                rendered += "in ";
+            }
+            else if(param && param->variance == ASTGenericVariance::Out) {
+                rendered += "out ";
+            }
+            rendered += (param && param->id) ? param->id->val : "T";
+            if(param && !param->bounds.empty()) {
+                rendered += ": ";
+                for(size_t boundIndex = 0; boundIndex < param->bounds.size(); ++boundIndex) {
+                    if(boundIndex > 0) {
+                        rendered += " & ";
+                    }
+                    rendered += formatType(param->bounds[boundIndex]);
+                }
+            }
+            if(param && param->defaultType) {
+                rendered += " = ";
+                rendered += formatType(param->defaultType);
+            }
         }
         rendered += ">";
         return rendered;
@@ -916,6 +936,7 @@ private:
                 }
                 signature += "func ";
                 signature += funcDecl->funcId ? funcDecl->funcId->val : "_";
+                signature += formatGenericParams(funcDecl->genericParams);
                 signature += "(";
                 auto sortedParams = sortParams(funcDecl->params);
                 for(size_t i = 0; i < sortedParams.size(); ++i) {
@@ -944,7 +965,9 @@ private:
             }
             case CLASS_CTOR_DECL: {
                 auto *ctorDecl = static_cast<const ASTConstructorDecl *>(decl);
-                std::string signature = "new(";
+                std::string signature = "new";
+                signature += formatGenericParams(ctorDecl->genericParams);
+                signature += "(";
                 auto sortedParams = sortParams(ctorDecl->params);
                 for(size_t i = 0; i < sortedParams.size(); ++i) {
                     if(i > 0) {
@@ -965,7 +988,7 @@ private:
                 auto *classDecl = static_cast<const ASTClassDecl *>(decl);
                 std::string header = "class ";
                 header += classDecl->id ? classDecl->id->val : "_";
-                header += formatGenericParams(classDecl->genericTypeParams);
+                header += formatGenericParams(classDecl->genericParams);
                 if(!classDecl->interfaces.empty()) {
                     header += " : ";
                     for(size_t i = 0; i < classDecl->interfaces.size(); ++i) {
@@ -1011,7 +1034,7 @@ private:
                 auto *interfaceDecl = static_cast<const ASTInterfaceDecl *>(decl);
                 std::string header = "interface ";
                 header += interfaceDecl->id ? interfaceDecl->id->val : "_";
-                header += formatGenericParams(interfaceDecl->genericTypeParams);
+                header += formatGenericParams(interfaceDecl->genericParams);
                 writer.write(header);
                 writer.write(" ");
                 writer.write("{");
@@ -1041,7 +1064,7 @@ private:
                 auto *typeAliasDecl = static_cast<const ASTTypeAliasDecl *>(decl);
                 std::string line = "def ";
                 line += typeAliasDecl->id ? typeAliasDecl->id->val : "_";
-                line += formatGenericParams(typeAliasDecl->genericTypeParams);
+                line += formatGenericParams(typeAliasDecl->genericParams);
                 line += " = ";
                 line += formatType(typeAliasDecl->aliasedType);
                 writer.writeLine(line);

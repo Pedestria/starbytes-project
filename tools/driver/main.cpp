@@ -2201,6 +2201,9 @@ int main(int argc, const char *argv[]) {
         }
 
         interp->exec(rtcodeIn);
+        if(interp->hasRuntimeError() && starbytes::stdDiagnosticHandler) {
+            starbytes::stdDiagnosticHandler->push(starbytes::StandardDiagnostic::createError(interp->takeRuntimeError()));
+        }
         if(profile.enabled) {
             auto runtimeEnd = std::chrono::steady_clock::now();
             profile.runtimeExecNs = std::chrono::duration_cast<std::chrono::nanoseconds>(runtimeEnd - runtimeStart).count();
@@ -2212,7 +2215,8 @@ int main(int argc, const char *argv[]) {
         cleanAnalysisCacheDirectory(analysisCacheRoot);
     }
 
+    bool hadRuntimeDiagnostics = starbytes::stdDiagnosticHandler && starbytes::stdDiagnosticHandler->hasErrored();
     maybeLogRuntimeDiagnostics(opts);
 
-    return finishWith((starbytes::stdDiagnosticHandler && starbytes::stdDiagnosticHandler->hasErrored()) ? 1 : 0);
+    return finishWith(hadRuntimeDiagnostics ? 1 : 0);
 }

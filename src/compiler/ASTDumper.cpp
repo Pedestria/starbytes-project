@@ -22,6 +22,46 @@ namespace starbytes {
         pad << "}" << std::endl;
     }
 
+    inline const char *genericVarianceToString(ASTGenericVariance variance){
+        switch(variance){
+            case ASTGenericVariance::In:
+                return "in";
+            case ASTGenericVariance::Out:
+                return "out";
+            case ASTGenericVariance::Invariant:
+            default:
+                return "invariant";
+        }
+    }
+
+    inline void printGenericParams(std::ostream &os,const std::vector<ASTGenericParamDecl *> &params,unsigned level){
+        auto pad = padString(level);
+        if(params.empty()){
+            return;
+        }
+        os << pad << "   generics:[\n";
+        for(auto *param : params){
+            os << pad << "      ";
+            if(param && param->id){
+                os << param->id->val;
+            }
+            else {
+                os << "T";
+            }
+            if(param && param->variance != ASTGenericVariance::Invariant){
+                os << " variance=" << genericVarianceToString(param->variance);
+            }
+            if(param && !param->bounds.empty()){
+                os << " bounds=" << param->bounds.size();
+            }
+            if(param && param->defaultType){
+                os << " default=" << param->defaultType->getName();
+            }
+            os << "\n";
+        }
+        os << pad << "   ]\n";
+    }
+
     ASTDumper::ASTDumper(std::ostream & os):os(os){
 
     }
@@ -111,15 +151,7 @@ namespace starbytes {
             ASTFuncDecl *func_node = (ASTFuncDecl *)decl;
             auto & id = func_node->funcId;
             formatIdentifier(os,id,level + 1);
-            if(!func_node->genericTypeParams.empty()){
-                os << pad << "   generics:[\n";
-                for(auto *param : func_node->genericTypeParams){
-                    if(param){
-                        os << pad << "      " << param->val << "\n";
-                    }
-                }
-                os << pad << "   ]\n";
-            }
+            printGenericParams(os,func_node->genericParams,level);
             os << pad <<"   params:[\n" << std::flush;
             auto __level = level + 1;
             auto _pad = padString(__level);
@@ -141,15 +173,7 @@ namespace starbytes {
             auto *classNode = (ASTClassDecl *)decl;
             os << "ClassDecl : {\n" << pad << "   id:" << std::flush;
             formatIdentifier(os,classNode->id,level + 1);
-            if(!classNode->genericTypeParams.empty()){
-                os << pad << "   generics:[\n";
-                for(auto *param : classNode->genericTypeParams){
-                    if(param){
-                        os << pad << "      " << param->val << "\n";
-                    }
-                }
-                os << pad << "   ]\n";
-            }
+            printGenericParams(os,classNode->genericParams,level);
             if(classNode->superClass){
                 os << pad << "   super:" << classNode->superClass->getName() << "\n";
             }
@@ -183,15 +207,7 @@ namespace starbytes {
             auto *interfaceNode = (ASTInterfaceDecl *)decl;
             os << "InterfaceDecl : {\n" << pad << "   id:" << std::flush;
             formatIdentifier(os,interfaceNode->id,level + 1);
-            if(!interfaceNode->genericTypeParams.empty()){
-                os << pad << "   generics:[\n";
-                for(auto *param : interfaceNode->genericTypeParams){
-                    if(param){
-                        os << pad << "      " << param->val << "\n";
-                    }
-                }
-                os << pad << "   ]\n";
-            }
+            printGenericParams(os,interfaceNode->genericParams,level);
             os << pad << "   fields:[\n";
             for(auto *fieldDecl : interfaceNode->fields){
                 printDecl(fieldDecl,level + 1);
@@ -208,15 +224,7 @@ namespace starbytes {
             auto *aliasDecl = (ASTTypeAliasDecl *)decl;
             os << "TypeAliasDecl : {\n" << pad << "   id:" << std::flush;
             formatIdentifier(os,aliasDecl->id,level + 1);
-            if(!aliasDecl->genericTypeParams.empty()){
-                os << pad << "   generics:[\n";
-                for(auto *param : aliasDecl->genericTypeParams){
-                    if(param){
-                        os << pad << "      " << param->val << "\n";
-                    }
-                }
-                os << pad << "   ]\n";
-            }
+            printGenericParams(os,aliasDecl->genericParams,level);
             if(aliasDecl->aliasedType){
                 os << pad << "   aliasedType:" << aliasDecl->aliasedType->getName() << "\n";
             }
@@ -224,7 +232,9 @@ namespace starbytes {
         }
         else if(decl->type == CLASS_CTOR_DECL){
             auto *ctorNode = (ASTConstructorDecl *)decl;
-            os << "ConstructorDecl : {\n" << pad << "   params:[\n" << std::flush;
+            os << "ConstructorDecl : {\n";
+            printGenericParams(os,ctorNode->genericParams,level);
+            os << pad << "   params:[\n" << std::flush;
             auto __level = level + 1;
             auto _pad = padString(__level);
             for(auto &param : ctorNode->params){

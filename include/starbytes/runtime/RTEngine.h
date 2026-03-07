@@ -13,6 +13,8 @@ class Interp {
 public:
     virtual void exec(std::istream & in) = 0;
     virtual bool addExtension(const std::string &path) = 0;
+    virtual bool hasRuntimeError() const = 0;
+    virtual std::string takeRuntimeError() = 0;
     static std::shared_ptr<Interp> Create();
     virtual ~Interp() = default;
 };

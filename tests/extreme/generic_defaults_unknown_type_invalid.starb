@@ -1,0 +1,2 @@
+class MissingDefault<T = Missing> {
+}

@@ -105,9 +105,29 @@ class Disassembler {
                 };
             }
             else if(obj_type == RTINTOBJ_NUM){
-                starbytes_float_t num;
-                in.read((char *)&num,sizeof(num));
-                out << "RTINTOBJ_NUM " << num << " ";
+                StarbytesNumT numType = NumTypeInt;
+                in.read((char *)&numType,sizeof(numType));
+                out << "RTINTOBJ_NUM " << (unsigned)numType << " ";
+                if(numType == NumTypeInt){
+                    int num = 0;
+                    in.read((char *)&num,sizeof(num));
+                    out << num << " ";
+                }
+                else if(numType == NumTypeLong){
+                    int64_t num = 0;
+                    in.read((char *)&num,sizeof(num));
+                    out << num << " ";
+                }
+                else if(numType == NumTypeFloat){
+                    float num = 0.0f;
+                    in.read((char *)&num,sizeof(num));
+                    out << num << " ";
+                }
+                else {
+                    double num = 0.0;
+                    in.read((char *)&num,sizeof(num));
+                    out << num << " ";
+                }
             }
         }
         else if(code == CODE_RTIVKFUNC){

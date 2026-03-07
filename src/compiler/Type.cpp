@@ -2,6 +2,30 @@
 #include "starbytes/compiler/ASTExpr.h"
 
 namespace starbytes {
+    static bool isNumericTypeName(string_ref name){
+        return name == INT_TYPE->getName()
+            || name == LONG_TYPE->getName()
+            || name == FLOAT_TYPE->getName()
+            || name == DOUBLE_TYPE->getName();
+    }
+
+    static bool isWideningNumericMatch(string_ref expected,string_ref actual){
+        if(expected == actual){
+            return true;
+        }
+        if(expected == LONG_TYPE->getName() && actual == INT_TYPE->getName()){
+            return true;
+        }
+        if(expected == FLOAT_TYPE->getName() && actual == INT_TYPE->getName()){
+            return true;
+        }
+        if(expected == DOUBLE_TYPE->getName() &&
+           (actual == INT_TYPE->getName() || actual == LONG_TYPE->getName() || actual == FLOAT_TYPE->getName())){
+            return true;
+        }
+        return false;
+    }
+
     static StringInterner &typeNameInterner(){
         static StringInterner interner;
         return interner;
@@ -60,6 +84,9 @@ namespace starbytes {
         bool first_m = name == other->name;
         if(name == "Any"){
             return true;
+        }
+        if(isNumericTypeName(name) && isNumericTypeName(other->name) && isWideningNumericMatch(name,other->name)){
+            first_m = true;
         }
         if(name == DICTIONARY_TYPE->getName() && other->name == MAP_TYPE->getName()){
             return true;

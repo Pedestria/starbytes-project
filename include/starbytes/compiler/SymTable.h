@@ -16,6 +16,17 @@ namespace starbytes {
     namespace Semantics  {
     
         struct SymbolTable {
+
+            struct GenericParam {
+                enum Variance {
+                    Invariant,
+                    In,
+                    Out
+                } variance = Invariant;
+                std::string name;
+                ASTType *defaultType = nullptr;
+                std::vector<ASTType *> bounds;
+            };
             
             struct Var {
                 std::string name;
@@ -27,7 +38,7 @@ namespace starbytes {
                 std::string name;
                 ASTType *funcType;
                 ASTType *returnType;
-                std::vector<std::string> genericParams;
+                std::vector<GenericParam> genericParams;
                 string_map<ASTType *> paramMap;
                 std::vector<std::pair<std::string,ASTType *>> orderedParams;
                 bool isLazy = false;
@@ -36,7 +47,7 @@ namespace starbytes {
             struct Class {
                 ASTType *classType;
                 ASTType *superClassType = nullptr;
-                std::vector<std::string> genericParams;
+                std::vector<GenericParam> genericParams;
                 std::vector<ASTType *> interfaces;
                 std::vector<Function *> instMethods;
                 std::vector<Function *> constructors;
@@ -45,14 +56,14 @@ namespace starbytes {
 
             struct Interface {
                 ASTType *interfaceType;
-                std::vector<std::string> genericParams;
+                std::vector<GenericParam> genericParams;
                 std::vector<Function *> methods;
                 std::vector<Var *> fields;
             };
 
             struct TypeAlias {
                 ASTType *aliasType = nullptr;
-                std::vector<std::string> genericParams;
+                std::vector<GenericParam> genericParams;
             };
             
             struct Entry {

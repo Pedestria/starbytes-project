@@ -16,12 +16,15 @@ secure(decl raw = readText(inputPath,"utf-8")) catch (error:String) {
     print(error)
 }
 
-decl rawLines = raw.split("\n")
+secure(decl rawLines = lines(raw,"en")) catch (error:String) {
+    print(error)
+}
 decl parts:String[] = []
 decl index:Int = 0
 decl line:String = ""
 while(index < rawLines.length){
-    line = rawLines[index].trim()
+    line = String(rawLines[index])
+    line = line.trim()
     if(line.length > 0 && line.startsWith(">") == false){
         parts.push(line.upper())
     }

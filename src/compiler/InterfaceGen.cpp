@@ -76,6 +76,77 @@ std::vector<std::pair<starbytes::ASTIdentifier *,starbytes::ASTType *>> sortedPa
     return ordered;
 }
 
+std::string renderTypeRef(starbytes::ASTType *type){
+    if(!type){
+        return "Any";
+    }
+    std::string rendered = type->getName().str();
+    if(!type->typeParams.empty()){
+        rendered += "<";
+        for(size_t i = 0;i < type->typeParams.size();++i){
+            if(i > 0){
+                rendered += ",";
+            }
+            rendered += renderTypeRef(type->typeParams[i]);
+        }
+        rendered += ">";
+    }
+    if(type->isOptional){
+        rendered += "?";
+    }
+    if(type->isThrowable){
+        rendered += "!";
+    }
+    return rendered;
+}
+
+std::string renderGenericParamDecl(const starbytes::ASTGenericParamDecl *param){
+    if(!param || !param->id){
+        return "T";
+    }
+    std::string rendered;
+    switch(param->variance){
+        case starbytes::ASTGenericVariance::In:
+            rendered += "in ";
+            break;
+        case starbytes::ASTGenericVariance::Out:
+            rendered += "out ";
+            break;
+        case starbytes::ASTGenericVariance::Invariant:
+        default:
+            break;
+    }
+    rendered += param->id->val;
+    if(!param->bounds.empty()){
+        rendered += ": ";
+        for(size_t i = 0;i < param->bounds.size();++i){
+            if(i > 0){
+                rendered += " & ";
+            }
+            rendered += renderTypeRef(param->bounds[i]);
+        }
+    }
+    if(param->defaultType){
+        rendered += " = ";
+        rendered += renderTypeRef(param->defaultType);
+    }
+    return rendered;
+}
+
+void emitGenericParamList(std::ostream &out,const std::vector<starbytes::ASTGenericParamDecl *> &params){
+    if(params.empty()){
+        return;
+    }
+    out << "<";
+    for(size_t i = 0;i < params.size();++i){
+        if(i > 0){
+            out << ",";
+        }
+        out << renderGenericParamDecl(params[i]);
+    }
+    out << ">";
+}
+
 }
 
 namespace starbytes {
@@ -384,16 +455,7 @@ void InterfaceGen::emitFuncDecl(ASTFuncDecl *node){
         out << KW_LAZY << " ";
     }
     out << KW_FUNC << " " << (node->funcId ? node->funcId->val : "_");
-    if(!node->genericTypeParams.empty()){
-        out << "<";
-        for(size_t i = 0;i < node->genericTypeParams.size();++i){
-            if(i > 0){
-                out << ",";
-            }
-            out << (node->genericTypeParams[i] ? node->genericTypeParams[i]->val : "T");
-        }
-        out << ">";
-    }
+    emitGenericParamList(out,node->genericParams);
     out << "(";
     auto params = sortedParams(node->params);
     for(size_t i = 0;i < params.size();++i){
@@ -413,7 +475,9 @@ void InterfaceGen::emitCtorDecl(ASTConstructorDecl *node){
     }
     emitDocComments(node);
     writeIndent();
-    out << KW_NEW << "(";
+    out << KW_NEW;
+    emitGenericParamList(out,node->genericParams);
+    out << "(";
     auto params = sortedParams(node->params);
     for(size_t i = 0;i < params.size();++i){
         auto *paramId = params[i].first;
@@ -434,16 +498,7 @@ void InterfaceGen::emitClassDecl(ASTClassDecl *node){
     writeIndent();
     out << (lineUsesKeyword(node,KW_STRUCT) ? KW_STRUCT : KW_CLASS) << " "
         << (node->id ? node->id->val : "_");
-    if(!node->genericTypeParams.empty()){
-        out << "<";
-        for(size_t i = 0;i < node->genericTypeParams.size();++i){
-            if(i > 0){
-                out << ",";
-            }
-            out << node->genericTypeParams[i]->val;
-        }
-        out << ">";
-    }
+    emitGenericParamList(out,node->genericParams);
     if(!node->interfaces.empty()){
         out << " : ";
         for(size_t i = 0;i < node->interfaces.size();++i){
@@ -480,16 +535,7 @@ void InterfaceGen::emitInterfaceDecl(ASTInterfaceDecl *node){
     emitDocComments(node);
     writeIndent();
     out << KW_INTERFACE << " " << (node->id ? node->id->val : "_");
-    if(!node->genericTypeParams.empty()){
-        out << "<";
-        for(size_t i = 0;i < node->genericTypeParams.size();++i){
-            if(i > 0){
-                out << ",";
-            }
-            out << node->genericTypeParams[i]->val;
-        }
-        out << ">";
-    }
+    emitGenericParamList(out,node->genericParams);
     out << " {\n";
 
     ++indentLevel;
@@ -583,16 +629,7 @@ void InterfaceGen::emitTypeAliasDecl(ASTTypeAliasDecl *node){
     emitDocComments(node);
     writeIndent();
     out << KW_DEF << " " << node->id->val;
-    if(!node->genericTypeParams.empty()){
-        out << "<";
-        for(size_t i = 0;i < node->genericTypeParams.size();++i){
-            if(i > 0){
-                out << ",";
-            }
-            out << node->genericTypeParams[i]->val;
-        }
-        out << ">";
-    }
+    emitGenericParamList(out,node->genericParams);
     out << " = " << renderType(node->aliasedType) << "\n\n";
 }
 

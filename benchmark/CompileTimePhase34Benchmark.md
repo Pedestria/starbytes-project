@@ -74,4 +74,4 @@ for i in 1 2 3 4 5 6 7 8; do
   "$BIN" compile "$SRC" -o "/tmp/starbytes_profile_compare_compile/opt_${i}.starbmod" --profile-compile-out "/tmp/starbytes_profile_compare_compile/opt_${i}.json"
 done
 ```
-
+The numeric execution path itself needs to get much better.

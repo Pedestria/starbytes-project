@@ -7,6 +7,8 @@ STARBYTES_BIN="$BUILD_DIR/bin/starbytes"
 if [[ ! -x "$STARBYTES_BIN" && -x "${STARBYTES_BIN}.exe" ]]; then
   STARBYTES_BIN="${STARBYTES_BIN}.exe"
 fi
+
+rm -rf "$ROOT_DIR/.starbytes"
 LOG_DIR="$ROOT_DIR/.starbytes/full-test-logs"
 mkdir -p "$LOG_DIR"
 
@@ -150,7 +152,23 @@ run_expect_success "generic-free-function-phase7-inference-check" "$STARBYTES_BI
 run_expect_success "generic-free-function-phase7-inference-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/generic_free_function_phase7_inference.starb"
 assert_log_contains "generic-free-function-phase7-inference-run" "GENERIC-FREE-FUNCTION-PHASE7-OK"
 run_expect_failure "generic-free-function-phase7-conflict-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_free_function_phase7_conflict_invalid.starb"
-assert_log_contains "generic-free-function-phase7-conflict-invalid-check" 'Conflicting inferred types for generic parameter `T`'
+assert_log_contains "generic-free-function-phase7-conflict-invalid-check" "Function argument type mismatch"
+run_expect_success "generic-defaults-wave1-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_defaults_wave1.starb"
+run_expect_success "generic-defaults-wave1-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/generic_defaults_wave1.starb"
+assert_log_contains "generic-defaults-wave1-run" "GENERIC-DEFAULTS-WAVE1-OK"
+run_expect_failure "generic-defaults-non-trailing-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_defaults_non_trailing_invalid.starb"
+assert_log_contains "generic-defaults-non-trailing-invalid-check" "Generic parameters with defaults must be trailing"
+run_expect_failure "generic-defaults-unknown-type-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_defaults_unknown_type_invalid.starb"
+assert_log_contains "generic-defaults-unknown-type-invalid-check" 'Unknown type `Missing`'
+run_expect_failure "generic-defaults-missing-required-type-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_defaults_missing_required_type_invalid.starb"
+assert_log_contains "generic-defaults-missing-required-type-invalid-check" 'Type `Pair` expects 2 type argument'
+run_expect_success "generic-constructor-wave2-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_constructor_wave2.starb"
+run_expect_success "generic-constructor-wave2-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/generic_constructor_wave2.starb"
+assert_log_contains "generic-constructor-wave2-run" "GENERIC-CONSTRUCTOR-WAVE2-OK"
+run_expect_failure "generic-constructor-wave2-conflict-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_constructor_wave2_conflict_invalid.starb"
+assert_log_contains "generic-constructor-wave2-conflict-invalid-check" 'Conflicting inferred types for generic parameter `U`'
+run_expect_failure "generic-constructor-wave2-uninferable-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_constructor_wave2_uninferable_invalid.starb"
+assert_log_contains "generic-constructor-wave2-uninferable-invalid-check" 'Could not infer generic type parameter `U` from invocation arguments'
 run_expect_success "generic-methods-phase5-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_methods_phase5.starb"
 run_expect_success "generic-methods-phase5-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/generic_methods_phase5.starb"
 assert_log_contains "generic-methods-phase5-run" "GENERIC-METHODS-PHASE5-OK"
@@ -159,12 +177,12 @@ assert_log_contains "generic-methods-phase5-missing-args-invalid-check" 'Could n
 run_expect_failure "generic-methods-phase5-arity-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_methods_phase5_arity_invalid.starb"
 assert_log_contains "generic-methods-phase5-arity-invalid-check" "Generic method invocation type argument count does not match method generic parameter count"
 run_expect_failure "generic-methods-phase5-arg-mismatch-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_methods_phase5_arg_mismatch_invalid.starb"
-assert_log_contains "generic-methods-phase5-arg-mismatch-invalid-check" "Function argument type mismatch"
+assert_log_contains "generic-methods-phase5-arg-mismatch-invalid-check" "Method argument type mismatch"
 run_expect_success "generic-methods-phase7-inference-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_methods_phase7_inference.starb"
 run_expect_success "generic-methods-phase7-inference-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/generic_methods_phase7_inference.starb"
 assert_log_contains "generic-methods-phase7-inference-run" "GENERIC-METHODS-PHASE7-OK"
 run_expect_failure "generic-methods-phase7-conflict-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_methods_phase7_conflict_invalid.starb"
-assert_log_contains "generic-methods-phase7-conflict-invalid-check" 'Conflicting inferred types for generic parameter `U`'
+assert_log_contains "generic-methods-phase7-conflict-invalid-check" "Method argument type mismatch"
 run_expect_success "generic-interface-methods-phase6-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/generic_interface_methods_phase6.starb"
 run_expect_success "generic-interface-methods-phase6-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/generic_interface_methods_phase6.starb"
 assert_log_contains "generic-interface-methods-phase6-run" "GENERIC-INTERFACE-METHODS-PHASE6-OK"
@@ -185,6 +203,11 @@ run_expect_success "numeric-inference-default-run" "$STARBYTES_BIN" run "$ROOT_D
 assert_log_contains "numeric-inference-default-run" "INFER-32BIT-OK"
 run_expect_success "numeric-inference-64bit-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/numeric_inference_modes.starb" --infer-64bit-numbers
 assert_log_contains "numeric-inference-64bit-run" "INFER-64BIT-OK"
+run_expect_success "numeric-phase1-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/numeric_phase1.starb"
+run_expect_success "numeric-phase1-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/numeric_phase1.starb"
+assert_log_contains "numeric-phase1-run" "NUMERIC-PHASE1-OK"
+run_expect_failure "math-intrinsics-invalid-runtime-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/math_intrinsics_invalid_runtime.starb"
+assert_log_contains "math-intrinsics-invalid-runtime-run" "sqrt requires non-negative numeric input"
 run_expect_success "inferred-var-types-custom-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/inferred_var_types_custom.starb"
 assert_log_contains "inferred-var-types-custom-run" "INFER-CUSTOM-INVOKE-OK"
 run_expect_success "map-long-double-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/map_long_double_support.starb"
@@ -361,6 +384,8 @@ assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-ARCHIVE-BAD-UNPAC
 assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-ARCHIVE-BAD-LIST-CATCH"
 assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-ARCHIVE-ISVALID-OK"
 assert_log_contains "expected-phase3-invalid-runtime-run" "PH3-INVALID-CASE-OK"
+run_expect_success "track-a-parity" python3 "$ROOT_DIR/benchmark/runners/check_track_a_parity.py" --starbytes-bin "$STARBYTES_BIN" --inputs "$ROOT_DIR/benchmark/data/track_a/track_a_parity_inputs.json"
+assert_log_contains "track-a-parity" "TRACK-A-PARITY-OK"
 
 echo
 echo "Full test suite finished: pass=$PASS_COUNT fail=$FAIL_COUNT"

@@ -1,0 +1,16 @@
+class Box<T> {
+    decl value:T
+
+    new<U>(seed:U, fallback:T) {
+        decl mirror:U = seed
+        decl resolved:T = fallback
+        self.value = resolved
+    }
+
+    func get() T {
+        return self.value
+    }
+}
+
+decl box = new Box<String>(7, "GENERIC-CONSTRUCTOR-WAVE2-OK")
+print(box.get())

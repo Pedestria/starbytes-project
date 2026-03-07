@@ -215,4 +215,40 @@ add_starbytes_test(
     DEPENDENCIES
     ${STARBYTES_ALL_LIBS})
 
+add_starbytes_test(
+    NAME
+    "generic-metadata-wave0-test"
+    INCLUDE_LIB
+    FILES
+    "GenericMetadataWave0Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "generic-defaults-wave1-test"
+    INCLUDE_LIB
+    FILES
+    "GenericDefaultsWave1Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "generic-constructor-wave2-test"
+    INCLUDE_LIB
+    FILES
+    "GenericConstructorWave2Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "numeric-phase1-lexer-test"
+    INCLUDE_LIB
+    FILES
+    "NumericPhase1LexerTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
 configure_file("test.starb" "${CMAKE_CURRENT_BINARY_DIR}/test.starb" COPYONLY)

@@ -21,19 +21,47 @@ bool isKeyword(string_ref str){
 
 bool isNumber(string_ref str,bool * isFloating){
     *isFloating = false;
-    for(auto & c : str){
-
+    if(str.empty()){
+        return false;
+    }
+    bool seenDigit = false;
+    bool seenDot = false;
+    bool seenExponent = false;
+    bool needExponentDigit = false;
+    for(size_t i = 0;i < str.size();++i){
+        char c = str[i];
+        if(std::isdigit((unsigned char)c)){
+            seenDigit = true;
+            needExponentDigit = false;
+            continue;
+        }
         if(c == '.'){
+            if(seenDot || seenExponent){
+                return false;
+            }
+            seenDot = true;
             *isFloating = true;
             continue;
         }
+        if(c == 'e' || c == 'E'){
+            if(seenExponent || !seenDigit){
+                return false;
+            }
+            seenExponent = true;
+            needExponentDigit = true;
+            *isFloating = true;
+            continue;
+        }
+        if((c == '+' || c == '-') && i > 0
+           && (str[i - 1] == 'e' || str[i - 1] == 'E')){
+            continue;
+        }
+        return false;
+    }
 
-        if(!std::isdigit(c)){
-            return false;
-            break;
-        };
-    };
-    
+    if(!seenDigit || needExponentDigit){
+        return false;
+    }
     return true;
 }
 
@@ -96,6 +124,13 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
             }
             else if(isBooleanLiteral(tok.content))
                 tok.type = Tok::BooleanLiteral;
+            else if(!tok.content.empty() && std::isdigit(static_cast<unsigned char>(tok.content.front()))){
+                Region region;
+                region.startLine = region.endLine = pos.line;
+                region.startCol = pos.startCol;
+                region.endCol = pos.endCol;
+                errStream.push(StandardDiagnostic::createError("Malformed numeric literal `" + tok.content + "`",region));
+            }
         }
         tok.srcPos = pos;
         tokStreamRef.push_back(tok);
@@ -446,16 +481,49 @@ void Lexer::tokenizeFromIStream(std::istream & in, std::vector<Tok> & tokStreamR
                 break;
             }
             default: {
-                if(std::isalnum(static_cast<unsigned char>(c)) || c == '_'){
+                if(std::isdigit(static_cast<unsigned char>(c))){
                     PUSH_CHAR(c);
-                    c = aheadChar();
-                    bool tokenStartsWithDigit = std::isdigit(static_cast<unsigned char>(*bufferStart));
-                    bool dotContinuesFloat = tokenStartsWithDigit && c == '.';
-                    bool identifierContinues = std::isalnum(static_cast<unsigned char>(c)) || c == '_';
-                    if(c == EOF || (!identifierContinues && !dotContinuesFloat)){
-                        pushToken(Tok::Identifier);
+                    bool seenDot = false;
+                    bool seenExponent = false;
+                    while(true){
+                        int next = aheadChar();
+                        if(std::isdigit(static_cast<unsigned char>(next))){
+                            INCREMENT_TO_NEXT_CHAR;
+                            PUSH_CHAR(next);
+                            continue;
+                        }
+                        if(next == '.' && !seenDot && !seenExponent){
+                            seenDot = true;
+                            INCREMENT_TO_NEXT_CHAR;
+                            PUSH_CHAR(next);
+                            continue;
+                        }
+                        if((next == 'e' || next == 'E') && !seenExponent){
+                            seenExponent = true;
+                            INCREMENT_TO_NEXT_CHAR;
+                            PUSH_CHAR(next);
+                            int exponentMarker = aheadChar();
+                            if(exponentMarker == '+' || exponentMarker == '-'){
+                                INCREMENT_TO_NEXT_CHAR;
+                                PUSH_CHAR(exponentMarker);
+                            }
+                            continue;
+                        }
+                        break;
                     }
-                   
+                    pushToken(Tok::Identifier);
+                }
+                else if(std::isalpha(static_cast<unsigned char>(c)) || c == '_'){
+                    PUSH_CHAR(c);
+                    while(true){
+                        int next = aheadChar();
+                        if(next == EOF || !(std::isalnum(static_cast<unsigned char>(next)) || next == '_')){
+                            break;
+                        }
+                        INCREMENT_TO_NEXT_CHAR;
+                        PUSH_CHAR(next);
+                    }
+                    pushToken(Tok::Identifier);
                 }
                 else if(std::isspace(static_cast<unsigned char>(c))){
                     ++pos.endCol;

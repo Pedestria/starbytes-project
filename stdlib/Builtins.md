@@ -4,7 +4,8 @@ This reference documents intrinsic (non-stdlib-module) language types and member
 
 Source of truth used for this document:
 - `src/compiler/ExprSema.cpp` (type checking and builtin member signatures)
-- `src/runtime/RTEngine.cpp` (runtime builtin method behavior)
+- `src/runtime/RTStdlib.cpp` (global intrinsic function behavior)
+- `src/runtime/RTEngine.cpp` (builtin member/runtime object behavior)
 
 ## Global Intrinsic Functions
 

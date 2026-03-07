@@ -97,6 +97,9 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
                     }
                     else {
                     spec.type = type;
+                    if(spec.expr && (type->nameMatches(LONG_TYPE) || type->nameMatches(DOUBLE_TYPE))){
+                        spec.expr->runtimeCastTargetName = type->getName().str();
+                    }
                     }
                 }
 

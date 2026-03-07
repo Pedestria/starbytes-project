@@ -46,9 +46,14 @@ class Box<T> {
     if(!classDecl || !classDecl->id || classDecl->id->val != "Box") {
         return fail("failed to parse generic class declaration");
     }
-    if(classDecl->genericTypeParams.size() != 1 || !classDecl->genericTypeParams.front() ||
-       classDecl->genericTypeParams.front()->val != "T") {
+    if(classDecl->genericParams.size() != 1 || !classDecl->genericParams.front() ||
+       !classDecl->genericParams.front()->id || classDecl->genericParams.front()->id->val != "T") {
         return fail("class generic parameter list was not parsed as `<T>`");
+    }
+    if(classDecl->genericParams.front()->variance != ASTGenericVariance::Invariant ||
+       classDecl->genericParams.front()->defaultType != nullptr ||
+       !classDecl->genericParams.front()->bounds.empty()) {
+        return fail("class generic parameter metadata did not match wave 0 defaults");
     }
     if(classDecl->methods.size() != 1) {
         return fail("expected exactly one class method");
@@ -58,9 +63,14 @@ class Box<T> {
     if(!methodDecl || !methodDecl->funcId || methodDecl->funcId->val != "echo") {
         return fail("failed to parse generic method declaration");
     }
-    if(methodDecl->genericTypeParams.size() != 1 || !methodDecl->genericTypeParams.front() ||
-       methodDecl->genericTypeParams.front()->val != "U") {
+    if(methodDecl->genericParams.size() != 1 || !methodDecl->genericParams.front() ||
+       !methodDecl->genericParams.front()->id || methodDecl->genericParams.front()->id->val != "U") {
         return fail("method generic parameter list was not parsed as `<U>`");
+    }
+    if(methodDecl->genericParams.front()->variance != ASTGenericVariance::Invariant ||
+       methodDecl->genericParams.front()->defaultType != nullptr ||
+       !methodDecl->genericParams.front()->bounds.empty()) {
+        return fail("method generic parameter metadata did not match wave 0 defaults");
     }
     if(methodDecl->params.size() != 2) {
         return fail("expected exactly two method parameters");

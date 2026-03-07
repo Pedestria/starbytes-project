@@ -634,14 +634,27 @@ namespace Runtime {
             };
         }
         else if(code2 == RTINTOBJ_NUM){
-            starbytes_float_t val;
-            is.read((char *)&val,sizeof(starbytes_float_t));
-            double intPart = 0.0;
-            if(std::modf(val,&intPart) == 0.0){
-                *obj = StarbytesNumNew(NumTypeInt,(int)intPart);
+            StarbytesNumT numType = NumTypeInt;
+            is.read((char *)&numType,sizeof(numType));
+            if(numType == NumTypeInt){
+                int value = 0;
+                is.read((char *)&value,sizeof(value));
+                *obj = StarbytesNumNew(NumTypeInt,value);
+            }
+            else if(numType == NumTypeLong){
+                int64_t value = 0;
+                is.read((char *)&value,sizeof(value));
+                *obj = StarbytesNumNew(NumTypeLong,value);
+            }
+            else if(numType == NumTypeFloat){
+                float value = 0.0f;
+                is.read((char *)&value,sizeof(value));
+                *obj = StarbytesNumNew(NumTypeFloat,value);
             }
             else {
-                *obj = StarbytesNumNew(NumTypeFloat,val);
+                double value = 0.0;
+                is.read((char *)&value,sizeof(value));
+                *obj = StarbytesNumNew(NumTypeDouble,value);
             }
         }
         else if(code2 == RTINTOBJ_DICTIONARY){
@@ -688,10 +701,24 @@ namespace Runtime {
         else if(StarbytesObjectTypecheck(*obj,StarbytesNumType())){
             code2 = RTINTOBJ_NUM;
             os.write((char *)&code2,sizeof(RTCode));
-            auto floatObj = StarbytesNumConvertTo(*obj,NumTypeFloat);
-            starbytes_float_t f = StarbytesNumGetFloatValue(floatObj);
-            StarbytesObjectRelease(floatObj);
-            os.write((char *)&f,sizeof(starbytes_float_t));
+            auto numType = StarbytesNumGetType(*obj);
+            os.write((char *)&numType,sizeof(numType));
+            if(numType == NumTypeInt){
+                int value = StarbytesNumGetIntValue(*obj);
+                os.write((char *)&value,sizeof(value));
+            }
+            else if(numType == NumTypeLong){
+                int64_t value = StarbytesNumGetLongValue(*obj);
+                os.write((char *)&value,sizeof(value));
+            }
+            else if(numType == NumTypeFloat){
+                float value = StarbytesNumGetFloatValue(*obj);
+                os.write((char *)&value,sizeof(value));
+            }
+            else {
+                double value = StarbytesNumGetDoubleValue(*obj);
+                os.write((char *)&value,sizeof(value));
+            }
         }
         else {
         /// Special Process for exporting custom class objects.

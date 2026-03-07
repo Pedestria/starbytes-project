@@ -1,0 +1,48 @@
+{
+  "binary-trees": {
+    "min_depth": 4,
+    "max_depth": 8,
+    "stretch_depth_offset": 1
+  },
+  "n-body": {
+    "steps": 10,
+    "dt": 0.01
+  },
+  "spectral-norm": {
+    "n": 30,
+    "iterations": 4
+  },
+  "fasta": {
+    "repeat_length": 400,
+    "random_length": 400,
+    "seed": 42,
+    "repeat_source": "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGG",
+    "random_weights": {
+      "A": 270,
+      "C": 120,
+      "G": 120,
+      "T": 270,
+      "N": 220
+    }
+  },
+  "k-nucleotide": {
+    "input_file": "benchmark/data/track_a/dna_input.fasta",
+    "k_values": [1, 2, 3, 4, 6, 8],
+    "probe_sequences": ["GGT", "GGTA", "GGTATT", "AGGGTAAA"]
+  },
+  "regex-redux": {
+    "input_file": "benchmark/data/track_a/dna_input.fasta",
+    "count_patterns": [
+      "agggtaaa|tttaccct",
+      "[cgt]gggtaaa|tttaccc[acg]",
+      "a[act]ggtaaa|tttacc[agt]t",
+      "ag[act]gtaaa|tttac[agt]ct",
+      "agg[act]taaa|ttta[agt]cct"
+    ],
+    "replacement_rules": [
+      ["agggtaaa", "<A>"],
+      ["tttaccct", "<B>"],
+      ["cgggtaaa", "<C>"]
+    ]
+  }
+}

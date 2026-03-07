@@ -3,11 +3,30 @@
 /// @see stdlib/Builtins.md
 
 def DictKey = Int | Long | Float | Double | String
+def Number = Int | Long | Float | Double
 
 /// @brief Writes a value to stdout.
 /// @param object Value to print.
 /// @return Void.
 func print(object:Any) Void
+
+/// @brief Returns square root as Double.
+/// @param value Numeric input.
+func sqrt(value:Number) Double
+
+/// @brief Returns absolute magnitude, preserving numeric kind when representable.
+/// @param value Numeric input.
+func abs(value:Number) Number
+
+/// @brief Returns the lesser of two numeric values.
+/// @param lhs Left operand.
+/// @param rhs Right operand.
+func min(lhs:Number,rhs:Number) Number
+
+/// @brief Returns the greater of two numeric values.
+/// @param lhs Left operand.
+/// @param rhs Right operand.
+func max(lhs:Number,rhs:Number) Number
 
 /// @brief Intrinsic UTF-8 string type.
 interface String {

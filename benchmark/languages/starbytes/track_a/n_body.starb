@@ -7,100 +7,124 @@ func intArg(args:String[],index:Int,fallback:Int) Int {
     return fallback
 }
 
+func sqrtApprox(value:Float) Float {
+    if(value <= 0.0){
+        return 0.0
+    }
+    decl guess:Float = value
+    if(guess < 1.0){
+        guess = 1.0
+    }
+    decl i:Int = 0
+    while(i < 24){
+        guess = Float(0.5 * (guess + (value / guess)))
+        i += 1
+    }
+    return guess
+}
+
+decl PI:Float = 3.141592653589793
+decl SOLAR_MASS:Float = 4.0 * PI * PI
+decl DAYS_PER_YEAR:Float = 365.24
+
 decl args = positionals()
-
-decl x = [0.0, 4.84, 8.34, 12.89, 15.37]
-decl y = [0.0, -1.16, 4.12, -15.11, -25.91]
-decl z = [0.0, -0.10, -0.40, -0.22, 0.18]
-decl vx = [0.0, 0.0016, -0.0027, 0.0029, 0.0026]
-decl vy = [0.0, 0.0076, 0.0049, 0.0023, 0.0016]
-decl vz = [0.0, -0.00006, 0.00002, -0.00002, -0.00009]
-decl mass = [39.47, 0.037, 0.011, 0.0017, 0.002]
-
-decl dt:Float = 0.01
 decl steps:Int = intArg(args,0,500)
 
-decl energyBefore:Float = 0.0
-decl energyAfter:Float = 0.0
+decl x:Float[] = [0.0, 4.84143144246472090, 8.34336671824457987, 12.8943695621391310, 15.3796971148509165]
+decl y:Float[] = [0.0, -1.16032004402742839, 4.12479856412430479, -15.1111514016986312, -25.9193146099879641]
+decl z:Float[] = [0.0, -0.103622044471123109, -0.403523417114321381, -0.223307578892655734, 0.179258772950371181]
+decl vx:Float[] = [0.0, 0.00166007664274403694 * DAYS_PER_YEAR, -0.00276742510726862411 * DAYS_PER_YEAR, 0.00296460137564761618 * DAYS_PER_YEAR, 0.00268067772490389322 * DAYS_PER_YEAR]
+decl vy:Float[] = [0.0, 0.00769901118419740425 * DAYS_PER_YEAR, 0.00499852801234917238 * DAYS_PER_YEAR, 0.00237847173959480950 * DAYS_PER_YEAR, 0.00162824170038242295 * DAYS_PER_YEAR]
+decl vz:Float[] = [0.0, -0.0000690460016972063023 * DAYS_PER_YEAR, 0.0000230417297573763929 * DAYS_PER_YEAR, -0.0000296589568540237556 * DAYS_PER_YEAR, -0.0000951592254519715870 * DAYS_PER_YEAR]
+decl mass:Float[] = [SOLAR_MASS, 0.000954791938424326609 * SOLAR_MASS, 0.000285885980666130812 * SOLAR_MASS, 0.0000436624404335156298 * SOLAR_MASS, 0.0000515138902046611451 * SOLAR_MASS]
 
+decl px:Float = 0.0
+decl py:Float = 0.0
+decl pz:Float = 0.0
 decl i:Int = 0
 decl j:Int = 0
-
 decl dx:Float = 0.0
 decl dy:Float = 0.0
 decl dz:Float = 0.0
 decl dist2:Float = 0.0
+decl dist:Float = 0.0
 decl mag:Float = 0.0
 decl bim:Float = 0.0
 decl bjm:Float = 0.0
+decl before:Float = 0.0
+decl after:Float = 0.0
+decl step:Int = 0
+
+while(i < mass.length){
+    px += vx[i] * mass[i]
+    py += vy[i] * mass[i]
+    pz += vz[i] * mass[i]
+    i += 1
+}
+vx[0] = 0.0 - (px / SOLAR_MASS)
+vy[0] = 0.0 - (py / SOLAR_MASS)
+vz[0] = 0.0 - (pz / SOLAR_MASS)
 
 i = 0
-while(i < x.length){
-    energyBefore += 0.5 * mass[i] * ((vx[i] * vx[i]) + (vy[i] * vy[i]) + (vz[i] * vz[i]))
+while(i < mass.length){
+    before += 0.5 * mass[i] * ((vx[i] * vx[i]) + (vy[i] * vy[i]) + (vz[i] * vz[i]))
     j = i + 1
-    while(j < x.length){
+    while(j < mass.length){
         dx = x[i] - x[j]
         dy = y[i] - y[j]
         dz = z[i] - z[j]
-        dist2 = (dx * dx) + (dy * dy) + (dz * dz) + 0.000001
-        energyBefore -= (mass[i] * mass[j]) / dist2
+        before -= (mass[i] * mass[j]) / sqrtApprox((dx * dx) + (dy * dy) + (dz * dz))
         j += 1
     }
     i += 1
 }
 
-decl s:Int = 0
-while(s < steps){
+while(step < steps){
     i = 0
-    while(i < x.length - 1){
+    while(i < mass.length - 1){
         j = i + 1
-        while(j < x.length){
+        while(j < mass.length){
             dx = x[i] - x[j]
             dy = y[i] - y[j]
             dz = z[i] - z[j]
-            dist2 = (dx * dx) + (dy * dy) + (dz * dz) + 0.000001
-            mag = dt / (dist2 * dist2)
+            dist2 = (dx * dx) + (dy * dy) + (dz * dz)
+            dist = sqrtApprox(dist2)
+            mag = 0.01 / (dist2 * dist)
             bim = mass[i] * mag
             bjm = mass[j] * mag
-
             vx[i] -= dx * bjm
             vy[i] -= dy * bjm
             vz[i] -= dz * bjm
-
             vx[j] += dx * bim
             vy[j] += dy * bim
             vz[j] += dz * bim
-
             j += 1
         }
         i += 1
     }
-
     i = 0
-    while(i < x.length){
-        x[i] += dt * vx[i]
-        y[i] += dt * vy[i]
-        z[i] += dt * vz[i]
+    while(i < mass.length){
+        x[i] += 0.01 * vx[i]
+        y[i] += 0.01 * vy[i]
+        z[i] += 0.01 * vz[i]
         i += 1
     }
-
-    s += 1
+    step += 1
 }
 
 i = 0
-while(i < x.length){
-    energyAfter += 0.5 * mass[i] * ((vx[i] * vx[i]) + (vy[i] * vy[i]) + (vz[i] * vz[i]))
+while(i < mass.length){
+    after += 0.5 * mass[i] * ((vx[i] * vx[i]) + (vy[i] * vy[i]) + (vz[i] * vz[i]))
     j = i + 1
-    while(j < x.length){
+    while(j < mass.length){
         dx = x[i] - x[j]
         dy = y[i] - y[j]
         dz = z[i] - z[j]
-        dist2 = (dx * dx) + (dy * dy) + (dz * dz) + 0.000001
-        energyAfter -= (mass[i] * mass[j]) / dist2
+        after -= (mass[i] * mass[j]) / sqrtApprox((dx * dx) + (dy * dy) + (dz * dz))
         j += 1
     }
     i += 1
 }
 
-print(energyBefore)
-print(energyAfter)
+print(before)
+print(after)

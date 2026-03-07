@@ -2,6 +2,7 @@
 #include "starbytes/compiler/RTCode.h"
 #include "RTStdlib.h"
 #include "starbytes/base/ADT.h"
+#include "starbytes/base/Diagnostic.h"
 
 #include <iostream>
 #include <iomanip>
@@ -115,14 +116,45 @@ static uint32_t regexCompileOptionsFromFlags(const std::string &flags){
     return options;
 }
 
-static bool objectToNumber(StarbytesObject object,double &value,bool &isFloat){
+static bool isIntegralNumType(StarbytesNumT numType){
+    return numType == NumTypeInt || numType == NumTypeLong;
+}
+
+static bool isFloatingNumType(StarbytesNumT numType){
+    return numType == NumTypeFloat || numType == NumTypeDouble;
+}
+
+static int numericTypeRank(StarbytesNumT numType){
+    switch(numType){
+        case NumTypeInt:
+            return 0;
+        case NumTypeLong:
+            return 1;
+        case NumTypeFloat:
+            return 2;
+        case NumTypeDouble:
+        default:
+            return 3;
+    }
+}
+
+static StarbytesNumT promoteNumericType(StarbytesNumT lhs,StarbytesNumT rhs){
+    return numericTypeRank(lhs) >= numericTypeRank(rhs) ? lhs : rhs;
+}
+
+static bool objectToNumber(StarbytesObject object,long double &value,StarbytesNumT &numType){
     if(!object || !StarbytesObjectTypecheck(object,StarbytesNumType())){
         return false;
     }
-    auto numType = StarbytesNumGetType(object);
-    isFloat = (numType == NumTypeFloat);
+    numType = StarbytesNumGetType(object);
     if(numType == NumTypeFloat){
         value = StarbytesNumGetFloatValue(object);
+    }
+    else if(numType == NumTypeDouble){
+        value = StarbytesNumGetDoubleValue(object);
+    }
+    else if(numType == NumTypeLong){
+        value = (long double)StarbytesNumGetLongValue(object);
     }
     else {
         value = StarbytesNumGetIntValue(object);
@@ -130,9 +162,15 @@ static bool objectToNumber(StarbytesObject object,double &value,bool &isFloat){
     return true;
 }
 
-static StarbytesObject makeNumber(double value,bool isFloat){
-    if(isFloat){
-        return StarbytesNumNew(NumTypeFloat,value);
+static StarbytesObject makeNumber(long double value,StarbytesNumT numType){
+    if(numType == NumTypeDouble){
+        return StarbytesNumNew(NumTypeDouble,(double)value);
+    }
+    if(numType == NumTypeFloat){
+        return StarbytesNumNew(NumTypeFloat,(float)value);
+    }
+    if(numType == NumTypeLong){
+        return StarbytesNumNew(NumTypeLong,(int64_t)value);
     }
     return StarbytesNumNew(NumTypeInt,(int)value);
 }
@@ -153,6 +191,14 @@ static std::string objectToString(StarbytesObject object){
             std::ostringstream out;
             out << StarbytesNumGetFloatValue(object);
             return out.str();
+        }
+        if(numType == NumTypeDouble){
+            std::ostringstream out;
+            out << StarbytesNumGetDoubleValue(object);
+            return out.str();
+        }
+        if(numType == NumTypeLong){
+            return std::to_string(StarbytesNumGetLongValue(object));
         }
         return std::to_string(StarbytesNumGetIntValue(object));
     }
@@ -237,6 +283,21 @@ static bool parseFloatStrict(const std::string &text,float &outValue){
     errno = 0;
     char *endPtr = nullptr;
     float parsed = std::strtof(trimmed.c_str(),&endPtr);
+    if(errno != 0 || endPtr == nullptr || *endPtr != '\0'){
+        return false;
+    }
+    outValue = parsed;
+    return true;
+}
+
+static bool parseDoubleStrict(const std::string &text,double &outValue){
+    auto trimmed = stringTrim(text);
+    if(trimmed.empty()){
+        return false;
+    }
+    errno = 0;
+    char *endPtr = nullptr;
+    double parsed = std::strtod(trimmed.c_str(),&endPtr);
     if(errno != 0 || endPtr == nullptr || *endPtr != '\0'){
         return false;
     }
@@ -397,14 +458,28 @@ class InterpImpl final : public Interp {
     
 public:
     InterpImpl():allocator(std::make_unique<RTAllocator>()){
-        RTFuncTemplate printTemplate;
-        printTemplate.name = {strlen("print"),"print"};
-        printTemplate.argsTemplate.push_back({strlen("object"),"object"});
-        functions.push_back(std::move(printTemplate));
+        auto addBuiltinTemplate = [&](const char *name,std::initializer_list<const char *> params){
+            RTFuncTemplate funcTemplate;
+            funcTemplate.name = {strlen(name),name};
+            for(auto *param : params){
+                funcTemplate.argsTemplate.push_back({strlen(param),param});
+            }
+            functions.push_back(std::move(funcTemplate));
+        };
+        addBuiltinTemplate("print",{"object"});
+        stdlib::addMathBuiltinTemplates(functions);
     };
     ~InterpImpl() override;
     void exec(std::istream &in) override;
     bool addExtension(const std::string &path) override;
+    bool hasRuntimeError() const override {
+        return !lastRuntimeError.empty();
+    }
+    std::string takeRuntimeError() override {
+        auto out = lastRuntimeError;
+        lastRuntimeError.clear();
+        return out;
+    }
 };
 
 RTClass *InterpImpl::findClassByName(string_ref className){
@@ -577,9 +652,14 @@ StarbytesObject InterpImpl::invokeFuncWithValues(RTFuncTemplate *func_temp,
 
     if(func_name == "print"){
         if(!args.empty()){
-            stdlib::print(args[0],runtimeClassRegistry);
+            if(args[0] || lastRuntimeError.empty()){
+                stdlib::print(args[0],runtimeClassRegistry);
+            }
         }
         return nullptr;
+    }
+    if(stdlib::isMathBuiltinFunction(func_name)){
+        return stdlib::invokeMathBuiltinFunction(func_name,args,lastRuntimeError);
     }
 
     auto nativeCallbackName = resolveNativeCallbackName(func_temp);
@@ -775,7 +855,9 @@ StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_te
     if(func_name == "print"){
         if(argCount > 0){
             auto object_to_print = evalExpr(in);
-            stdlib::print(object_to_print,runtimeClassRegistry);
+            if(object_to_print || lastRuntimeError.empty()){
+                stdlib::print(object_to_print,runtimeClassRegistry);
+            }
             if(object_to_print){
                 StarbytesObjectRelease(object_to_print);
             }
@@ -785,6 +867,21 @@ StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_te
             discardExprArgs(in,argCount);
         }
         return nullptr;
+    }
+    if(stdlib::isMathBuiltinFunction(func_name)){
+        std::vector<StarbytesObject> args;
+        args.reserve(argCount);
+        while(argCount > 0){
+            args.push_back(evalExpr(in));
+            --argCount;
+        }
+        auto result = stdlib::invokeMathBuiltinFunction(func_name,{args.data(), static_cast<uint32_t>(args.size())},lastRuntimeError);
+        for(auto *arg : args){
+            if(arg){
+                StarbytesObjectRelease(arg);
+            }
+        }
+        return result;
     }
     auto nativeCallbackName = resolveNativeCallbackName(func_temp);
     if(!nativeCallbackName.empty()){
@@ -934,6 +1031,12 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 if(operandType == NumTypeFloat){
                     result = StarbytesNumNew(NumTypeFloat,StarbytesNumGetFloatValue(operand));
                 }
+                else if(operandType == NumTypeDouble){
+                    result = StarbytesNumNew(NumTypeDouble,StarbytesNumGetDoubleValue(operand));
+                }
+                else if(operandType == NumTypeLong){
+                    result = StarbytesNumNew(NumTypeLong,StarbytesNumGetLongValue(operand));
+                }
                 else {
                     result = StarbytesNumNew(NumTypeInt,StarbytesNumGetIntValue(operand));
                 }
@@ -949,6 +1052,12 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 StarbytesObject result = nullptr;
                 if(operandType == NumTypeFloat){
                     result = StarbytesNumNew(NumTypeFloat,-StarbytesNumGetFloatValue(operand));
+                }
+                else if(operandType == NumTypeDouble){
+                    result = StarbytesNumNew(NumTypeDouble,-StarbytesNumGetDoubleValue(operand));
+                }
+                else if(operandType == NumTypeLong){
+                    result = StarbytesNumNew(NumTypeLong,-StarbytesNumGetLongValue(operand));
                 }
                 else {
                     result = StarbytesNumNew(NumTypeInt,-StarbytesNumGetIntValue(operand));
@@ -1091,32 +1200,36 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 if(!(StarbytesObjectTypecheck(lhs,StarbytesNumType()) && StarbytesObjectTypecheck(rhs,StarbytesNumType()))){
                     return finish(nullptr);
                 }
-                bool lhsFloat = false;
-                bool rhsFloat = false;
-                double lhsVal = 0.0;
-                double rhsVal = 0.0;
-                if(!objectToNumber(lhs,lhsVal,lhsFloat) || !objectToNumber(rhs,rhsVal,rhsFloat)){
+                StarbytesNumT lhsType = NumTypeInt;
+                StarbytesNumT rhsType = NumTypeInt;
+                long double lhsVal = 0.0;
+                long double rhsVal = 0.0;
+                if(!objectToNumber(lhs,lhsVal,lhsType) || !objectToNumber(rhs,rhsVal,rhsType)){
                     return finish(nullptr);
                 }
                 if((binaryCode == BINARY_OP_DIV || binaryCode == BINARY_OP_MOD) && rhsVal == 0.0){
                     return finish(nullptr);
                 }
+                StarbytesNumT resultType = promoteNumericType(lhsType,rhsType);
                 if(binaryCode == BINARY_OP_MUL){
-                    bool useFloat = lhsFloat || rhsFloat;
-                    return finish(makeNumber(lhsVal * rhsVal,useFloat));
+                    return finish(makeNumber(lhsVal * rhsVal,resultType));
                 }
                 if(binaryCode == BINARY_OP_DIV){
-                    bool useFloat = lhsFloat || rhsFloat;
-                    if(useFloat){
-                        return finish(makeNumber(lhsVal / rhsVal,true));
+                    if(isFloatingNumType(resultType)){
+                        return finish(makeNumber(lhsVal / rhsVal,resultType));
                     }
-                    return finish(makeNumber((double)((int)lhsVal / (int)rhsVal),false));
+                    if(resultType == NumTypeLong){
+                        return finish(makeNumber((long double)((int64_t)lhsVal / (int64_t)rhsVal),NumTypeLong));
+                    }
+                    return finish(makeNumber((long double)((int)lhsVal / (int)rhsVal),NumTypeInt));
                 }
-                bool useFloat = lhsFloat || rhsFloat;
-                if(useFloat){
-                    return finish(makeNumber(std::fmod(lhsVal,rhsVal),true));
+                if(isFloatingNumType(resultType)){
+                    return finish(makeNumber(std::fmod((double)lhsVal,(double)rhsVal),resultType));
                 }
-                return finish(makeNumber((double)((int)lhsVal % (int)rhsVal),false));
+                if(resultType == NumTypeLong){
+                    return finish(makeNumber((long double)((int64_t)lhsVal % (int64_t)rhsVal),NumTypeLong));
+                }
+                return finish(makeNumber((long double)((int)lhsVal % (int)rhsVal),NumTypeInt));
             }
             if(binaryCode == BINARY_EQUAL_EQUAL || binaryCode == BINARY_NOT_EQUAL){
                 bool equals = false;
@@ -1295,11 +1408,11 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 }
                 else if(targetType == "Long"){
                     matches = StarbytesObjectTypecheck(object,StarbytesNumType())
-                        && StarbytesNumGetType(object) == NumTypeInt;
+                        && StarbytesNumGetType(object) == NumTypeLong;
                 }
                 else if(targetType == "Double"){
                     matches = StarbytesObjectTypecheck(object,StarbytesNumType())
-                        && StarbytesNumGetType(object) == NumTypeFloat;
+                        && StarbytesNumGetType(object) == NumTypeDouble;
                 }
                 else if(!StarbytesObjectIs(object)){
                     auto classType = StarbytesClassObjectGetClass(object);
@@ -1336,14 +1449,6 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             if(!object){
                 return nullptr;
             }
-
-            if(targetType == "Long"){
-                targetType = "Int";
-            }
-            else if(targetType == "Double"){
-                targetType = "Float";
-            }
-
             auto failCast = [&](const std::string &message) -> StarbytesObject {
                 lastRuntimeError = message;
                 StarbytesObjectRelease(object);
@@ -1364,8 +1469,15 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                     value = (bool)StarbytesBoolValue(object);
                 }
                 else if(StarbytesObjectTypecheck(object,StarbytesNumType())){
-                    if(StarbytesNumGetType(object) == NumTypeFloat){
+                    auto objectType = StarbytesNumGetType(object);
+                    if(objectType == NumTypeFloat){
                         value = StarbytesNumGetFloatValue(object) != 0.0f;
+                    }
+                    else if(objectType == NumTypeDouble){
+                        value = StarbytesNumGetDoubleValue(object) != 0.0;
+                    }
+                    else if(objectType == NumTypeLong){
+                        value = StarbytesNumGetLongValue(object) != 0;
                     }
                     else {
                         value = StarbytesNumGetIntValue(object) != 0;
@@ -1381,8 +1493,15 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             if(targetType == "Int"){
                 int value = 0;
                 if(StarbytesObjectTypecheck(object,StarbytesNumType())){
-                    if(StarbytesNumGetType(object) == NumTypeFloat){
+                    auto objectType = StarbytesNumGetType(object);
+                    if(objectType == NumTypeFloat){
                         value = (int)StarbytesNumGetFloatValue(object);
+                    }
+                    else if(objectType == NumTypeDouble){
+                        value = (int)StarbytesNumGetDoubleValue(object);
+                    }
+                    else if(objectType == NumTypeLong){
+                        value = (int)StarbytesNumGetLongValue(object);
                     }
                     else {
                         value = StarbytesNumGetIntValue(object);
@@ -1405,11 +1524,55 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 }
                 return failCast("Int cast failed: unsupported source type");
             }
+            if(targetType == "Long"){
+                int64_t value = 0;
+                if(StarbytesObjectTypecheck(object,StarbytesNumType())){
+                    auto objectType = StarbytesNumGetType(object);
+                    if(objectType == NumTypeFloat){
+                        value = (int64_t)StarbytesNumGetFloatValue(object);
+                    }
+                    else if(objectType == NumTypeDouble){
+                        value = (int64_t)StarbytesNumGetDoubleValue(object);
+                    }
+                    else if(objectType == NumTypeLong){
+                        value = StarbytesNumGetLongValue(object);
+                    }
+                    else {
+                        value = (int64_t)StarbytesNumGetIntValue(object);
+                    }
+                    StarbytesObjectRelease(object);
+                    return StarbytesNumNew(NumTypeLong,value);
+                }
+                if(StarbytesObjectTypecheck(object,StarbytesBoolType())){
+                    value = (bool)StarbytesBoolValue(object)? 1 : 0;
+                    StarbytesObjectRelease(object);
+                    return StarbytesNumNew(NumTypeLong,value);
+                }
+                if(StarbytesObjectTypecheck(object,StarbytesStrType())){
+                    auto text = StarbytesStrGetBuffer(object);
+                    errno = 0;
+                    char *endPtr = nullptr;
+                    long long parsed = std::strtoll(text ? text : "",&endPtr,10);
+                    if(errno != 0 || endPtr == nullptr || *endPtr != '\0'){
+                        return failCast("Long cast failed: string is not a valid integer");
+                    }
+                    StarbytesObjectRelease(object);
+                    return StarbytesNumNew(NumTypeLong,(int64_t)parsed);
+                }
+                return failCast("Long cast failed: unsupported source type");
+            }
             if(targetType == "Float"){
                 float value = 0.0f;
                 if(StarbytesObjectTypecheck(object,StarbytesNumType())){
-                    if(StarbytesNumGetType(object) == NumTypeFloat){
+                    auto objectType = StarbytesNumGetType(object);
+                    if(objectType == NumTypeFloat){
                         value = StarbytesNumGetFloatValue(object);
+                    }
+                    else if(objectType == NumTypeDouble){
+                        value = (float)StarbytesNumGetDoubleValue(object);
+                    }
+                    else if(objectType == NumTypeLong){
+                        value = (float)StarbytesNumGetLongValue(object);
                     }
                     else {
                         value = (float)StarbytesNumGetIntValue(object);
@@ -1431,6 +1594,40 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                     return StarbytesNumNew(NumTypeFloat,value);
                 }
                 return failCast("Float cast failed: unsupported source type");
+            }
+            if(targetType == "Double"){
+                double value = 0.0;
+                if(StarbytesObjectTypecheck(object,StarbytesNumType())){
+                    auto objectType = StarbytesNumGetType(object);
+                    if(objectType == NumTypeFloat){
+                        value = StarbytesNumGetFloatValue(object);
+                    }
+                    else if(objectType == NumTypeDouble){
+                        value = StarbytesNumGetDoubleValue(object);
+                    }
+                    else if(objectType == NumTypeLong){
+                        value = (double)StarbytesNumGetLongValue(object);
+                    }
+                    else {
+                        value = (double)StarbytesNumGetIntValue(object);
+                    }
+                    StarbytesObjectRelease(object);
+                    return StarbytesNumNew(NumTypeDouble,value);
+                }
+                if(StarbytesObjectTypecheck(object,StarbytesBoolType())){
+                    value = (bool)StarbytesBoolValue(object)? 1.0 : 0.0;
+                    StarbytesObjectRelease(object);
+                    return StarbytesNumNew(NumTypeDouble,value);
+                }
+                if(StarbytesObjectTypecheck(object,StarbytesStrType())){
+                    auto text = StarbytesStrGetBuffer(object);
+                    if(!parseDoubleStrict(text? text : "",value)){
+                        return failCast("Double cast failed: string is not a valid float");
+                    }
+                    StarbytesObjectRelease(object);
+                    return StarbytesNumNew(NumTypeDouble,value);
+                }
+                return failCast("Double cast failed: unsupported source type");
             }
 
             if(!StarbytesObjectIs(object)){
@@ -1499,9 +1696,15 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             }
             StarbytesObject result = nullptr;
             if(StarbytesObjectTypecheck(collection,StarbytesArrayType()) &&
-               StarbytesObjectTypecheck(index,StarbytesNumType()) &&
-               StarbytesNumGetType(index) == NumTypeInt){
-                int idx = StarbytesNumGetIntValue(index);
+               StarbytesObjectTypecheck(index,StarbytesNumType())){
+                int idx = -1;
+                auto indexType = StarbytesNumGetType(index);
+                if(indexType == NumTypeInt){
+                    idx = StarbytesNumGetIntValue(index);
+                }
+                else if(indexType == NumTypeLong){
+                    idx = (int)StarbytesNumGetLongValue(index);
+                }
                 if(idx >= 0 && (unsigned)idx < StarbytesArrayGetLength(collection)){
                     result = StarbytesArrayIndex(collection,(unsigned)idx);
                 }
@@ -1538,9 +1741,15 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             }
             bool success = false;
             if(StarbytesObjectTypecheck(collection,StarbytesArrayType()) &&
-               StarbytesObjectTypecheck(index,StarbytesNumType()) &&
-               StarbytesNumGetType(index) == NumTypeInt){
-                int idx = StarbytesNumGetIntValue(index);
+               StarbytesObjectTypecheck(index,StarbytesNumType())){
+                int idx = -1;
+                auto indexType = StarbytesNumGetType(index);
+                if(indexType == NumTypeInt){
+                    idx = StarbytesNumGetIntValue(index);
+                }
+                else if(indexType == NumTypeLong){
+                    idx = (int)StarbytesNumGetLongValue(index);
+                }
                 if(idx >= 0 && (unsigned)idx < StarbytesArrayGetLength(collection)){
                     StarbytesArraySet(collection,(unsigned)idx,value);
                     success = true;
@@ -1750,11 +1959,19 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 }
             };
             auto expectIntArg = [&](StarbytesObject arg,int &value) -> bool {
-                if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt){
+                if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType())){
                     return false;
                 }
-                value = StarbytesNumGetIntValue(arg);
-                return true;
+                auto argType = StarbytesNumGetType(arg);
+                if(argType == NumTypeInt){
+                    value = StarbytesNumGetIntValue(arg);
+                    return true;
+                }
+                if(argType == NumTypeLong){
+                    value = (int)StarbytesNumGetLongValue(arg);
+                    return true;
+                }
+                return false;
             };
             auto expectStringArg = [&](StarbytesObject arg,std::string &value) -> bool {
                 if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())){
@@ -2848,6 +3065,7 @@ void InterpImpl::exec(std::istream & in){
     std::string g = "GLOBAL";
     allocator->setScope(g);
     activeInput = &in;
+    lastRuntimeError.clear();
     if(!in.read((char *)&code,sizeof(RTCode))){
         activeInput = nullptr;
         return;
@@ -2857,6 +3075,9 @@ void InterpImpl::exec(std::istream & in){
     while(in.good() && code != CODE_MODULE_END){
         execNorm(code,in,&temp,&temp2);
         processMicrotasks();
+        if(!lastRuntimeError.empty()){
+            break;
+        }
         if(!in.read((char *)&code,sizeof(RTCode))){
             break;
         }

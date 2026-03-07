@@ -1,0 +1,54 @@
+def Alias<T = String> = T
+
+func mark<T, Tag = String>(value:T) T {
+    return value
+}
+
+class Box<T = String> {
+    func echo(value:T) T {
+        return value
+    }
+
+    func mark<U, Tag = String>(value:U) U {
+        return value
+    }
+}
+
+interface Mapper<T = String> {
+    func mark<U, Tag = String>(value:U) U
+
+    func through(value:T) T {
+        return self.mark<T>(value)
+    }
+}
+
+class EchoMapper : Mapper {
+    func mark<U, Tag = String>(value:U) U {
+        return value
+    }
+
+    func through(value:String) String {
+        return self.mark<String>(value)
+    }
+}
+
+decl aliasText:Alias = "ALIAS-DEFAULT-OK"
+decl inferred:Int = mark(7)
+decl explicitPartial:Int = mark<Int>(8)
+
+decl box:Box = new Box()
+decl echoed:String = box.echo("BOX-TYPE-DEFAULT-OK")
+decl boxed:Int = box.mark<Int>(9)
+
+decl mapper = new EchoMapper()
+decl mapped:Int = mapper.mark<Int>(11)
+decl through:String = mapper.through("INTERFACE-DEFAULT-OK")
+
+print(aliasText)
+print(inferred)
+print(explicitPartial)
+print(echoed)
+print(boxed)
+print(mapped)
+print(through)
+print("GENERIC-DEFAULTS-WAVE1-OK")

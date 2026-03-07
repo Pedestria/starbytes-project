@@ -471,11 +471,38 @@ namespace starbytes {
         return true;
     }
 
-    static string_set genericParamSet(const std::vector<ASTIdentifier *> &params){
+    static Semantics::SymbolTable::GenericParam::Variance toSymbolGenericVariance(ASTGenericVariance variance){
+        switch(variance){
+            case ASTGenericVariance::In:
+                return Semantics::SymbolTable::GenericParam::In;
+            case ASTGenericVariance::Out:
+                return Semantics::SymbolTable::GenericParam::Out;
+            case ASTGenericVariance::Invariant:
+            default:
+                return Semantics::SymbolTable::GenericParam::Invariant;
+        }
+    }
+
+    static void appendGenericParams(std::vector<Semantics::SymbolTable::GenericParam> &dest,
+                                    const std::vector<ASTGenericParamDecl *> &src){
+        for(auto *param : src){
+            if(!param || !param->id){
+                continue;
+            }
+            Semantics::SymbolTable::GenericParam meta;
+            meta.name = param->id->val;
+            meta.variance = toSymbolGenericVariance(param->variance);
+            meta.defaultType = param->defaultType;
+            meta.bounds = param->bounds;
+            dest.push_back(std::move(meta));
+        }
+    }
+
+    static string_set genericParamSet(const std::vector<ASTGenericParamDecl *> &params){
         string_set names;
         for(auto *param : params){
-            if(param){
-                names.insert(param->val);
+            if(param && param->id){
+                names.insert(param->id->val);
             }
         }
         return names;
@@ -619,11 +646,7 @@ namespace starbytes {
                 data->returnType = funcDecl->returnType ? funcDecl->returnType : VOID_TYPE;
                 data->funcType = funcDecl->funcType;
                 data->isLazy = funcDecl->isLazy;
-                for(auto *genericParam : funcDecl->genericTypeParams){
-                    if(genericParam){
-                        data->genericParams.push_back(genericParam->val);
-                    }
-                }
+                appendGenericParams(data->genericParams,funcDecl->genericParams);
                 fillFunctionParamsFromDecl(data,funcDecl->params);
                 data->funcType = buildFunctionTypeFromFunctionData(data,funcDecl);
                 entry->name = sourceName;
@@ -649,11 +672,7 @@ namespace starbytes {
                 data->classType = classDecl->classType ? classDecl->classType : ASTType::Create(sourceName,classDecl,false,false);
                 data->superClassType = classDecl->superClass;
                 data->interfaces = classDecl->interfaces;
-                for(auto *genericParam : classDecl->genericTypeParams){
-                    if(genericParam){
-                        data->genericParams.push_back(genericParam->val);
-                    }
-                }
+                appendGenericParams(data->genericParams,classDecl->genericParams);
                 for(auto *fieldDecl : classDecl->fields){
                     if(!fieldDecl){
                         continue;
@@ -685,11 +704,7 @@ namespace starbytes {
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
-                    for(auto *genericParam : methodDecl->genericTypeParams){
-                        if(genericParam){
-                            method->genericParams.push_back(genericParam->val);
-                        }
-                    }
+                    appendGenericParams(method->genericParams,methodDecl->genericParams);
                     fillFunctionParamsFromDecl(method,methodDecl->params);
                     method->funcType = buildFunctionTypeFromFunctionData(method,methodDecl);
                     data->instMethods.push_back(method);
@@ -702,6 +717,7 @@ namespace starbytes {
                     ctor->name = "__ctor__" + std::to_string(ctorDecl->params.size());
                     ctor->returnType = VOID_TYPE;
                     ctor->funcType = data->classType;
+                    appendGenericParams(ctor->genericParams,ctorDecl->genericParams);
                     fillFunctionParamsFromDecl(ctor,ctorDecl->params);
                     data->constructors.push_back(ctor);
                 }
@@ -723,11 +739,7 @@ namespace starbytes {
                 entry->data = data;
                 data->interfaceType = interfaceDecl->interfaceType ? interfaceDecl->interfaceType
                                                                     : ASTType::Create(sourceName,interfaceDecl,false,false);
-                for(auto *genericParam : interfaceDecl->genericTypeParams){
-                    if(genericParam){
-                        data->genericParams.push_back(genericParam->val);
-                    }
-                }
+                appendGenericParams(data->genericParams,interfaceDecl->genericParams);
                 for(auto *fieldDecl : interfaceDecl->fields){
                     if(!fieldDecl){
                         continue;
@@ -752,11 +764,7 @@ namespace starbytes {
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
-                    for(auto *genericParam : methodDecl->genericTypeParams){
-                        if(genericParam){
-                            method->genericParams.push_back(genericParam->val);
-                        }
-                    }
+                    appendGenericParams(method->genericParams,methodDecl->genericParams);
                     fillFunctionParamsFromDecl(method,methodDecl->params);
                     method->funcType = buildFunctionTypeFromFunctionData(method,methodDecl);
                     data->methods.push_back(method);
@@ -778,11 +786,7 @@ namespace starbytes {
                 entry->type = Semantics::SymbolTable::Entry::TypeAlias;
                 entry->data = data;
                 data->aliasType = aliasDecl->aliasedType;
-                for(auto *genericParam : aliasDecl->genericTypeParams){
-                    if(genericParam){
-                        data->genericParams.push_back(genericParam->val);
-                    }
-                }
+                appendGenericParams(data->genericParams,aliasDecl->genericParams);
                 tablePtr->addSymbolInScope(entry,decl->scope);
                 return;
             }
@@ -839,24 +843,42 @@ static ASTType *substituteTypeParams(ASTType *type,
     }
 
     static ASTType *canonicalizeBuiltinAliasType(ASTType *type){
-        if(!type){
-            return nullptr;
-        }
-        if(type->nameMatches(LONG_TYPE)){
-            auto *canonical = ASTType::Create(INT_TYPE->getName(),type->getParentNode(),false,false);
-            canonical->isOptional = type->isOptional;
-            canonical->isThrowable = type->isThrowable;
-            canonical->isGenericParam = type->isGenericParam;
-            return canonical;
-        }
-        if(type->nameMatches(DOUBLE_TYPE)){
-            auto *canonical = ASTType::Create(FLOAT_TYPE->getName(),type->getParentNode(),false,false);
-            canonical->isOptional = type->isOptional;
-            canonical->isThrowable = type->isThrowable;
-            canonical->isGenericParam = type->isGenericParam;
-            return canonical;
-        }
         return type;
+    }
+
+    static bool isNumericTypeNode(ASTType *type){
+        return type && (type->nameMatches(INT_TYPE)
+                        || type->nameMatches(LONG_TYPE)
+                        || type->nameMatches(FLOAT_TYPE)
+                        || type->nameMatches(DOUBLE_TYPE));
+    }
+
+    static bool isWideningNumericCast(ASTType *expected,ASTType *actual){
+        if(!expected || !actual || !isNumericTypeNode(expected) || !isNumericTypeNode(actual)){
+            return false;
+        }
+        if(expected->nameMatches(actual)){
+            return false;
+        }
+        if(expected->nameMatches(LONG_TYPE) && actual->nameMatches(INT_TYPE)){
+            return true;
+        }
+        if(expected->nameMatches(FLOAT_TYPE) && actual->nameMatches(INT_TYPE)){
+            return true;
+        }
+        if(expected->nameMatches(DOUBLE_TYPE) &&
+           (actual->nameMatches(INT_TYPE) || actual->nameMatches(LONG_TYPE) || actual->nameMatches(FLOAT_TYPE))){
+            return true;
+        }
+        return false;
+    }
+
+    static bool applyImplicitNumericCast(ASTType *expected,ASTType *actual,ASTExpr *expr){
+        if(!expr || !isWideningNumericCast(expected,actual)){
+            return false;
+        }
+        expr->runtimeCastTargetName = expected->getName().str();
+        return true;
     }
 
     static ASTType *resolveAliasType(ASTType *type,
@@ -898,13 +920,29 @@ static ASTType *substituteTypeParams(ASTType *type,
         if(!aliasData || !aliasData->aliasType){
             return resolved;
         }
-        if(aliasData->genericParams.size() != resolved->typeParams.size()){
+        if(aliasData->genericParams.size() < resolved->typeParams.size()){
             return resolved;
         }
 
         string_map<ASTType *> bindings;
-        for(size_t i = 0;i < aliasData->genericParams.size();++i){
-            bindings.insert(std::make_pair(aliasData->genericParams[i],resolved->typeParams[i]));
+        for(size_t i = 0;i < resolved->typeParams.size();++i){
+            bindings.insert(std::make_pair(aliasData->genericParams[i].name,resolved->typeParams[i]));
+        }
+        for(size_t i = resolved->typeParams.size();i < aliasData->genericParams.size();++i){
+            auto &param = aliasData->genericParams[i];
+            if(!param.defaultType){
+                return resolved;
+            }
+            auto *materializedDefault = substituteTypeParams(param.defaultType,bindings,type->getParentNode());
+            if(!materializedDefault){
+                return resolved;
+            }
+            materializedDefault = resolveAliasType(materializedDefault,symbolTableContext,scope,genericTypeParams,visiting);
+            if(!materializedDefault){
+                return resolved;
+            }
+            resolved->addTypeParam(materializedDefault);
+            bindings[param.name] = materializedDefault;
         }
         visiting.insert(key);
         auto *substituted = substituteTypeParams(aliasData->aliasType,bindings,type->getParentNode());
@@ -996,11 +1034,7 @@ static ASTType *substituteTypeParams(ASTType *type,
             data->returnType = func->returnType;
             data->funcType = func->funcType;
             data->isLazy = func->isLazy;
-            for(auto *genericParam : func->genericTypeParams){
-                if(genericParam){
-                    data->genericParams.push_back(genericParam->val);
-                }
-            }
+            appendGenericParams(data->genericParams,func->genericParams);
             fillFunctionParamsFromDecl(data,func->params);
             data->funcType = buildFunctionTypeFromFunctionData(data,func);
             
@@ -1036,12 +1070,17 @@ static ASTType *substituteTypeParams(ASTType *type,
                  auto *data = tablePtr->allocate<Semantics::SymbolTable::Class>();
                  e->data = data;
                  data->classType = ASTType::Create(emittedName.c_str(),classDecl,false,false);
-                 for(auto *genericParam : classDecl->genericTypeParams){
-                     if(!genericParam){
+                 for(auto *genericParam : classDecl->genericParams){
+                     if(!genericParam || !genericParam->id){
                          continue;
                      }
-                     data->genericParams.push_back(genericParam->val);
-                     auto *paramType = ASTType::Create(genericParam->val,classDecl,true,false);
+                     Semantics::SymbolTable::GenericParam meta;
+                     meta.name = genericParam->id->val;
+                     meta.variance = toSymbolGenericVariance(genericParam->variance);
+                     meta.defaultType = genericParam->defaultType;
+                     meta.bounds = genericParam->bounds;
+                     data->genericParams.push_back(std::move(meta));
+                     auto *paramType = ASTType::Create(genericParam->id->val,classDecl,true,false);
                      paramType->isGenericParam = true;
                      data->classType->addTypeParam(paramType);
                  }
@@ -1071,11 +1110,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                      method->returnType = m->returnType;
                      method->funcType = m->funcType;
                      method->isLazy = m->isLazy;
-                     for(auto *genericParam : m->genericTypeParams){
-                         if(genericParam){
-                             method->genericParams.push_back(genericParam->val);
-                         }
-                     }
+                     appendGenericParams(method->genericParams,m->genericParams);
                      fillFunctionParamsFromDecl(method,m->params);
                      method->funcType = buildFunctionTypeFromFunctionData(method,m);
                      data->instMethods.push_back(method);
@@ -1085,6 +1120,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                      ctor->name = "__ctor__" + std::to_string(c->params.size());
                      ctor->returnType = VOID_TYPE;
                      ctor->funcType = data->classType;
+                     appendGenericParams(ctor->genericParams,c->genericParams);
                      fillFunctionParamsFromDecl(ctor,c->params);
                      data->constructors.push_back(ctor);
                  }
@@ -1102,12 +1138,17 @@ static ASTType *substituteTypeParams(ASTType *type,
                 auto *data = tablePtr->allocate<Semantics::SymbolTable::Interface>();
                 e->data = data;
                 data->interfaceType = ASTType::Create(emittedName.c_str(),interfaceDecl,false,false);
-                for(auto *genericParam : interfaceDecl->genericTypeParams){
-                    if(!genericParam){
+                for(auto *genericParam : interfaceDecl->genericParams){
+                    if(!genericParam || !genericParam->id){
                         continue;
                     }
-                    data->genericParams.push_back(genericParam->val);
-                    auto *paramType = ASTType::Create(genericParam->val,interfaceDecl,true,false);
+                    Semantics::SymbolTable::GenericParam meta;
+                    meta.name = genericParam->id->val;
+                    meta.variance = toSymbolGenericVariance(genericParam->variance);
+                    meta.defaultType = genericParam->defaultType;
+                    meta.bounds = genericParam->bounds;
+                    data->genericParams.push_back(std::move(meta));
+                    auto *paramType = ASTType::Create(genericParam->id->val,interfaceDecl,true,false);
                     paramType->isGenericParam = true;
                     data->interfaceType->addTypeParam(paramType);
                 }
@@ -1130,11 +1171,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
-                    for(auto *genericParam : methodDecl->genericTypeParams){
-                        if(genericParam){
-                            method->genericParams.push_back(genericParam->val);
-                        }
-                    }
+                    appendGenericParams(method->genericParams,methodDecl->genericParams);
                     fillFunctionParamsFromDecl(method,methodDecl->params);
                     method->funcType = buildFunctionTypeFromFunctionData(method,methodDecl);
                     data->methods.push_back(method);
@@ -1153,11 +1190,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                 entry->type = Semantics::SymbolTable::Entry::TypeAlias;
                 entry->data = data;
                 data->aliasType = aliasDecl->aliasedType;
-                for(auto *genericParam : aliasDecl->genericTypeParams){
-                    if(genericParam){
-                        data->genericParams.push_back(genericParam->val);
-                    }
-                }
+                appendGenericParams(data->genericParams,aliasDecl->genericParams);
                 aliasDecl->id->val = emittedName;
                 tablePtr->addSymbolInScope(entry,decl->scope);
                 break;
@@ -1288,31 +1321,62 @@ static ASTType *substituteTypeParams(ASTType *type,
         }
 
         size_t expectedArity = 0;
+        const std::vector<Semantics::SymbolTable::GenericParam> *declaredGenericParams = nullptr;
         if(entry->type == Semantics::SymbolTable::Entry::Class){
             auto *classData = (Semantics::SymbolTable::Class *)entry->data;
             if(classData){
                 expectedArity = classData->genericParams.size();
+                declaredGenericParams = &classData->genericParams;
             }
         }
         else if(entry->type == Semantics::SymbolTable::Entry::Interface){
             auto *interfaceData = (Semantics::SymbolTable::Interface *)entry->data;
             if(interfaceData){
                 expectedArity = interfaceData->genericParams.size();
+                declaredGenericParams = &interfaceData->genericParams;
             }
         }
         else if(entry->type == Semantics::SymbolTable::Entry::TypeAlias){
             auto *aliasData = (Semantics::SymbolTable::TypeAlias *)entry->data;
             if(aliasData){
                 expectedArity = aliasData->genericParams.size();
+                declaredGenericParams = &aliasData->genericParams;
             }
         }
 
-        if(type->typeParams.size() != expectedArity){
+        if(type->typeParams.size() > expectedArity){
             std::ostringstream ss;
             ss << "Type `" << type->getName() << "` expects " << expectedArity
                << " type argument(s), but got " << type->typeParams.size() << ".";
             errStream.push(SemanticADiagnostic::create(ss.str(),diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
             return false;
+        }
+        if(declaredGenericParams && type->typeParams.size() < expectedArity){
+            string_map<ASTType *> bindings;
+            for(size_t i = 0;i < type->typeParams.size();++i){
+                bindings.insert(std::make_pair((*declaredGenericParams)[i].name,type->typeParams[i]));
+            }
+            for(size_t i = type->typeParams.size();i < declaredGenericParams->size();++i){
+                const auto &param = (*declaredGenericParams)[i];
+                if(!param.defaultType){
+                    std::ostringstream ss;
+                    ss << "Type `" << type->getName() << "` expects " << expectedArity
+                       << " type argument(s), but got " << type->typeParams.size() << ".";
+                    errStream.push(SemanticADiagnostic::create(ss.str(),diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
+                    return false;
+                }
+                auto *materializedDefault = substituteTypeParams(param.defaultType,bindings,diagNode ? diagNode : (ASTStmt *)type->getParentNode());
+                if(!materializedDefault){
+                    errStream.push(SemanticADiagnostic::create("Failed to materialize generic default type argument.",diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
+                    return false;
+                }
+                if(!typeExists(materializedDefault,contextTableContext,scope,genericTypeParams,diagNode)){
+                    return false;
+                }
+                materializedDefault = resolveAliasType(materializedDefault,contextTableContext,scope,genericTypeParams);
+                type->addTypeParam(materializedDefault);
+                bindings[param.name] = materializedDefault;
+            }
         }
         return true;
     }
@@ -1404,6 +1468,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                     if(!resolvedElementType || !silentTypeMatch(expectedElementType,resolvedElementType)){
                         return false;
                     }
+                    applyImplicitNumericCast(expectedElementType,resolvedElementType,elementExpr);
                 }
                 return true;
             }
@@ -1437,6 +1502,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                         if(!resolvedKeyType || !silentTypeMatch(expectedKeyType,resolvedKeyType)){
                             return false;
                         }
+                        applyImplicitNumericCast(expectedKeyType,resolvedKeyType,entry.first);
                     }
 
                     if(self(self,expectedValueType,entry.second)){
@@ -1450,6 +1516,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                     if(!resolvedValueType || !silentTypeMatch(expectedValueType,resolvedValueType)){
                         return false;
                     }
+                    applyImplicitNumericCast(expectedValueType,resolvedValueType,entry.second);
                 }
                 return true;
             }
@@ -1476,7 +1543,11 @@ static ASTType *substituteTypeParams(ASTType *type,
                         return false;
                     }
                     auto *resolvedBranchType = resolveAliasType(branchType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
-                    return resolvedBranchType && silentTypeMatch(resolvedExpectedType,resolvedBranchType);
+                    if(!resolvedBranchType || !silentTypeMatch(resolvedExpectedType,resolvedBranchType)){
+                        return false;
+                    }
+                    applyImplicitNumericCast(resolvedExpectedType,resolvedBranchType,branch);
+                    return true;
                 };
 
                 return branchMatches(expr->middleExpr) && branchMatches(expr->rightExpr);
@@ -1486,6 +1557,7 @@ static ASTType *substituteTypeParams(ASTType *type,
         };
 
         if(expr_to_eval && literalMatchesExpected(literalMatchesExpected,resolvedType,expr_to_eval)){
+            applyImplicitNumericCast(resolvedType,resolvedOtherType,expr_to_eval);
             return true;
         }
 
@@ -1516,12 +1588,16 @@ static ASTType *substituteTypeParams(ASTType *type,
             }
         }
         
-        return resolvedType->match(resolvedOtherType,[&](std::string message){
+        if(resolvedType->match(resolvedOtherType,[&](std::string message){
             std::ostringstream ss;
             ss << message << "\nContext: Type `" << resolvedOtherType->getName() << "` was implied from " << contextLabel;
             auto res = ss.str();
             errStream.push(SemanticADiagnostic::create(res,expr_to_eval,Diagnostic::Error));
-        });
+        })){
+            applyImplicitNumericCast(resolvedType,resolvedOtherType,expr_to_eval);
+            return true;
+        }
+        return false;
     }
 
 
@@ -1536,6 +1612,39 @@ static ASTType *substituteTypeParams(ASTType *type,
             bool hasErrored = false;
             auto rc = evalGenericDecl(decl,symbolTableContext,scopeContext,&hasErrored);
             if(hasErrored && !rc){
+                auto validateGenericParamDecls = [&](const std::vector<ASTGenericParamDecl *> &params,
+                                                    const string_set *outerGenericParams,
+                                                    ASTStmt *owner) -> bool {
+                    string_set visibleGenericParams;
+                    if(outerGenericParams){
+                        visibleGenericParams = *outerGenericParams;
+                    }
+                    bool sawDefault = false;
+                    for(auto *param : params){
+                        if(!param || !param->id){
+                            errStream.push(SemanticADiagnostic::create("Malformed generic parameter declaration.",owner,Diagnostic::Error));
+                            return false;
+                        }
+                        for(auto *bound : param->bounds){
+                            if(!typeExists(bound,symbolTableContext,scope,&visibleGenericParams,owner)){
+                                return false;
+                            }
+                        }
+                        if(param->defaultType){
+                            sawDefault = true;
+                            if(!typeExists(param->defaultType,symbolTableContext,scope,&visibleGenericParams,owner)){
+                                return false;
+                            }
+                            param->defaultType = resolveAliasType(param->defaultType,symbolTableContext,scope,&visibleGenericParams);
+                        }
+                        else if(sawDefault){
+                            errStream.push(SemanticADiagnostic::create("Generic parameters with defaults must be trailing.",owner,Diagnostic::Error));
+                            return false;
+                        }
+                        visibleGenericParams.insert(param->id->val);
+                    }
+                    return true;
+                };
                 switch (decl->type) {
                     /// FuncDecl
                     case FUNC_DECL : {
@@ -1544,7 +1653,10 @@ static ASTType *substituteTypeParams(ASTType *type,
                         
 
                         ASTIdentifier *func_id = funcNode->funcId;
-                        auto funcGenericParams = genericParamSet(funcNode->genericTypeParams);
+                        if(!validateGenericParamDecls(funcNode->genericParams,scopeContext.genericTypeParams,funcNode)){
+                            return false;
+                        }
+                        auto funcGenericParams = genericParamSet(funcNode->genericParams);
                         
                         /// Ensure that Function declared is unique within the current scope.
                         auto symEntry = symbolTableContext.main->symbolExists(func_id->val,scope);
@@ -1636,7 +1748,10 @@ static ASTType *substituteTypeParams(ASTType *type,
                         addTempDeclEntryForSelfReference(classDecl,classSelfSymbols.get());
                         ScopedAdditionalSymbolTable classSelfSymbolScope(symbolTableContext,classSelfSymbols);
 
-                        auto classGenericParams = genericParamSet(classDecl->genericTypeParams);
+                        if(!validateGenericParamDecls(classDecl->genericParams,scopeContext.genericTypeParams,classDecl)){
+                            return false;
+                        }
+                        auto classGenericParams = genericParamSet(classDecl->genericParams);
                         ASTType *resolvedSuperClass = nullptr;
                         std::vector<ASTType *> resolvedInterfaces;
                         for(auto *baseType : classDecl->interfaces){
@@ -1736,8 +1851,11 @@ static ASTType *substituteTypeParams(ASTType *type,
                                 return false;
                             }
                             methodNames.insert(m->funcId->val);
+                            if(!validateGenericParamDecls(m->genericParams,&classGenericParams,m)){
+                                return false;
+                            }
                             auto methodGenericParams = classGenericParams;
-                            auto ownMethodGenericParams = genericParamSet(m->genericTypeParams);
+                            auto ownMethodGenericParams = genericParamSet(m->genericParams);
                             methodGenericParams.insert(ownMethodGenericParams.begin(),ownMethodGenericParams.end());
                             for(auto &paramPair : m->params){
                                 if(!typeExists(paramPair.second,symbolTableContext,scope,&methodGenericParams,m)){
@@ -1805,18 +1923,24 @@ static ASTType *substituteTypeParams(ASTType *type,
                                 return false;
                             }
                             ctorArities.insert(arity);
+                            if(!validateGenericParamDecls(c->genericParams,&classGenericParams,c)){
+                                return false;
+                            }
+                            auto ctorGenericParams = classGenericParams;
+                            auto ownCtorGenericParams = genericParamSet(c->genericParams);
+                            ctorGenericParams.insert(ownCtorGenericParams.begin(),ownCtorGenericParams.end());
                             for(auto &paramPair : c->params){
-                                if(!typeExists(paramPair.second,symbolTableContext,scope,&classGenericParams,c)){
+                                if(!typeExists(paramPair.second,symbolTableContext,scope,&ctorGenericParams,c)){
                                     return false;
                                 }
-                                paramPair.second = resolveAliasType(paramPair.second,symbolTableContext,scope,&classGenericParams);
+                                paramPair.second = resolveAliasType(paramPair.second,symbolTableContext,scope,&ctorGenericParams);
                             }
                             std::map<ASTIdentifier *,ASTType *> ctorParams = c->params;
                             auto *selfId = new ASTIdentifier();
                             selfId->val = "self";
                             ctorParams.insert(std::make_pair(selfId,classDecl->classType));
                             bool ctorHasFailed = false;
-                            ASTScopeSemanticsContext ctorScopeContext {c->blockStmt->parentScope,&ctorParams,&classGenericParams};
+                            ASTScopeSemanticsContext ctorScopeContext {c->blockStmt->parentScope,&ctorParams,&ctorGenericParams};
                             ASTType *ctorReturnType = evalBlockStmtForASTType(c->blockStmt,
                                                                              symbolTableContext,
                                                                              &ctorHasFailed,
@@ -1857,7 +1981,7 @@ static ASTType *substituteTypeParams(ASTType *type,
 
                             string_map<ASTType *> interfaceBindings;
                             for(size_t i = 0;i < interfaceData->genericParams.size() && i < implementedInterfaceType->typeParams.size();++i){
-                                interfaceBindings.insert(std::make_pair(interfaceData->genericParams[i],implementedInterfaceType->typeParams[i]));
+                                interfaceBindings.insert(std::make_pair(interfaceData->genericParams[i].name,implementedInterfaceType->typeParams[i]));
                             }
 
                             for(auto *requiredField : interfaceData->fields){
@@ -1896,7 +2020,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                                     errStream.push(SemanticADiagnostic::create(ss.str(),classDecl,Diagnostic::Error));
                                     return false;
                                 }
-                                if(requiredMethod->genericParams.size() != classMethod->genericTypeParams.size()){
+                                if(requiredMethod->genericParams.size() != classMethod->genericParams.size()){
                                     std::ostringstream ss;
                                     ss << "Class method `" << classMethod->funcId->val
                                        << "` generic parameter count does not match interface method declaration.";
@@ -1906,16 +2030,16 @@ static ASTType *substituteTypeParams(ASTType *type,
 
                                 auto classMethodGenericParams = classGenericParams;
                                 string_map<ASTType *> requiredMethodBindings = interfaceBindings;
-                                for(size_t i = 0;i < classMethod->genericTypeParams.size();++i){
-                                    auto *classMethodGeneric = classMethod->genericTypeParams[i];
-                                    if(!classMethodGeneric){
+                                for(size_t i = 0;i < classMethod->genericParams.size();++i){
+                                    auto *classMethodGeneric = classMethod->genericParams[i];
+                                    if(!classMethodGeneric || !classMethodGeneric->id){
                                         errStream.push(SemanticADiagnostic::create("Malformed class method generic parameter.",classMethod,Diagnostic::Error));
                                         return false;
                                     }
-                                    classMethodGenericParams.insert(classMethodGeneric->val);
-                                    auto *boundGenericType = ASTType::Create(classMethodGeneric->val,classDecl,true,false);
+                                    classMethodGenericParams.insert(classMethodGeneric->id->val);
+                                    auto *boundGenericType = ASTType::Create(classMethodGeneric->id->val,classDecl,true,false);
                                     boundGenericType->isGenericParam = true;
-                                    requiredMethodBindings[requiredMethod->genericParams[i]] = boundGenericType;
+                                    requiredMethodBindings[requiredMethod->genericParams[i].name] = boundGenericType;
                                 }
                                 if(!classMethod->returnType || !requiredMethod->returnType){
                                     errStream.push(SemanticADiagnostic::create("Interface method return type could not be resolved.",classMethod,Diagnostic::Error));
@@ -1967,7 +2091,10 @@ static ASTType *substituteTypeParams(ASTType *type,
                         addTempDeclEntryForSelfReference(interfaceDecl,interfaceSelfSymbols.get());
                         ScopedAdditionalSymbolTable interfaceSelfSymbolScope(symbolTableContext,interfaceSelfSymbols);
 
-                        auto interfaceGenericParams = genericParamSet(interfaceDecl->genericTypeParams);
+                        if(!validateGenericParamDecls(interfaceDecl->genericParams,scopeContext.genericTypeParams,interfaceDecl)){
+                            return false;
+                        }
+                        auto interfaceGenericParams = genericParamSet(interfaceDecl->genericParams);
                         bool hasInterfaceError = false;
                         ASTScopeSemanticsContext interfaceScopeContext {interfaceDecl->scope,nullptr,&interfaceGenericParams};
                         for(auto *fieldDecl : interfaceDecl->fields){
@@ -1992,8 +2119,11 @@ static ASTType *substituteTypeParams(ASTType *type,
                             }
                             methodNames.insert(methodDecl->funcId->val);
 
+                            if(!validateGenericParamDecls(methodDecl->genericParams,&interfaceGenericParams,methodDecl)){
+                                return false;
+                            }
                             auto methodGenericParams = interfaceGenericParams;
-                            auto ownMethodGenericParams = genericParamSet(methodDecl->genericTypeParams);
+                            auto ownMethodGenericParams = genericParamSet(methodDecl->genericParams);
                             methodGenericParams.insert(ownMethodGenericParams.begin(),ownMethodGenericParams.end());
 
                             for(auto &paramPair : methodDecl->params){
@@ -2062,7 +2192,10 @@ static ASTType *substituteTypeParams(ASTType *type,
                             errStream.push(SemanticADiagnostic::create("Duplicate type alias name in current scope.",decl,Diagnostic::Error));
                             return false;
                         }
-                        auto aliasGenericParams = genericParamSet(aliasDecl->genericTypeParams);
+                        if(!validateGenericParamDecls(aliasDecl->genericParams,scopeContext.genericTypeParams,aliasDecl)){
+                            return false;
+                        }
+                        auto aliasGenericParams = genericParamSet(aliasDecl->genericParams);
                         if(!aliasDecl->aliasedType){
                             errStream.push(SemanticADiagnostic::create("Type alias is missing target type.",decl,Diagnostic::Error));
                             return false;

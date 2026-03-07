@@ -8,14 +8,26 @@ namespace starbytes {
 
  #define PRINT_FUNC_ID "print"
   #define EXIT_FUNC_ID "exit"
+  #define SQRT_FUNC_ID "sqrt"
+  #define ABS_FUNC_ID "abs"
+  #define MIN_FUNC_ID "min"
+  #define MAX_FUNC_ID "max"
 
 auto print_func_type = ASTType::Create(PRINT_FUNC_ID,nullptr);
 auto exit_func_type = ASTType::Create(EXIT_FUNC_ID,nullptr);
+auto sqrt_func_type = ASTType::Create(SQRT_FUNC_ID,nullptr);
+auto abs_func_type = ASTType::Create(ABS_FUNC_ID,nullptr);
+auto min_func_type = ASTType::Create(MIN_FUNC_ID,nullptr);
+auto max_func_type = ASTType::Create(MAX_FUNC_ID,nullptr);
 auto scope_ref_type = ASTType::Create("__scope__",nullptr);
 
 ASTType *isBuiltinType(ASTIdentifier *id){
     if(id->val == PRINT_FUNC_ID) return print_func_type;
     if(id->val == EXIT_FUNC_ID)  return exit_func_type;
+    if(id->val == SQRT_FUNC_ID) return sqrt_func_type;
+    if(id->val == ABS_FUNC_ID) return abs_func_type;
+    if(id->val == MIN_FUNC_ID) return min_func_type;
+    if(id->val == MAX_FUNC_ID) return max_func_type;
     return nullptr;
 }
 
@@ -52,23 +64,6 @@ static Semantics::SymbolTable::Entry *findTypeEntryNoDiag(Semantics::STableConte
 }
 
 static ASTType *canonicalizeBuiltinAliasType(ASTType *type){
-    if(!type){
-        return nullptr;
-    }
-    if(type->nameMatches(LONG_TYPE)){
-        auto *canonical = ASTType::Create(INT_TYPE->getName(),type->getParentNode(),false,false);
-        canonical->isOptional = type->isOptional;
-        canonical->isThrowable = type->isThrowable;
-        canonical->isGenericParam = type->isGenericParam;
-        return canonical;
-    }
-    if(type->nameMatches(DOUBLE_TYPE)){
-        auto *canonical = ASTType::Create(FLOAT_TYPE->getName(),type->getParentNode(),false,false);
-        canonical->isOptional = type->isOptional;
-        canonical->isThrowable = type->isThrowable;
-        canonical->isGenericParam = type->isGenericParam;
-        return canonical;
-    }
     return type;
 }
 
@@ -155,12 +150,28 @@ static ASTType *resolveAliasType(ASTType *type,
         return resolved;
     }
     auto *aliasData = (Semantics::SymbolTable::TypeAlias *)entry->data;
-    if(!aliasData || !aliasData->aliasType || aliasData->genericParams.size() != resolved->typeParams.size()){
+    if(!aliasData || !aliasData->aliasType || aliasData->genericParams.size() < resolved->typeParams.size()){
         return resolved;
     }
     string_map<ASTType *> bindings;
-    for(size_t i = 0;i < aliasData->genericParams.size();++i){
-        bindings.insert(std::make_pair(aliasData->genericParams[i],resolved->typeParams[i]));
+    for(size_t i = 0;i < resolved->typeParams.size();++i){
+        bindings.insert(std::make_pair(aliasData->genericParams[i].name,resolved->typeParams[i]));
+    }
+    for(size_t i = resolved->typeParams.size();i < aliasData->genericParams.size();++i){
+        auto &param = aliasData->genericParams[i];
+        if(!param.defaultType){
+            return resolved;
+        }
+        auto *materializedDefault = substituteTypeParams(param.defaultType,bindings,type->getParentNode());
+        if(!materializedDefault){
+            return resolved;
+        }
+        materializedDefault = resolveAliasType(materializedDefault,symbolTableContext,scope,genericTypeParams,visiting);
+        if(!materializedDefault){
+            return resolved;
+        }
+        resolved->addTypeParam(materializedDefault);
+        bindings[param.name] = materializedDefault;
     }
     visiting.insert(key);
     auto *substituted = substituteTypeParams(aliasData->aliasType,bindings,type->getParentNode());
@@ -222,7 +233,7 @@ static string_map<ASTType *> classBindingsFromInstanceType(Semantics::SymbolTabl
         return bindings;
     }
     for(size_t i = 0;i < classData->genericParams.size();++i){
-        bindings.insert(std::make_pair(classData->genericParams[i],instanceType->typeParams[i]));
+        bindings.insert(std::make_pair(classData->genericParams[i].name,instanceType->typeParams[i]));
     }
     return bindings;
 }
@@ -237,7 +248,7 @@ static string_map<ASTType *> interfaceBindingsFromInstanceType(Semantics::Symbol
         return bindings;
     }
     for(size_t i = 0;i < interfaceData->genericParams.size();++i){
-        bindings.insert(std::make_pair(interfaceData->genericParams[i],instanceType->typeParams[i]));
+        bindings.insert(std::make_pair(interfaceData->genericParams[i].name,instanceType->typeParams[i]));
     }
     return bindings;
 }
@@ -469,6 +480,70 @@ static bool isNumericType(ASTType *type){
                     || type->nameMatches(FLOAT_TYPE)
                     || type->nameMatches(LONG_TYPE)
                     || type->nameMatches(DOUBLE_TYPE));
+}
+
+static int numericTypeRank(ASTType *type){
+    if(!type){
+        return -1;
+    }
+    if(type->nameMatches(INT_TYPE)){
+        return 0;
+    }
+    if(type->nameMatches(LONG_TYPE)){
+        return 1;
+    }
+    if(type->nameMatches(FLOAT_TYPE)){
+        return 2;
+    }
+    if(type->nameMatches(DOUBLE_TYPE)){
+        return 3;
+    }
+    return -1;
+}
+
+static bool isWideningNumericCast(ASTType *expected,ASTType *actual){
+    if(!expected || !actual || !isNumericType(expected) || !isNumericType(actual)){
+        return false;
+    }
+    if(expected->nameMatches(actual)){
+        return false;
+    }
+    if(expected->nameMatches(LONG_TYPE) && actual->nameMatches(INT_TYPE)){
+        return true;
+    }
+    if(expected->nameMatches(FLOAT_TYPE) && actual->nameMatches(INT_TYPE)){
+        return true;
+    }
+    if(expected->nameMatches(DOUBLE_TYPE) &&
+       (actual->nameMatches(INT_TYPE) || actual->nameMatches(LONG_TYPE) || actual->nameMatches(FLOAT_TYPE))){
+        return true;
+    }
+    return false;
+}
+
+static bool applyImplicitNumericCast(ASTType *expected,ASTType *actual,ASTExpr *expr){
+    if(!expr || !isWideningNumericCast(expected,actual)){
+        return false;
+    }
+    expr->runtimeCastTargetName = expected->getName().str();
+    return true;
+}
+
+static bool matchExpectedExprType(ASTType *expected,
+                                  ASTExpr *expr,
+                                  ASTType *actual,
+                                  DiagnosticHandler &errStream,
+                                  const char *message){
+    if(!expected || !expr || !actual){
+        return false;
+    }
+    if(!expected->match(actual,[&](std::string){
+        errStream.push(SemanticADiagnostic::create(message,expr,Diagnostic::Error));
+    })){
+        return false;
+    }
+    applyImplicitNumericCast(expected,actual,expr);
+    return true;
 }
 
 static bool isIntType(ASTType *type){
@@ -811,10 +886,15 @@ static ASTType *promoteNumericType(ASTType *lhs,ASTType *rhs,ASTStmt *node){
     if(!isNumericType(lhs) || !isNumericType(rhs)){
         return nullptr;
     }
-    if(lhs->nameMatches(FLOAT_TYPE) || rhs->nameMatches(FLOAT_TYPE)){
-        return ASTType::Create(FLOAT_TYPE->getName(),node,false,false);
+    int lhsRank = numericTypeRank(lhs);
+    int rhsRank = numericTypeRank(rhs);
+    if(lhsRank < 0 || rhsRank < 0){
+        return nullptr;
     }
-    return ASTType::Create(INT_TYPE->getName(),node,false,false);
+    if(lhsRank >= rhsRank){
+        return ASTType::Create(lhs->getName(),node,false,false);
+    }
+    return ASTType::Create(rhs->getName(),node,false,false);
 }
 
 static ASTType *inferBinaryResultType(ASTExpr *expr,
@@ -994,7 +1074,36 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
             }
             return true;
         };
-        auto inferGenericInvocationBindings = [&](const std::vector<std::string> &genericParams,
+        auto materializeGenericDefaults = [&](const std::vector<Semantics::SymbolTable::GenericParam> &genericParams,
+                                              string_map<ASTType *> &bindings) -> bool {
+            for(auto &genericParam : genericParams){
+                if(bindings.find(genericParam.name) != bindings.end()){
+                    continue;
+                }
+                if(!genericParam.defaultType){
+                    std::ostringstream ss;
+                    ss << "Could not infer generic type parameter `" << genericParam.name << "` from invocation arguments.";
+                    errStream.push(SemanticADiagnostic::create(ss.str(),expr_to_eval,Diagnostic::Error));
+                    return false;
+                }
+                auto *defaultType = substituteTypeParams(genericParam.defaultType,bindings,expr_to_eval);
+                if(!defaultType){
+                    errStream.push(SemanticADiagnostic::create("Failed to materialize generic default type argument.",expr_to_eval,Diagnostic::Error));
+                    return false;
+                }
+                if(!typeExists(defaultType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams,expr_to_eval)){
+                    return false;
+                }
+                defaultType = normalizeType(defaultType);
+                if(!defaultType){
+                    errStream.push(SemanticADiagnostic::create("Failed to resolve generic default type argument.",expr_to_eval,Diagnostic::Error));
+                    return false;
+                }
+                bindings[genericParam.name] = defaultType;
+            }
+            return true;
+        };
+        auto inferGenericInvocationBindings = [&](const std::vector<Semantics::SymbolTable::GenericParam> &genericParams,
                                                   const std::vector<ASTType *> &expectedParams,
                                                   const string_map<ASTType *> &seedBindings,
                                                   const char *argMismatchMessage,
@@ -1002,8 +1111,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
             outBindings = seedBindings;
             string_set inferableParams;
             for(auto &genericParam : genericParams){
-                inferableParams.insert(genericParam);
-                outBindings.erase(genericParam);
+                inferableParams.insert(genericParam.name);
             }
 
             for(size_t i = 0;i < expr_to_eval->exprArrayData.size();++i){
@@ -1039,15 +1147,117 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 }
             }
 
-            for(auto &genericParam : genericParams){
-                if(outBindings.find(genericParam) == outBindings.end()){
-                    std::ostringstream ss;
-                    ss << "Could not infer generic type parameter `" << genericParam << "` from invocation arguments.";
-                    errStream.push(SemanticADiagnostic::create(ss.str(),expr_to_eval,Diagnostic::Error));
+            return materializeGenericDefaults(genericParams,outBindings);
+        };
+        auto resolveTypeArgsFromSymbolDefaults = [&](const std::vector<Semantics::SymbolTable::GenericParam> &genericParams,
+                                                     const std::vector<ASTType *> &explicitTypeArgs,
+                                                     const char *countMismatchMessage,
+                                                     std::vector<ASTType *> &outTypeArgs) -> bool {
+            if(explicitTypeArgs.size() > genericParams.size()){
+                errStream.push(SemanticADiagnostic::create(countMismatchMessage,expr_to_eval,Diagnostic::Error));
+                return false;
+            }
+            outTypeArgs = explicitTypeArgs;
+            string_map<ASTType *> bindings;
+            for(size_t i = 0;i < outTypeArgs.size();++i){
+                bindings[genericParams[i].name] = outTypeArgs[i];
+            }
+            for(size_t i = outTypeArgs.size();i < genericParams.size();++i){
+                auto &genericParam = genericParams[i];
+                if(!genericParam.defaultType){
+                    errStream.push(SemanticADiagnostic::create(countMismatchMessage,expr_to_eval,Diagnostic::Error));
                     return false;
                 }
+                auto *defaultType = substituteTypeParams(genericParam.defaultType,bindings,expr_to_eval);
+                if(!defaultType){
+                    errStream.push(SemanticADiagnostic::create("Failed to materialize generic default type argument.",expr_to_eval,Diagnostic::Error));
+                    return false;
+                }
+                if(!typeExists(defaultType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams,expr_to_eval)){
+                    return false;
+                }
+                defaultType = normalizeType(defaultType);
+                if(!defaultType){
+                    errStream.push(SemanticADiagnostic::create("Failed to resolve generic default type argument.",expr_to_eval,Diagnostic::Error));
+                    return false;
+                }
+                outTypeArgs.push_back(defaultType);
+                bindings[genericParam.name] = defaultType;
             }
             return true;
+        };
+        auto resolveTypeArgsFromAstDefaults = [&](const std::vector<ASTGenericParamDecl *> &genericParams,
+                                                  const std::vector<ASTType *> &explicitTypeArgs,
+                                                  const char *countMismatchMessage,
+                                                  std::vector<ASTType *> &outTypeArgs) -> bool {
+            if(explicitTypeArgs.size() > genericParams.size()){
+                errStream.push(SemanticADiagnostic::create(countMismatchMessage,expr_to_eval,Diagnostic::Error));
+                return false;
+            }
+            outTypeArgs = explicitTypeArgs;
+            string_map<ASTType *> bindings;
+            for(size_t i = 0;i < outTypeArgs.size();++i){
+                auto *genericParam = genericParams[i];
+                if(!genericParam || !genericParam->id){
+                    errStream.push(SemanticADiagnostic::create("Malformed generic parameter declaration.",expr_to_eval,Diagnostic::Error));
+                    return false;
+                }
+                bindings[genericParam->id->val] = outTypeArgs[i];
+            }
+            for(size_t i = outTypeArgs.size();i < genericParams.size();++i){
+                auto *genericParam = genericParams[i];
+                if(!genericParam || !genericParam->id){
+                    errStream.push(SemanticADiagnostic::create("Malformed generic parameter declaration.",expr_to_eval,Diagnostic::Error));
+                    return false;
+                }
+                if(!genericParam->defaultType){
+                    errStream.push(SemanticADiagnostic::create(countMismatchMessage,expr_to_eval,Diagnostic::Error));
+                    return false;
+                }
+                auto *defaultType = substituteTypeParams(genericParam->defaultType,bindings,expr_to_eval);
+                if(!defaultType){
+                    errStream.push(SemanticADiagnostic::create("Failed to materialize generic default type argument.",expr_to_eval,Diagnostic::Error));
+                    return false;
+                }
+                if(!typeExists(defaultType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams,expr_to_eval)){
+                    return false;
+                }
+                defaultType = normalizeType(defaultType);
+                if(!defaultType){
+                    errStream.push(SemanticADiagnostic::create("Failed to resolve generic default type argument.",expr_to_eval,Diagnostic::Error));
+                    return false;
+                }
+                outTypeArgs.push_back(defaultType);
+                bindings[genericParam->id->val] = defaultType;
+            }
+            return true;
+        };
+        auto buildGenericParamsFromAst = [&](const std::vector<ASTGenericParamDecl *> &genericParams) {
+            std::vector<Semantics::SymbolTable::GenericParam> params;
+            params.reserve(genericParams.size());
+            for(auto *genericParam : genericParams){
+                if(!genericParam || !genericParam->id){
+                    continue;
+                }
+                Semantics::SymbolTable::GenericParam param;
+                param.name = genericParam->id->val;
+                param.defaultType = genericParam->defaultType;
+                param.bounds = genericParam->bounds;
+                switch(genericParam->variance){
+                    case ASTGenericVariance::In:
+                        param.variance = Semantics::SymbolTable::GenericParam::In;
+                        break;
+                    case ASTGenericVariance::Out:
+                        param.variance = Semantics::SymbolTable::GenericParam::Out;
+                        break;
+                    case ASTGenericVariance::Invariant:
+                    default:
+                        param.variance = Semantics::SymbolTable::GenericParam::Invariant;
+                        break;
+                }
+                params.push_back(std::move(param));
+            }
+            return params;
         };
         switch (expr_to_eval->type) {
             case ID_EXPR : {
@@ -1833,9 +2043,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     }
                 }
                 else {
-                    if(!lhsType->match(rhsType,[&](std::string){
-                        errStream.push(SemanticADiagnostic::create("Assignment type mismatch.",expr_to_eval,Diagnostic::Error));
-                    })){
+                    if(!matchExpectedExprType(lhsType,expr_to_eval->rightExpr,rhsType,errStream,"Assignment type mismatch.")){
                         return nullptr;
                     }
                 }
@@ -1969,7 +2177,10 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     }
                     else if(isBuiltinCastTargetType(resolvedTargetType)){
                         bool conversionIsValid = false;
-                        if(resolvedTargetType->nameMatches(INT_TYPE) || resolvedTargetType->nameMatches(FLOAT_TYPE)){
+                        if(resolvedTargetType->nameMatches(INT_TYPE)
+                           || resolvedTargetType->nameMatches(LONG_TYPE)
+                           || resolvedTargetType->nameMatches(FLOAT_TYPE)
+                           || resolvedTargetType->nameMatches(DOUBLE_TYPE)){
                             conversionIsValid = isNumericType(sourceType)
                                 || isBoolType(sourceType)
                                 || isStringType(sourceType)
@@ -2118,25 +2329,13 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             resolvedInstanceMethod = true;
                             if(!methodLookup.method->genericParams.empty()){
                                 auto expectedParams = orderedFunctionParamTypes(methodLookup.method);
-                                string_map<ASTType *> methodBindings;
-                                if(expr_to_eval->genericTypeArgs.empty()){
-                                    if(expr_to_eval->exprArrayData.size() == expectedParams.size()){
-                                        if(!inferGenericInvocationBindings(methodLookup.method->genericParams,
-                                                                          expectedParams,
-                                                                          classBindings,
-                                                                          "Method argument type mismatch.",
-                                                                          methodBindings)){
-                                            return nullptr;
-                                        }
-                                    }
-                                }
-                                else {
-                                    if(expr_to_eval->genericTypeArgs.size() != methodLookup.method->genericParams.size()){
+                                string_map<ASTType *> methodBindings = classBindings;
+                                if(!expr_to_eval->genericTypeArgs.empty()){
+                                    if(expr_to_eval->genericTypeArgs.size() > methodLookup.method->genericParams.size()){
                                         return rejectUnsupportedGenericInvocation("Generic method invocation type argument count does not match method generic parameter count.");
                                     }
 
-                                    methodBindings = classBindings;
-                                    for(size_t i = 0;i < methodLookup.method->genericParams.size();++i){
+                                    for(size_t i = 0;i < expr_to_eval->genericTypeArgs.size();++i){
                                         auto *typeArg = expr_to_eval->genericTypeArgs[i];
                                         if(!typeArg){
                                             return rejectUnsupportedGenericInvocation("Invalid generic type argument in method invocation.");
@@ -2148,8 +2347,20 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                                         if(!resolvedTypeArg){
                                             return nullptr;
                                         }
-                                        methodBindings[methodLookup.method->genericParams[i]] = resolvedTypeArg;
+                                        methodBindings[methodLookup.method->genericParams[i].name] = resolvedTypeArg;
                                     }
+                                }
+                                if(expr_to_eval->exprArrayData.size() == expectedParams.size()){
+                                    if(!inferGenericInvocationBindings(methodLookup.method->genericParams,
+                                                                      expectedParams,
+                                                                      methodBindings,
+                                                                      "Method argument type mismatch.",
+                                                                      methodBindings)){
+                                        return nullptr;
+                                    }
+                                }
+                                else if(!materializeGenericDefaults(methodLookup.method->genericParams,methodBindings)){
+                                    return nullptr;
                                 }
 
                                 auto *baseMethodType = buildFunctionTypeFromFunctionData(methodLookup.method,expr_to_eval);
@@ -2183,25 +2394,13 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                                 resolvedInstanceMethod = true;
                                 if(!method->genericParams.empty()){
                                     auto expectedParams = orderedFunctionParamTypes(method);
-                                    string_map<ASTType *> methodBindings;
-                                    if(expr_to_eval->genericTypeArgs.empty()){
-                                        if(expr_to_eval->exprArrayData.size() == expectedParams.size()){
-                                            if(!inferGenericInvocationBindings(method->genericParams,
-                                                                              expectedParams,
-                                                                              interfaceBindings,
-                                                                              "Method argument type mismatch.",
-                                                                              methodBindings)){
-                                                return nullptr;
-                                            }
-                                        }
-                                    }
-                                    else {
-                                        if(expr_to_eval->genericTypeArgs.size() != method->genericParams.size()){
+                                    string_map<ASTType *> methodBindings = interfaceBindings;
+                                    if(!expr_to_eval->genericTypeArgs.empty()){
+                                        if(expr_to_eval->genericTypeArgs.size() > method->genericParams.size()){
                                             return rejectUnsupportedGenericInvocation("Generic method invocation type argument count does not match method generic parameter count.");
                                         }
 
-                                        methodBindings = interfaceBindings;
-                                        for(size_t i = 0;i < method->genericParams.size();++i){
+                                        for(size_t i = 0;i < expr_to_eval->genericTypeArgs.size();++i){
                                             auto *typeArg = expr_to_eval->genericTypeArgs[i];
                                             if(!typeArg){
                                                 return rejectUnsupportedGenericInvocation("Invalid generic type argument in method invocation.");
@@ -2213,8 +2412,20 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                                             if(!resolvedTypeArg){
                                                 return nullptr;
                                             }
-                                            methodBindings[method->genericParams[i]] = resolvedTypeArg;
+                                            methodBindings[method->genericParams[i].name] = resolvedTypeArg;
                                         }
+                                    }
+                                    if(expr_to_eval->exprArrayData.size() == expectedParams.size()){
+                                        if(!inferGenericInvocationBindings(method->genericParams,
+                                                                          expectedParams,
+                                                                          methodBindings,
+                                                                          "Method argument type mismatch.",
+                                                                          methodBindings)){
+                                            return nullptr;
+                                        }
+                                    }
+                                    else if(!materializeGenericDefaults(method->genericParams,methodBindings)){
+                                        return nullptr;
                                     }
 
                                     auto *baseMethodType = buildFunctionTypeFromFunctionData(method,expr_to_eval);
@@ -2238,23 +2449,12 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     if(!namedFunctionData->genericParams.empty()){
                         auto expectedParams = orderedFunctionParamTypes(namedFunctionData);
                         string_map<ASTType *> genericBindings;
-                        if(expr_to_eval->genericTypeArgs.empty()){
-                            if(expr_to_eval->exprArrayData.size() == expectedParams.size()){
-                                if(!inferGenericInvocationBindings(namedFunctionData->genericParams,
-                                                                  expectedParams,
-                                                                  {},
-                                                                  "Function argument type mismatch.",
-                                                                  genericBindings)){
-                                    return nullptr;
-                                }
-                            }
-                        }
-                        else {
-                            if(expr_to_eval->genericTypeArgs.size() != namedFunctionData->genericParams.size()){
+                        if(!expr_to_eval->genericTypeArgs.empty()){
+                            if(expr_to_eval->genericTypeArgs.size() > namedFunctionData->genericParams.size()){
                                 return rejectUnsupportedGenericInvocation("Generic free-function invocation type argument count does not match function generic parameter count.");
                             }
 
-                            for(size_t i = 0;i < namedFunctionData->genericParams.size();++i){
+                            for(size_t i = 0;i < expr_to_eval->genericTypeArgs.size();++i){
                                 auto *typeArg = expr_to_eval->genericTypeArgs[i];
                                 if(!typeArg){
                                     return rejectUnsupportedGenericInvocation("Invalid generic type argument in free-function invocation.");
@@ -2266,8 +2466,20 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                                 if(!resolvedTypeArg){
                                     return nullptr;
                                 }
-                                genericBindings.insert(std::make_pair(namedFunctionData->genericParams[i],resolvedTypeArg));
+                                genericBindings.insert(std::make_pair(namedFunctionData->genericParams[i].name,resolvedTypeArg));
                             }
+                        }
+                        if(expr_to_eval->exprArrayData.size() == expectedParams.size()){
+                            if(!inferGenericInvocationBindings(namedFunctionData->genericParams,
+                                                              expectedParams,
+                                                              genericBindings,
+                                                              "Function argument type mismatch.",
+                                                              genericBindings)){
+                                return nullptr;
+                            }
+                        }
+                        else if(!materializeGenericDefaults(namedFunctionData->genericParams,genericBindings)){
+                            return nullptr;
                         }
 
                         auto *baseFuncType = buildFunctionTypeFromFunctionData(namedFunctionData,expr_to_eval);
@@ -2332,9 +2544,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             errStream.push(SemanticADiagnostic::create("Malformed function parameter type.",expr_to_eval,Diagnostic::Error));
                             return nullptr;
                         }
-                        if(!expectedType->match(argType,[&](std::string){
-                            errStream.push(SemanticADiagnostic::create("Function argument type mismatch.",expr_to_eval->exprArrayData[i],Diagnostic::Error));
-                        })){
+                        if(!matchExpectedExprType(expectedType,expr_to_eval->exprArrayData[i],argType,errStream,"Function argument type mismatch.")){
                             return nullptr;
                         }
                     }
@@ -2372,9 +2582,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         }
                         argType = normalizeType(argType);
                         auto *expectedParamType = normalizeType(expectedParams[i]);
-                        if(!expectedParamType->match(argType,[&](std::string){
-                            errStream.push(SemanticADiagnostic::create("Function argument type mismatch.",arg,Diagnostic::Error));
-                        })){
+                        if(!matchExpectedExprType(expectedParamType,arg,argType,errStream,"Function argument type mismatch.")){
                             return nullptr;
                         }
                     }
@@ -2450,9 +2658,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         if(!expectedKeyType){
                             return false;
                         }
-                        if(!expectedKeyType->match(argType,[&](std::string){
-                            errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",expr_to_eval->exprArrayData[index],Diagnostic::Error));
-                        })){
+                        if(!matchExpectedExprType(expectedKeyType,expr_to_eval->exprArrayData[index],argType,errStream,"Method argument type mismatch.")){
                             return false;
                         }
                         return true;
@@ -2470,9 +2676,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         if(!expectedValueType){
                             return false;
                         }
-                        if(!expectedValueType->match(argType,[&](std::string){
-                            errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",expr_to_eval->exprArrayData[index],Diagnostic::Error));
-                        })){
+                        if(!matchExpectedExprType(expectedValueType,expr_to_eval->exprArrayData[index],argType,errStream,"Method argument type mismatch.")){
                             return false;
                         }
                         return true;
@@ -2486,9 +2690,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         if(!expectedElementType){
                             return false;
                         }
-                        if(!expectedElementType->match(argType,[&](std::string){
-                            errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",expr_to_eval->exprArrayData[index],Diagnostic::Error));
-                        })){
+                        if(!matchExpectedExprType(expectedElementType,expr_to_eval->exprArrayData[index],argType,errStream,"Method argument type mismatch.")){
                             return false;
                         }
                         return true;
@@ -2734,9 +2936,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             argType = normalizeType(argType);
                             auto *boundExpected = substituteTypeParams(expectedParams[i],classBindings,expr_to_eval);
                             boundExpected = normalizeType(boundExpected);
-                            if(!boundExpected->match(argType,[&](std::string){
-                                errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",arg,Diagnostic::Error));
-                            })){
+                            if(!matchExpectedExprType(boundExpected,arg,argType,errStream,"Method argument type mismatch.")){
                                 return nullptr;
                             }
                         }
@@ -2774,9 +2974,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             argType = normalizeType(argType);
                             auto *boundExpected = substituteTypeParams(expectedParams[i],interfaceBindings,expr_to_eval);
                             boundExpected = normalizeType(boundExpected);
-                            if(!boundExpected->match(argType,[&](std::string){
-                                errStream.push(SemanticADiagnostic::create("Method argument type mismatch.",arg,Diagnostic::Error));
-                            })){
+                            if(!matchExpectedExprType(boundExpected,arg,argType,errStream,"Method argument type mismatch.")){
                                 return nullptr;
                             }
                         }
@@ -2836,16 +3034,12 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     }
 
                     size_t argCount = expr_to_eval->exprArrayData.size();
-                    for(auto *arg : expr_to_eval->exprArrayData){
-                        if(!evalExprForTypeId(arg,symbolTableContext,scopeContext)){
-                            return nullptr;
-                        }
-                    }
-
                     if(classData){
-                        size_t expectedTypeArgCount = classData->genericParams.size();
-                        if(!explicitTypeArgs.empty() && explicitTypeArgs.size() != expectedTypeArgCount){
-                            errStream.push(SemanticADiagnostic::create("Constructor generic argument count does not match class generic parameter count.",expr_to_eval,Diagnostic::Error));
+                        std::vector<ASTType *> resolvedTypeArgs;
+                        if(!resolveTypeArgsFromSymbolDefaults(classData->genericParams,
+                                                              explicitTypeArgs,
+                                                              "Constructor generic argument count does not match class generic parameter count.",
+                                                              resolvedTypeArgs)){
                             return nullptr;
                         }
                         if(classData->constructors.empty()){
@@ -2854,14 +3048,46 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                                 return nullptr;
                             }
                         }
-                        else if(!findConstructorByArity(classData,argCount)){
-                            errStream.push(SemanticADiagnostic::create("No constructor matches argument count.",expr_to_eval,Diagnostic::Error));
-                            return nullptr;
+                        else {
+                            auto *ctor = findConstructorByArity(classData,argCount);
+                            if(!ctor){
+                                errStream.push(SemanticADiagnostic::create("No constructor matches argument count.",expr_to_eval,Diagnostic::Error));
+                                return nullptr;
+                            }
+                            auto expectedParams = orderedFunctionParamTypes(ctor);
+                            string_map<ASTType *> classBindings;
+                            for(size_t i = 0;i < resolvedTypeArgs.size() && i < classData->genericParams.size();++i){
+                                classBindings[classData->genericParams[i].name] = resolvedTypeArgs[i];
+                            }
+                            if(!ctor->genericParams.empty()){
+                                string_map<ASTType *> ctorBindings;
+                                if(!inferGenericInvocationBindings(ctor->genericParams,
+                                                                  expectedParams,
+                                                                  classBindings,
+                                                                  "Constructor argument type mismatch.",
+                                                                  ctorBindings)){
+                                    return nullptr;
+                                }
+                            }
+                            else {
+                                for(size_t i = 0;i < expectedParams.size();++i){
+                                    auto *argType = evalExprForTypeId(expr_to_eval->exprArrayData[i],symbolTableContext,scopeContext);
+                                    if(!argType){
+                                        return nullptr;
+                                    }
+                                    argType = normalizeType(argType);
+                                    auto *expectedType = substituteTypeParams(expectedParams[i],classBindings,expr_to_eval);
+                                    expectedType = normalizeType(expectedType);
+                                    if(!expectedType || !matchExpectedExprType(expectedType,expr_to_eval->exprArrayData[i],argType,errStream,"Constructor argument type mismatch.")){
+                                        return nullptr;
+                                    }
+                                }
+                            }
                         }
                         auto *resolvedCtorType = cloneTypeNode(classData->classType,expr_to_eval);
-                        if(!explicitTypeArgs.empty()){
+                        if(!resolvedTypeArgs.empty()){
                             resolvedCtorType->typeParams.clear();
-                            for(auto *argType : explicitTypeArgs){
+                            for(auto *argType : resolvedTypeArgs){
                                 resolvedCtorType->addTypeParam(cloneTypeNode(argType,expr_to_eval));
                             }
                         }
@@ -2870,9 +3096,11 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     }
 
                     if(classDecl){
-                        size_t expectedTypeArgCount = classDecl->genericTypeParams.size();
-                        if(!explicitTypeArgs.empty() && explicitTypeArgs.size() != expectedTypeArgCount){
-                            errStream.push(SemanticADiagnostic::create("Constructor generic argument count does not match class generic parameter count.",expr_to_eval,Diagnostic::Error));
+                        std::vector<ASTType *> resolvedTypeArgs;
+                        if(!resolveTypeArgsFromAstDefaults(classDecl->genericParams,
+                                                           explicitTypeArgs,
+                                                           "Constructor generic argument count does not match class generic parameter count.",
+                                                           resolvedTypeArgs)){
                             return nullptr;
                         }
                         if(classDecl->constructors.empty()){
@@ -2881,14 +3109,57 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                                 return nullptr;
                             }
                         }
-                        else if(!findConstructorByArityFromDecl(classDecl,argCount)){
-                            errStream.push(SemanticADiagnostic::create("No constructor matches argument count.",expr_to_eval,Diagnostic::Error));
-                            return nullptr;
+                        else {
+                            auto *ctorDecl = findConstructorByArityFromDecl(classDecl,argCount);
+                            if(!ctorDecl){
+                                errStream.push(SemanticADiagnostic::create("No constructor matches argument count.",expr_to_eval,Diagnostic::Error));
+                                return nullptr;
+                            }
+                            auto ctorGenericParams = buildGenericParamsFromAst(ctorDecl->genericParams);
+                            std::vector<ASTType *> expectedParams;
+                            auto orderedCtorParams = orderedParamPairs(ctorDecl->params);
+                            for(auto &paramPair : orderedCtorParams){
+                                if(paramPair.second){
+                                    expectedParams.push_back(paramPair.second);
+                                }
+                            }
+                            string_map<ASTType *> classBindings;
+                            for(size_t i = 0;i < resolvedTypeArgs.size() && i < classDecl->genericParams.size();++i){
+                                auto *genericParam = classDecl->genericParams[i];
+                                if(!genericParam || !genericParam->id){
+                                    continue;
+                                }
+                                classBindings[genericParam->id->val] = resolvedTypeArgs[i];
+                            }
+                            if(!ctorGenericParams.empty()){
+                                string_map<ASTType *> ctorBindings;
+                                if(!inferGenericInvocationBindings(ctorGenericParams,
+                                                                  expectedParams,
+                                                                  classBindings,
+                                                                  "Constructor argument type mismatch.",
+                                                                  ctorBindings)){
+                                    return nullptr;
+                                }
+                            }
+                            else {
+                                for(size_t i = 0;i < expectedParams.size();++i){
+                                    auto *argType = evalExprForTypeId(expr_to_eval->exprArrayData[i],symbolTableContext,scopeContext);
+                                    if(!argType){
+                                        return nullptr;
+                                    }
+                                    argType = normalizeType(argType);
+                                    auto *expectedType = substituteTypeParams(expectedParams[i],classBindings,expr_to_eval);
+                                    expectedType = normalizeType(expectedType);
+                                    if(!expectedType || !matchExpectedExprType(expectedType,expr_to_eval->exprArrayData[i],argType,errStream,"Constructor argument type mismatch.")){
+                                        return nullptr;
+                                    }
+                                }
+                            }
                         }
                         auto *resolvedCtorType = cloneTypeNode(classDecl->classType,expr_to_eval);
-                        if(!explicitTypeArgs.empty()){
+                        if(!resolvedTypeArgs.empty()){
                             resolvedCtorType->typeParams.clear();
-                            for(auto *argType : explicitTypeArgs){
+                            for(auto *argType : resolvedTypeArgs){
                                 resolvedCtorType->addTypeParam(cloneTypeNode(argType,expr_to_eval));
                             }
                         }
@@ -2941,6 +3212,63 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         
                     };
                     // std::cout << "Print Func 2" << std::endl;
+                }
+                else if(func_name == SQRT_FUNC_ID){
+                    if(expr_to_eval->exprArrayData.size() != 1){
+                        errStream.push(SemanticADiagnostic::create("sqrt expects exactly one argument.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    auto *argType = evalExprForTypeId(expr_to_eval->exprArrayData.front(),symbolTableContext,scopeContext);
+                    if(!argType){
+                        return nullptr;
+                    }
+                    argType = normalizeType(argType);
+                    if(!isNumericType(argType)){
+                        errStream.push(SemanticADiagnostic::create("sqrt requires a numeric argument.",expr_to_eval->exprArrayData.front(),Diagnostic::Error));
+                        return nullptr;
+                    }
+                    type = DOUBLE_TYPE;
+                }
+                else if(func_name == ABS_FUNC_ID){
+                    if(expr_to_eval->exprArrayData.size() != 1){
+                        errStream.push(SemanticADiagnostic::create("abs expects exactly one argument.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    auto *argType = evalExprForTypeId(expr_to_eval->exprArrayData.front(),symbolTableContext,scopeContext);
+                    if(!argType){
+                        return nullptr;
+                    }
+                    argType = normalizeType(argType);
+                    if(!isNumericType(argType)){
+                        errStream.push(SemanticADiagnostic::create("abs requires a numeric argument.",expr_to_eval->exprArrayData.front(),Diagnostic::Error));
+                        return nullptr;
+                    }
+                    type = argType;
+                }
+                else if(func_name == MIN_FUNC_ID || func_name == MAX_FUNC_ID){
+                    if(expr_to_eval->exprArrayData.size() != 2){
+                        errStream.push(SemanticADiagnostic::create((func_name == MIN_FUNC_ID? "min expects exactly two arguments."
+                                                                                          : "max expects exactly two arguments."),
+                                                                   expr_to_eval,
+                                                                   Diagnostic::Error));
+                        return nullptr;
+                    }
+                    auto *lhsType = evalExprForTypeId(expr_to_eval->exprArrayData[0],symbolTableContext,scopeContext);
+                    auto *rhsType = evalExprForTypeId(expr_to_eval->exprArrayData[1],symbolTableContext,scopeContext);
+                    if(!lhsType || !rhsType){
+                        return nullptr;
+                    }
+                    lhsType = normalizeType(lhsType);
+                    rhsType = normalizeType(rhsType);
+                    auto *resultType = promoteNumericType(lhsType,rhsType,expr_to_eval);
+                    if(!resultType){
+                        errStream.push(SemanticADiagnostic::create((func_name == MIN_FUNC_ID? "min requires numeric arguments."
+                                                                                          : "max requires numeric arguments."),
+                                                                   expr_to_eval,
+                                                                   Diagnostic::Error));
+                        return nullptr;
+                    }
+                    type = resultType;
                 }
                 else {
                     /// Check to see if function was previously defined.

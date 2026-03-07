@@ -16,36 +16,39 @@ This document proposes the next expansion wave for the Starbytes generic system 
 
 Current compiler shape that matters for the remaining work:
 
-- generic parameters are still modeled as `std::vector<ASTIdentifier *>`
-- constructors are separate `ASTConstructorDecl` nodes with no generic parameter model
+- generic parameters are modeled as `ASTGenericParamDecl` metadata nodes
+- defaults for generic parameters are implemented for aliases, classes, interfaces, methods, and free functions
+- omitted trailing generic arguments are materialized for type references, constructor class refs, and generic invocation paths
+- constructors are separate `ASTConstructorDecl` nodes with constructor-specific generic syntax and semantic inference
+- constructor dispatch is still arity-unique at the backend boundary, so same-arity constructor overloading remains deferred
 - enums are still lowered through `SCOPE_DECL`-style parsing rather than a dedicated enum AST/type model
 - scopes are namespace-like containers, not generic templates
 - modules are file/import/cache units, not first-class AST declarations
 - type matching is mostly invariant and exact, with a few builtin exceptions
 
-That means five requested features do not fit cleanly into the current generic parameter representation. The first required step is a data-model upgrade.
+That means the remaining work is no longer blocked on generic parameter representation. The next blockers are constructor-specific syntax, constraint storage/checking, and a richer subtype relation.
 
 ## Decision Matrix
 
 | Feature | Current State | Value | Complexity | Main Blockers | Recommendation | Target Wave |
 | --- | --- | --- | --- | --- | --- | --- |
-| Generic constructors as separate declarations | Not supported | High | Medium | `ASTConstructorDecl` has no generic params; constructor call syntax only carries class type args | Implement | Wave 2 |
+| Generic constructors as separate declarations | Implemented (arity-unique dispatch) | High | Medium | backend/runtime still identify constructors by arity, so same-arity overload sets remain deferred | Complete with current backend boundary | Wave 2 |
 | Generic enums | Effectively unsupported | Medium | High | enums are parsed as scope-like constant containers, not real generic types | Implement only after real enum AST/type model exists | Wave 4 |
 | Generic scopes | Unsupported | Low-Medium | Very High | scopes are namespaces; no instantiation model, no scoped generic cache/interface model | Defer; treat as namespace-template feature, not core generics | Wave 6 |
 | Generic modules | Unsupported | Low-Medium | Very High | modules are import/cache units; would need parameterized `.starbint` and `.starbmod` keys | Defer after generic scopes prove necessary | Wave 7 |
-| Constraints / where clauses / trait bounds | Unsupported | Very High | High | no generic param metadata beyond names; no first-class bounds storage or constraint solver | Implement | Wave 3 |
+| Constraints / where clauses / trait bounds | Unsupported | Very High | High | metadata exists, but there is no syntax, first-class constraint model, or conformance solver | Implement | Wave 3 |
 | Variance annotations | Unsupported | Medium-High | Very High | current assignability is largely invariant/exact; no general subtype relation engine | Defer until after constraints and type-relation rewrite | Wave 5 |
-| Defaults for generic parameters | Unsupported | Medium | Medium | generic params are identifiers only; arity checking assumes exact counts | Implement early | Wave 1 |
+| Defaults for generic parameters | Implemented | Medium | Medium | follow-on work is limited to bounds validation once constraints ship | Complete | Wave 1 |
 
 ## Foundational Matrix
 
-| Foundation Change | Why It Is Needed | Affects |
-| --- | --- | --- |
-| Replace identifier-only generic params with `ASTGenericParamDecl` | defaults, bounds, variance, and constructor generics all need metadata per generic parameter | parser, AST, semantic analysis, interface generation, LSP |
-| Add symbol-table support for rich generic parameter metadata | semantic checks must see defaults, bounds, and variance; interface rendering must preserve them | `SymTable`, `SemanticA`, interface gen |
-| Add reusable generic argument resolution pipeline | explicit args, defaults, and inference should resolve through one code path | `ExprSema`, constructor call resolution |
-| Separate real enum type modeling from scope lowering | generic enums are not meaningful on top of namespace constants alone | parser, AST, semantics, codegen/runtime metadata |
-| Build a real subtype/assignability relation | variance and constraint checking both need more than exact type equality | `ASTType::match`, semantic type utilities |
+| Foundation Change | Why It Is Needed | Affects | Status |
+| --- | --- | --- | --- |
+| Replace identifier-only generic params with `ASTGenericParamDecl` | defaults, bounds, variance, and constructor generics all need metadata per generic parameter | parser, AST, semantic analysis, interface generation, LSP | Implemented in Wave 0 |
+| Add symbol-table support for rich generic parameter metadata | semantic checks must see defaults, bounds, and variance; interface rendering must preserve them | `SymTable`, `SemanticA`, interface gen | Implemented in Wave 0 |
+| Add reusable generic argument resolution pipeline | explicit args, defaults, and inference should resolve through one code path | `ExprSema`, constructor call resolution | Implemented for type refs, constructor class refs, and generic invocation in Wave 1 |
+| Separate real enum type modeling from scope lowering | generic enums are not meaningful on top of namespace constants alone | parser, AST, semantics, codegen/runtime metadata | Pending |
+| Build a real subtype/assignability relation | variance and constraint checking both need more than exact type equality | `ASTType::match`, semantic type utilities | Pending |
 
 ## Recommended Syntax
 
@@ -166,6 +169,8 @@ Recommendation:
 
 ### Wave 0: Generic Parameter Data Model
 
+Status: implemented.
+
 Introduce a dedicated generic parameter node, for example:
 
 ```cpp
@@ -198,6 +203,8 @@ This is the mandatory precursor for defaults, bounds, variance, and generic cons
 
 ### Wave 1: Defaults For Generic Parameters
 
+Status: implemented.
+
 ### Parser
 
 - parse `T = SomeType` in generic parameter lists
@@ -224,9 +231,11 @@ This is the mandatory precursor for defaults, bounds, variance, and generic cons
 - default on free functions
 - default plus inference interaction
 - invalid non-trailing default
-- invalid default violating bound
+- invalid missing required type argument after defaults
 
 ### Wave 2: Generic Constructors As Separate Declarations
+
+Status: implemented for generic constructor declarations, merged generic environments, and constructor-generic inference with arity-unique runtime dispatch.
 
 ### Parser / AST
 
@@ -237,26 +246,24 @@ This is the mandatory precursor for defaults, bounds, variance, and generic cons
 
 - constructor generic environment = class generic params + constructor generic params
 - support constructor return/field initialization type resolution under that merged environment
-- add duplicate constructor signature checking using:
-  - arity
-  - generic arity
-  - parameter types after normalization
+- preserve arity-unique constructor validation because backend dispatch is still arity-based
 
 ### Invocation
 
-- choose constructor by value-parameter arity first
+- choose constructor by value-parameter arity
 - infer constructor generic params from arguments by default
+- validate constructor argument types against the merged class/constructor generic environment
 - optional explicit constructor generic args can be added later if inference-first is insufficient
 
 ### Runtime / codegen
 
-- current backend likely does not need cloned constructor symbols if specialization remains semantic-only
-- keep constructor metadata rich enough to support cloned symbols later if needed
+- current backend does not need cloned constructor symbols for the implemented slice because constructor specialization remains semantic-only
+- same-arity constructor overloading remains deferred until constructor runtime naming/selection stops being arity-only
 
 ### Tests
 
 - success with inferred constructor generic args
-- constructor generic using class generic in param types
+- constructor generic using class generic in param types and constructor body locals
 - conflicting constructor generic inference
 - explicit class generic + inferred constructor generic
 

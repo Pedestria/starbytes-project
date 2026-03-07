@@ -146,7 +146,7 @@ std::string typeToString(ASTType *type) {
   return rendered;
 }
 
-std::string genericParamsToString(const std::vector<ASTIdentifier *> &params) {
+std::string genericParamsToString(const std::vector<ASTGenericParamDecl *> &params) {
   if (params.empty()) {
     return {};
   }
@@ -155,7 +155,26 @@ std::string genericParamsToString(const std::vector<ASTIdentifier *> &params) {
     if (i > 0) {
       value += ", ";
     }
-    value += params[i] ? params[i]->val : "T";
+    auto *param = params[i];
+    if (param && param->variance == ASTGenericVariance::In) {
+      value += "in ";
+    } else if (param && param->variance == ASTGenericVariance::Out) {
+      value += "out ";
+    }
+    value += (param && param->id) ? param->id->val : "T";
+    if (param && !param->bounds.empty()) {
+      value += ": ";
+      for (size_t boundIndex = 0; boundIndex < param->bounds.size(); ++boundIndex) {
+        if (boundIndex > 0) {
+          value += " & ";
+        }
+        value += typeToString(param->bounds[boundIndex]);
+      }
+    }
+    if (param && param->defaultType) {
+      value += " = ";
+      value += typeToString(param->defaultType);
+    }
   }
   value += ">";
   return value;
@@ -305,7 +324,7 @@ std::string functionSignature(ASTFuncDecl *funcDecl) {
   }
   signature += "func ";
   signature += funcDecl->funcId->val;
-  signature += genericParamsToString(funcDecl->genericTypeParams);
+  signature += genericParamsToString(funcDecl->genericParams);
   signature += "(";
   for (size_t idx = 0; idx < params.size(); ++idx) {
     if (idx > 0) {
@@ -474,7 +493,7 @@ void collectSymbolsFromDecl(ASTDecl *decl,
           lines, classDecl->id->codeRegion.startLine > 0 ? classDecl->id->codeRegion.startLine - 1 : 0, "struct");
       int kind = isStructDecl ? SYMBOL_KIND_STRUCT : SYMBOL_KIND_CLASS;
       std::string detail = isStructDecl ? "struct" : "class";
-      std::string signature = detail + " " + classDecl->id->val + genericParamsToString(classDecl->genericTypeParams);
+      std::string signature = detail + " " + classDecl->id->val + genericParamsToString(classDecl->genericParams);
       if (classDecl->superClass) {
         signature += " : ";
         signature += typeToString(classDecl->superClass);
@@ -505,7 +524,7 @@ void collectSymbolsFromDecl(ASTDecl *decl,
       auto *interfaceDecl = static_cast<ASTInterfaceDecl *>(decl);
       std::string signature = "interface ";
       signature += interfaceDecl->id ? interfaceDecl->id->val : "Interface";
-      signature += genericParamsToString(interfaceDecl->genericTypeParams);
+      signature += genericParamsToString(interfaceDecl->genericParams);
       pushSymbol(symbols,
                  interfaceDecl->id,
                  SYMBOL_KIND_INTERFACE,
@@ -544,7 +563,7 @@ void collectSymbolsFromDecl(ASTDecl *decl,
       auto *aliasDecl = static_cast<ASTTypeAliasDecl *>(decl);
       std::string signature = "def ";
       signature += aliasDecl->id ? aliasDecl->id->val : "TypeAlias";
-      signature += genericParamsToString(aliasDecl->genericTypeParams);
+      signature += genericParamsToString(aliasDecl->genericParams);
       signature += " = ";
       signature += typeToString(aliasDecl->aliasedType);
       pushSymbol(symbols,

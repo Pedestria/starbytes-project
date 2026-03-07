@@ -9,6 +9,20 @@
 namespace starbytes {
 
     class ASTExpr;
+    class ASTIdentifier;
+
+    enum class ASTGenericVariance {
+        Invariant,
+        In,
+        Out
+    };
+
+    struct ASTGenericParamDecl {
+        ASTIdentifier *id = nullptr;
+        ASTGenericVariance variance = ASTGenericVariance::Invariant;
+        ASTType *defaultType = nullptr;
+        std::vector<ASTType *> bounds;
+    };
 
     struct ASTAttributeArg {
         std::optional<std::string> key;
@@ -60,7 +74,7 @@ namespace starbytes {
         ASTIdentifier *funcId;
         ASTType *funcType;
         ASTType *returnType;
-        std::vector<ASTIdentifier *> genericTypeParams;
+        std::vector<ASTGenericParamDecl *> genericParams;
         std::map<ASTIdentifier *,ASTType *> params;
         ASTBlockStmt *blockStmt = nullptr;
         bool declarationOnly = false;
@@ -69,6 +83,7 @@ namespace starbytes {
 
     class ASTConstructorDecl : public ASTDecl {
     public:
+        std::vector<ASTGenericParamDecl *> genericParams;
         std::map<ASTIdentifier *,ASTType *> params;
         ASTBlockStmt *blockStmt;
     };
@@ -80,7 +95,7 @@ namespace starbytes {
         
         ASTType * classType = nullptr;
         ASTType * superClass = nullptr;
-        std::vector<ASTIdentifier *> genericTypeParams;
+        std::vector<ASTGenericParamDecl *> genericParams;
         std::vector<ASTType *> interfaces;
 
         std::vector<ASTVarDecl *> fields;
@@ -92,7 +107,7 @@ namespace starbytes {
     public:
         ASTIdentifier *id;
         ASTType *interfaceType = nullptr;
-        std::vector<ASTIdentifier *> genericTypeParams;
+        std::vector<ASTGenericParamDecl *> genericParams;
         std::vector<ASTVarDecl *> fields;
         std::vector<ASTFuncDecl *> methods;
     };
@@ -101,7 +116,7 @@ namespace starbytes {
     public:
         ASTIdentifier *id = nullptr;
         ASTType *aliasedType = nullptr;
-        std::vector<ASTIdentifier *> genericTypeParams;
+        std::vector<ASTGenericParamDecl *> genericParams;
     };
 
     class ASTReturnDecl : public ASTDecl {

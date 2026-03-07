@@ -1,0 +1,3 @@
+func invalid<T = String, U>(value:U) U {
+    return value
+}

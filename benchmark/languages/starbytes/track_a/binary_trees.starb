@@ -7,45 +7,63 @@ func intArg(args:String[],index:Int,fallback:Int) Int {
     return fallback
 }
 
+class Node {
+    decl item:Int = 0
+    decl left:Node?
+    decl right:Node?
+
+    new(item:Int){
+        self.item = item
+    }
+}
+
+func makeTree(item:Int,depth:Int) Node {
+    decl node = new Node(item)
+    if(depth > 0){
+        decl childDepth:Int = depth - 1
+        node.left = makeTree((item * 2) - 1,childDepth)
+        node.right = makeTree(item * 2,childDepth)
+    }
+    return node
+}
+
+func checkTree(node:Node) Int {
+    decl leftValue:Int = 0
+    decl rightValue:Int = 0
+    secure(decl leftNode:Node = Node(node.left)) catch {
+    }
+    secure(decl rightNode:Node = Node(node.right)) catch {
+    }
+    if(leftNode is Node){
+        leftValue = checkTree(leftNode)
+    }
+    if(rightNode is Node){
+        rightValue = checkTree(rightNode)
+    }
+    return node.item + leftValue - rightValue
+}
+
 decl args = positionals()
 decl minDepth:Int = 4
 decl maxDepth:Int = intArg(args,0,12)
+decl stretchDepth:Int = maxDepth + 1
 
-decl checksum:Int = 0
+decl checksum:Int = checkTree(makeTree(0,stretchDepth))
+decl longLived = makeTree(0,maxDepth)
 decl depth:Int = minDepth
+
 decl iterations:Int = 0
-decl shift:Int = 0
-decl k:Int = 0
 decl i:Int = 0
-
-decl left:Int = 0
-decl right:Int = 0
-decl negLeft:Int = 0
-decl negRight:Int = 0
-
 while(depth <= maxDepth){
-    iterations = 1
-    shift = maxDepth - depth + minDepth
-    k = 0
-    while(k < shift){
-        iterations *= 2
-        k += 1
-    }
-
+    iterations = 1 << (maxDepth - depth + minDepth)
     i = 1
     while(i <= iterations){
-        left = (i * 2) - 1
-        right = i * 2
-        checksum += i + left - right
-
-        negLeft = ((-i) * 2) - 1
-        negRight = (-i) * 2
-        checksum += (-i) + negLeft - negRight
-
+        checksum += checkTree(makeTree(i,depth))
+        checksum += checkTree(makeTree(-i,depth))
         i += 1
     }
-
     depth += 2
 }
 
+checksum += checkTree(longLived)
 print(checksum)

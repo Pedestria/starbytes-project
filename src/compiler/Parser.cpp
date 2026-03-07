@@ -13,6 +13,13 @@ namespace {
 
 void annotateStmtParentFile(ASTStmt *stmt,const std::string &parentFile);
 
+void annotateGenericParamParentFile(ASTGenericParamDecl *param,const std::string &parentFile){
+    if(!param || !param->id){
+        return;
+    }
+    param->id->parentFile = parentFile;
+}
+
 void annotateExprParentFile(ASTExpr *expr,const std::string &parentFile){
     if(!expr){
         return;
@@ -69,10 +76,8 @@ void annotateDeclParentFile(ASTDecl *decl,const std::string &parentFile){
             if(funcDecl->funcId){
                 funcDecl->funcId->parentFile = parentFile;
             }
-            for(auto *genericParam : funcDecl->genericTypeParams){
-                if(genericParam){
-                    genericParam->parentFile = parentFile;
-                }
+            for(auto *genericParam : funcDecl->genericParams){
+                annotateGenericParamParentFile(genericParam,parentFile);
             }
             for(auto &param : funcDecl->params){
                 if(param.first){
@@ -84,6 +89,9 @@ void annotateDeclParentFile(ASTDecl *decl,const std::string &parentFile){
         }
         case CLASS_CTOR_DECL: {
             auto *ctorDecl = (ASTConstructorDecl *)decl;
+            for(auto *genericParam : ctorDecl->genericParams){
+                annotateGenericParamParentFile(genericParam,parentFile);
+            }
             for(auto &param : ctorDecl->params){
                 if(param.first){
                     param.first->parentFile = parentFile;
@@ -97,10 +105,8 @@ void annotateDeclParentFile(ASTDecl *decl,const std::string &parentFile){
             if(classDecl->id){
                 classDecl->id->parentFile = parentFile;
             }
-            for(auto *genericParam : classDecl->genericTypeParams){
-                if(genericParam){
-                    genericParam->parentFile = parentFile;
-                }
+            for(auto *genericParam : classDecl->genericParams){
+                annotateGenericParamParentFile(genericParam,parentFile);
             }
             for(auto *field : classDecl->fields){
                 annotateDeclParentFile(field,parentFile);
@@ -118,10 +124,8 @@ void annotateDeclParentFile(ASTDecl *decl,const std::string &parentFile){
             if(interfaceDecl->id){
                 interfaceDecl->id->parentFile = parentFile;
             }
-            for(auto *genericParam : interfaceDecl->genericTypeParams){
-                if(genericParam){
-                    genericParam->parentFile = parentFile;
-                }
+            for(auto *genericParam : interfaceDecl->genericParams){
+                annotateGenericParamParentFile(genericParam,parentFile);
             }
             for(auto *field : interfaceDecl->fields){
                 annotateDeclParentFile(field,parentFile);
@@ -136,10 +140,8 @@ void annotateDeclParentFile(ASTDecl *decl,const std::string &parentFile){
             if(aliasDecl->id){
                 aliasDecl->id->parentFile = parentFile;
             }
-            for(auto *genericParam : aliasDecl->genericTypeParams){
-                if(genericParam){
-                    genericParam->parentFile = parentFile;
-                }
+            for(auto *genericParam : aliasDecl->genericParams){
+                annotateGenericParamParentFile(genericParam,parentFile);
             }
             break;
         }
@@ -251,6 +253,14 @@ void annotateStmtParentFile(ASTStmt *stmt,const std::string &parentFile){
             auto lexEnd = std::chrono::steady_clock::now();
             profileData.lexNs += std::chrono::duration_cast<std::chrono::nanoseconds>(lexEnd - lexStart).count();
             profileData.tokenCount += tokenStream.size();
+        }
+        if(diagnosticHandler->hasErrored()){
+            tokenStream.clear();
+            if(profilingEnabled){
+                auto parseEnd = std::chrono::steady_clock::now();
+                profileData.totalNs += std::chrono::duration_cast<std::chrono::nanoseconds>(parseEnd - parseStart).count();
+            }
+            return;
         }
         syntaxA->setTokenStream(tokenStream);
        if(astConsumer.acceptsSymbolTableContext()){

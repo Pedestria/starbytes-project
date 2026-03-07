@@ -58,11 +58,16 @@ print("ok")
     if(!funcDecl->funcId || funcDecl->funcId->val != "identity") {
         return fail("unexpected function identifier");
     }
-    if(funcDecl->genericTypeParams.size() != 1) {
+    if(funcDecl->genericParams.size() != 1) {
         return fail("expected exactly one generic parameter");
     }
-    if(!funcDecl->genericTypeParams.front() || funcDecl->genericTypeParams.front()->val != "T") {
+    auto *genericParam = funcDecl->genericParams.front();
+    if(!genericParam || !genericParam->id || genericParam->id->val != "T") {
         return fail("expected generic parameter T");
+    }
+    if(genericParam->variance != ASTGenericVariance::Invariant || genericParam->defaultType != nullptr ||
+       !genericParam->bounds.empty()) {
+        return fail("expected wave 0 generic metadata defaults for T");
     }
     if(funcDecl->params.size() != 1) {
         return fail("expected exactly one function parameter");

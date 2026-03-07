@@ -7,8 +7,26 @@ func intArg(args:String[],index:Int,fallback:Int) Int {
     return fallback
 }
 
+func sqrtApprox(value:Float) Float {
+    if(value <= 0.0){
+        return 0.0
+    }
+    decl guess:Float = value
+    if(guess < 1.0){
+        guess = 1.0
+    }
+    decl i:Int = 0
+    while(i < 24){
+        guess = Float(0.5 * (guess + (value / guess)))
+        i += 1
+    }
+    return guess
+}
+
 func A(i:Int,j:Int) Float {
-    return 1.0 / (((i + j) * (i + j + 1) / 2) + i + 1)
+    decl ij:Int = i + j
+    decl denom:Int = ((ij * (ij + 1) / 2) + i + 1)
+    return 1.0 / Float(denom)
 }
 
 decl args = positionals()
@@ -18,12 +36,9 @@ decl iterations:Int = intArg(args,1,8)
 decl u:Float[] = []
 decl v:Float[] = []
 decl tmp:Float[] = []
-
 decl i:Int = 0
 decl j:Int = 0
-decl sum:Float = 0.0
-
-i = 0
+decl s:Float = 0.0
 while(i < n){
     u.push(1.0)
     v.push(0.0)
@@ -35,34 +50,51 @@ decl t:Int = 0
 while(t < iterations){
     i = 0
     while(i < n){
-        sum = 0.0
+        s = 0.0
         j = 0
         while(j < n){
-            sum = Float(sum + (A(i,j) * u[j]))
+            s += A(i,j) * u[j]
             j += 1
         }
-        tmp[i] = sum
+        tmp[i] = s
         i += 1
     }
 
     i = 0
     while(i < n){
-        sum = 0.0
+        s = 0.0
         j = 0
         while(j < n){
-            sum = Float(sum + (A(j,i) * tmp[j]))
+            s += A(j,i) * tmp[j]
             j += 1
         }
-        v[i] = sum
+        v[i] = s
         i += 1
     }
 
     i = 0
     while(i < n){
-        u[i] = v[i]
+        s = 0.0
+        j = 0
+        while(j < n){
+            s += A(i,j) * v[j]
+            j += 1
+        }
+        tmp[i] = s
         i += 1
     }
 
+    i = 0
+    while(i < n){
+        s = 0.0
+        j = 0
+        while(j < n){
+            s += A(j,i) * tmp[j]
+            j += 1
+        }
+        u[i] = s
+        i += 1
+    }
     t += 1
 }
 
@@ -70,9 +102,9 @@ decl vBv:Float = 0.0
 decl vv:Float = 0.0
 i = 0
 while(i < n){
-    vBv = Float(vBv + (u[i] * v[i]))
-    vv = Float(vv + (v[i] * v[i]))
+    vBv += u[i] * v[i]
+    vv += v[i] * v[i]
     i += 1
 }
 
-print(vBv / vv)
+print(sqrtApprox(vBv / vv))

@@ -1,0 +1,9 @@
+class Box<T> {
+    decl value:T
+
+    new<U>(fallback:T) {
+        self.value = fallback
+    }
+}
+
+decl box = new Box<String>("x")

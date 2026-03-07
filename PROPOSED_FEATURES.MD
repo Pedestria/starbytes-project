@@ -31,3 +31,5 @@ Expand/fix generics:
 Explore the limitation around assigning/casting concrete class instances to interface-typed values. 
 
 Fix contextual expected-type inference
+
+Fix full-file integration (so files execute appropriately)

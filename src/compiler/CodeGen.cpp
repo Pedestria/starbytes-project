@@ -714,6 +714,17 @@ bool stmtCanBeConvertedToRTInternalObject(ASTStmt *stmt){
     return false;
 }
 
+static bool stmtIsExpressionLike(ASTStmt *stmt){
+    if(!stmt){
+        return false;
+    }
+    return (stmt->type & EXPR)
+        || stmt->type == STR_LITERAL
+        || stmt->type == NUM_LITERAL
+        || stmt->type == BOOL_LITERAL
+        || stmt->type == REGEX_LITERAL;
+}
+
 StarbytesObject CodeGen::exprToRTInternalObject(ASTExpr *expr){
     StarbytesObject ob;
     if (expr->type == ARRAY_EXPR){
@@ -737,11 +748,28 @@ StarbytesObject CodeGen::exprToRTInternalObject(ASTExpr *expr){
     }
     else if(expr->type == NUM_LITERAL){
         ASTLiteralExpr *literal_expr = (ASTLiteralExpr *)expr;
+        auto targetType = expr->runtimeCastTargetName.value_or("");
         if(literal_expr->floatValue.has_value()){
-            ob = StarbytesNumNew(NumTypeFloat,*literal_expr->floatValue);
+            if(targetType == DOUBLE_TYPE->getName().str()){
+                ob = StarbytesNumNew(NumTypeDouble,*literal_expr->floatValue);
+            }
+            else {
+                ob = StarbytesNumNew(NumTypeFloat,*literal_expr->floatValue);
+            }
         }
         else {
-            ob = StarbytesNumNew(NumTypeInt,*literal_expr->intValue);
+            if(targetType == LONG_TYPE->getName().str()){
+                ob = StarbytesNumNew(NumTypeLong,(int64_t)*literal_expr->intValue);
+            }
+            else if(targetType == DOUBLE_TYPE->getName().str()){
+                ob = StarbytesNumNew(NumTypeDouble,(double)*literal_expr->intValue);
+            }
+            else if(targetType == FLOAT_TYPE->getName().str()){
+                ob = StarbytesNumNew(NumTypeFloat,(float)*literal_expr->intValue);
+            }
+            else {
+                ob = StarbytesNumNew(NumTypeInt,(int)*literal_expr->intValue);
+            }
         }
     }
     return ob;
@@ -752,7 +780,8 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
     if(!stmt){
         return;
     }
-    ASTExpr *expr = (ASTExpr *)stmt;
+    bool isExprLike = stmtIsExpressionLike(stmt);
+    ASTExpr *expr = isExprLike ? (ASTExpr *)stmt : nullptr;
     if((stmt->type & EXPR) && exprEmitDepth == 0){
         ensureInlineExprTemplates(expr);
     }
@@ -761,6 +790,28 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         explicit ExprDepthGuard(size_t &depthRef):depth(depthRef){ ++depth; }
         ~ExprDepthGuard(){ --depth; }
     } depthGuard(exprEmitDepth);
+    if(isExprLike && expr->runtimeCastTargetName.has_value()){
+        bool explicitCastInvocation = false;
+        if(stmt->type == IVKE_EXPR && expr->callee){
+            explicitCastInvocation =
+                ((expr->callee->type == ID_EXPR && expr->callee->id
+                  && expr->callee->id->type == ASTIdentifier::Class)
+                 || (expr->callee->type == MEMBER_EXPR
+                     && expr->callee->rightExpr && expr->callee->rightExpr->id
+                     && expr->callee->rightExpr->id->type == ASTIdentifier::Class));
+        }
+        if(!explicitCastInvocation){
+            auto targetName = expr->runtimeCastTargetName;
+            expr->runtimeCastTargetName.reset();
+            RTCode code = CODE_RTCAST;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            consumeStmt(stmt);
+            RTID targetTypeId = makeOwnedRTID(targetName.value());
+            genContext->out << &targetTypeId;
+            expr->runtimeCastTargetName = targetName;
+            return;
+        }
+    }
     if(stmt->type == REGEX_LITERAL){
         auto *literalExpr = (ASTLiteralExpr *)stmt;
         RTCode code = CODE_RTREGEX_LITERAL;

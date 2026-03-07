@@ -353,9 +353,60 @@ StarbytesClassType StarbytesClassObjectGetClass(StarbytesObject obj){
 
 typedef struct {
     StarbytesNumT type;
+    double d;
     float f;
+    int64_t l;
     int i;
 } StarbytesNumPriv;
+
+static int StarbytesNumIsIntegralType(StarbytesNumT type){
+    return type == NumTypeInt || type == NumTypeLong;
+}
+
+static int StarbytesNumIsFloatingType(StarbytesNumT type){
+    return type == NumTypeFloat || type == NumTypeDouble;
+}
+
+static long double StarbytesNumAsLongDouble(const StarbytesNumPriv *priv){
+    switch(priv->type){
+        case NumTypeFloat:
+            return (long double)priv->f;
+        case NumTypeDouble:
+            return (long double)priv->d;
+        case NumTypeLong:
+            return (long double)priv->l;
+        case NumTypeInt:
+        default:
+            return (long double)priv->i;
+    }
+}
+
+static int64_t StarbytesNumAsInt64(const StarbytesNumPriv *priv){
+    switch(priv->type){
+        case NumTypeLong:
+            return priv->l;
+        case NumTypeFloat:
+            return (int64_t)priv->f;
+        case NumTypeDouble:
+            return (int64_t)priv->d;
+        case NumTypeInt:
+        default:
+            return (int64_t)priv->i;
+    }
+}
+
+static StarbytesNumT StarbytesPromotedNumericType(StarbytesNumT lhs,StarbytesNumT rhs){
+    if(lhs == NumTypeDouble || rhs == NumTypeDouble){
+        return NumTypeDouble;
+    }
+    if(lhs == NumTypeFloat || rhs == NumTypeFloat){
+        return NumTypeFloat;
+    }
+    if(lhs == NumTypeLong || rhs == NumTypeLong){
+        return NumTypeLong;
+    }
+    return NumTypeInt;
+}
 
 void _StarbytesNumFree(void *data){
     StarbytesNumPriv *priv = (StarbytesNumPriv *)data;
@@ -367,16 +418,27 @@ StarbytesNum StarbytesNumNew(StarbytesNumT type,...){
     obj->freePrivData = _StarbytesNumFree;
     StarbytesNumPriv priv;
     priv.type = type;
+    priv.d = 0.0;
+    priv.f = 0.0f;
+    priv.l = 0;
+    priv.i = 0;
 
     va_list args;
     va_start(args,type);
-    if(type == NumTypeInt){
-        priv.i = va_arg(args,int);
-        priv.f = 0;
-    }
-    else {
-        priv.f = (float)va_arg(args,double);
-        priv.i = 0;
+    switch(type){
+        case NumTypeInt:
+            priv.i = va_arg(args,int);
+            break;
+        case NumTypeLong:
+            priv.l = va_arg(args,int64_t);
+            break;
+        case NumTypeFloat:
+            priv.f = (float)va_arg(args,double);
+            break;
+        case NumTypeDouble:
+        default:
+            priv.d = va_arg(args,double);
+            break;
     }
     va_end(args);
     
@@ -388,31 +450,35 @@ StarbytesNum StarbytesNumNew(StarbytesNumT type,...){
 
 StarbytesNum StarbytesNumCopy(StarbytesNum num){
     StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
-    if(priv->type == NumTypeInt){
-        return StarbytesNumNew(priv->type,priv->i);
-    }
-    else {
-        return StarbytesNumNew(priv->type,priv->f);
+    switch(priv->type){
+        case NumTypeInt:
+            return StarbytesNumNew(priv->type,priv->i);
+        case NumTypeLong:
+            return StarbytesNumNew(priv->type,priv->l);
+        case NumTypeFloat:
+            return StarbytesNumNew(priv->type,priv->f);
+        case NumTypeDouble:
+        default:
+            return StarbytesNumNew(priv->type,priv->d);
     }
 }
 
 StarbytesNum StarbytesNumConvertTo(StarbytesNum num,StarbytesNumT type){
     StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
     if(priv->type == type){
-        if(type == NumTypeFloat){
-            return StarbytesNumNew(NumTypeFloat,priv->f);
-        }
-        else {
-            return StarbytesNumNew(NumTypeInt,priv->i);
-        }
+        return StarbytesNumCopy(num);
     }
-    else {
-        if(type == NumTypeFloat){
-            return StarbytesNumNew(NumTypeFloat,(float)priv->i);
-        }
-        else {
-            return StarbytesNumNew(NumTypeInt,(int)priv->f);
-        }
+
+    switch(type){
+        case NumTypeInt:
+            return StarbytesNumNew(NumTypeInt,(int)StarbytesNumAsInt64(priv));
+        case NumTypeLong:
+            return StarbytesNumNew(NumTypeLong,StarbytesNumAsInt64(priv));
+        case NumTypeFloat:
+            return StarbytesNumNew(NumTypeFloat,(float)StarbytesNumAsLongDouble(priv));
+        case NumTypeDouble:
+        default:
+            return StarbytesNumNew(NumTypeDouble,(double)StarbytesNumAsLongDouble(priv));
     }
 }
 
@@ -420,9 +486,21 @@ int StarbytesNumCompare(StarbytesNum lhs,StarbytesNum rhs){
     StarbytesNumPriv *privLhs = (StarbytesNumPriv *)lhs->privData;
     StarbytesNumPriv *privRhs = (StarbytesNumPriv *)rhs->privData;
 
-    float lhsVal = (privLhs->type == NumTypeFloat)? privLhs->f : (float)privLhs->i;
-    float rhsVal = (privRhs->type == NumTypeFloat)? privRhs->f : (float)privRhs->i;
+    if(StarbytesNumIsIntegralType(privLhs->type) && StarbytesNumIsIntegralType(privRhs->type)){
+        int64_t lhsVal = StarbytesNumAsInt64(privLhs);
+        int64_t rhsVal = StarbytesNumAsInt64(privRhs);
 
+        if(lhsVal == rhsVal){
+            return COMPARE_EQUAL;
+        }
+        if(lhsVal > rhsVal){
+            return COMPARE_GREATER;
+        }
+        return COMPARE_LESS;
+    }
+
+    long double lhsVal = StarbytesNumAsLongDouble(privLhs);
+    long double rhsVal = StarbytesNumAsLongDouble(privRhs);
     if(lhsVal == rhsVal){
         return COMPARE_EQUAL;
     }
@@ -435,15 +513,26 @@ int StarbytesNumCompare(StarbytesNum lhs,StarbytesNum rhs){
 void StarbytesNumAssign(StarbytesNum num,StarbytesNumT type,...){
     StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
     priv->type = type;
+    priv->d = 0.0;
+    priv->f = 0.0f;
+    priv->l = 0;
+    priv->i = 0;
     va_list args;
     va_start(args,type);
-    if(type == NumTypeInt){
-        priv->i = va_arg(args,int);
-        priv->f = 0;
-    }
-    else {
-        priv->f = (float)va_arg(args,double);
-        priv->i = 0;
+    switch(type){
+        case NumTypeInt:
+            priv->i = va_arg(args,int);
+            break;
+        case NumTypeLong:
+            priv->l = va_arg(args,int64_t);
+            break;
+        case NumTypeFloat:
+            priv->f = (float)va_arg(args,double);
+            break;
+        case NumTypeDouble:
+        default:
+            priv->d = va_arg(args,double);
+            break;
     }
     va_end(args);
 }
@@ -452,26 +541,36 @@ StarbytesNum StarbytesNumAdd(StarbytesNum a,StarbytesNum b){
     StarbytesNumPriv *a_priv = (StarbytesNumPriv *)a->privData;
     StarbytesNumPriv *b_priv = (StarbytesNumPriv *)b->privData;
 
-    if(a_priv->type == NumTypeInt && b_priv->type == NumTypeInt){
-        int r = a_priv->i + b_priv->i;
-        return StarbytesNumNew(NumTypeInt,r);
+    if(StarbytesNumIsIntegralType(a_priv->type) && StarbytesNumIsIntegralType(b_priv->type)){
+        if(a_priv->type == NumTypeLong || b_priv->type == NumTypeLong){
+            return StarbytesNumNew(NumTypeLong,StarbytesNumAsInt64(a_priv) + StarbytesNumAsInt64(b_priv));
+        }
+        return StarbytesNumNew(NumTypeInt,a_priv->i + b_priv->i);
     }
-    float af = (a_priv->type == NumTypeFloat)? a_priv->f : (float)a_priv->i;
-    float bf = (b_priv->type == NumTypeFloat)? b_priv->f : (float)b_priv->i;
-    return StarbytesNumNew(NumTypeFloat,af + bf);
+    StarbytesNumT outType = StarbytesPromotedNumericType(a_priv->type,b_priv->type);
+    long double result = StarbytesNumAsLongDouble(a_priv) + StarbytesNumAsLongDouble(b_priv);
+    if(outType == NumTypeDouble){
+        return StarbytesNumNew(NumTypeDouble,(double)result);
+    }
+    return StarbytesNumNew(NumTypeFloat,(float)result);
 }
 
 StarbytesNum StarbytesNumSub(StarbytesNum a,StarbytesNum b){
     StarbytesNumPriv *a_priv = (StarbytesNumPriv *)a->privData;
     StarbytesNumPriv *b_priv = (StarbytesNumPriv *)b->privData;
 
-    if(a_priv->type == NumTypeInt && b_priv->type == NumTypeInt){
-        int r = a_priv->i - b_priv->i;
-        return StarbytesNumNew(NumTypeInt,r);
+    if(StarbytesNumIsIntegralType(a_priv->type) && StarbytesNumIsIntegralType(b_priv->type)){
+        if(a_priv->type == NumTypeLong || b_priv->type == NumTypeLong){
+            return StarbytesNumNew(NumTypeLong,StarbytesNumAsInt64(a_priv) - StarbytesNumAsInt64(b_priv));
+        }
+        return StarbytesNumNew(NumTypeInt,a_priv->i - b_priv->i);
     }
-    float af = (a_priv->type == NumTypeFloat)? a_priv->f : (float)a_priv->i;
-    float bf = (b_priv->type == NumTypeFloat)? b_priv->f : (float)b_priv->i;
-    return StarbytesNumNew(NumTypeFloat,af - bf);
+    StarbytesNumT outType = StarbytesPromotedNumericType(a_priv->type,b_priv->type);
+    long double result = StarbytesNumAsLongDouble(a_priv) - StarbytesNumAsLongDouble(b_priv);
+    if(outType == NumTypeDouble){
+        return StarbytesNumNew(NumTypeDouble,(double)result);
+    }
+    return StarbytesNumNew(NumTypeFloat,(float)result);
 }
 
 StarbytesNumT StarbytesNumGetType(StarbytesNum num){
@@ -485,10 +584,22 @@ int StarbytesNumGetIntValue(StarbytesNum num){
     return priv->i;
 }
 
+int64_t StarbytesNumGetLongValue(StarbytesNum num){
+    StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
+    assert(priv->type == NumTypeLong);
+    return priv->l;
+}
+
 float StarbytesNumGetFloatValue(StarbytesNum num){
     StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
     assert(priv->type == NumTypeFloat);
     return priv->f;
+}
+
+double StarbytesNumGetDoubleValue(StarbytesNum num){
+    StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
+    assert(priv->type == NumTypeDouble);
+    return priv->d;
 }
 
 /// String Class

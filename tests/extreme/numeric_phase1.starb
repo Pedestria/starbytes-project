@@ -1,0 +1,30 @@
+decl wideDouble:Double = 3.5
+decl wideLong:Long = 4
+decl sqrtValue = sqrt(9)
+decl absInt = abs(-4)
+decl absLong = abs(Long(-12))
+decl absFloat = abs(Float(-3.25))
+decl minLong = min(Long(9),3)
+decl maxDouble = max(Double(2.0),Float(3.5))
+decl scientificLarge = 9.732e6
+decl scientificSmall = 9.732e-6
+
+if(wideDouble is Double
+   && wideLong is Long
+   && sqrtValue is Double
+   && absLong is Long
+   && absFloat is Float
+   && minLong is Long
+   && maxDouble is Double
+   && sqrtValue == 3.0
+   && absInt == 4
+   && absLong == 12
+   && absFloat == Float(3.25)
+   && minLong == 3
+   && maxDouble == 3.5
+   && scientificLarge > 9731999.0
+   && scientificLarge < 9732001.0
+   && scientificSmall > 0.0
+   && scientificSmall < 0.00001){
+    print("NUMERIC-PHASE1-OK")
+}

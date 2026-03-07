@@ -127,7 +127,9 @@ void StarbytesArraySet(StarbytesArray array,unsigned int index,StarbytesObject o
 
 typedef enum {
     NumTypeFloat,
-    NumTypeInt
+    NumTypeDouble,
+    NumTypeInt,
+    NumTypeLong
 } StarbytesNumT;
 
 StarbytesNum StarbytesNumNew(StarbytesNumT type,...);
@@ -137,7 +139,9 @@ void StarbytesNumAssign(StarbytesNum obj,StarbytesNumT type,...);
 StarbytesNum StarbytesNumConvertTo(StarbytesNum num,StarbytesNumT type);
 StarbytesNumT StarbytesNumGetType(StarbytesNum obj);
 int StarbytesNumGetIntValue(StarbytesNum obj);
+int64_t StarbytesNumGetLongValue(StarbytesNum obj);
 float StarbytesNumGetFloatValue(StarbytesNum obj);
+double StarbytesNumGetDoubleValue(StarbytesNum obj);
 StarbytesNum StarbytesNumAdd(StarbytesNum a,StarbytesNum b);
 StarbytesNum StarbytesNumSub(StarbytesNum a,StarbytesNum b);
 /// @}

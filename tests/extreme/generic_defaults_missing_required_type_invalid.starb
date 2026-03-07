@@ -1,0 +1,4 @@
+class Pair<T, U = String> {
+}
+
+decl pair:Pair = new Pair<Int>()
