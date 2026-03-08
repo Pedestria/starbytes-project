@@ -1,5 +1,6 @@
 #include <starbytes/interop.h>
 #include "starbytes/base/ADT.h"
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <algorithm>
 #include <climits>
@@ -15,6 +16,8 @@
 namespace {
 
 using starbytes::string_map;
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
 
 struct NativeArgsLayout {
     unsigned argc = 0;
@@ -45,6 +48,7 @@ StarbytesObject makeInt(int value) {
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     outValue = StarbytesStrGetBuffer(arg);
@@ -54,6 +58,7 @@ bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
 bool readIntArg(StarbytesFuncArgs args,int &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt) {
+        setNativeErrorIfEmpty(args,"expected Int argument");
         return false;
     }
     outValue = StarbytesNumGetIntValue(arg);
@@ -63,6 +68,7 @@ bool readIntArg(StarbytesFuncArgs args,int &outValue) {
 bool readStringArrayArg(StarbytesFuncArgs args,std::vector<std::string> &outValues) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesArrayType())) {
+        setNativeErrorIfEmpty(args,"expected Array<String> argument");
         return false;
     }
 
@@ -72,6 +78,7 @@ bool readStringArrayArg(StarbytesFuncArgs args,std::vector<std::string> &outValu
     for(unsigned i = 0; i < len; ++i) {
         auto item = StarbytesArrayIndex(arg,i);
         if(!item || !StarbytesObjectTypecheck(item,StarbytesStrType())) {
+            setNativeErrorIfEmpty(args,"expected Array<String> argument");
             return false;
         }
         outValues.emplace_back(StarbytesStrGetBuffer(item));
@@ -255,11 +262,11 @@ STARBYTES_FUNC(http_get) {
 #ifdef STARBYTES_HAS_CURL
     auto result = performHttpRequest("GET",url,"",timeoutMillis,headers);
     if(!result.ok) {
-        return nullptr;
+        return failNativeIfEmpty(args,"HTTP GET request failed");
     }
     return makeHttpResponseObject(result);
 #else
-    return nullptr;
+    return failNativeIfEmpty(args,"HTTP support is unavailable");
 #endif
 }
 
@@ -277,11 +284,11 @@ STARBYTES_FUNC(http_post) {
 #ifdef STARBYTES_HAS_CURL
     auto result = performHttpRequest("POST",url,body,timeoutMillis,headers);
     if(!result.ok) {
-        return nullptr;
+        return failNativeIfEmpty(args,"HTTP POST request failed");
     }
     return makeHttpResponseObject(result);
 #else
-    return nullptr;
+    return failNativeIfEmpty(args,"HTTP support is unavailable");
 #endif
 }
 
@@ -301,11 +308,11 @@ STARBYTES_FUNC(http_request) {
 #ifdef STARBYTES_HAS_CURL
     auto result = performHttpRequest(method,url,body,timeoutMillis,headers);
     if(!result.ok) {
-        return nullptr;
+        return failNativeIfEmpty(args,"HTTP request failed");
     }
     return makeHttpResponseObject(result);
 #else
-    return nullptr;
+    return failNativeIfEmpty(args,"HTTP support is unavailable");
 #endif
 }
 

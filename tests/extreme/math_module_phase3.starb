@@ -1,0 +1,37 @@
+import Math
+
+decl emptyValues:Any[] = []
+decl ints:Any[] = [1,2,3,4]
+decl mixed:Any[] = [1,2.5,Double(3.25)]
+decl single:Any[] = [7]
+decl promotedInts:Any[] = [2147483647,1]
+
+secure(decl sumEmpty = Math.sum(emptyValues)) catch {}
+secure(decl productEmpty = Math.product(emptyValues)) catch {}
+secure(decl sumInts = Math.sum(ints)) catch {}
+secure(decl productInts = Math.product(ints)) catch {}
+secure(decl meanInts = Math.mean(ints)) catch {}
+secure(decl varianceInts = Math.variance(ints)) catch {}
+secure(decl stddevInts = Math.stddev(ints)) catch {}
+secure(decl sumMixed = Math.sum(mixed)) catch {}
+secure(decl productMixed = Math.product(mixed)) catch {}
+secure(decl promotedSum = Math.sum(promotedInts)) catch {}
+secure(decl singleVariance = Math.variance(single)) catch {}
+secure(decl singleStddev = Math.stddev(single)) catch {}
+secure(decl varianceOk = Math.approxEqual(varianceInts,1.25,0.000001)) catch {}
+secure(decl stddevOk = Math.approxEqual(stddevInts,1.11803398875,0.000001)) catch {}
+
+if(sumEmpty == 0
+   && productEmpty == 1
+   && sumInts == 10
+   && productInts == 24
+   && meanInts == 2.5
+   && varianceOk
+   && stddevOk
+   && sumMixed == 6.75
+   && productMixed == 8.125
+   && promotedSum == Long(2147483647) + Long(1)
+   && singleVariance == 0.0
+   && singleStddev == 0.0){
+    print("MATH-MODULE-PHASE3-OK")
+}

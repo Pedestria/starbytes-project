@@ -1,5 +1,6 @@
 #include <starbytes/interop.h>
 #include "starbytes/base/ADT.h"
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <climits>
 #include <memory>
@@ -14,6 +15,9 @@
 namespace {
 
 using starbytes::string_set;
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
+using starbytes::Runtime::stdlib::systemErrorMessage;
 
 struct NativeArgsLayout {
     unsigned argc = 0;
@@ -44,6 +48,7 @@ StarbytesObject makeInt(int value) {
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     outValue = StarbytesStrGetBuffer(arg);
@@ -53,6 +58,7 @@ bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
 bool readIntArg(StarbytesFuncArgs args,int &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt) {
+        setNativeErrorIfEmpty(args,"expected Int argument");
         return false;
     }
     outValue = StarbytesNumGetIntValue(arg);
@@ -82,10 +88,12 @@ StarbytesObject intVectorToArray(const std::vector<unsigned char> &values) {
 TcpSocketState *requireSocketSelf(StarbytesFuncArgs args) {
     auto self = StarbytesFuncArgsGetArg(args);
     if(!self) {
+        setNativeErrorIfEmpty(args,"TcpSocket receiver is missing");
         return nullptr;
     }
     auto it = g_socketRegistry.find(self);
     if(it == g_socketRegistry.end()) {
+        setNativeErrorIfEmpty(args,"TcpSocket receiver is invalid");
         return nullptr;
     }
     return it->second.get();
@@ -94,6 +102,7 @@ TcpSocketState *requireSocketSelf(StarbytesFuncArgs args) {
 bool readByteArrayArg(StarbytesFuncArgs args,std::vector<unsigned char> &outValues) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesArrayType())) {
+        setNativeErrorIfEmpty(args,"expected Bytes argument");
         return false;
     }
 
@@ -103,10 +112,12 @@ bool readByteArrayArg(StarbytesFuncArgs args,std::vector<unsigned char> &outValu
     for(unsigned i = 0; i < len; ++i) {
         auto item = StarbytesArrayIndex(arg,i);
         if(!item || !StarbytesObjectTypecheck(item,StarbytesNumType()) || StarbytesNumGetType(item) != NumTypeInt) {
+            setNativeErrorIfEmpty(args,"expected Bytes argument");
             return false;
         }
         auto value = StarbytesNumGetIntValue(item);
         if(value < 0 || value > 255) {
+            setNativeErrorIfEmpty(args,"byte values must be between 0 and 255");
             return false;
         }
         outValues.push_back((unsigned char)value);
@@ -123,7 +134,7 @@ STARBYTES_FUNC(net_tcpSocket) {
     g_socketRegistry[object] = std::make_unique<TcpSocketState>();
     return object;
 #else
-    return nullptr;
+    return failNativeIfEmpty(args,"Net support is unavailable");
 #endif
 }
 
@@ -133,7 +144,7 @@ STARBYTES_FUNC(net_resolve) {
     std::string host;
     std::string service;
     if(!readStringArg(args,host) || !readStringArg(args,service) || host.empty() || service.empty()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"resolve requires non-empty host and service strings");
     }
 
 #ifdef STARBYTES_HAS_ASIO
@@ -142,7 +153,7 @@ STARBYTES_FUNC(net_resolve) {
     std::error_code ec;
     auto endpoints = resolver.resolve(host,service,ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("resolve failed",ec));
     }
 
     string_set seen;
@@ -156,7 +167,7 @@ STARBYTES_FUNC(net_resolve) {
     }
     return out;
 #else
-    return nullptr;
+    return failNativeIfEmpty(args,"Net support is unavailable");
 #endif
 }
 
@@ -188,23 +199,23 @@ STARBYTES_FUNC(Net_TcpSocket_connect) {
     std::string host;
     int port = 0;
     if(!readStringArg(args,host) || !readIntArg(args,port) || host.empty() || port <= 0 || port > 65535) {
-        return nullptr;
+        return failNativeIfEmpty(args,"connect requires a host string and port between 1 and 65535");
     }
 
     std::error_code ec;
     asio::ip::tcp::resolver resolver(state->io);
     auto endpoints = resolver.resolve(host,std::to_string(port),ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("connect resolve failed",ec));
     }
 
     asio::connect(state->socket,endpoints,ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("connect failed",ec));
     }
     return makeBool(true);
 #else
-    return nullptr;
+    return failNativeIfEmpty(args,"Net support is unavailable");
 #endif
 }
 
@@ -217,7 +228,7 @@ STARBYTES_FUNC(Net_TcpSocket_read) {
 
     int maxBytes = 0;
     if(!readIntArg(args,maxBytes) || maxBytes < 0) {
-        return nullptr;
+        return failNativeIfEmpty(args,"read requires a non-negative maxBytes");
     }
     if(maxBytes == 0) {
         return StarbytesArrayNew();
@@ -227,13 +238,13 @@ STARBYTES_FUNC(Net_TcpSocket_read) {
     std::error_code ec;
     auto readCount = state->socket.read_some(asio::buffer(buffer),ec);
     if(ec && ec != asio::error::eof) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("read failed",ec));
     }
 
     buffer.resize(readCount);
     return intVectorToArray(buffer);
 #else
-    return nullptr;
+    return failNativeIfEmpty(args,"Net support is unavailable");
 #endif
 }
 
@@ -252,7 +263,7 @@ STARBYTES_FUNC(Net_TcpSocket_write) {
     std::error_code ec;
     auto written = asio::write(state->socket,asio::buffer(bytes),ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("write failed",ec));
     }
 
     if(written > (size_t)INT_MAX) {
@@ -260,7 +271,7 @@ STARBYTES_FUNC(Net_TcpSocket_write) {
     }
     return makeInt((int)written);
 #else
-    return nullptr;
+    return failNativeIfEmpty(args,"Net support is unavailable");
 #endif
 }
 
@@ -279,7 +290,7 @@ STARBYTES_FUNC(Net_TcpSocket_writeText) {
     std::error_code ec;
     auto written = asio::write(state->socket,asio::buffer(text),ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("writeText failed",ec));
     }
 
     if(written > (size_t)INT_MAX) {
@@ -287,7 +298,7 @@ STARBYTES_FUNC(Net_TcpSocket_writeText) {
     }
     return makeInt((int)written);
 #else
-    return nullptr;
+    return failNativeIfEmpty(args,"Net support is unavailable");
 #endif
 }
 
@@ -301,11 +312,11 @@ STARBYTES_FUNC(Net_TcpSocket_close) {
     std::error_code ec;
     state->socket.close(ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("close failed",ec));
     }
     return makeBool(true);
 #else
-    return nullptr;
+    return failNativeIfEmpty(args,"Net support is unavailable");
 #endif
 }
 

@@ -119,7 +119,7 @@ func durationDiv(duration:Duration,divisor:Float) Duration!
 /// @brief Compares two durations.
 /// @return Negative if lhs<rhs, zero if equal, positive if lhs>rhs.
 @native(name="Time_durationCompare")
-func durationCompare(lhs:Duration,rhs:Duration) Int
+func durationCompare(lhs:Duration,rhs:Duration) Int!
 
 /// @brief Sleeps current execution context for the given duration.
 /// @param duration Sleep duration.

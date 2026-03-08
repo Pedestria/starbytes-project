@@ -1,0 +1,26 @@
+import Math
+
+decl emptyValues:Any[] = []
+decl badValues:Any[] = [1,"oops"]
+
+secure(decl badSum = Math.sum(badValues)) catch (error:String) {
+    print(error)
+}
+
+secure(decl badProduct = Math.product(badValues)) catch (error:String) {
+    print(error)
+}
+
+secure(decl badMean = Math.mean(emptyValues)) catch (error:String) {
+    print(error)
+}
+
+secure(decl badVariance = Math.variance(badValues)) catch (error:String) {
+    print(error)
+}
+
+secure(decl badStddev = Math.stddev(emptyValues)) catch (error:String) {
+    print(error)
+}
+
+print("MATH-MODULE-PHASE3-INVALID-OK")

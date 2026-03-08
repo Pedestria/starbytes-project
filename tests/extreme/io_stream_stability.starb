@@ -3,9 +3,9 @@ import IO
 decl root = ".starbytes/io-stream-stability"
 decl textPath = root + "/sample.txt"
 
-secure(decl mk = createDirectory(root,true)) catch {}
-secure(decl wt = writeText(textPath,"alpha\nbeta","utf-8")) catch {}
-secure(decl tf = openText(textPath,"r+","utf-8","\n",-1)) catch (error:String) {
+secure(decl mk = IO.createDirectory(root,true)) catch {}
+secure(decl wt = IO.writeText(textPath,"alpha\nbeta","utf-8")) catch {}
+secure(decl tf = IO.openText(textPath,"r+","utf-8","\n",-1)) catch (error:String) {
     print("IO-STREAM-OPEN-CATCH")
     print(error)
 }
@@ -63,7 +63,7 @@ else {
     print("IO-STREAM-CLOSED-BAD")
 }
 
-secure(decl rmText = remove(textPath)) catch {}
-secure(decl rmRoot = remove(root)) catch {}
+secure(decl rmText = IO.remove(textPath)) catch {}
+secure(decl rmRoot = IO.remove(root)) catch {}
 
 print("IO-STREAM-STABILITY-OK")

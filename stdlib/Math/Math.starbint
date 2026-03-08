@@ -1,0 +1,176 @@
+/// @brief StdLib Math module.
+/// @details Deterministic scalar math surface with intrinsic wrappers and baseline transcendental helpers.
+
+def NumberList = Array<Any>
+
+/// @brief Circle constant pi.
+@native(name="math_pi")
+decl imut pi:Double
+
+/// @brief Tau = 2 * pi.
+@native(name="math_tau")
+decl imut tau:Double
+
+/// @brief Euler's number.
+@native(name="math_e")
+decl imut e:Double
+
+/// @brief IEEE NaN.
+@native(name="math_nan")
+decl imut nan:Double
+
+/// @brief Positive infinity.
+@native(name="math_infinity")
+decl imut infinity:Double
+
+/// @brief Negative infinity.
+@native(name="math_negativeInfinity")
+decl imut negativeInfinity:Double
+
+/// @brief Returns square root as Double.
+@native(name="math_sqrt")
+func sqrt(value:Any) Double!
+
+/// @brief Returns absolute magnitude.
+@native(name="math_abs")
+func abs(value:Any) Any!
+
+/// @brief Returns the lesser of two numeric values.
+@native(name="math_min")
+func min(lhs:Any,rhs:Any) Any!
+
+/// @brief Returns the greater of two numeric values.
+@native(name="math_max")
+func max(lhs:Any,rhs:Any) Any!
+
+/// @brief Returns base raised to exponent.
+@native(name="math_pow")
+func pow(base:Any,exponent:Any) Double!
+
+/// @brief Returns e^value.
+@native(name="math_exp")
+func exp(value:Any) Double!
+
+/// @brief Returns 2^value.
+@native(name="math_exp2")
+func exp2(value:Any) Double!
+
+/// @brief Returns natural logarithm.
+@native(name="math_log")
+func log(value:Any) Double!
+
+/// @brief Returns base-2 logarithm.
+@native(name="math_log2")
+func log2(value:Any) Double!
+
+/// @brief Returns base-10 logarithm.
+@native(name="math_log10")
+func log10(value:Any) Double!
+
+/// @brief Returns cube root as Double.
+@native(name="math_cbrt")
+func cbrt(value:Any) Double!
+
+/// @brief Returns Euclidean norm of two values.
+@native(name="math_hypot")
+func hypot(lhs:Any,rhs:Any) Double!
+
+/// @brief Returns sine of angle in radians.
+@native(name="math_sin")
+func sin(angle:Any) Double!
+
+/// @brief Returns cosine of angle in radians.
+@native(name="math_cos")
+func cos(angle:Any) Double!
+
+/// @brief Returns tangent of angle in radians.
+@native(name="math_tan")
+func tan(angle:Any) Double!
+
+/// @brief Returns atan2(y, x) in radians.
+@native(name="math_atan2")
+func atan2(y:Any,x:Any) Double!
+
+/// @brief Returns floor as Double.
+@native(name="math_floor")
+func floor(value:Any) Double!
+
+/// @brief Returns ceil as Double.
+@native(name="math_ceil")
+func ceil(value:Any) Double!
+
+/// @brief Returns rounded value as Double.
+@native(name="math_round")
+func round(value:Any) Double!
+
+/// @brief Returns truncated value as Double.
+@native(name="math_trunc")
+func trunc(value:Any) Double!
+
+/// @brief Returns whether value is finite.
+@native(name="math_isFinite")
+func isFinite(value:Any) Bool!
+
+/// @brief Returns whether value is +/- infinity.
+@native(name="math_isInfinite")
+func isInfinite(value:Any) Bool!
+
+/// @brief Returns whether value is NaN.
+@native(name="math_isNaN")
+func isNaN(value:Any) Bool!
+
+/// @brief Converts degrees to radians.
+@native(name="math_degreesToRadians")
+func degreesToRadians(angle:Any) Double!
+
+/// @brief Converts radians to degrees.
+@native(name="math_radiansToDegrees")
+func radiansToDegrees(angle:Any) Double!
+
+/// @brief Returns whether two numbers are approximately equal within epsilon.
+@native(name="math_approxEqual")
+func approxEqual(lhs:Any,rhs:Any,epsilon:Any) Bool!
+
+/// @brief Clamps value into [lower, upper].
+@native(name="math_clamp")
+func clamp(value:Any,lower:Any,upper:Any) Any!
+
+/// @brief Linearly interpolates from start to end by t.
+@native(name="math_lerp")
+func lerp(start:Any,end:Any,t:Any) Double!
+
+/// @brief Greatest common divisor.
+@native(name="math_gcd")
+func gcd(lhs:Any,rhs:Any) Long!
+
+/// @brief Least common multiple.
+@native(name="math_lcm")
+func lcm(lhs:Any,rhs:Any) Long!
+
+/// @brief Returns whether integer value is a power of two.
+@native(name="math_isPowerOfTwo")
+func isPowerOfTwo(value:Any) Bool!
+
+/// @brief Returns the next power of two greater than or equal to value.
+@native(name="math_nextPowerOfTwo")
+func nextPowerOfTwo(value:Any) Long!
+
+/// @brief Returns the arithmetic sum of numeric values.
+@native(name="math_sum")
+func sum(values:NumberList) Any!
+
+/// @brief Returns the multiplicative product of numeric values.
+@native(name="math_product")
+func product(values:NumberList) Any!
+
+/// @brief Returns the arithmetic mean of numeric values.
+@native(name="math_mean")
+func mean(values:NumberList) Double!
+
+/// @brief Returns the population variance of numeric values.
+@native(name="math_variance")
+func variance(values:NumberList) Double!
+
+/// @brief Returns the population standard deviation of numeric values.
+@native(name="math_stddev")
+func stddev(values:NumberList) Double!

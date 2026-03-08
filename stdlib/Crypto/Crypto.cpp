@@ -1,4 +1,5 @@
 #include <starbytes/interop.h>
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -14,6 +15,9 @@
 #endif
 
 namespace {
+
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
 
 struct NativeArgsLayout {
     unsigned argc = 0;
@@ -39,6 +43,7 @@ StarbytesObject makeBool(bool value) {
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     auto *buf = StarbytesStrGetBuffer(arg);
@@ -49,6 +54,7 @@ bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
 bool readIntArg(StarbytesFuncArgs args,int &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt) {
+        setNativeErrorIfEmpty(args,"expected Int argument");
         return false;
     }
     outValue = StarbytesNumGetIntValue(arg);
@@ -288,7 +294,11 @@ STARBYTES_FUNC(crypto_md5Hex) {
     if(!readStringArg(args,text)) {
         return nullptr;
     }
-    return digestAsHex(DigestKind::Md5,text);
+    auto result = digestAsHex(DigestKind::Md5,text);
+    if(!result) {
+        return failNativeIfEmpty(args,"md5Hex failed");
+    }
+    return result;
 }
 
 STARBYTES_FUNC(crypto_sha1Hex) {
@@ -298,7 +308,11 @@ STARBYTES_FUNC(crypto_sha1Hex) {
     if(!readStringArg(args,text)) {
         return nullptr;
     }
-    return digestAsHex(DigestKind::Sha1,text);
+    auto result = digestAsHex(DigestKind::Sha1,text);
+    if(!result) {
+        return failNativeIfEmpty(args,"sha1Hex failed");
+    }
+    return result;
 }
 
 STARBYTES_FUNC(crypto_sha256Hex) {
@@ -308,7 +322,11 @@ STARBYTES_FUNC(crypto_sha256Hex) {
     if(!readStringArg(args,text)) {
         return nullptr;
     }
-    return digestAsHex(DigestKind::Sha256,text);
+    auto result = digestAsHex(DigestKind::Sha256,text);
+    if(!result) {
+        return failNativeIfEmpty(args,"sha256Hex failed");
+    }
+    return result;
 }
 
 STARBYTES_FUNC(crypto_hmacSha256Hex) {
@@ -322,7 +340,7 @@ STARBYTES_FUNC(crypto_hmacSha256Hex) {
 
     std::vector<unsigned char> digest;
     if(!hmacSha256(key,message,digest)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"hmacSha256Hex failed");
     }
     auto hex = bytesToHex(digest);
     return StarbytesStrNewWithData(hex.c_str());
@@ -340,20 +358,20 @@ STARBYTES_FUNC(crypto_pbkdf2Sha256Hex) {
         return nullptr;
     }
     if(iterations <= 0 || iterations > kMaxPbkdf2Iterations) {
-        return nullptr;
+        return failNativeIfEmpty(args,"pbkdf2Sha256Hex iterations must be between 1 and 10000000");
     }
     if(keyBytes <= 0 || keyBytes > kMaxDerivedKeyBytes) {
-        return nullptr;
+        return failNativeIfEmpty(args,"pbkdf2Sha256Hex keyBytes must be between 1 and 4096");
     }
 
     std::vector<unsigned char> salt;
     if(!hexToBytes(saltHex,salt)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"pbkdf2Sha256Hex saltHex must be valid hex");
     }
 
     std::vector<unsigned char> derived;
     if(!pbkdf2Sha256(password,salt,iterations,keyBytes,derived)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"pbkdf2Sha256Hex failed");
     }
     auto hex = bytesToHex(derived);
     return StarbytesStrNewWithData(hex.c_str());

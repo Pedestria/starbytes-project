@@ -554,6 +554,10 @@ static bool isStringType(ASTType *type){
     return type && type->nameMatches(STRING_TYPE);
 }
 
+static bool isRegexType(ASTType *type){
+    return type && type->nameMatches(REGEX_TYPE);
+}
+
 static bool isBoolType(ASTType *type){
     return type && type->nameMatches(BOOL_TYPE);
 }
@@ -1319,6 +1323,15 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
 
                 // std::cout << "SYMBOL_PTR:" << symbol_ << std::endl;
                 if(!symbol_){
+                    auto *importedEntry = symbolTableContext.findImportedGlobalEntryNoDiag(id_->val);
+                    if(importedEntry &&
+                       (importedEntry->type == Semantics::SymbolTable::Entry::Var
+                        || importedEntry->type == Semantics::SymbolTable::Entry::Function)){
+                        std::ostringstream out;
+                        out << "Imported symbol `" << id_->val << "` must be referenced with its module name.";
+                        errStream.push(SemanticADiagnostic::create(out.str(),expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
                     std::ostringstream out;
                     out <<"Undefined symbol `" << id_->val << "`";
                     errStream.push(SemanticADiagnostic::create(out.str(),expr_to_eval,Diagnostic::Error));
@@ -1852,6 +1865,14 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     errStream.push(SemanticADiagnostic::create("Unknown String member.",expr_to_eval,Diagnostic::Error));
                     return nullptr;
                 }
+                if(isRegexType(leftType)){
+                    if(memberName == "match" || memberName == "findAll" || memberName == "replace"){
+                        setBuiltinMethod();
+                        break;
+                    }
+                    errStream.push(SemanticADiagnostic::create("Unknown Regex member.",expr_to_eval,Diagnostic::Error));
+                    return nullptr;
+                }
                 if(isArrayType(leftType)){
                     if(memberName == "length"){
                         setBuiltinProperty(INT_TYPE);
@@ -2274,6 +2295,22 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             return nullptr;
                         }
                         break;
+                    }
+                }
+
+                if(!expr_to_eval->isConstructorCall
+                   && expr_to_eval->callee->type == ID_EXPR
+                   && expr_to_eval->callee->id){
+                    auto calleeName = expr_to_eval->callee->id->val;
+                    auto *visibleEntry = symbolTableContext.findEntryNoDiag(calleeName,scopeContext.scope);
+                    auto *importedEntry = symbolTableContext.findImportedGlobalEntryNoDiag(calleeName);
+                    if(!visibleEntry && importedEntry &&
+                       (importedEntry->type == Semantics::SymbolTable::Entry::Var
+                        || importedEntry->type == Semantics::SymbolTable::Entry::Function)){
+                        std::ostringstream out;
+                        out << "Imported symbol `" << calleeName << "` must be referenced with its module name.";
+                        errStream.push(SemanticADiagnostic::create(out.str(),expr_to_eval->callee,Diagnostic::Error));
+                        return nullptr;
                     }
                 }
 
@@ -2747,6 +2784,29 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             break;
                         }
                         errStream.push(SemanticADiagnostic::create("Unknown String method.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    if(isRegexType(baseType)){
+                        if(memberName == "match"){
+                            if(!requireArgCount(1) || !requireStringArg(0)) return nullptr;
+                            type = cloneTypeWithQualifiers(BOOL_TYPE,expr_to_eval,false,true);
+                            break;
+                        }
+                        if(memberName == "findAll"){
+                            if(!requireArgCount(1) || !requireStringArg(0)) return nullptr;
+                            auto *matchesType = makeArrayType(STRING_TYPE,expr_to_eval);
+                            if(matchesType){
+                                matchesType->isThrowable = true;
+                            }
+                            type = matchesType;
+                            break;
+                        }
+                        if(memberName == "replace"){
+                            if(!requireArgCount(2) || !requireStringArg(0) || !requireStringArg(1)) return nullptr;
+                            type = cloneTypeWithQualifiers(STRING_TYPE,expr_to_eval,false,true);
+                            break;
+                        }
+                        errStream.push(SemanticADiagnostic::create("Unknown Regex method.",expr_to_eval,Diagnostic::Error));
                         return nullptr;
                     }
                     if(isArrayType(baseType)){

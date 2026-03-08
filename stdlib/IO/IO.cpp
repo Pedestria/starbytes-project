@@ -1,4 +1,5 @@
 #include <starbytes/interop.h>
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -10,6 +11,10 @@
 #include <vector>
 
 namespace {
+
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
+using starbytes::Runtime::stdlib::systemErrorMessage;
 
 struct NativeStream {
     std::string path;
@@ -41,6 +46,7 @@ StarbytesObject makeInt(int value) {
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     outValue = StarbytesStrGetBuffer(arg);
@@ -50,6 +56,7 @@ bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
 bool readIntArg(StarbytesFuncArgs args,int &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt) {
+        setNativeErrorIfEmpty(args,"expected Int argument");
         return false;
     }
     outValue = StarbytesNumGetIntValue(arg);
@@ -59,6 +66,7 @@ bool readIntArg(StarbytesFuncArgs args,int &outValue) {
 bool readBoolArg(StarbytesFuncArgs args,bool &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesBoolType())) {
+        setNativeErrorIfEmpty(args,"expected Bool argument");
         return false;
     }
     outValue = (StarbytesBoolValue(arg) == StarbytesBoolFalse);
@@ -152,7 +160,8 @@ std::ios::openmode parseOpenMode(const std::string &modeText,bool binary,bool &o
     return mode;
 }
 
-std::unique_ptr<NativeStream> createNativeStream(const std::string &path,
+std::unique_ptr<NativeStream> createNativeStream(StarbytesFuncArgs args,
+                                                 const std::string &path,
                                                  const std::string &modeText,
                                                  bool binary,
                                                  const std::string &encoding,
@@ -161,10 +170,12 @@ std::unique_ptr<NativeStream> createNativeStream(const std::string &path,
     bool exclusiveCreate = false;
     auto openMode = parseOpenMode(modeText,binary,modeOk,exclusiveCreate);
     if(!modeOk) {
+        setNativeErrorIfEmpty(args,"invalid file mode");
         return nullptr;
     }
 
     if(exclusiveCreate && std::filesystem::exists(path)) {
+        setNativeErrorIfEmpty(args,"file already exists");
         return nullptr;
     }
 
@@ -177,6 +188,7 @@ std::unique_ptr<NativeStream> createNativeStream(const std::string &path,
 
     stream->file.open(path,openMode);
     if(!stream->file.is_open()) {
+        setNativeErrorIfEmpty(args,"failed to open file");
         return nullptr;
     }
 
@@ -196,10 +208,12 @@ StarbytesObject registerStreamObject(const char *className,std::unique_ptr<Nativ
 NativeStream *requireStream(StarbytesFuncArgs args,StarbytesObject &selfOut) {
     selfOut = StarbytesFuncArgsGetArg(args);
     if(!selfOut) {
+        setNativeErrorIfEmpty(args,"stream receiver is missing");
         return nullptr;
     }
     auto it = g_streamRegistry.find(selfOut);
     if(it == g_streamRegistry.end()) {
+        setNativeErrorIfEmpty(args,"stream receiver is invalid");
         return nullptr;
     }
     return it->second.get();
@@ -252,12 +266,12 @@ StarbytesObject streamFlush(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream || stream->closed || !stream->file.is_open()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"flush requires an open stream");
     }
 
     stream->file.flush();
     if(stream->file.fail()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"flush failed");
     }
     return makeBool(true);
 }
@@ -266,7 +280,7 @@ StarbytesObject streamSeek(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream || stream->closed || !stream->file.is_open()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"seek requires an open stream");
     }
 
     int offset = 0;
@@ -291,7 +305,7 @@ StarbytesObject streamSeek(StarbytesFuncArgs args) {
         stream->file.seekp(offset,dir);
     }
     if(stream->file.fail()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"seek failed");
     }
 
     auto pos = stream->file.tellg();
@@ -308,7 +322,7 @@ StarbytesObject streamPosition(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream || stream->closed || !stream->file.is_open()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"position requires an open stream");
     }
 
     auto pos = stream->file.tellg();
@@ -316,7 +330,7 @@ StarbytesObject streamPosition(StarbytesFuncArgs args) {
         pos = stream->file.tellp();
     }
     if(pos == std::streampos(-1)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"position failed");
     }
     return makeInt((int)pos);
 }
@@ -325,10 +339,10 @@ StarbytesObject streamTruncate(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream || stream->closed || !stream->file.is_open()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"truncate requires an open stream");
     }
     if(!streamWritable(stream)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"truncate requires a writable stream");
     }
 
     int newSize = 0;
@@ -341,7 +355,7 @@ StarbytesObject streamTruncate(StarbytesFuncArgs args) {
     std::error_code ec;
     std::filesystem::resize_file(stream->path,(uintmax_t)newSize,ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("truncate failed",ec));
     }
     stream->file.seekg(0,std::ios::beg);
     stream->file.seekp(0,std::ios::beg);
@@ -352,7 +366,7 @@ StarbytesObject textRead(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream || stream->closed || !stream->file.is_open() || !streamReadable(stream)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"read requires an open readable stream");
     }
 
     int upTo = 0;
@@ -367,7 +381,7 @@ StarbytesObject textRead(StarbytesFuncArgs args) {
     stream->file.read(data.data(),(std::streamsize)upTo);
     auto count = stream->file.gcount();
     if(count < 0) {
-        return nullptr;
+        return failNativeIfEmpty(args,"read failed");
     }
     data.resize((size_t)count);
     return StarbytesStrNewWithData(data.c_str());
@@ -377,7 +391,7 @@ StarbytesObject textReadToEnd(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream || stream->closed || !stream->file.is_open() || !streamReadable(stream)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"readToEnd requires an open readable stream");
     }
 
     stream->file.clear();
@@ -390,7 +404,7 @@ StarbytesObject textReadLine(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream || stream->closed || !stream->file.is_open() || !streamReadable(stream)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"readLine requires an open readable stream");
     }
 
     stream->file.clear();
@@ -398,8 +412,9 @@ StarbytesObject textReadLine(StarbytesFuncArgs args) {
     if(!std::getline(stream->file,line)) {
         if(stream->file.eof()) {
             stream->file.clear();
+            return nullptr;
         }
-        return nullptr;
+        return failNativeIfEmpty(args,"readLine failed");
     }
 
     if(stream->newline == "" || stream->newline == "\\n") {
@@ -413,7 +428,7 @@ StarbytesObject textWrite(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream || stream->closed || !stream->file.is_open() || !streamWritable(stream)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"write requires an open writable stream");
     }
 
     std::string text;
@@ -424,7 +439,7 @@ StarbytesObject textWrite(StarbytesFuncArgs args) {
     stream->file.clear();
     stream->file.write(text.data(),(std::streamsize)text.size());
     if(stream->file.fail()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"write failed");
     }
     return makeInt((int)text.size());
 }
@@ -498,7 +513,7 @@ StarbytesObject binaryReadBytes(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream || stream->closed || !stream->file.is_open() || !streamReadable(stream)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"readBytes requires an open readable stream");
     }
 
     int upTo = 0;
@@ -511,7 +526,7 @@ StarbytesObject binaryReadBytes(StarbytesFuncArgs args) {
     stream->file.read(buffer.data(),(std::streamsize)upTo);
     auto count = stream->file.gcount();
     if(count < 0) {
-        return nullptr;
+        return failNativeIfEmpty(args,"readBytes failed");
     }
 
     return bytesToArray(buffer.data(),(size_t)count);
@@ -521,7 +536,7 @@ StarbytesObject binaryReadAllBytes(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream || stream->closed || !stream->file.is_open() || !streamReadable(stream)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"readAllBytes requires an open readable stream");
     }
 
     stream->file.clear();
@@ -535,13 +550,13 @@ StarbytesObject binaryWriteBytes(StarbytesFuncArgs args) {
     StarbytesObject self = nullptr;
     auto *stream = requireStream(args,self);
     if(!stream || stream->closed || !stream->file.is_open() || !streamWritable(stream)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"writeBytes requires an open writable stream");
     }
 
     auto arrayObj = StarbytesFuncArgsGetArg(args);
     std::vector<char> bytes;
     if(!bytesFromArray(arrayObj,bytes)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"writeBytes expects a Bytes array");
     }
 
     stream->file.clear();
@@ -549,7 +564,7 @@ StarbytesObject binaryWriteBytes(StarbytesFuncArgs args) {
         stream->file.write(bytes.data(),(std::streamsize)bytes.size());
     }
     if(stream->file.fail()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"writeBytes failed");
     }
     return makeInt((int)bytes.size());
 }
@@ -570,8 +585,12 @@ STARBYTES_FUNC(openText) {
 
     (void)buffering;
 
-    auto stream = createNativeStream(path,mode,false,encoding,newline);
-    return registerStreamObject("TextFile",std::move(stream));
+    auto stream = createNativeStream(args,path,mode,false,encoding,newline);
+    auto object = registerStreamObject("TextFile",std::move(stream));
+    if(!object) {
+        return failNativeIfEmpty(args,"openText failed");
+    }
+    return object;
 }
 
 STARBYTES_FUNC(openBinary) {
@@ -587,8 +606,12 @@ STARBYTES_FUNC(openBinary) {
 
     (void)buffering;
 
-    auto stream = createNativeStream(path,mode,true,"binary","\n");
-    return registerStreamObject("BinaryFile",std::move(stream));
+    auto stream = createNativeStream(args,path,mode,true,"binary","\n");
+    auto object = registerStreamObject("BinaryFile",std::move(stream));
+    if(!object) {
+        return failNativeIfEmpty(args,"openBinary failed");
+    }
+    return object;
 }
 
 STARBYTES_FUNC(openFile) {
@@ -601,8 +624,12 @@ STARBYTES_FUNC(openFile) {
         return nullptr;
     }
 
-    auto stream = createNativeStream(path,mode,false,"utf8","\n");
-    return registerStreamObject("Stream",std::move(stream));
+    auto stream = createNativeStream(args,path,mode,false,"utf8","\n");
+    auto object = registerStreamObject("Stream",std::move(stream));
+    if(!object) {
+        return failNativeIfEmpty(args,"openFile failed");
+    }
+    return object;
 }
 
 STARBYTES_FUNC(TextFile_close) { return streamClose(args); }
@@ -654,7 +681,7 @@ STARBYTES_FUNC(io_remove) {
     std::error_code ec;
     auto removed = std::filesystem::remove(path,ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("remove failed",ec));
     }
     return makeBool(removed);
 }
@@ -670,7 +697,7 @@ STARBYTES_FUNC(io_rename) {
     std::error_code ec;
     std::filesystem::rename(src,dst,ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("rename failed",ec));
     }
     return makeBool(true);
 }
@@ -693,7 +720,7 @@ STARBYTES_FUNC(io_mkdir) {
         rc = std::filesystem::create_directory(path,ec);
     }
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("createDirectory failed",ec));
     }
     return makeBool(rc || std::filesystem::exists(path));
 }
@@ -708,13 +735,13 @@ STARBYTES_FUNC(io_listdir) {
 
     std::error_code ec;
     if(!std::filesystem::is_directory(path,ec) || ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,ec ? systemErrorMessage("listDirectory failed",ec) : "listDirectory requires a directory path");
     }
 
     auto out = StarbytesArrayNew();
     for(const auto &entry : std::filesystem::directory_iterator(path,ec)) {
         if(ec) {
-            return nullptr;
+            return failNativeIfEmpty(args,systemErrorMessage("listDirectory failed",ec));
         }
         auto name = entry.path().filename().string();
         StarbytesArrayPush(out,StarbytesStrNewWithData(name.c_str()));
@@ -734,7 +761,7 @@ STARBYTES_FUNC(io_readText) {
 
     std::ifstream in(path,std::ios::in);
     if(!in.is_open()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"readText failed to open file");
     }
     std::ostringstream out;
     out << in.rdbuf();
@@ -754,11 +781,11 @@ STARBYTES_FUNC(io_writeText) {
 
     std::ofstream out(path,std::ios::out | std::ios::trunc);
     if(!out.is_open()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"writeText failed to open file");
     }
     out.write(text.data(),(std::streamsize)text.size());
     if(out.fail()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"writeText failed");
     }
     return makeBool(true);
 }
@@ -773,7 +800,7 @@ STARBYTES_FUNC(io_readBytes) {
 
     std::ifstream in(path,std::ios::in | std::ios::binary);
     if(!in.is_open()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"readBytes failed to open file");
     }
 
     std::ostringstream out;
@@ -793,18 +820,18 @@ STARBYTES_FUNC(io_writeBytes) {
     auto arrayObj = StarbytesFuncArgsGetArg(args);
     std::vector<char> bytes;
     if(!bytesFromArray(arrayObj,bytes)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"writeBytes expects a Bytes array");
     }
 
     std::ofstream out(path,std::ios::out | std::ios::binary | std::ios::trunc);
     if(!out.is_open()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"writeBytes failed to open file");
     }
     if(!bytes.empty()) {
         out.write(bytes.data(),(std::streamsize)bytes.size());
     }
     if(out.fail()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"writeBytes failed");
     }
     return makeBool(true);
 }

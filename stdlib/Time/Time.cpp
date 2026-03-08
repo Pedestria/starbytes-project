@@ -1,4 +1,5 @@
 #include <starbytes/interop.h>
+#include <starbytes/runtime/NativeModuleSupport.h>
 
 #include <chrono>
 #include <climits>
@@ -73,6 +74,7 @@ StarbytesObject makeString(const std::string &value) {
 bool readIntArg(StarbytesFuncArgs args,int &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt) {
+        starbytes::Runtime::stdlib::setNativeErrorIfEmpty(args,"expected Int argument");
         return false;
     }
     outValue = StarbytesNumGetIntValue(arg);
@@ -82,6 +84,7 @@ bool readIntArg(StarbytesFuncArgs args,int &outValue) {
 bool readFloatArg(StarbytesFuncArgs args,double &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType())) {
+        starbytes::Runtime::stdlib::setNativeErrorIfEmpty(args,"expected numeric argument");
         return false;
     }
     if(StarbytesNumGetType(arg) == NumTypeFloat) {
@@ -96,6 +99,7 @@ bool readFloatArg(StarbytesFuncArgs args,double &outValue) {
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        starbytes::Runtime::stdlib::setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     outValue = StarbytesStrGetBuffer(arg);
@@ -188,6 +192,38 @@ bool getDateTimeState(StarbytesObject object,DateTimeState &outState) {
         return false;
     }
     outState = it->second;
+    return true;
+}
+
+bool requireDurationNanos(StarbytesFuncArgs args,StarbytesObject object,int64_t &outNanos,const char *context) {
+    if(!object || !getDurationNanos(object,outNanos)) {
+        starbytes::Runtime::stdlib::setNativeErrorIfEmpty(args,std::string(context) + " requires Duration value");
+        return false;
+    }
+    return true;
+}
+
+bool requireInstantTicks(StarbytesFuncArgs args,StarbytesObject object,int64_t &outTicks,const char *context) {
+    if(!object || !getInstantTicks(object,outTicks)) {
+        starbytes::Runtime::stdlib::setNativeErrorIfEmpty(args,std::string(context) + " requires Instant value");
+        return false;
+    }
+    return true;
+}
+
+bool requireTimeZoneState(StarbytesFuncArgs args,StarbytesObject object,TimeZoneState &outState,const char *context) {
+    if(!object || !getTimeZoneState(object,outState)) {
+        starbytes::Runtime::stdlib::setNativeErrorIfEmpty(args,std::string(context) + " requires TimeZone value");
+        return false;
+    }
+    return true;
+}
+
+bool requireDateTimeState(StarbytesFuncArgs args,StarbytesObject object,DateTimeState &outState,const char *context) {
+    if(!object || !getDateTimeState(object,outState)) {
+        starbytes::Runtime::stdlib::setNativeErrorIfEmpty(args,std::string(context) + " requires DateTime value");
+        return false;
+    }
     return true;
 }
 
@@ -364,6 +400,30 @@ bool civilToUnixUTC(int year,int month,int day,int hour,int minute,int second,in
     return true;
 }
 
+bool validateCivilDateTime(int year,int month,int day,int hour,int minute,int second) {
+    if(month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 60) {
+        return false;
+    }
+
+    int64_t unixSeconds = 0;
+    if(!civilToUnixUTC(year,month,day,hour,minute,second,unixSeconds)) {
+        return false;
+    }
+
+    std::time_t raw = (std::time_t)unixSeconds;
+    std::tm tmValue = {};
+    if(!gmtimeSafe(raw,tmValue)) {
+        return false;
+    }
+
+    return tmValue.tm_year + 1900 == year &&
+           tmValue.tm_mon + 1 == month &&
+           tmValue.tm_mday == day &&
+           tmValue.tm_hour == hour &&
+           tmValue.tm_min == minute &&
+           tmValue.tm_sec == second;
+}
+
 int64_t steadyNowNanos() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
                std::chrono::steady_clock::now().time_since_epoch())
@@ -373,16 +433,14 @@ int64_t steadyNowNanos() {
 bool readDateTimeAndTargetTz(StarbytesFuncArgs args,DateTimeState &dateTime,TimeZoneState &tzState) {
     auto dateTimeObj = StarbytesFuncArgsGetArg(args);
     auto tzObj = StarbytesFuncArgsGetArg(args);
-    if(!dateTimeObj || !tzObj) {
-        return false;
-    }
-    return getDateTimeState(dateTimeObj,dateTime) && getTimeZoneState(tzObj,tzState);
+    return requireDateTimeState(args,dateTimeObj,dateTime,"Time operation") &&
+           requireTimeZoneState(args,tzObj,tzState,"Time operation");
 }
 
 STARBYTES_FUNC(Time_Duration_nanoseconds) {
     auto self = StarbytesFuncArgsGetArg(args);
     int64_t nanos = 0;
-    if(!getDurationNanos(self,nanos)) {
+    if(!requireDurationNanos(args,self,nanos,"Duration.nanoseconds")) {
         return nullptr;
     }
     return makeInt64(nanos);
@@ -391,7 +449,7 @@ STARBYTES_FUNC(Time_Duration_nanoseconds) {
 STARBYTES_FUNC(Time_Duration_milliseconds) {
     auto self = StarbytesFuncArgsGetArg(args);
     int64_t nanos = 0;
-    if(!getDurationNanos(self,nanos)) {
+    if(!requireDurationNanos(args,self,nanos,"Duration.milliseconds")) {
         return nullptr;
     }
     return makeInt64(nanos / 1000000);
@@ -400,7 +458,7 @@ STARBYTES_FUNC(Time_Duration_milliseconds) {
 STARBYTES_FUNC(Time_Duration_secondsFloat) {
     auto self = StarbytesFuncArgsGetArg(args);
     int64_t nanos = 0;
-    if(!getDurationNanos(self,nanos)) {
+    if(!requireDurationNanos(args,self,nanos,"Duration.secondsFloat")) {
         return nullptr;
     }
     return makeFloat((double)nanos / 1000000000.0);
@@ -409,7 +467,7 @@ STARBYTES_FUNC(Time_Duration_secondsFloat) {
 STARBYTES_FUNC(Time_Instant_ticks) {
     auto self = StarbytesFuncArgsGetArg(args);
     int64_t ticks = 0;
-    if(!getInstantTicks(self,ticks)) {
+    if(!requireInstantTicks(args,self,ticks,"Instant.ticks")) {
         return nullptr;
     }
     return makeInt64(ticks);
@@ -418,7 +476,7 @@ STARBYTES_FUNC(Time_Instant_ticks) {
 STARBYTES_FUNC(Time_TimeZone_id) {
     auto self = StarbytesFuncArgsGetArg(args);
     TimeZoneState state;
-    if(!getTimeZoneState(self,state)) {
+    if(!requireTimeZoneState(args,self,state,"TimeZone.id")) {
         return nullptr;
     }
     return makeString(state.id);
@@ -427,7 +485,7 @@ STARBYTES_FUNC(Time_TimeZone_id) {
 STARBYTES_FUNC(Time_TimeZone_offsetMinutes) {
     auto self = StarbytesFuncArgsGetArg(args);
     TimeZoneState state;
-    if(!getTimeZoneState(self,state)) {
+    if(!requireTimeZoneState(args,self,state,"TimeZone.offsetMinutes")) {
         return nullptr;
     }
     return makeInt64(state.offsetMinutes);
@@ -436,7 +494,7 @@ STARBYTES_FUNC(Time_TimeZone_offsetMinutes) {
 STARBYTES_FUNC(Time_DateTime_unixSeconds) {
     auto self = StarbytesFuncArgsGetArg(args);
     DateTimeState state;
-    if(!getDateTimeState(self,state)) {
+    if(!requireDateTimeState(args,self,state,"DateTime.unixSeconds")) {
         return nullptr;
     }
     return makeInt64(state.unixSeconds);
@@ -445,7 +503,7 @@ STARBYTES_FUNC(Time_DateTime_unixSeconds) {
 STARBYTES_FUNC(Time_DateTime_nanosecond) {
     auto self = StarbytesFuncArgsGetArg(args);
     DateTimeState state;
-    if(!getDateTimeState(self,state)) {
+    if(!requireDateTimeState(args,self,state,"DateTime.nanosecond")) {
         return nullptr;
     }
     return makeInt64(state.nanosecond);
@@ -454,12 +512,12 @@ STARBYTES_FUNC(Time_DateTime_nanosecond) {
 STARBYTES_FUNC(Time_DateTime_year) {
     auto self = StarbytesFuncArgsGetArg(args);
     DateTimeState state;
-    if(!getDateTimeState(self,state)) {
+    if(!requireDateTimeState(args,self,state,"DateTime.year")) {
         return nullptr;
     }
     DateParts parts;
     if(!datePartsFromState(state,parts)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"DateTime.year could not derive calendar components");
     }
     return makeInt64(parts.year);
 }
@@ -467,12 +525,12 @@ STARBYTES_FUNC(Time_DateTime_year) {
 STARBYTES_FUNC(Time_DateTime_month) {
     auto self = StarbytesFuncArgsGetArg(args);
     DateTimeState state;
-    if(!getDateTimeState(self,state)) {
+    if(!requireDateTimeState(args,self,state,"DateTime.month")) {
         return nullptr;
     }
     DateParts parts;
     if(!datePartsFromState(state,parts)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"DateTime.month could not derive calendar components");
     }
     return makeInt64(parts.month);
 }
@@ -480,12 +538,12 @@ STARBYTES_FUNC(Time_DateTime_month) {
 STARBYTES_FUNC(Time_DateTime_day) {
     auto self = StarbytesFuncArgsGetArg(args);
     DateTimeState state;
-    if(!getDateTimeState(self,state)) {
+    if(!requireDateTimeState(args,self,state,"DateTime.day")) {
         return nullptr;
     }
     DateParts parts;
     if(!datePartsFromState(state,parts)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"DateTime.day could not derive calendar components");
     }
     return makeInt64(parts.day);
 }
@@ -493,12 +551,12 @@ STARBYTES_FUNC(Time_DateTime_day) {
 STARBYTES_FUNC(Time_DateTime_hour) {
     auto self = StarbytesFuncArgsGetArg(args);
     DateTimeState state;
-    if(!getDateTimeState(self,state)) {
+    if(!requireDateTimeState(args,self,state,"DateTime.hour")) {
         return nullptr;
     }
     DateParts parts;
     if(!datePartsFromState(state,parts)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"DateTime.hour could not derive calendar components");
     }
     return makeInt64(parts.hour);
 }
@@ -506,12 +564,12 @@ STARBYTES_FUNC(Time_DateTime_hour) {
 STARBYTES_FUNC(Time_DateTime_minute) {
     auto self = StarbytesFuncArgsGetArg(args);
     DateTimeState state;
-    if(!getDateTimeState(self,state)) {
+    if(!requireDateTimeState(args,self,state,"DateTime.minute")) {
         return nullptr;
     }
     DateParts parts;
     if(!datePartsFromState(state,parts)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"DateTime.minute could not derive calendar components");
     }
     return makeInt64(parts.minute);
 }
@@ -519,12 +577,12 @@ STARBYTES_FUNC(Time_DateTime_minute) {
 STARBYTES_FUNC(Time_DateTime_second) {
     auto self = StarbytesFuncArgsGetArg(args);
     DateTimeState state;
-    if(!getDateTimeState(self,state)) {
+    if(!requireDateTimeState(args,self,state,"DateTime.second")) {
         return nullptr;
     }
     DateParts parts;
     if(!datePartsFromState(state,parts)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"DateTime.second could not derive calendar components");
     }
     return makeInt64(parts.second);
 }
@@ -532,7 +590,7 @@ STARBYTES_FUNC(Time_DateTime_second) {
 STARBYTES_FUNC(Time_DateTime_timezone) {
     auto self = StarbytesFuncArgsGetArg(args);
     DateTimeState state;
-    if(!getDateTimeState(self,state)) {
+    if(!requireDateTimeState(args,self,state,"DateTime.timezone")) {
         return nullptr;
     }
     return makeTimeZoneObject(state.tzId,state.offsetMinutes);
@@ -560,7 +618,7 @@ STARBYTES_FUNC(Time_durationFromMillis) {
     }
     int64_t nanos = 0;
     if(!checkedAddInt64(0,(int64_t)millis * 1000000LL,nanos)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"durationFromMillis overflowed supported nanosecond range");
     }
     return makeDurationObject(nanos);
 }
@@ -569,12 +627,12 @@ STARBYTES_FUNC(Time_durationFromSeconds) {
     skipOptionalModuleReceiver(args,1);
     double seconds = 0;
     if(!readFloatArg(args,seconds) || !std::isfinite(seconds)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"durationFromSeconds requires finite numeric seconds");
     }
     auto nanosDouble = seconds * 1000000000.0;
     if(nanosDouble > (double)std::numeric_limits<int64_t>::max() ||
        nanosDouble < (double)std::numeric_limits<int64_t>::min()) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"durationFromSeconds overflowed supported nanosecond range");
     }
     return makeDurationObject((int64_t)std::llround(nanosDouble));
 }
@@ -586,13 +644,13 @@ STARBYTES_FUNC(Time_durationAdd) {
 
     int64_t lhs = 0;
     int64_t rhs = 0;
-    if(!getDurationNanos(lhsObj,lhs) || !getDurationNanos(rhsObj,rhs)) {
+    if(!requireDurationNanos(args,lhsObj,lhs,"durationAdd") || !requireDurationNanos(args,rhsObj,rhs,"durationAdd")) {
         return nullptr;
     }
 
     int64_t sum = 0;
     if(!checkedAddInt64(lhs,rhs,sum)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"durationAdd overflowed supported nanosecond range");
     }
     return makeDurationObject(sum);
 }
@@ -604,13 +662,13 @@ STARBYTES_FUNC(Time_durationSub) {
 
     int64_t lhs = 0;
     int64_t rhs = 0;
-    if(!getDurationNanos(lhsObj,lhs) || !getDurationNanos(rhsObj,rhs)) {
+    if(!requireDurationNanos(args,lhsObj,lhs,"durationSub") || !requireDurationNanos(args,rhsObj,rhs,"durationSub")) {
         return nullptr;
     }
 
     int64_t diff = 0;
     if(!checkedSubInt64(lhs,rhs,diff)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"durationSub overflowed supported nanosecond range");
     }
     return makeDurationObject(diff);
 }
@@ -620,18 +678,18 @@ STARBYTES_FUNC(Time_durationMul) {
     auto durationObj = StarbytesFuncArgsGetArg(args);
     double factor = 0;
     if(!durationObj || !readFloatArg(args,factor) || !std::isfinite(factor)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"durationMul requires Duration and finite numeric factor");
     }
 
     int64_t nanos = 0;
-    if(!getDurationNanos(durationObj,nanos)) {
+    if(!requireDurationNanos(args,durationObj,nanos,"durationMul")) {
         return nullptr;
     }
 
     auto value = (double)nanos * factor;
     if(value > (double)std::numeric_limits<int64_t>::max() ||
        value < (double)std::numeric_limits<int64_t>::min()) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"durationMul overflowed supported nanosecond range");
     }
     return makeDurationObject((int64_t)std::llround(value));
 }
@@ -641,18 +699,18 @@ STARBYTES_FUNC(Time_durationDiv) {
     auto durationObj = StarbytesFuncArgsGetArg(args);
     double divisor = 0;
     if(!durationObj || !readFloatArg(args,divisor) || !std::isfinite(divisor) || divisor == 0.0) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"durationDiv requires Duration and finite non-zero divisor");
     }
 
     int64_t nanos = 0;
-    if(!getDurationNanos(durationObj,nanos)) {
+    if(!requireDurationNanos(args,durationObj,nanos,"durationDiv")) {
         return nullptr;
     }
 
     auto value = (double)nanos / divisor;
     if(value > (double)std::numeric_limits<int64_t>::max() ||
        value < (double)std::numeric_limits<int64_t>::min()) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"durationDiv overflowed supported nanosecond range");
     }
     return makeDurationObject((int64_t)std::llround(value));
 }
@@ -664,7 +722,7 @@ STARBYTES_FUNC(Time_durationCompare) {
 
     int64_t lhs = 0;
     int64_t rhs = 0;
-    if(!getDurationNanos(lhsObj,lhs) || !getDurationNanos(rhsObj,rhs)) {
+    if(!requireDurationNanos(args,lhsObj,lhs,"durationCompare") || !requireDurationNanos(args,rhsObj,rhs,"durationCompare")) {
         return nullptr;
     }
     if(lhs < rhs) {
@@ -680,8 +738,11 @@ STARBYTES_FUNC(Time_sleep) {
     skipOptionalModuleReceiver(args,1);
     auto durationObj = StarbytesFuncArgsGetArg(args);
     int64_t nanos = 0;
-    if(!getDurationNanos(durationObj,nanos) || nanos < 0) {
+    if(!requireDurationNanos(args,durationObj,nanos,"sleep")) {
         return nullptr;
+    }
+    if(nanos < 0) {
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"sleep requires non-negative Duration");
     }
     std::this_thread::sleep_for(std::chrono::nanoseconds(nanos));
     return makeBool(true);
@@ -696,14 +757,14 @@ STARBYTES_FUNC(Time_elapsedSince) {
     skipOptionalModuleReceiver(args,1);
     auto startObj = StarbytesFuncArgsGetArg(args);
     int64_t startTicks = 0;
-    if(!getInstantTicks(startObj,startTicks)) {
+    if(!requireInstantTicks(args,startObj,startTicks,"elapsedSince")) {
         return nullptr;
     }
 
     auto nowTicks = steadyNowNanos();
     int64_t elapsed = 0;
     if(!checkedSubInt64(nowTicks,startTicks,elapsed)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"elapsedSince overflowed supported duration range");
     }
     return makeDurationObject(elapsed);
 }
@@ -750,7 +811,7 @@ STARBYTES_FUNC(Time_timezoneFromID) {
     int offset = 0;
     std::string normalized;
     if(!parseTimeZoneIdentifier(id,offset,normalized)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"timezoneFromID requires UTC, LOCAL, Z, or a numeric UTC offset");
     }
     return makeTimeZoneObject(normalized,offset);
 }
@@ -768,7 +829,7 @@ STARBYTES_FUNC(Time_parseISO8601) {
 
     std::smatch match;
     if(!std::regex_match(text,match,pattern)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"parseISO8601 text is not a valid ISO-8601 timestamp");
     }
 
     int year = std::stoi(match[1].str());
@@ -778,8 +839,8 @@ STARBYTES_FUNC(Time_parseISO8601) {
     int minute = std::stoi(match[5].str());
     int second = std::stoi(match[6].str());
 
-    if(month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 60) {
-        return nullptr;
+    if(!validateCivilDateTime(year,month,day,hour,minute,second)) {
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"parseISO8601 date/time components are out of range");
     }
 
     int32_t nanos = 0;
@@ -795,18 +856,18 @@ STARBYTES_FUNC(Time_parseISO8601) {
     auto zone = match[8].str();
     if(zone != "Z") {
         if(!parseHHMMOffset(zone,offset)) {
-            return nullptr;
+            return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"parseISO8601 timezone offset is invalid");
         }
     }
 
     int64_t wallEpoch = 0;
     if(!civilToUnixUTC(year,month,day,hour,minute,second,wallEpoch)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"parseISO8601 timestamp is outside supported range");
     }
 
     int64_t unixSeconds = 0;
     if(!checkedSubInt64(wallEpoch,(int64_t)offset * 60,unixSeconds)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"parseISO8601 timestamp overflowed supported range");
     }
 
     return makeDateTimeObject(unixSeconds,nanos,offset,timezoneIdFromOffset(offset));
@@ -818,7 +879,7 @@ STARBYTES_FUNC(Time_formatISO8601) {
     DateTimeState dateTime;
     TimeZoneState tzState;
     if(!readDateTimeAndTargetTz(args,dateTime,tzState)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"formatISO8601 requires DateTime and TimeZone values");
     }
 
     DateTimeState shifted = dateTime;
@@ -827,7 +888,7 @@ STARBYTES_FUNC(Time_formatISO8601) {
 
     DateParts parts;
     if(!datePartsFromState(shifted,parts)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"formatISO8601 could not derive calendar components");
     }
 
     std::ostringstream out;
@@ -869,11 +930,11 @@ STARBYTES_FUNC(Time_fromUnix) {
     }
     auto tzObj = StarbytesFuncArgsGetArg(args);
     TimeZoneState tz;
-    if(!tzObj || !getTimeZoneState(tzObj,tz)) {
+    if(!requireTimeZoneState(args,tzObj,tz,"fromUnix")) {
         return nullptr;
     }
     if(nanos < 0 || nanos > 999999999) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"fromUnix nanos must be between 0 and 999999999");
     }
 
     return makeDateTimeObject((int64_t)seconds,(int32_t)nanos,tz.offsetMinutes,tz.id);
@@ -887,7 +948,7 @@ STARBYTES_FUNC(Time_convertTimeZone) {
 
     DateTimeState dt;
     TimeZoneState tz;
-    if(!dtObj || !tzObj || !getDateTimeState(dtObj,dt) || !getTimeZoneState(tzObj,tz)) {
+    if(!requireDateTimeState(args,dtObj,dt,"convertTimeZone") || !requireTimeZoneState(args,tzObj,tz,"convertTimeZone")) {
         return nullptr;
     }
 

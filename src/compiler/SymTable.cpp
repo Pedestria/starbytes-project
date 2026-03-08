@@ -158,6 +158,51 @@ void Semantics::SymbolTable::serializePublic(std::ostream & out){
     out.write((char *)&c,sizeof(c));
 }
 
+std::shared_ptr<Semantics::SymbolTable> Semantics::SymbolTable::createImportNamespaceOverlay(string_ref moduleName) const{
+    auto moduleNameStr = moduleName.str();
+    if(moduleNameStr.empty()){
+        return nullptr;
+    }
+
+    auto overlay = std::make_shared<Semantics::SymbolTable>();
+    auto moduleScope = std::shared_ptr<ASTScope>(new ASTScope{moduleNameStr,ASTScope::Namespace,ASTScopeGlobal});
+    moduleScope->generateHashID();
+
+    auto *scopeEntry = overlay->allocate<Semantics::SymbolTable::Entry>();
+    auto *scopeData = overlay->allocate<std::shared_ptr<ASTScope>>(moduleScope);
+    scopeEntry->data = scopeData;
+    scopeEntry->name = moduleNameStr;
+    scopeEntry->emittedName = moduleNameStr;
+    scopeEntry->type = Semantics::SymbolTable::Entry::Scope;
+    overlay->addSymbolInScope(scopeEntry,ASTScopeGlobal);
+
+    for(const auto &pair : body){
+        auto *sourceEntry = pair.first;
+        if(!sourceEntry || pair.second != ASTScopeGlobal){
+            continue;
+        }
+
+        auto *mirroredEntry = overlay->allocate<Semantics::SymbolTable::Entry>();
+        mirroredEntry->name = sourceEntry->name;
+        mirroredEntry->emittedName = sourceEntry->emittedName;
+        mirroredEntry->interfacePos = sourceEntry->interfacePos;
+        mirroredEntry->sourcePos = sourceEntry->sourcePos;
+        mirroredEntry->type = sourceEntry->type;
+
+        if(sourceEntry->type == Semantics::SymbolTable::Entry::Scope && sourceEntry->data){
+            auto scopeValue = *((std::shared_ptr<ASTScope> *)sourceEntry->data);
+            mirroredEntry->data = overlay->allocate<std::shared_ptr<ASTScope>>(scopeValue);
+        }
+        else {
+            mirroredEntry->data = sourceEntry->data;
+        }
+
+        overlay->addSymbolInScope(mirroredEntry,moduleScope);
+    }
+
+    return overlay;
+}
+
 void Semantics::SymbolTable::importModule(string_ref moduleName){
     auto moduleNameStr = moduleName.str();
     if(std::find(deps.begin(),deps.end(),moduleNameStr) == deps.end()){
@@ -353,6 +398,27 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryNoDiag(string
     return nullptr;
 }
 
+Semantics::SymbolTable::Entry * Semantics::STableContext::findImportedGlobalEntryNoDiag(string_ref symbolName){
+    if(useLegacyLinearSymbolLookup()){
+        for(auto &table : importTables){
+            for(auto &pair : table->body){
+                if(pair.first->name == symbolName && pair.second == ASTScopeGlobal){
+                    return pair.first;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    for(auto &table : importTables){
+        auto *entries = table->findEntriesInExactScope(symbolName,ASTScopeGlobal);
+        if(entries && !entries->empty()){
+            return entries->front();
+        }
+    }
+    return nullptr;
+}
+
 Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryInExactScopeNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope){
     if(useLegacyLinearSymbolLookup()){
         if(main){
@@ -369,6 +435,13 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryInExactScopeN
                 }
             }
         }
+        for(auto &table : importTables){
+            for(auto &pair : table->body){
+                if(pair.first->name == symbolName && pair.second == scope){
+                    return pair.first;
+                }
+            }
+        }
         return nullptr;
     }
 
@@ -379,6 +452,12 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryInExactScopeN
         }
     }
     for(auto &table : otherTables){
+        auto *entries = table->findEntriesInExactScope(symbolName,scope);
+        if(entries && !entries->empty()){
+            return entries->front();
+        }
+    }
+    for(auto &table : importTables){
         auto *entries = table->findEntriesInExactScope(symbolName,scope);
         if(entries && !entries->empty()){
             return entries->front();
@@ -403,6 +482,13 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryByEmittedNoDi
                 }
             }
         }
+        for(auto &table : importTables){
+            for(auto &pair : table->body){
+                if(pair.first->emittedName == emittedName){
+                    return pair.first;
+                }
+            }
+        }
         return nullptr;
     }
 
@@ -413,6 +499,12 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryByEmittedNoDi
         }
     }
     for(auto &table : otherTables){
+        auto *entries = table->findEntriesByEmittedName(emittedName);
+        if(entries && !entries->empty()){
+            return entries->front();
+        }
+    }
+    for(auto &table : importTables){
         auto *entries = table->findEntriesByEmittedName(emittedName);
         if(entries && !entries->empty()){
             return entries->front();

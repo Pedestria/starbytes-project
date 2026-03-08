@@ -40,7 +40,8 @@ using namespace starbytes::Runtime;
 
 
 struct __StarbytesNativeModule {
-    std::vector<StarbytesFuncDesc> desc;
+    std::vector<StarbytesFuncDesc> functions;
+    std::vector<StarbytesValueDesc> values;
 #if defined(UNIX_DLFCN)
     void *dl_handle;
 #else
@@ -53,10 +54,12 @@ StarbytesNativeModule *StarbytesNativeModuleCreate(){
 };
 
 void StarbytesNativeModuleAddDesc(StarbytesNativeModule *module,StarbytesFuncDesc *desc){
-    module->desc.push_back(*desc);
-    
+    module->functions.push_back(*desc);
 };
 
+void StarbytesNativeModuleAddValueDesc(StarbytesNativeModule *module,StarbytesValueDesc *desc){
+    module->values.push_back(*desc);
+};
 
 //}
 
@@ -109,7 +112,19 @@ StarbytesFuncCallback starbytes_native_mod_load_function(StarbytesNativeModule *
     if(!mod){
         return nullptr;
     }
-    for(auto & d : mod->desc){
+    for(auto & d : mod->functions){
+        if(name == d.name){
+            return d.callback;
+        };
+    };
+    return nullptr;
+}
+
+StarbytesFuncCallback starbytes_native_mod_load_value(StarbytesNativeModule * mod,string_ref name){
+    if(!mod){
+        return nullptr;
+    }
+    for(auto & d : mod->values){
         if(name == d.name){
             return d.callback;
         };
@@ -141,5 +156,3 @@ StarbytesClassType StarbytesMakeClass(const char *name){
     }
     return t;
 }
-
-

@@ -303,6 +303,10 @@ No additional worker thread is created for lazy execution.
 
 - Regex literal compiles at runtime via PCRE2
 - On success, value is `Regex` object with `pattern`/`flags`
+- Builtin regex operations are instance methods on `Regex`
+  - `match(text:String) Bool!`
+  - `findAll(text:String) Array<String>!`
+  - `replace(text:String,replacement:String) String!`
 - On compile failure, expression yields failure path compatible with secure/catch handling
 
 ## 10. Diagnostic Semantics

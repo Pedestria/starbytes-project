@@ -31,8 +31,15 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
         /// VarDecl
         case VAR_DECL : {
             auto varDecl = (ASTVarDecl *)stmt;
+            bool isNativeVarDecl = false;
+            for(const auto &attr : varDecl->attributes){
+                if(attr.name == "native"){
+                    isNativeVarDecl = true;
+                    break;
+                }
+            }
             for(auto & spec : varDecl->specs){
-                if(varDecl->isConst && !spec.expr){
+                if(varDecl->isConst && !spec.expr && !isNativeVarDecl){
                     std::ostringstream ss;
                     ss << "Const variable `" << spec.id->val << "` must be initialized.";
                     errStream.push(SemanticADiagnostic::create(ss.str(),varDecl,Diagnostic::Error));

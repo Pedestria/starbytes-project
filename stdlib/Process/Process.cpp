@@ -1,5 +1,6 @@
 #include <starbytes/interop.h>
 #include "starbytes/base/ADT.h"
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <array>
 #include <cstdio>
@@ -13,6 +14,9 @@
 namespace {
 
 using starbytes::Twine;
+using starbytes::Runtime::stdlib::errnoMessage;
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
 
 struct NativeArgsLayout {
     unsigned argc = 0;
@@ -38,6 +42,7 @@ StarbytesObject makeInt(int value) {
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     outValue = StarbytesStrGetBuffer(arg);
@@ -47,6 +52,7 @@ bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
 bool readStringArrayArg(StarbytesFuncArgs args,std::vector<std::string> &outValues) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesArrayType())) {
+        setNativeErrorIfEmpty(args,"expected Array<String> argument");
         return false;
     }
 
@@ -56,6 +62,7 @@ bool readStringArrayArg(StarbytesFuncArgs args,std::vector<std::string> &outValu
     for(unsigned i = 0; i < len; ++i) {
         auto item = StarbytesArrayIndex(arg,i);
         if(!item || !StarbytesObjectTypecheck(item,StarbytesStrType())) {
+            setNativeErrorIfEmpty(args,"expected Array<String> argument");
             return false;
         }
         outValues.emplace_back(StarbytesStrGetBuffer(item));
@@ -165,12 +172,12 @@ STARBYTES_FUNC(process_run) {
 
     std::string command;
     if(!readStringArg(args,command) || command.empty()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"run requires a non-empty command string");
     }
 
     auto result = runCommandCapture(command);
     if(!result.started) {
-        return nullptr;
+        return failNativeIfEmpty(args,errnoMessage("run failed to start process"));
     }
     return makeProcessResult(result);
 }
@@ -181,13 +188,13 @@ STARBYTES_FUNC(process_runArgs) {
     std::string program;
     std::vector<std::string> argv;
     if(!readStringArg(args,program) || !readStringArrayArg(args,argv) || program.empty()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"runArgs requires a non-empty program string and Array<String> args");
     }
 
     auto command = buildCommandFromArgs(program,argv);
     auto result = runCommandCapture(command);
     if(!result.started) {
-        return nullptr;
+        return failNativeIfEmpty(args,errnoMessage("runArgs failed to start process"));
     }
     return makeProcessResult(result);
 }

@@ -1,4 +1,4 @@
 import ExternalLib
 
-print(extlibValue())
+print(ExternalLib.extlibValue())
 print("MODPATH-OK")

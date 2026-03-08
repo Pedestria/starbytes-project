@@ -67,6 +67,16 @@ interface String {
     func repeat(count:Int) String
 }
 
+/// @brief Intrinsic regex type created by regex literals.
+interface Regex {
+    /// @brief Returns whether the regex matches any part of text.
+    func match(text:String) Bool!
+    /// @brief Returns all match texts in scan order.
+    func findAll(text:String) Array<String>!
+    /// @brief Replaces all matches with replacement text.
+    func replace(text:String,replacement:String) String!
+}
+
 /// @brief Intrinsic generic array type.
 /// @tparam T Element type.
 interface Array<T> {

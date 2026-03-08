@@ -88,9 +88,14 @@ Attribute arguments support:
 ```starbytes
 import IO
 import Time
+
+decl contents = IO.readText("README.md","utf-8")
+decl utc = Time.timezoneUTC()
 ```
 
-Import names are identifiers only.
+Import names are identifiers only. Imported public members must be referenced
+through the module scope using `ModuleName.member`. Unqualified imported names
+are not injected into file scope.
 
 ### 5.2 Scope (Namespace)
 

@@ -191,9 +191,14 @@ With `--infer-64bit-numbers`:
 ```starbytes
 import IO
 import Net
+
+decl config = IO.readText("./config.json","utf-8")
+decl response = Net.httpGet("https://example.com")
 ```
 
-Imports are module-name based (identifier form).
+Imports are module-name based (identifier form). Imported public members shall
+be referenced through the imported module scope, for example `IO.readText(...)`
+or `Net.httpGet(...)`. Unqualified imported names are not visible in file scope.
 
 ### 8.2 Namespace scopes
 

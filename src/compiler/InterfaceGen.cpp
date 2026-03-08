@@ -423,20 +423,47 @@ void InterfaceGen::emitVarDecl(ASTVarDecl *node){
         return;
     }
     emitDocComments(node);
+    auto emitAttributes = [&](const std::vector<ASTAttribute> &attributes){
+        for(const auto &attr : attributes){
+            writeIndent();
+            out << "@" << attr.name;
+            if(!attr.args.empty()){
+                out << "(";
+                for(size_t argIndex = 0; argIndex < attr.args.size(); ++argIndex){
+                    if(argIndex > 0){
+                        out << ",";
+                    }
+                    const auto &arg = attr.args[argIndex];
+                    if(arg.key.has_value()){
+                        out << arg.key.value() << "=";
+                    }
+                    auto renderedValue = renderLiteralExpr((ASTExpr *)arg.value);
+                    if(renderedValue.has_value()){
+                        out << *renderedValue;
+                    }
+                    else if(arg.value && arg.value->type == ID_EXPR && arg.value->id){
+                        out << arg.value->id->val;
+                    }
+                }
+                out << ")";
+            }
+            out << "\n";
+        }
+    };
     for(size_t i = 0;i < node->specs.size();++i){
+        emitAttributes(node->attributes);
         auto &spec = node->specs[i];
         auto renderedInitExpr = renderLiteralExpr(spec.expr);
-        bool emitConst = node->isConst && renderedInitExpr.has_value();
         writeIndent();
         out << KW_DECL << " ";
-        if(emitConst){
+        if(node->isConst){
             out << KW_IMUT << " ";
         }
         out << (spec.id ? spec.id->val : "_");
         if(spec.type){
             out << ":" << renderType(spec.type);
         }
-        if(emitConst){
+        if(renderedInitExpr.has_value()){
             out << " = " << *renderedInitExpr;
         }
         out << "\n";

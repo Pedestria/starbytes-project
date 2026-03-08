@@ -1,0 +1,22 @@
+import Time
+import Unicode
+
+secure(decl tz = Time.timezoneUTC()) catch (error:String) {
+    print("SCOPED-TIME-CATCH")
+    print(error)
+}
+print(tz.id())
+
+secure(decl loc = Unicode.localeCurrent()) catch (error:String) {
+    print("SCOPED-UNICODE-CATCH")
+    print(error)
+}
+print(loc.id())
+
+secure(decl norm = Unicode.isNormalized("abc",Unicode.NFC)) catch (error:String) {
+    print("SCOPED-UNICODE-NORM-CATCH")
+    print(error)
+}
+print(norm)
+
+print("SCOPED-MODULE-IMPORTS-OK")

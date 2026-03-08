@@ -1,4 +1,5 @@
 #include <starbytes/interop.h>
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <algorithm>
 #include <chrono>
@@ -9,6 +10,10 @@
 #include <vector>
 
 namespace {
+
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
+using starbytes::Runtime::stdlib::systemErrorMessage;
 
 struct NativeArgsLayout {
     unsigned argc = 0;
@@ -28,6 +33,7 @@ StarbytesObject makeInt(int value) {
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     outValue = StarbytesStrGetBuffer(arg);
@@ -37,6 +43,7 @@ bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
 bool readBoolArg(StarbytesFuncArgs args,bool &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesBoolType())) {
+        setNativeErrorIfEmpty(args,"expected Bool argument");
         return false;
     }
     outValue = (StarbytesBoolValue(arg) == StarbytesBoolFalse);
@@ -46,6 +53,7 @@ bool readBoolArg(StarbytesFuncArgs args,bool &outValue) {
 bool readStringArrayArg(StarbytesFuncArgs args,std::vector<std::string> &outValues) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesArrayType())) {
+        setNativeErrorIfEmpty(args,"expected Array<String> argument");
         return false;
     }
 
@@ -55,6 +63,7 @@ bool readStringArrayArg(StarbytesFuncArgs args,std::vector<std::string> &outValu
     for(unsigned i = 0; i < len; ++i) {
         auto item = StarbytesArrayIndex(arg,i);
         if(!item || !StarbytesObjectTypecheck(item,StarbytesStrType())) {
+            setNativeErrorIfEmpty(args,"expected Array<String> argument");
             return false;
         }
         outValues.emplace_back(StarbytesStrGetBuffer(item));
@@ -91,7 +100,7 @@ STARBYTES_FUNC(fs_currentDirectory) {
     std::error_code ec;
     auto cwd = std::filesystem::current_path(ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("currentDirectory failed",ec));
     }
     return makePathString(cwd);
 }
@@ -105,7 +114,7 @@ STARBYTES_FUNC(fs_changeDirectory) {
     std::error_code ec;
     std::filesystem::current_path(std::filesystem::path(path),ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("changeDirectory failed",ec));
     }
     return makeBool(true);
 }
@@ -119,7 +128,7 @@ STARBYTES_FUNC(fs_pathAbsolute) {
     std::error_code ec;
     auto absolutePath = std::filesystem::absolute(std::filesystem::path(path),ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("pathAbsolute failed",ec));
     }
     return makePathString(absolutePath);
 }
@@ -143,7 +152,7 @@ STARBYTES_FUNC(fs_pathCanonical) {
     std::error_code ec;
     auto canonical = std::filesystem::weakly_canonical(std::filesystem::path(path),ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("pathCanonical failed",ec));
     }
     return makePathString(canonical);
 }
@@ -152,7 +161,7 @@ STARBYTES_FUNC(fs_pathJoin) {
     skipOptionalModuleReceiver(args,1);
     std::vector<std::string> parts;
     if(!readStringArrayArg(args,parts) || parts.empty()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"pathJoin requires a non-empty Array<String>");
     }
     std::filesystem::path joined(parts[0]);
     for(size_t i = 1; i < parts.size(); ++i) {
@@ -242,8 +251,11 @@ STARBYTES_FUNC(fs_fileSize) {
     }
     std::error_code ec;
     auto size = std::filesystem::file_size(std::filesystem::path(path),ec);
-    if(ec || size > static_cast<uintmax_t>(INT_MAX)) {
-        return nullptr;
+    if(ec) {
+        return failNativeIfEmpty(args,systemErrorMessage("fileSize failed",ec));
+    }
+    if(size > static_cast<uintmax_t>(INT_MAX)) {
+        return failNativeIfEmpty(args,"fileSize exceeded Int range");
     }
     return makeInt(static_cast<int>(size));
 }
@@ -257,14 +269,14 @@ STARBYTES_FUNC(fs_lastWriteEpochSeconds) {
     std::error_code ec;
     auto fileTime = std::filesystem::last_write_time(std::filesystem::path(path),ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("lastWriteEpochSeconds failed",ec));
     }
 
     auto systemTime = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
         fileTime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
     auto seconds = std::chrono::duration_cast<std::chrono::seconds>(systemTime.time_since_epoch()).count();
     if(!isIntRange(seconds)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"lastWriteEpochSeconds exceeded Int range");
     }
     return makeInt(static_cast<int>(seconds));
 }
@@ -290,7 +302,7 @@ STARBYTES_FUNC(fs_copyPath) {
     std::error_code ec;
     std::filesystem::copy(std::filesystem::path(src),std::filesystem::path(dst),options,ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("copyPath failed",ec));
     }
     return makeBool(true);
 }
@@ -304,7 +316,7 @@ STARBYTES_FUNC(fs_removeTree) {
     std::error_code ec;
     auto removed = std::filesystem::remove_all(std::filesystem::path(path),ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("removeTree failed",ec));
     }
     return makeBool(removed > 0);
 }
@@ -321,7 +333,7 @@ STARBYTES_FUNC(fs_walkPaths) {
     std::error_code ec;
     auto rootPath = std::filesystem::path(root);
     if(!std::filesystem::is_directory(rootPath,ec) || ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,ec ? systemErrorMessage("walkPaths failed",ec) : "walkPaths requires a directory path");
     }
 
     std::vector<std::string> values;
@@ -330,7 +342,7 @@ STARBYTES_FUNC(fs_walkPaths) {
             auto candidate = it->path();
             bool isDir = it->is_directory(ec);
             if(ec) {
-                return nullptr;
+                return failNativeIfEmpty(args,systemErrorMessage("walkPaths failed",ec));
             }
             if(includeDirectories || !isDir) {
                 values.emplace_back(pathToString(candidate));
@@ -342,7 +354,7 @@ STARBYTES_FUNC(fs_walkPaths) {
             auto candidate = it->path();
             bool isDir = it->is_directory(ec);
             if(ec) {
-                return nullptr;
+                return failNativeIfEmpty(args,systemErrorMessage("walkPaths failed",ec));
             }
             if(includeDirectories || !isDir) {
                 values.emplace_back(pathToString(candidate));
@@ -351,7 +363,7 @@ STARBYTES_FUNC(fs_walkPaths) {
     }
 
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("walkPaths failed",ec));
     }
 
     std::sort(values.begin(),values.end());
@@ -367,7 +379,7 @@ STARBYTES_FUNC(fs_tempDirectory) {
     std::error_code ec;
     auto tempPath = std::filesystem::temp_directory_path(ec);
     if(ec) {
-        return nullptr;
+        return failNativeIfEmpty(args,systemErrorMessage("tempDirectory failed",ec));
     }
     return makePathString(tempPath);
 }
@@ -393,7 +405,7 @@ STARBYTES_FUNC(fs_homeDirectory) {
     }
 
     if(resolved.empty()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"homeDirectory could not determine a home path");
     }
     return makePathString(std::filesystem::path(resolved));
 }

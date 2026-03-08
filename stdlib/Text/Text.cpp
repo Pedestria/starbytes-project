@@ -1,14 +1,11 @@
 #include <starbytes/interop.h>
 #include "starbytes/base/ADT.h"
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <algorithm>
 #include <cctype>
-#include <cstdint>
 #include <string>
 #include <vector>
-
-#define PCRE2_CODE_UNIT_WIDTH 8
-#include <pcre2.h>
 
 #ifdef STARBYTES_HAS_ICU
 #include <unicode/brkiter.h>
@@ -18,7 +15,8 @@
 
 namespace {
 
-using starbytes::string_set;
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
 
 struct NativeArgsLayout {
     unsigned argc = 0;
@@ -34,6 +32,7 @@ StarbytesObject makeBool(bool value) {
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     outValue = StarbytesStrGetBuffer(arg);
@@ -57,56 +56,6 @@ StarbytesObject stringListToArray(const std::vector<std::string> &values) {
         StarbytesArrayPush(out,StarbytesStrNewWithData(value.c_str()));
     }
     return out;
-}
-
-bool extractRegexPatternAndFlags(StarbytesObject regexObject,std::string &patternOut,std::string &flagsOut) {
-    if(!regexObject || !StarbytesObjectTypecheck(regexObject,StarbytesRegexType())) {
-        return false;
-    }
-
-    auto pattern = StarbytesObjectGetProperty(regexObject,"pattern");
-    auto flags = StarbytesObjectGetProperty(regexObject,"flags");
-    if(!pattern || !StarbytesObjectTypecheck(pattern,StarbytesStrType())) {
-        return false;
-    }
-
-    patternOut = StarbytesStrGetBuffer(pattern);
-    flagsOut = (flags && StarbytesObjectTypecheck(flags,StarbytesStrType())) ? StarbytesStrGetBuffer(flags) : "";
-    return true;
-}
-
-uint32_t regexCompileOptionsFromFlags(const std::string &flags) {
-    uint32_t options = 0;
-    for(char flag : flags) {
-        switch(flag) {
-            case 'i':
-                options |= PCRE2_CASELESS;
-                break;
-            case 'm':
-                options |= PCRE2_MULTILINE;
-                break;
-            case 's':
-                options |= PCRE2_DOTALL;
-                break;
-            case 'u':
-                options |= PCRE2_UTF;
-                break;
-            default:
-                break;
-        }
-    }
-    return options;
-}
-
-pcre2_code *compileRegex(const std::string &pattern,const std::string &flags) {
-    int errorCode = 0;
-    PCRE2_SIZE errorOffset = 0;
-    return pcre2_compile((PCRE2_SPTR)pattern.c_str(),
-                         PCRE2_ZERO_TERMINATED,
-                         regexCompileOptionsFromFlags(flags),
-                         &errorCode,
-                         &errorOffset,
-                         nullptr);
 }
 
 std::string caseFoldAscii(const std::string &value) {
@@ -213,169 +162,6 @@ std::vector<std::string> splitWithBreakIterator(const std::string &text,
 }
 #endif
 
-STARBYTES_FUNC(text_regexMatch) {
-    skipOptionalModuleReceiver(args,2);
-
-    auto regexObject = StarbytesFuncArgsGetArg(args);
-    std::string text;
-    if(!readStringArg(args,text)) {
-        return nullptr;
-    }
-
-    std::string pattern;
-    std::string flags;
-    if(!extractRegexPatternAndFlags(regexObject,pattern,flags)) {
-        return nullptr;
-    }
-
-    auto *compiled = compileRegex(pattern,flags);
-    if(!compiled) {
-        return nullptr;
-    }
-
-    auto *matchData = pcre2_match_data_create_from_pattern(compiled,nullptr);
-    auto matchRc = pcre2_match(compiled,
-                               (PCRE2_SPTR)text.c_str(),
-                               text.size(),
-                               0,
-                               0,
-                               matchData,
-                               nullptr);
-
-    pcre2_match_data_free(matchData);
-    pcre2_code_free(compiled);
-
-    return makeBool(matchRc >= 0);
-}
-
-STARBYTES_FUNC(text_regexFindAll) {
-    skipOptionalModuleReceiver(args,2);
-
-    auto regexObject = StarbytesFuncArgsGetArg(args);
-    std::string text;
-    if(!readStringArg(args,text)) {
-        return nullptr;
-    }
-
-    std::string pattern;
-    std::string flags;
-    if(!extractRegexPatternAndFlags(regexObject,pattern,flags)) {
-        return nullptr;
-    }
-
-    auto *compiled = compileRegex(pattern,flags);
-    if(!compiled) {
-        return nullptr;
-    }
-
-    std::vector<std::string> matches;
-    string_set dedupGuard;
-    auto *matchData = pcre2_match_data_create_from_pattern(compiled,nullptr);
-
-    size_t offset = 0;
-    while(offset <= text.size()) {
-        auto matchRc = pcre2_match(compiled,
-                                   (PCRE2_SPTR)text.c_str(),
-                                   text.size(),
-                                   offset,
-                                   0,
-                                   matchData,
-                                   nullptr);
-        if(matchRc < 0) {
-            break;
-        }
-
-        auto *ovector = pcre2_get_ovector_pointer(matchData);
-        size_t start = ovector[0];
-        size_t end = ovector[1];
-        if(end < start || start > text.size() || end > text.size()) {
-            break;
-        }
-
-        auto matchText = text.substr(start,end - start);
-        if(dedupGuard.insert(matchText + "@" + std::to_string(start)).second) {
-            matches.push_back(std::move(matchText));
-        }
-
-        if(end == offset) {
-            ++offset;
-        }
-        else {
-            offset = end;
-        }
-    }
-
-    pcre2_match_data_free(matchData);
-    pcre2_code_free(compiled);
-
-    return stringListToArray(matches);
-}
-
-STARBYTES_FUNC(text_regexReplace) {
-    skipOptionalModuleReceiver(args,3);
-
-    auto regexObject = StarbytesFuncArgsGetArg(args);
-    std::string text;
-    std::string replacement;
-    if(!readStringArg(args,text) || !readStringArg(args,replacement)) {
-        return nullptr;
-    }
-
-    std::string pattern;
-    std::string flags;
-    if(!extractRegexPatternAndFlags(regexObject,pattern,flags)) {
-        return nullptr;
-    }
-
-    auto *compiled = compileRegex(pattern,flags);
-    if(!compiled) {
-        return nullptr;
-    }
-
-    auto *matchData = pcre2_match_data_create_from_pattern(compiled,nullptr);
-
-    std::string out;
-    size_t offset = 0;
-    size_t consumed = 0;
-    while(offset <= text.size()) {
-        auto matchRc = pcre2_match(compiled,
-                                   (PCRE2_SPTR)text.c_str(),
-                                   text.size(),
-                                   offset,
-                                   0,
-                                   matchData,
-                                   nullptr);
-        if(matchRc < 0) {
-            break;
-        }
-
-        auto *ovector = pcre2_get_ovector_pointer(matchData);
-        size_t start = ovector[0];
-        size_t end = ovector[1];
-        if(end < start || start > text.size() || end > text.size()) {
-            break;
-        }
-
-        out.append(text.substr(consumed,start - consumed));
-        out.append(replacement);
-
-        consumed = end;
-        if(end == offset) {
-            ++offset;
-        }
-        else {
-            offset = end;
-        }
-    }
-
-    out.append(text.substr(consumed));
-
-    pcre2_match_data_free(matchData);
-    pcre2_code_free(compiled);
-
-    return StarbytesStrNewWithData(out.c_str());
-}
-
 STARBYTES_FUNC(text_caseFold) {
     skipOptionalModuleReceiver(args,2);
 
@@ -443,9 +229,6 @@ void addFunc(StarbytesNativeModule *module,const char *name,unsigned argCount,St
 STARBYTES_NATIVE_MOD_MAIN() {
     auto module = StarbytesNativeModuleCreate();
 
-    addFunc(module,"text_regexMatch",2,text_regexMatch);
-    addFunc(module,"text_regexFindAll",2,text_regexFindAll);
-    addFunc(module,"text_regexReplace",3,text_regexReplace);
     addFunc(module,"text_caseFold",2,text_caseFold);
     addFunc(module,"text_equalsFold",3,text_equalsFold);
     addFunc(module,"text_words",2,text_words);

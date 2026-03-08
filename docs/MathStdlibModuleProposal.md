@@ -21,6 +21,10 @@ Their semantic signatures remain in:
 
 ## Responsibility Split
 
+Implementation note:
+- The native module ABI now supports module-level immutable constant declarations.
+- `Math` exports `pi`, `tau`, `e`, `nan`, `infinity`, and `negativeInfinity` as scoped constants.
+
 ### Keep Intrinsic
 These should remain language-level globals for bootstrap ergonomics and because they are fundamental enough to justify direct lowering:
 - `sqrt`
@@ -67,12 +71,12 @@ This keeps old code stable while giving the stdlib a coherent namespace.
 
 ```starbytes
 scope Math {
-    decl pi:Double
-    decl tau:Double
-    decl e:Double
-    decl nan:Double
-    decl infinity:Double
-    decl negativeInfinity:Double
+    decl imut pi:Double
+    decl imut tau:Double
+    decl imut e:Double
+    decl imut nan:Double
+    decl imut infinity:Double
+    decl imut negativeInfinity:Double
 
     func sqrt(value:Number) Double
     func abs(value:Number) Number

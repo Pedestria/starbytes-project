@@ -1,4 +1,5 @@
 #include <starbytes/interop.h>
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -10,6 +11,9 @@
 #include <unordered_map>
 
 namespace {
+
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
 
 struct NativeArgsLayout {
     unsigned argc = 0;
@@ -62,6 +66,7 @@ StarbytesObject makeString(const std::string &value) {
 bool readIntArg(StarbytesFuncArgs args,int &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt) {
+        setNativeErrorIfEmpty(args,"expected Int argument");
         return false;
     }
     outValue = StarbytesNumGetIntValue(arg);
@@ -71,6 +76,7 @@ bool readIntArg(StarbytesFuncArgs args,int &outValue) {
 bool readBoolArg(StarbytesFuncArgs args,bool &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesBoolType())) {
+        setNativeErrorIfEmpty(args,"expected Bool argument");
         return false;
     }
     outValue = (StarbytesBoolValue(arg) == StarbytesBoolFalse);
@@ -91,10 +97,12 @@ void skipOptionalModuleReceiver(StarbytesFuncArgs args,unsigned expectedUserArgs
 MutexState *requireMutexSelf(StarbytesFuncArgs args) {
     auto self = StarbytesFuncArgsGetArg(args);
     if(!self) {
+        setNativeErrorIfEmpty(args,"Mutex receiver is missing");
         return nullptr;
     }
     auto it = g_mutexRegistry.find(self);
     if(it == g_mutexRegistry.end()) {
+        setNativeErrorIfEmpty(args,"Mutex receiver is invalid");
         return nullptr;
     }
     return it->second.get();
@@ -103,10 +111,12 @@ MutexState *requireMutexSelf(StarbytesFuncArgs args) {
 ConditionState *requireConditionSelf(StarbytesFuncArgs args) {
     auto self = StarbytesFuncArgsGetArg(args);
     if(!self) {
+        setNativeErrorIfEmpty(args,"Condition receiver is missing");
         return nullptr;
     }
     auto it = g_conditionRegistry.find(self);
     if(it == g_conditionRegistry.end()) {
+        setNativeErrorIfEmpty(args,"Condition receiver is invalid");
         return nullptr;
     }
     return it->second.get();
@@ -115,10 +125,12 @@ ConditionState *requireConditionSelf(StarbytesFuncArgs args) {
 SemaphoreState *requireSemaphoreSelf(StarbytesFuncArgs args) {
     auto self = StarbytesFuncArgsGetArg(args);
     if(!self) {
+        setNativeErrorIfEmpty(args,"Semaphore receiver is missing");
         return nullptr;
     }
     auto it = g_semaphoreRegistry.find(self);
     if(it == g_semaphoreRegistry.end()) {
+        setNativeErrorIfEmpty(args,"Semaphore receiver is invalid");
         return nullptr;
     }
     return it->second.get();
@@ -127,10 +139,12 @@ SemaphoreState *requireSemaphoreSelf(StarbytesFuncArgs args) {
 EventState *requireEventSelf(StarbytesFuncArgs args) {
     auto self = StarbytesFuncArgsGetArg(args);
     if(!self) {
+        setNativeErrorIfEmpty(args,"Event receiver is missing");
         return nullptr;
     }
     auto it = g_eventRegistry.find(self);
     if(it == g_eventRegistry.end()) {
+        setNativeErrorIfEmpty(args,"Event receiver is invalid");
         return nullptr;
     }
     return it->second.get();
@@ -188,7 +202,7 @@ STARBYTES_FUNC(Threading_Mutex_unlock) {
 
     auto current = std::this_thread::get_id();
     if(!state->locked || state->owner != current) {
-        return nullptr;
+        return failNativeIfEmpty(args,"unlock requires the current thread to own the mutex");
     }
 
     state->locked = false;
@@ -206,17 +220,17 @@ STARBYTES_FUNC(Threading_Condition_wait) {
     auto mutexObj = StarbytesFuncArgsGetArg(args);
     int timeoutMillis = -1;
     if(!mutexObj || !readIntArg(args,timeoutMillis)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"wait requires a Mutex and timeoutMillis");
     }
 
     auto *mutexState = findMutexByObject(mutexObj);
     if(!mutexState) {
-        return nullptr;
+        return failNativeIfEmpty(args,"wait requires a valid Mutex");
     }
 
     auto current = std::this_thread::get_id();
     if(!mutexState->locked || mutexState->owner != current) {
-        return nullptr;
+        return failNativeIfEmpty(args,"wait requires the current thread to own the mutex");
     }
 
     std::unique_lock<std::mutex> lock(mutexState->native,std::adopt_lock);
@@ -289,13 +303,13 @@ STARBYTES_FUNC(Threading_Semaphore_release) {
 
     int amount = 0;
     if(!readIntArg(args,amount) || amount <= 0) {
-        return nullptr;
+        return failNativeIfEmpty(args,"release requires a positive count");
     }
 
     {
         std::unique_lock<std::mutex> lock(state->mutex);
         if(state->count > state->maxCount - amount) {
-            return nullptr;
+            return failNativeIfEmpty(args,"release would exceed semaphore max count");
         }
         state->count += amount;
     }
@@ -406,7 +420,7 @@ STARBYTES_FUNC(Threading_semaphoreCreate) {
         return nullptr;
     }
     if(maxCount <= 0 || initial < 0 || initial > maxCount) {
-        return nullptr;
+        return failNativeIfEmpty(args,"semaphoreCreate requires 0 <= initial <= max and max > 0");
     }
 
     auto object = StarbytesObjectNew(StarbytesMakeClass("Semaphore"));
@@ -464,7 +478,7 @@ STARBYTES_FUNC(Threading_sleepMillis) {
 
     int ms = 0;
     if(!readIntArg(args,ms) || ms < 0) {
-        return nullptr;
+        return failNativeIfEmpty(args,"sleepMillis requires a non-negative Int");
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));

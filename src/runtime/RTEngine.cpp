@@ -1,6 +1,7 @@
 #include "starbytes/runtime/RTEngine.h"
 #include "starbytes/compiler/RTCode.h"
 #include "RTStdlib.h"
+#include "starbytes/runtime/RegexSupport.h"
 #include "starbytes/base/ADT.h"
 #include "starbytes/base/Diagnostic.h"
 
@@ -10,6 +11,7 @@
 #include <cassert>
 #include <cmath>
 #include <algorithm>
+#include <exception>
 #include <cctype>
 #include <cerrno>
 #include <cstdlib>
@@ -35,6 +37,7 @@ struct _StarbytesFuncArgs {
     unsigned argc = 0;
     unsigned index = 0;
     StarbytesObject *argv = nullptr;
+    char *errorMessage = nullptr;
 };
 
 RTScope *RTSCOPE_GLOBAL = new RTScope({"__GLOBAL__"});
@@ -60,12 +63,49 @@ static const RTAttribute *findAttribute(const RTFuncTemplate *func,string_ref at
     return nullptr;
 }
 
+static const RTAttribute *findAttribute(const RTVar *var,string_ref attrName){
+    if(!var){
+        return nullptr;
+    }
+    for(const auto &attr : var->attributes){
+        string_ref currentName(attr.name.value, (uint32_t)attr.name.len);
+        if(currentName == attrName){
+            return &attr;
+        }
+    }
+    return nullptr;
+}
+
 static std::string resolveNativeCallbackName(const RTFuncTemplate *func){
     if(!func){
         return {};
     }
     auto defaultName = rtidToString(func->name);
     auto *nativeAttr = findAttribute(func,"native");
+    if(!nativeAttr){
+        return {};
+    }
+    if(nativeAttr->args.empty()){
+        return defaultName;
+    }
+    for(const auto &arg : nativeAttr->args){
+        if(arg.hasName && rtidToString(arg.name) != "name"){
+            continue;
+        }
+        auto value = attributeArgValueToString(arg);
+        if(!value.empty()){
+            return value;
+        }
+    }
+    return defaultName;
+}
+
+static std::string resolveNativeValueName(const RTVar *var){
+    if(!var){
+        return {};
+    }
+    auto defaultName = rtidToString(var->id);
+    auto *nativeAttr = findAttribute(var,"native");
     if(!nativeAttr){
         return {};
     }
@@ -406,6 +446,7 @@ public:
 
 StarbytesNativeModule * starbytes_native_mod_load(string_ref path);
 StarbytesFuncCallback starbytes_native_mod_load_function(StarbytesNativeModule * mod,string_ref name);
+StarbytesFuncCallback starbytes_native_mod_load_value(StarbytesNativeModule * mod,string_ref name);
 void starbytes_native_mod_close(StarbytesNativeModule * mod);
 
 struct ScheduledTaskCall {
@@ -423,6 +464,7 @@ class InterpImpl final : public Interp {
     std::vector<RTFuncTemplate> functions;
     std::vector<StarbytesNativeModule *> nativeModules;
     string_map<StarbytesFuncCallback> nativeCallbackCache;
+    string_map<StarbytesFuncCallback> nativeValueCallbackCache;
     std::deque<ScheduledTaskCall> microtaskQueue;
     bool isDrainingMicrotasks = false;
     std::istream *activeInput = nullptr;
@@ -447,6 +489,7 @@ class InterpImpl final : public Interp {
     void skipRuntimeBlock(std::istream &in,RTCode endCode);
     void executeRuntimeBlock(std::istream &in,RTCode endCode,bool *willReturn,StarbytesObject *return_val);
     StarbytesFuncCallback findNativeCallback(string_ref callbackName);
+    StarbytesFuncCallback findNativeValueCallback(string_ref callbackName);
     StarbytesObject invokeNativeFunc(std::istream &in,StarbytesFuncCallback callback,unsigned argCount,StarbytesObject boundSelf);
     StarbytesObject invokeNativeFuncWithValues(StarbytesFuncCallback callback,ArrayRef<StarbytesObject> args,StarbytesObject boundSelf);
     StarbytesObject invokeFuncWithValues(RTFuncTemplate *func_temp,ArrayRef<StarbytesObject> args,StarbytesObject boundSelf = nullptr);
@@ -584,6 +627,22 @@ StarbytesFuncCallback InterpImpl::findNativeCallback(string_ref callbackName){
     return nullptr;
 }
 
+StarbytesFuncCallback InterpImpl::findNativeValueCallback(string_ref callbackName){
+    auto cached = nativeValueCallbackCache.find(callbackName.view());
+    if(cached != nativeValueCallbackCache.end()){
+        return cached->second;
+    }
+    for(auto *module : nativeModules){
+        auto callback = starbytes_native_mod_load_value(module,callbackName);
+        if(callback){
+            nativeValueCallbackCache.insert(std::make_pair(callbackName.str(),callback));
+            return callback;
+        }
+    }
+    nativeValueCallbackCache.insert(std::make_pair(callbackName.str(),nullptr));
+    return nullptr;
+}
+
 StarbytesObject InterpImpl::invokeNativeFunc(std::istream &in,
                                              StarbytesFuncCallback callback,
                                              unsigned argCount,
@@ -604,13 +663,27 @@ StarbytesObject InterpImpl::invokeNativeFunc(std::istream &in,
     nativeArgs.argc = (unsigned)args.size();
     nativeArgs.index = 0;
     nativeArgs.argv = args.empty()? nullptr : args.data();
-
-    auto result = callback((StarbytesFuncArgs)&nativeArgs);
+    StarbytesObject result = nullptr;
+    try {
+        result = callback((StarbytesFuncArgs)&nativeArgs);
+    }
+    catch(const std::exception &ex){
+        StarbytesFuncArgsSetError((StarbytesFuncArgs)&nativeArgs,ex.what());
+    }
+    catch(...){
+        StarbytesFuncArgsSetError((StarbytesFuncArgs)&nativeArgs,"native callback threw an unknown exception");
+    }
+    auto nativeErrorRaw = StarbytesFuncArgsGetError((StarbytesFuncArgs)&nativeArgs);
+    std::string nativeError = nativeErrorRaw == nullptr ? std::string() : std::string(nativeErrorRaw);
+    StarbytesFuncArgsClearError((StarbytesFuncArgs)&nativeArgs);
 
     for(auto *arg : args){
         if(arg){
             StarbytesObjectRelease(arg);
         }
+    }
+    if(!result && !nativeError.empty()){
+        lastRuntimeError = nativeError;
     }
     return result;
 }
@@ -632,11 +705,26 @@ StarbytesObject InterpImpl::invokeNativeFuncWithValues(StarbytesFuncCallback cal
     nativeArgs.argc = (unsigned)callArgs.size();
     nativeArgs.index = 0;
     nativeArgs.argv = callArgs.empty()? nullptr : callArgs.data();
-    auto result = callback((StarbytesFuncArgs)&nativeArgs);
+    StarbytesObject result = nullptr;
+    try {
+        result = callback((StarbytesFuncArgs)&nativeArgs);
+    }
+    catch(const std::exception &ex){
+        StarbytesFuncArgsSetError((StarbytesFuncArgs)&nativeArgs,ex.what());
+    }
+    catch(...){
+        StarbytesFuncArgsSetError((StarbytesFuncArgs)&nativeArgs,"native callback threw an unknown exception");
+    }
+    auto nativeErrorRaw = StarbytesFuncArgsGetError((StarbytesFuncArgs)&nativeArgs);
+    std::string nativeError = nativeErrorRaw == nullptr ? std::string() : std::string(nativeErrorRaw);
+    StarbytesFuncArgsClearError((StarbytesFuncArgs)&nativeArgs);
     for(auto *arg : callArgs){
         if(arg){
             StarbytesObjectRelease(arg);
         }
+    }
+    if(!result && !nativeError.empty()){
+        lastRuntimeError = nativeError;
     }
     return result;
 }
@@ -1982,6 +2070,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             };
 
             if(StarbytesObjectTypecheck(object,StarbytesStrType()) ||
+               StarbytesObjectTypecheck(object,StarbytesRegexType()) ||
                StarbytesObjectTypecheck(object,StarbytesArrayType()) ||
                StarbytesObjectTypecheck(object,StarbytesDictType())){
                 std::vector<StarbytesObject> args;
@@ -2175,6 +2264,73 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                         releaseArgs(args);
                         StarbytesObjectRelease(object);
                         return StarbytesStrNewWithData(out.c_str());
+                    }
+                    discardExprArgs(in,argCount);
+                    StarbytesObjectRelease(object);
+                    return nullptr;
+                }
+
+                if(StarbytesObjectTypecheck(object,StarbytesRegexType())){
+                    if(methodName == "match"){
+                        if(argCount != 1 || !collectArgs(args)){
+                            return failWithArgs("Regex.match expects 1 argument");
+                        }
+                        std::string text;
+                        if(!expectStringArg(args[0],text)){
+                            return failWithArgs("Regex.match expects String text");
+                        }
+                        std::string error;
+                        auto result = regex::match(object,text,error);
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        if(!result){
+                            if(!error.empty()){
+                                lastRuntimeError = error;
+                            }
+                            return nullptr;
+                        }
+                        return result;
+                    }
+                    if(methodName == "findAll"){
+                        if(argCount != 1 || !collectArgs(args)){
+                            return failWithArgs("Regex.findAll expects 1 argument");
+                        }
+                        std::string text;
+                        if(!expectStringArg(args[0],text)){
+                            return failWithArgs("Regex.findAll expects String text");
+                        }
+                        std::string error;
+                        auto result = regex::findAll(object,text,error);
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        if(!result){
+                            if(!error.empty()){
+                                lastRuntimeError = error;
+                            }
+                            return nullptr;
+                        }
+                        return result;
+                    }
+                    if(methodName == "replace"){
+                        if(argCount != 2 || !collectArgs(args)){
+                            return failWithArgs("Regex.replace expects 2 arguments");
+                        }
+                        std::string text;
+                        std::string replacement;
+                        if(!expectStringArg(args[0],text) || !expectStringArg(args[1],replacement)){
+                            return failWithArgs("Regex.replace expects String arguments");
+                        }
+                        std::string error;
+                        auto result = regex::replace(object,text,replacement,error);
+                        releaseArgs(args);
+                        StarbytesObjectRelease(object);
+                        if(!result){
+                            if(!error.empty()){
+                                lastRuntimeError = error;
+                            }
+                            return nullptr;
+                        }
+                        return result;
                     }
                     discardExprArgs(in,argCount);
                     StarbytesObjectRelease(object);
@@ -2872,6 +3028,24 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
             auto val = evalExpr(in);
             allocator->allocVariable(var_name,val);
         }
+        else {
+            auto nativeValueName = resolveNativeValueName(&var);
+            if(!nativeValueName.empty()){
+                auto callback = findNativeValueCallback(string_ref(nativeValueName));
+                if(!callback){
+                    lastRuntimeError = "native global `" + nativeValueName + "` is not loaded";
+                    return;
+                }
+                auto val = invokeNativeFuncWithValues(callback,{},nullptr);
+                if(!val){
+                    if(lastRuntimeError.empty()){
+                        lastRuntimeError = "native global `" + nativeValueName + "` returned no value";
+                    }
+                    return;
+                }
+                allocator->allocVariable(var_name,val);
+            }
+        }
     }
     else if(code == CODE_RTSECURE_DECL){
         RTID targetVarId;
@@ -3120,6 +3294,7 @@ bool InterpImpl::addExtension(const std::string &path) {
     }
     nativeModules.push_back(module);
     nativeCallbackCache.clear();
+    nativeValueCallbackCache.clear();
     return true;
 }
 

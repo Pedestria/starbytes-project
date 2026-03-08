@@ -28,8 +28,13 @@ func print(object:Any) Void
 - No builtin members (operator/type-check support only).
 
 ### `Regex`
-- No direct builtin members.
 - Produced by regex literals (for example `/abc/g`).
+
+```starbytes
+func match(text:String) Bool!
+func findAll(text:String) Array<String>!
+func replace(text:String,replacement:String) String!
+```
 
 ### `Any`
 - Dynamic top type for values.

@@ -23,7 +23,7 @@ func chooseBase(value:Int) String {
     return "N"
 }
 
-decl args = positionals()
+decl args = CmdLine.positionals()
 decl repeatLength:Int = intArg(args,0,4000)
 decl randomLength:Int = intArg(args,1,4000)
 decl state:Int = intArg(args,2,42)

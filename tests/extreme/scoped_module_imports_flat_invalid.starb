@@ -1,0 +1,5 @@
+import Time
+
+secure(decl tz = timezoneUTC()) catch (error:String) {
+    print(error)
+}

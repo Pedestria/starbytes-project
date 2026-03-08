@@ -9,14 +9,14 @@ func stringArg(args:String[],index:Int,fallback:String) String {
     return fallback
 }
 
-decl args = positionals()
+decl args = CmdLine.positionals()
 decl inputPath = stringArg(args,0,"benchmark/data/track_a/dna_input.fasta")
 
-secure(decl raw = readText(inputPath,"utf-8")) catch (error:String) {
+secure(decl raw = IO.readText(inputPath,"utf-8")) catch (error:String) {
     print(error)
 }
 
-secure(decl rawLines = lines(raw,"en")) catch (error:String) {
+secure(decl rawLines = Text.lines(raw,"en")) catch (error:String) {
     print(error)
 }
 decl parts:String[] = []
@@ -58,29 +58,29 @@ secure(decl replacePatternC = /CGGGTAAA/g) catch (error:String) {
     print(error)
 }
 
-secure(decl matches1 = regexFindAll(pattern1,cleaned)) catch (error:String) {
+secure(decl matches1 = pattern1.findAll(cleaned)) catch (error:String) {
     print(error)
 }
-secure(decl matches2 = regexFindAll(pattern2,cleaned)) catch (error:String) {
+secure(decl matches2 = pattern2.findAll(cleaned)) catch (error:String) {
     print(error)
 }
-secure(decl matches3 = regexFindAll(pattern3,cleaned)) catch (error:String) {
+secure(decl matches3 = pattern3.findAll(cleaned)) catch (error:String) {
     print(error)
 }
-secure(decl matches4 = regexFindAll(pattern4,cleaned)) catch (error:String) {
+secure(decl matches4 = pattern4.findAll(cleaned)) catch (error:String) {
     print(error)
 }
-secure(decl matches5 = regexFindAll(pattern5,cleaned)) catch (error:String) {
+secure(decl matches5 = pattern5.findAll(cleaned)) catch (error:String) {
     print(error)
 }
 
-secure(decl replacedA = regexReplace(replacePatternA,cleaned,"<A>")) catch (error:String) {
+secure(decl replacedA = replacePatternA.replace(cleaned,"<A>")) catch (error:String) {
     print(error)
 }
-secure(decl replacedB = regexReplace(replacePatternB,replacedA,"<B>")) catch (error:String) {
+secure(decl replacedB = replacePatternB.replace(replacedA,"<B>")) catch (error:String) {
     print(error)
 }
-secure(decl replacedC = regexReplace(replacePatternC,replacedB,"<C>")) catch (error:String) {
+secure(decl replacedC = replacePatternC.replace(replacedB,"<C>")) catch (error:String) {
     print(error)
 }
 

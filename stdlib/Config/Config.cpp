@@ -1,5 +1,6 @@
 #include <starbytes/interop.h>
 #include "starbytes/base/ADT.h"
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <rapidjson/document.h>
 
@@ -20,6 +21,8 @@ namespace {
 
 using starbytes::optional;
 using starbytes::string_map;
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
 using rapidjson::Document;
 using rapidjson::Value;
 
@@ -43,6 +46,7 @@ StarbytesObject makeInt(int value) {
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     outValue = StarbytesStrGetBuffer(arg);
@@ -52,6 +56,7 @@ bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
 bool readIntArg(StarbytesFuncArgs args,int &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt) {
+        setNativeErrorIfEmpty(args,"expected Int argument");
         return false;
     }
     outValue = StarbytesNumGetIntValue(arg);
@@ -61,6 +66,7 @@ bool readIntArg(StarbytesFuncArgs args,int &outValue) {
 bool readStringArrayArg(StarbytesFuncArgs args,std::vector<std::string> &outValues) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesArrayType())) {
+        setNativeErrorIfEmpty(args,"expected Array<String> argument");
         return false;
     }
 
@@ -70,6 +76,7 @@ bool readStringArrayArg(StarbytesFuncArgs args,std::vector<std::string> &outValu
     for(unsigned i = 0; i < len; ++i) {
         auto item = StarbytesArrayIndex(arg,i);
         if(!item || !StarbytesObjectTypecheck(item,StarbytesStrType())) {
+            setNativeErrorIfEmpty(args,"expected Array<String> argument");
             return false;
         }
         outValues.emplace_back(StarbytesStrGetBuffer(item));
@@ -267,12 +274,12 @@ STARBYTES_FUNC(config_parseJsonObject) {
     Document document;
     document.Parse(source.c_str());
     if(document.HasParseError() || !document.IsObject()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"parseJsonObject requires a JSON object");
     }
 
     StarbytesObject out = nullptr;
     if(!jsonToStarbytes(document,out,0) || !out || !StarbytesObjectTypecheck(out,StarbytesDictType())) {
-        return nullptr;
+        return failNativeIfEmpty(args,"parseJsonObject failed");
     }
     return out;
 }
@@ -283,7 +290,7 @@ STARBYTES_FUNC(config_merge) {
     auto base = StarbytesFuncArgsGetArg(args);
     auto overlay = StarbytesFuncArgsGetArg(args);
     if(!base || !overlay || !StarbytesObjectTypecheck(base,StarbytesDictType()) || !StarbytesObjectTypecheck(overlay,StarbytesDictType())) {
-        return nullptr;
+        return failNativeIfEmpty(args,"merge requires Dict arguments");
     }
 
     return mergeDicts(base,overlay,0);

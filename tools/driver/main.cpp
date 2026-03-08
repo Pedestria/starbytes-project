@@ -1046,26 +1046,6 @@ std::string defaultModuleNameForPath(const std::filesystem::path &path) {
     return name;
 }
 
-bool parseModuleGraphSources(starbytes::Parser &parser,
-                             starbytes::ModuleParseContext &parseContext,
-                             const ModuleGraph &graph,
-                             std::string &error) {
-    for(const auto &unitKey : graph.buildOrder) {
-        auto unitIt = graph.unitsByKey.find(unitKey);
-        if(unitIt == graph.unitsByKey.end()) {
-            error = "Internal driver error: missing module build unit for key `" + unitKey + "`.";
-            return false;
-        }
-        const auto &unit = unitIt->second;
-        for(const auto &source : unit.sources) {
-            parseContext.name = makeAbsolutePathString(source.filePath);
-            std::istringstream stream(source.fileText);
-            parser.parseFromStream(stream, parseContext);
-        }
-    }
-    return true;
-}
-
 bool sourceDeclaresNativeSymbols(const ModuleSource &source) {
     return source.fileText.find("@native") != std::string::npos;
 }
@@ -1110,6 +1090,31 @@ std::optional<std::filesystem::path> findNativeModuleByName(const std::string &m
         }
     }
     return std::nullopt;
+}
+
+std::string moduleNameFromModuleKey(const std::string &moduleKey) {
+    auto modulePath = std::filesystem::path(moduleKey);
+    auto moduleName = modulePath.filename().string();
+    if(!moduleName.empty()) {
+        return moduleName;
+    }
+    return moduleKey;
+}
+
+void appendImportedSymbolTables(starbytes::Semantics::STableContext &context,
+                                const std::vector<std::string> &dependencyKeys,
+                                const std::unordered_map<std::string,std::shared_ptr<starbytes::Semantics::SymbolTable>> &depTables) {
+    for(const auto &depKey : dependencyKeys) {
+        auto depIt = depTables.find(depKey);
+        if(depIt == depTables.end() || !depIt->second) {
+            continue;
+        }
+        context.importTables.push_back(depIt->second);
+        auto overlay = depIt->second->createImportNamespaceOverlay(moduleNameFromModuleKey(depKey));
+        if(overlay) {
+            context.otherTables.push_back(std::move(overlay));
+        }
+    }
 }
 
 std::vector<std::filesystem::path> collectAutoNativeModulePaths(const DriverOptions &opts,
@@ -1234,12 +1239,7 @@ ModuleCompileTaskResult compileModuleSymbolsOnly(const std::string &moduleKey,
     }
 
     auto parseContext = starbytes::ModuleParseContext::Create(moduleKey);
-    for(const auto &depKey : unit.dependencyKeys){
-        auto depIt = depTables.find(depKey);
-        if(depIt != depTables.end() && depIt->second){
-            parseContext.sTableContext.otherTables.push_back(depIt->second);
-        }
-    }
+    appendImportedSymbolTables(parseContext.sTableContext,unit.dependencyKeys,depTables);
 
     std::string parseError;
     for(const auto &source : unit.sources){
@@ -1265,6 +1265,100 @@ ModuleCompileTaskResult compileModuleSymbolsOnly(const std::string &moduleKey,
         result.error = "failed to materialize symbol table";
     }
     return result;
+}
+
+void accumulateModuleResultProfile(CompileProfileData &profile,
+                                   const ModuleCompileTaskResult &result) {
+    if(!profile.enabled) {
+        return;
+    }
+    profile.parseTotalNs += result.parserProfile.totalNs;
+    profile.lexNs += result.parserProfile.lexNs;
+    profile.syntaxNs += result.parserProfile.syntaxNs;
+    profile.semanticNs += result.parserProfile.semanticNs;
+    profile.consumerNs += result.parserProfile.consumerNs;
+    profile.parserSourceBytes += result.parserProfile.sourceBytes;
+    profile.parserTokenCount += result.parserProfile.tokenCount;
+    profile.parserStatementCount += result.parserProfile.statementCount;
+    profile.parserFileCount += result.parserProfile.fileCount;
+    profile.genFinishNs += result.genFinishNs;
+}
+
+bool emitFailedModuleResults(const std::vector<std::string> &buildOrder,
+                             const std::unordered_map<std::string,ModuleCompileTaskResult> &moduleResults) {
+    bool moduleBuildFailed = false;
+    for(const auto &moduleKey : buildOrder) {
+        auto it = moduleResults.find(moduleKey);
+        if(it == moduleResults.end() || it->second.success) {
+            continue;
+        }
+        moduleBuildFailed = true;
+        if(!it->second.error.empty()) {
+            std::cerr << "Error in module `" << moduleKey << "`: " << it->second.error << std::endl;
+        }
+        if(!it->second.diagnostics.empty()) {
+            std::cerr << it->second.diagnostics;
+        }
+    }
+    return moduleBuildFailed;
+}
+
+bool checkModuleGraphSymbolsOnly(const ModuleGraph &graph,
+                                 CompileProfileData &profile,
+                                 bool infer64BitNumbers) {
+    auto moduleBuildStart = std::chrono::steady_clock::now();
+    std::unordered_map<std::string,ModuleCompileTaskResult> moduleResults;
+    moduleResults.reserve(graph.unitsByKey.size());
+
+    for(const auto &moduleKey : graph.buildOrder) {
+        ModuleCompileTaskResult result;
+        result.moduleKey = moduleKey;
+
+        auto unitIt = graph.unitsByKey.find(moduleKey);
+        if(unitIt == graph.unitsByKey.end()) {
+            result.error = "Internal driver error: missing module build unit `" + moduleKey + "`.";
+            moduleResults[moduleKey] = result;
+            continue;
+        }
+
+        const auto &unit = unitIt->second;
+        std::unordered_map<std::string,std::shared_ptr<starbytes::Semantics::SymbolTable>> depTables;
+        depTables.reserve(unit.dependencyKeys.size());
+
+        bool missingDependency = false;
+        for(const auto &depKey : unit.dependencyKeys) {
+            auto depResultIt = moduleResults.find(depKey);
+            if(depResultIt == moduleResults.end()) {
+                result.error = "Internal driver error: missing dependency result `" + depKey + "`.";
+                missingDependency = true;
+                break;
+            }
+            if(!depResultIt->second.success || !depResultIt->second.symbols) {
+                result.error = "Dependency build failed for `" + depKey + "`.";
+                missingDependency = true;
+                break;
+            }
+            depTables[depKey] = depResultIt->second.symbols;
+        }
+
+        if(!missingDependency) {
+            result = compileModuleSymbolsOnly(moduleKey,
+                                              unit,
+                                              depTables,
+                                              profile.enabled,
+                                              infer64BitNumbers);
+        }
+
+        accumulateModuleResultProfile(profile,result);
+        moduleResults[moduleKey] = std::move(result);
+    }
+
+    if(profile.enabled) {
+        auto moduleBuildEnd = std::chrono::steady_clock::now();
+        profile.moduleBuildNs = std::chrono::duration_cast<std::chrono::nanoseconds>(moduleBuildEnd - moduleBuildStart).count();
+    }
+
+    return !emitFailedModuleResults(graph.buildOrder,moduleResults);
 }
 
 ModuleCompileTaskResult compileModuleToSegment(const std::string &moduleKey,
@@ -1313,12 +1407,7 @@ ModuleCompileTaskResult compileModuleToSegment(const std::string &moduleKey,
     }
 
     auto parseContext = starbytes::ModuleParseContext::Create(moduleKey);
-    for(const auto &depKey : unit.dependencyKeys){
-        auto depIt = depTables.find(depKey);
-        if(depIt != depTables.end() && depIt->second){
-            parseContext.sTableContext.otherTables.push_back(depIt->second);
-        }
-    }
+    appendImportedSymbolTables(parseContext.sTableContext,unit.dependencyKeys,depTables);
 
     for(const auto &source : unit.sources){
         parseContext.name = makeAbsolutePathString(source.filePath);
@@ -1787,44 +1876,7 @@ int main(int argc, const char *argv[]) {
     }
 
     if(opts.command == DriverCommand::Check) {
-        NullASTConsumer astConsumer;
-        starbytes::Parser parser(astConsumer);
-        parser.setProfilingEnabled(profile.enabled);
-        parser.setInfer64BitNumbers(opts.infer64BitNumbers);
-        if(profile.enabled) {
-            parser.resetProfileData();
-        }
-        auto parseContext = starbytes::ModuleParseContext::Create(opts.moduleName);
-        std::string parseError;
-        if(!parseModuleGraphSources(parser, parseContext, graph, parseError)) {
-            std::cerr << parseError << std::endl;
-            if(profile.enabled) {
-                const auto &parserProfile = parser.getProfileData();
-                profile.parseTotalNs = parserProfile.totalNs;
-                profile.lexNs = parserProfile.lexNs;
-                profile.syntaxNs = parserProfile.syntaxNs;
-                profile.semanticNs = parserProfile.semanticNs;
-                profile.consumerNs = parserProfile.consumerNs;
-                profile.parserSourceBytes = parserProfile.sourceBytes;
-                profile.parserTokenCount = parserProfile.tokenCount;
-                profile.parserStatementCount = parserProfile.statementCount;
-                profile.parserFileCount = parserProfile.fileCount;
-            }
-            return finishWith(1);
-        }
-        auto ok = parser.finish();
-        if(profile.enabled) {
-            const auto &parserProfile = parser.getProfileData();
-            profile.parseTotalNs = parserProfile.totalNs;
-            profile.lexNs = parserProfile.lexNs;
-            profile.syntaxNs = parserProfile.syntaxNs;
-            profile.semanticNs = parserProfile.semanticNs;
-            profile.consumerNs = parserProfile.consumerNs;
-            profile.parserSourceBytes = parserProfile.sourceBytes;
-            profile.parserTokenCount = parserProfile.tokenCount;
-            profile.parserStatementCount = parserProfile.statementCount;
-            profile.parserFileCount = parserProfile.fileCount;
-        }
+        auto ok = checkModuleGraphSymbolsOnly(graph,profile,opts.infer64BitNumbers);
         maybeLogRuntimeDiagnostics(opts);
         return finishWith(ok ? 0 : 1);
     }
@@ -2048,18 +2100,7 @@ int main(int argc, const char *argv[]) {
     for(const auto &moduleKey : graph.buildOrder){
         auto result = futuresByModule[moduleKey].get();
         moduleResults[moduleKey] = result;
-        if(profile.enabled){
-            profile.parseTotalNs += result.parserProfile.totalNs;
-            profile.lexNs += result.parserProfile.lexNs;
-            profile.syntaxNs += result.parserProfile.syntaxNs;
-            profile.semanticNs += result.parserProfile.semanticNs;
-            profile.consumerNs += result.parserProfile.consumerNs;
-            profile.parserSourceBytes += result.parserProfile.sourceBytes;
-            profile.parserTokenCount += result.parserProfile.tokenCount;
-            profile.parserStatementCount += result.parserProfile.statementCount;
-            profile.parserFileCount += result.parserProfile.fileCount;
-            profile.genFinishNs += result.genFinishNs;
-        }
+        accumulateModuleResultProfile(profile,result);
         if(!result.success){
             moduleBuildFailed = true;
         }
@@ -2071,18 +2112,7 @@ int main(int argc, const char *argv[]) {
     }
 
     if(moduleBuildFailed){
-        for(const auto &moduleKey : graph.buildOrder){
-            auto it = moduleResults.find(moduleKey);
-            if(it == moduleResults.end() || it->second.success){
-                continue;
-            }
-            if(!it->second.error.empty()){
-                std::cerr << "Error in module `" << moduleKey << "`: " << it->second.error << std::endl;
-            }
-            if(!it->second.diagnostics.empty()){
-                std::cerr << it->second.diagnostics;
-            }
-        }
+        emitFailedModuleResults(graph.buildOrder,moduleResults);
         maybeLogRuntimeDiagnostics(opts);
         return finishWith(1);
     }

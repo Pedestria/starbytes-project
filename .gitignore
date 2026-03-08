@@ -19,7 +19,9 @@ starbytes-lang/tools/main/Starbytes.cpp
 cmake-build-debug
 cmake-build-release
 .starbytes
-deps
+/deps/
+deps/*
+__pycache__/
 *.sh
 !scripts/wsl-cross-win-clangcl.sh
 !benchmark/runners/run_track_a.sh

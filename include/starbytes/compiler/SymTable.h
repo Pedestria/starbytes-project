@@ -113,6 +113,7 @@ namespace starbytes {
             static std::shared_ptr<SymbolTable> importPublic(std::istream & input);
             /// Upon export of the SymbolTable only publically visible symbols will be serialized.
             void serializePublic(std::ostream & out);
+            std::shared_ptr<SymbolTable> createImportNamespaceOverlay(string_ref moduleName) const;
             
             ~SymbolTable();
         };
@@ -120,7 +121,9 @@ namespace starbytes {
         struct STableContext {
             std::unique_ptr<SymbolTable> main;
             std::vector<std::shared_ptr<SymbolTable>> otherTables;
+            std::vector<std::shared_ptr<SymbolTable>> importTables;
             bool hasTable(SymbolTable *ptr);
+            SymbolTable::Entry * findImportedGlobalEntryNoDiag(string_ref symbolName);
             SymbolTable::Entry * findEntryNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope);
             SymbolTable::Entry * findEntryInExactScopeNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope);
             SymbolTable::Entry * findEntryByEmittedNoDiag(string_ref emittedName);

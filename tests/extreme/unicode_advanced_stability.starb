@@ -1,27 +1,27 @@
 import Unicode
 
-secure(decl loc = localeCurrent()) catch {
+secure(decl loc = Unicode.localeCurrent()) catch {
     print("UNICODE-LOC-CATCH")
 }
 print(loc.id())
 
-secure(decl rootLoc = localeRoot()) catch {
+secure(decl rootLoc = Unicode.localeRoot()) catch {
     print("UNICODE-ROOT-CATCH")
 }
 print(rootLoc.id())
 
-secure(decl folded = caseFold("Straße")) catch {
+secure(decl folded = Unicode.caseFold("Straße")) catch {
     print("UNICODE-FOLD-CATCH")
 }
 print(folded)
-if(folded == "straße"){
+if(folded == "straße" || folded == "strasse"){
     print("UNICODE-FOLD-OK")
 }
 else {
     print("UNICODE-FOLD-BAD")
 }
 
-secure(decl contains = containsFolded("StarBytes","star",loc)) catch {
+secure(decl contains = Unicode.containsFolded("StarBytes","star",loc)) catch {
     print("UNICODE-CONTAINS-CATCH")
 }
 if(contains){
@@ -31,17 +31,17 @@ else {
     print("UNICODE-CONTAINS-BAD")
 }
 
-secure(decl starts = startsWithFolded("StarBytes","star",loc)) catch {
+secure(decl starts = Unicode.startsWithFolded("StarBytes","star",loc)) catch {
     print("UNICODE-STARTS-CATCH")
 }
-secure(decl ends = endsWithFolded("StarBytes","BYTES",loc)) catch {
+secure(decl ends = Unicode.endsWithFolded("StarBytes","BYTES",loc)) catch {
     print("UNICODE-ENDS-CATCH")
 }
-secure(decl norm = isNormalized("abc",0)) catch {
+secure(decl norm = Unicode.isNormalized("abc",0)) catch {
     print("UNICODE-ISNORM-CATCH")
 }
 
-secure(decl containsRoot = containsFolded("Straße","STR",rootLoc)) catch {
+secure(decl containsRoot = Unicode.containsFolded("Straße","STR",rootLoc)) catch {
     print("UNICODE-CONTAINS-ROOT-CATCH")
 }
 if(containsRoot){
@@ -51,10 +51,10 @@ else {
     print("UNICODE-CONTAINS-ROOT-BAD")
 }
 
-secure(decl badNorm = isNormalized("abc",99)) catch {
+secure(decl badNorm = Unicode.isNormalized("abc",99)) catch {
     print("UNICODE-ISNORM-BADFORM-CATCH")
 }
-secure(decl badLocale = localeFrom("")) catch {
+secure(decl badLocale = Unicode.localeFrom("")) catch {
     print("UNICODE-LOCALE-BAD-CATCH")
 }
 

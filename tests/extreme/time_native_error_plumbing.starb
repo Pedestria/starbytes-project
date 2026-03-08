@@ -1,0 +1,35 @@
+import Time
+
+secure(decl base = Time.durationFromMillis(10)) catch (error:String) {
+    print("TIME-BASE-CATCH")
+    print(error)
+}
+
+secure(decl tz = Time.timezoneUTC()) catch (error:String) {
+    print("TIME-TZ-CATCH")
+    print(error)
+}
+
+secure(decl cmp = Time.durationCompare(base,base)) catch (error:String) {
+    print("TIME-COMPARE-CATCH")
+    print(error)
+}
+print(cmp)
+
+secure(decl badZone = Time.timezoneFromID("Mars/Phobos")) catch (error:String) {
+    print(error)
+}
+
+secure(decl badParse = Time.parseISO8601("2024-02-31T03:04:05Z")) catch (error:String) {
+    print(error)
+}
+
+secure(decl badDiv = Time.durationDiv(base,0)) catch (error:String) {
+    print(error)
+}
+
+secure(decl badUnix = Time.fromUnix(0,1000000000,tz)) catch (error:String) {
+    print(error)
+}
+
+print("TIME-NATIVE-ERROR-PLUMBING-OK")

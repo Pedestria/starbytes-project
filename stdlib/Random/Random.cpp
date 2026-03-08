@@ -1,4 +1,5 @@
 #include <starbytes/interop.h>
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <algorithm>
 #include <climits>
@@ -13,6 +14,9 @@
 #endif
 
 namespace {
+
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
 
 struct NativeArgsLayout {
     unsigned argc = 0;
@@ -42,6 +46,7 @@ StarbytesObject makeFloat(double value) {
 bool readIntArg(StarbytesFuncArgs args,int &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt) {
+        setNativeErrorIfEmpty(args,"expected Int argument");
         return false;
     }
     outValue = StarbytesNumGetIntValue(arg);
@@ -168,7 +173,7 @@ STARBYTES_FUNC(random_bytes) {
 
     std::vector<unsigned char> bytes;
     if(!fillDeterministicBytes(count,bytes)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"bytes count must be between 0 and 1048576");
     }
     return bytesToArray(bytes);
 }
@@ -183,7 +188,7 @@ STARBYTES_FUNC(random_secureBytes) {
 
     std::vector<unsigned char> bytes;
     if(!fillSecureBytes(count,bytes)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"secureBytes count must be between 0 and 1048576");
     }
     return bytesToArray(bytes);
 }
@@ -198,7 +203,7 @@ STARBYTES_FUNC(random_secureHex) {
 
     std::vector<unsigned char> bytes;
     if(!fillSecureBytes(byteCount,bytes)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"secureHex byte count must be between 0 and 1048576");
     }
     auto hex = bytesToHex(bytes);
     return StarbytesStrNewWithData(hex.c_str());
@@ -209,14 +214,14 @@ STARBYTES_FUNC(random_uuid4) {
 
     std::vector<unsigned char> bytes;
     if(!fillSecureBytes(16,bytes)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"uuid4 failed to generate secure bytes");
     }
 
     bytes[6] = (unsigned char)((bytes[6] & 0x0F) | 0x40);
     bytes[8] = (unsigned char)((bytes[8] & 0x3F) | 0x80);
     auto uuid = formatUuidV4(bytes);
     if(uuid.empty()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"uuid4 failed to format UUID");
     }
     return StarbytesStrNewWithData(uuid.c_str());
 }

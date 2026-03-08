@@ -1,5 +1,6 @@
 #include <starbytes/interop.h>
 #include "starbytes/base/ADT.h"
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <cstdlib>
 #include <string>
@@ -16,6 +17,9 @@ extern "C" char **environ;
 namespace {
 
 using starbytes::string_set;
+using starbytes::Runtime::stdlib::errnoMessage;
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
 
 struct NativeArgsLayout {
     unsigned argc = 0;
@@ -35,6 +39,7 @@ StarbytesObject makeInt(int value) {
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     outValue = StarbytesStrGetBuffer(arg);
@@ -79,16 +84,16 @@ STARBYTES_FUNC(env_set) {
     std::string key;
     std::string value;
     if(!readStringArg(args,key) || !readStringArg(args,value) || key.empty()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"set requires a non-empty key and String value");
     }
 
 #if defined(_WIN32)
     if(_putenv_s(key.c_str(),value.c_str()) != 0) {
-        return nullptr;
+        return failNativeIfEmpty(args,errnoMessage("set failed"));
     }
 #else
     if(setenv(key.c_str(),value.c_str(),1) != 0) {
-        return nullptr;
+        return failNativeIfEmpty(args,errnoMessage("set failed"));
     }
 #endif
     return makeBool(true);
@@ -98,16 +103,16 @@ STARBYTES_FUNC(env_unset) {
     skipOptionalModuleReceiver(args,1);
     std::string key;
     if(!readStringArg(args,key) || key.empty()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"unset requires a non-empty key");
     }
 
 #if defined(_WIN32)
     if(_putenv_s(key.c_str(),"") != 0) {
-        return nullptr;
+        return failNativeIfEmpty(args,errnoMessage("unset failed"));
     }
 #else
     if(unsetenv(key.c_str()) != 0) {
-        return nullptr;
+        return failNativeIfEmpty(args,errnoMessage("unset failed"));
     }
 #endif
     return makeBool(true);

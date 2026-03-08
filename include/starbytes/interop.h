@@ -203,6 +203,15 @@ CString StarbytesRuntimeGetScriptPath();
 unsigned StarbytesRuntimeGetScriptArgCount();
 CString StarbytesRuntimeGetScriptArg(unsigned index);
 
+/// Explicit native-module failure channel carried on the host-owned invocation args.
+/// Native callbacks may still return NULL for optional/no-value results as long as
+/// no function-args error is set.
+void StarbytesFuncArgsSetError(StarbytesFuncArgs args,const char *message);
+void StarbytesFuncArgsClearError(StarbytesFuncArgs args);
+CString StarbytesFuncArgsGetError(StarbytesFuncArgs args);
+
+#define STARBYTES_NATIVE_FAIL(args,message) do { StarbytesFuncArgsSetError(args,message); return NULL; } while(0)
+
 
 typedef StarbytesObject (*StarbytesFuncCallback)(StarbytesFuncArgs args);
 
@@ -212,10 +221,16 @@ typedef struct {
   unsigned argCount;
 }  StarbytesFuncDesc;
 
+typedef struct {
+  CString name;
+  StarbytesFuncCallback callback;
+} StarbytesValueDesc;
+
 typedef struct __StarbytesNativeModule StarbytesNativeModule;
 
 StarbytesNativeModule *StarbytesNativeModuleCreate();
 void StarbytesNativeModuleAddDesc(StarbytesNativeModule *module,StarbytesFuncDesc *desc);
+void StarbytesNativeModuleAddValueDesc(StarbytesNativeModule *module,StarbytesValueDesc *desc);
 
 
 #define STARBYTES_INSTANCE_FUNC(class,name) #class"_"#name

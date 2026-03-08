@@ -1,0 +1,9 @@
+decl text = "star 42 star"
+
+secure(decl pattern = /star/) catch (error:String) {
+    print(error)
+}
+
+secure(decl matches = pattern.findAll(42)) catch (error:String) {
+    print(error)
+}

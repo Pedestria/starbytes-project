@@ -1,4 +1,5 @@
 #include <starbytes/interop.h>
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <cstdint>
 #include <cstring>
@@ -11,6 +12,9 @@
 #endif
 
 namespace {
+
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
 
 struct NativeArgsLayout {
     unsigned argc = 0;
@@ -42,6 +46,7 @@ constexpr char kHexDigits[] = "0123456789abcdef";
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     auto *buf = StarbytesStrGetBuffer(arg);
@@ -52,6 +57,7 @@ bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
 bool readBoolArg(StarbytesFuncArgs args,bool &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesBoolType())) {
+        setNativeErrorIfEmpty(args,"expected Bool argument");
         return false;
     }
     outValue = (StarbytesBoolValue(arg) == StarbytesBoolFalse);
@@ -400,7 +406,7 @@ STARBYTES_FUNC(archive_packTextMapHex) {
 
     std::vector<EntryPayload> entries;
     if(!readDictStringEntries(dictArg,entries)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"packTextMapHex requires Dict<String,String> entries");
     }
 
     std::vector<unsigned char> archiveBytes;
@@ -415,7 +421,7 @@ STARBYTES_FUNC(archive_packTextMapHex) {
         bool usedCompression = false;
         if(compress) {
             if(!compressEntry(entry.bytes,payload,usedCompression)) {
-                return nullptr;
+                return failNativeIfEmpty(args,"packTextMapHex failed to compress archive entry");
             }
         }
 
@@ -427,7 +433,7 @@ STARBYTES_FUNC(archive_packTextMapHex) {
         archiveBytes.insert(archiveBytes.end(),payload.begin(),payload.end());
 
         if(archiveBytes.size() > kMaxArchiveBytes) {
-            return nullptr;
+            return failNativeIfEmpty(args,"packTextMapHex exceeded archive size limit");
         }
     }
 
@@ -445,12 +451,12 @@ STARBYTES_FUNC(archive_unpackTextMapHex) {
 
     std::vector<unsigned char> blob;
     if(!hexToBytes(archiveHex,blob)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"unpackTextMapHex archiveHex must be valid hex");
     }
 
     std::vector<DecodedEntry> entries;
     if(!parseArchive(blob,entries,true)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"unpackTextMapHex failed to decode archive");
     }
 
     auto dict = StarbytesDictNew();
@@ -472,12 +478,12 @@ STARBYTES_FUNC(archive_listEntries) {
 
     std::vector<unsigned char> blob;
     if(!hexToBytes(archiveHex,blob)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"listEntries archiveHex must be valid hex");
     }
 
     std::vector<DecodedEntry> entries;
     if(!parseArchive(blob,entries,false)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"listEntries failed to decode archive");
     }
 
     auto out = StarbytesArrayNew();

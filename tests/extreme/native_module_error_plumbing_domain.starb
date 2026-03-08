@@ -1,0 +1,3 @@
+import Math
+
+print(Math.log(0))

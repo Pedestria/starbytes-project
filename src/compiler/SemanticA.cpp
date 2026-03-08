@@ -83,8 +83,36 @@ namespace starbytes {
         }
 
         if(attr.name == "native"){
-            if(!(decl->type == FUNC_DECL || decl->type == CLASS_DECL)){
-                pushAttrError("@native is only valid on class/function declarations.");
+            if(decl->type == VAR_DECL){
+                auto *varDecl = (ASTVarDecl *)decl;
+                if(decl->scope && decl->scope->type == ASTScope::Class){
+                    pushAttrError("@native is not valid on class fields.");
+                    return false;
+                }
+                if(!(decl->scope == ASTScopeGlobal || (decl->scope && decl->scope->type == ASTScope::Namespace))){
+                    pushAttrError("@native variable declarations are only valid at module or namespace scope.");
+                    return false;
+                }
+                if(varDecl->specs.size() != 1){
+                    pushAttrError("@native variable declarations must declare exactly one symbol.");
+                    return false;
+                }
+                auto &spec = varDecl->specs.front();
+                if(!varDecl->isConst){
+                    pushAttrError("@native variable declarations must be immutable.");
+                    return false;
+                }
+                if(spec.type == nullptr){
+                    pushAttrError("@native variable declarations must declare an explicit type.");
+                    return false;
+                }
+                if(spec.expr != nullptr){
+                    pushAttrError("@native variable declarations must not declare an initializer.");
+                    return false;
+                }
+            }
+            else if(!(decl->type == FUNC_DECL || decl->type == CLASS_DECL)){
+                pushAttrError("@native is only valid on class/function declarations and immutable module constants.");
                 return false;
             }
             if(attr.args.empty()){

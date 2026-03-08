@@ -1,0 +1,99 @@
+import Math
+
+decl piValue = Math.pi
+decl tauValue = Math.tau
+decl eValue = Math.e
+secure(decl rootValue = Math.sqrt(16)) catch {}
+secure(decl absValue = Math.abs(-12)) catch {}
+secure(decl minValue = Math.min(4.5,2)) catch {}
+secure(decl maxValue = Math.max(Long(4),Int(9))) catch {}
+secure(decl powValue = Math.pow(2,8)) catch {}
+secure(decl expValue = Math.exp(1)) catch {}
+secure(decl exp2Value = Math.exp2(10)) catch {}
+secure(decl logValue = Math.log(eValue)) catch {}
+secure(decl log2Value = Math.log2(1024)) catch {}
+secure(decl log10Value = Math.log10(1000)) catch {}
+secure(decl cbrtValue = Math.cbrt(27)) catch {}
+secure(decl hypotValue = Math.hypot(3,4)) catch {}
+secure(decl sinValue = Math.sin(piValue / 2.0)) catch {}
+secure(decl cosValue = Math.cos(0.0)) catch {}
+secure(decl tanValue = Math.tan(0.0)) catch {}
+secure(decl atan2Value = Math.atan2(1.0,0.0)) catch {}
+secure(decl floorValue = Math.floor(3.75)) catch {}
+secure(decl ceilValue = Math.ceil(3.25)) catch {}
+secure(decl roundValue = Math.round(3.5)) catch {}
+secure(decl truncValue = Math.trunc(-3.75)) catch {}
+secure(decl radiansValue = Math.degreesToRadians(180.0)) catch {}
+secure(decl degreesValue = Math.radiansToDegrees(piValue)) catch {}
+secure(decl approxValue = Math.approxEqual(0.3,0.1 + 0.2,0.000001)) catch {}
+secure(decl clampValue = Math.clamp(Long(12),Long(0),Long(5))) catch {}
+secure(decl lerpValue = Math.lerp(10,20,0.25)) catch {}
+secure(decl gcdValue = Math.gcd(54,24)) catch {}
+secure(decl lcmValue = Math.lcm(21,6)) catch {}
+secure(decl powerTrue = Math.isPowerOfTwo(16)) catch {}
+secure(decl powerFalse = Math.isPowerOfTwo(18)) catch {}
+secure(decl nextPowerValue = Math.nextPowerOfTwo(17)) catch {}
+secure(decl zeroPowerValue = Math.nextPowerOfTwo(0)) catch {}
+decl nanValue = Math.nan
+decl infValue = Math.infinity
+decl negInfValue = Math.negativeInfinity
+secure(decl nanCheck = Math.isNaN(nanValue)) catch {}
+secure(decl infCheck = Math.isInfinite(infValue)) catch {}
+secure(decl negInfCheck = Math.isInfinite(negInfValue)) catch {}
+secure(decl piFiniteCheck = Math.isFinite(piValue)) catch {}
+secure(decl infFiniteCheck = Math.isFinite(infValue)) catch {}
+secure(decl piNaNCheck = Math.isNaN(piValue)) catch {}
+
+decl scalarOk = rootValue == 4.0
+   && absValue == 12
+   && minValue == 2.0
+   && maxValue == 9
+   && powValue == 256.0
+   && expValue > 2.71828
+   && expValue < 2.71829
+   && logValue > 0.999999
+   && logValue < 1.000001
+   && log10Value == 3.0
+   && sinValue > 0.999999
+   && sinValue < 1.000001
+   && cosValue == 1.0
+   && tanValue == 0.0
+   && floorValue == 3.0
+   && ceilValue == 4.0
+   && roundValue == 4.0
+   && truncValue == -3.0
+
+decl utilityOk = exp2Value == 1024.0
+   && log2Value == 10.0
+   && cbrtValue == 3.0
+   && hypotValue == 5.0
+   && atan2Value > 1.57079
+   && atan2Value < 1.57080
+   && radiansValue > 3.14159
+   && radiansValue < 3.14160
+   && degreesValue > 179.9999
+   && degreesValue < 180.0001
+   && approxValue
+   && clampValue == 5
+   && lerpValue == 12.5
+   && gcdValue == 6
+   && lcmValue == 42
+   && powerTrue
+   && !powerFalse
+   && nextPowerValue == 32
+   && zeroPowerValue == 1
+
+decl classificationOk = piValue > 3.14159
+   && piValue < 3.14160
+   && tauValue > 6.28318
+   && tauValue < 6.28319
+   && nanCheck
+   && infCheck
+   && negInfCheck
+   && piFiniteCheck
+   && !infFiniteCheck
+   && !piNaNCheck
+
+if(scalarOk && utilityOk && classificationOk){
+    print("MATH-MODULE-OK")
+}

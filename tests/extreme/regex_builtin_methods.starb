@@ -1,0 +1,25 @@
+decl text = "star 42 star"
+
+secure(decl starPattern = /star/g) catch (error:String) {
+    print(error)
+}
+secure(decl digitPattern = /[0-9]+/) catch (error:String) {
+    print(error)
+}
+
+secure(decl matches = starPattern.findAll(text)) catch (error:String) {
+    print(error)
+}
+secure(decl replaced = starPattern.replace(text,"nova")) catch (error:String) {
+    print(error)
+}
+secure(decl hasDigits = digitPattern.match(text)) catch (error:String) {
+    print(error)
+}
+
+if(matches.length == 2
+   && matches.join(",") == "star,star"
+   && replaced == "nova 42 nova"
+   && hasDigits){
+    print("REGEX-BUILTIN-METHODS-OK")
+}

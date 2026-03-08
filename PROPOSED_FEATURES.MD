@@ -18,18 +18,28 @@
 - Full doxygen spec parsing (`@param`, `@tparam`, `@throws`, `@note`, `@warning`, `@see`, `@since`, `@deprecated`, `@example`, `@code`).
 - Builtin types have full doxygen documentation coverage in interface metadata.
 - Variable type inference is surfaced in LSP for inferred declarations (builtins/custom classes/invocations), with optional `--infer-64bit-numbers` compiler mode for Long/Double literal inference defaults.
-
+Add a structured error channel to native module callbacks.
+Scope module imports under module name (So constants and funcs are under a scope.)
 ## UNFINISHED
 
 Expand/fix generics: 
-    Generic constructors as separate declarations
     Generic enums/scopes/modules
     Constraints / where clauses / trait bounds
-    Variance annotations
-    Defaults for generic parameters
+    Variance annotations 
+
+
+
+
+Implement Qualified type refs
+
+Add compiled-regex caching on Regex objects once the API surface is locked.
+
+Are bitwise operations builtin into the runtime?
 
 Explore the limitation around assigning/casting concrete class instances to interface-typed values. 
 
 Fix contextual expected-type inference
 
 Fix full-file integration (so files execute appropriately)
+
+Debug the suite-only track-a-parity flake in /Users/alextopper/Documents/GitHub/starbytes-project/benchmark/runners/check_track_a_parity.py and /Users/alextopper/Documents/GitHub/starbytes-project/benchmark/languages/starbytes/track_a/regex_redux.starb

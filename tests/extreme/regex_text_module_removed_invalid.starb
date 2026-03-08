@@ -1,0 +1,9 @@
+import Text
+
+secure(decl pattern = /star/) catch (error:String) {
+    print(error)
+}
+
+secure(decl matches = Text.regexFindAll(pattern,"star 42 star")) catch (error:String) {
+    print(error)
+}

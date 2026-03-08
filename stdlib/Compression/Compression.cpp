@@ -1,4 +1,5 @@
 #include <starbytes/interop.h>
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -10,6 +11,9 @@
 #endif
 
 namespace {
+
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
 
 struct NativeArgsLayout {
     unsigned argc = 0;
@@ -25,6 +29,7 @@ constexpr char kHexDigits[] = "0123456789abcdef";
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     auto *buf = StarbytesStrGetBuffer(arg);
@@ -35,6 +40,7 @@ bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
 bool readIntArg(StarbytesFuncArgs args,int &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt) {
+        setNativeErrorIfEmpty(args,"expected Int argument");
         return false;
     }
     outValue = StarbytesNumGetIntValue(arg);
@@ -225,12 +231,12 @@ STARBYTES_FUNC(compression_deflateHex) {
 
     std::vector<unsigned char> input;
     if(!hexToBytes(inputHex,input)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"deflateHex inputHex must be valid hex");
     }
 
     std::vector<unsigned char> compressed;
     if(!zlibDeflate(input,level,15,compressed)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"deflateHex failed");
     }
 
     auto outHex = bytesToHex(compressed);
@@ -247,12 +253,12 @@ STARBYTES_FUNC(compression_inflateHex) {
 
     std::vector<unsigned char> compressed;
     if(!hexToBytes(compressedHex,compressed)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"inflateHex compressedHex must be valid hex");
     }
 
     std::vector<unsigned char> inflated;
     if(!zlibInflate(compressed,15,inflated)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"inflateHex failed");
     }
 
     auto outHex = bytesToHex(inflated);
@@ -271,7 +277,7 @@ STARBYTES_FUNC(compression_gzipTextHex) {
     std::vector<unsigned char> input(text.begin(),text.end());
     std::vector<unsigned char> compressed;
     if(!zlibDeflate(input,level,31,compressed)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"gzipTextHex failed");
     }
 
     auto outHex = bytesToHex(compressed);
@@ -288,12 +294,12 @@ STARBYTES_FUNC(compression_gunzipText) {
 
     std::vector<unsigned char> compressed;
     if(!hexToBytes(compressedHex,compressed)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"gunzipText compressedHex must be valid hex");
     }
 
     std::vector<unsigned char> outBytes;
     if(!zlibInflate(compressed,31,outBytes)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"gunzipText failed");
     }
 
     std::string text(outBytes.begin(),outBytes.end());

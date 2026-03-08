@@ -27,6 +27,7 @@ struct _StarbytesFuncArgs {
     unsigned argc;
     unsigned index;
     StarbytesObject *argv;
+    char *errorMessage;
 };
 
 static char *gRuntimeExecutablePath = NULL;
@@ -116,6 +117,27 @@ StarbytesObject StarbytesFuncArgsGetArg(StarbytesFuncArgs args){
         return NULL;
     }
     return args->argv[args->index++];
+}
+
+void StarbytesFuncArgsSetError(StarbytesFuncArgs args,const char *message){
+    if(args == NULL){
+        return;
+    }
+    StarbytesSetOwnedString(&args->errorMessage,message);
+}
+
+void StarbytesFuncArgsClearError(StarbytesFuncArgs args){
+    if(args == NULL){
+        return;
+    }
+    StarbytesSetOwnedString(&args->errorMessage,NULL);
+}
+
+CString StarbytesFuncArgsGetError(StarbytesFuncArgs args){
+    if(args == NULL){
+        return NULL;
+    }
+    return args->errorMessage;
 }
 
 void StarbytesRuntimeSetExecutablePath(const char *path){

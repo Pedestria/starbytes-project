@@ -1,6 +1,8 @@
 
 include(CMakeParseArguments)
 
+set(STARBYTES_STDLIB_TARGETS "")
+
 function(add_starbytes_stdlib_module _NAME)
     set(options)
     set(oneValueArgs)
@@ -27,11 +29,13 @@ function(add_starbytes_stdlib_module _NAME)
         target_compile_definitions(${T_NAME} PRIVATE ${STDMOD_DEFINES})
     endif()
     set_target_properties(${T_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/stdlib" SUFFIX ".ntstarbmod")
+    set(STARBYTES_STDLIB_TARGETS ${STARBYTES_STDLIB_TARGETS} ${T_NAME} PARENT_SCOPE)
 endfunction()
 
 add_starbytes_stdlib_module("CmdLine" "CmdLine/CmdLine.cpp")
 add_starbytes_stdlib_module("IO" "IO/IO.cpp")
 add_starbytes_stdlib_module("FS" "FS/FS.cpp")
+add_starbytes_stdlib_module("Math" "Math/Math.cpp")
 add_starbytes_stdlib_module("Time" "Time/Time.cpp")
 add_starbytes_stdlib_module("Env" "Env/Env.cpp")
 add_starbytes_stdlib_module("Process" "Process/Process.cpp")
@@ -135,11 +139,10 @@ add_starbytes_stdlib_module("HTTP"
 set(STARBYTES_UNICODE_INCLUDE_DIRS)
 set(STARBYTES_UNICODE_LIBS)
 set(STARBYTES_UNICODE_DEFINES)
-find_package(ICU QUIET COMPONENTS uc i18n)
-if(ICU_FOUND)
-    list(APPEND STARBYTES_UNICODE_INCLUDE_DIRS ${ICU_INCLUDE_DIRS})
-    list(APPEND STARBYTES_UNICODE_LIBS ${ICU_LIBRARIES})
-    list(APPEND STARBYTES_UNICODE_DEFINES STARBYTES_HAS_ICU=1)
+if(STARBYTES_ICU_LIBS)
+    list(APPEND STARBYTES_UNICODE_INCLUDE_DIRS ${STARBYTES_ICU_INCLUDE_DIRS})
+    list(APPEND STARBYTES_UNICODE_LIBS ${STARBYTES_ICU_LIBS})
+    list(APPEND STARBYTES_UNICODE_DEFINES ${STARBYTES_ICU_DEFINES})
 else()
     message(WARNING "ICU not found. Building Unicode stdlib module in fallback mode.")
 endif()
@@ -151,10 +154,14 @@ add_starbytes_stdlib_module("Unicode"
     DEFINES ${STARBYTES_UNICODE_DEFINES})
 
 set(STARBYTES_TEXT_INCLUDE_DIRS ${STARBYTES_UNICODE_INCLUDE_DIRS})
-set(STARBYTES_TEXT_LIBS ${STARBYTES_UNICODE_LIBS} ${STARBYTES_PCRE2_TARGET})
+set(STARBYTES_TEXT_LIBS ${STARBYTES_UNICODE_LIBS})
 set(STARBYTES_TEXT_DEFINES ${STARBYTES_UNICODE_DEFINES})
 add_starbytes_stdlib_module("Text"
     SOURCES "Text/Text.cpp"
     INCLUDE_DIRS ${STARBYTES_TEXT_INCLUDE_DIRS}
     LIBS ${STARBYTES_TEXT_LIBS}
     DEFINES ${STARBYTES_TEXT_DEFINES})
+
+if(STARBYTES_STDLIB_TARGETS)
+    add_custom_target(starbytesStdlibModules DEPENDS ${STARBYTES_STDLIB_TARGETS})
+endif()

@@ -9,14 +9,14 @@ func stringArg(args:String[],index:Int,fallback:String) String {
     return fallback
 }
 
-decl args = positionals()
+decl args = CmdLine.positionals()
 decl inputPath = stringArg(args,0,"benchmark/data/track_a/dna_input.fasta")
 
-secure(decl raw = readText(inputPath,"utf-8")) catch (error:String) {
+secure(decl raw = IO.readText(inputPath,"utf-8")) catch (error:String) {
     print(error)
 }
 
-secure(decl rawLines = lines(raw,"en")) catch (error:String) {
+secure(decl rawLines = Text.lines(raw,"en")) catch (error:String) {
     print(error)
 }
 decl parts:String[] = []

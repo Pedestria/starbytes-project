@@ -3,22 +3,25 @@ import Crypto
 import Compression
 import Archive
 
-secure(decl randomNeg = secureBytes(-1)) catch (error:String) {
+secure(decl randomNeg = Random.secureBytes(-1)) catch (error:String) {
     print("PH3-RANDOM-NEG-BYTES-CATCH")
     print(error)
 }
-secure(decl randomNegHex = secureHex(-4)) catch {
+secure(decl randomNegHex = Random.secureHex(-4)) catch (error:String) {
     print("PH3-RANDOM-NEG-HEX-CATCH")
+    print(error)
 }
 
-secure(decl badKdfSalt = pbkdf2Sha256Hex("password","abc",1000,16)) catch {
+secure(decl badKdfSalt = Crypto.pbkdf2Sha256Hex("password","abc",1000,16)) catch (error:String) {
     print("PH3-CRYPTO-BAD-SALT-CATCH")
+    print(error)
 }
-secure(decl badKdfIter = pbkdf2Sha256Hex("password","73616c74",0,16)) catch {
+secure(decl badKdfIter = Crypto.pbkdf2Sha256Hex("password","73616c74",0,16)) catch (error:String) {
     print("PH3-CRYPTO-BAD-ITER-CATCH")
+    print(error)
 }
 
-decl badHexCompare = constantTimeHexEquals("zz","00")
+decl badHexCompare = Crypto.constantTimeHexEquals("zz","00")
 if(badHexCompare == false){
     print("PH3-CRYPTO-BAD-HEX-BOOL-OK")
 }
@@ -26,28 +29,34 @@ else {
     print("PH3-CRYPTO-BAD-HEX-BOOL-BAD")
 }
 
-secure(decl badDeflate = deflateHex("zz",6)) catch {
+secure(decl badDeflate = Compression.deflateHex("zz",6)) catch (error:String) {
     print("PH3-COMP-BAD-HEX-CATCH")
+    print(error)
 }
-secure(decl badInflate = inflateHex("00010203")) catch {
+secure(decl badInflate = Compression.inflateHex("00010203")) catch (error:String) {
     print("PH3-COMP-BAD-INFLATE-CATCH")
+    print(error)
 }
-secure(decl badGunzip = gunzipText("1f8b")) catch {
+secure(decl badGunzip = Compression.gunzipText("1f8b")) catch (error:String) {
     print("PH3-COMP-BAD-GUNZIP-CATCH")
+    print(error)
 }
 
 decl invalidEntries:Dict = {"a":1}
-secure(decl badPack = packTextMapHex(invalidEntries,true)) catch {
+secure(decl badPack = Archive.packTextMapHex(invalidEntries,true)) catch (error:String) {
     print("PH3-ARCHIVE-BAD-PACK-CATCH")
+    print(error)
 }
-secure(decl badUnpack = unpackTextMapHex("00")) catch {
+secure(decl badUnpack = Archive.unpackTextMapHex("00")) catch (error:String) {
     print("PH3-ARCHIVE-BAD-UNPACK-CATCH")
+    print(error)
 }
-secure(decl badList = listEntries("00")) catch {
+secure(decl badList = Archive.listEntries("00")) catch (error:String) {
     print("PH3-ARCHIVE-BAD-LIST-CATCH")
+    print(error)
 }
 
-decl validCheck = isValid("00")
+decl validCheck = Archive.isValid("00")
 if(validCheck == false){
     print("PH3-ARCHIVE-ISVALID-OK")
 }

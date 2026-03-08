@@ -1,0 +1,23 @@
+import Math
+
+secure(decl badLog2 = Math.log2(0)) catch (error:String) {
+    print(error)
+}
+
+secure(decl badApprox = Math.approxEqual(1,2,-1)) catch (error:String) {
+    print(error)
+}
+
+secure(decl badClamp = Math.clamp(5,10,0)) catch (error:String) {
+    print(error)
+}
+
+secure(decl badGcd = Math.gcd(3.5,2)) catch (error:String) {
+    print(error)
+}
+
+secure(decl badNext = Math.nextPowerOfTwo(-1)) catch (error:String) {
+    print(error)
+}
+
+print("MATH-MODULE-PHASE2-INVALID-OK")

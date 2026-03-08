@@ -1,4 +1,5 @@
 #include <starbytes/interop.h>
+#include <starbytes/runtime/NativeModuleSupport.h>
 
 #include <algorithm>
 #include <cctype>
@@ -61,6 +62,7 @@ StarbytesObject makeString(const std::string &value) {
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        starbytes::Runtime::stdlib::setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     outValue = StarbytesStrGetBuffer(arg);
@@ -70,6 +72,7 @@ bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
 bool readIntArg(StarbytesFuncArgs args,int &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt) {
+        starbytes::Runtime::stdlib::setNativeErrorIfEmpty(args,"expected Int argument");
         return false;
     }
     outValue = StarbytesNumGetIntValue(arg);
@@ -79,14 +82,25 @@ bool readIntArg(StarbytesFuncArgs args,int &outValue) {
 bool readLocaleArg(StarbytesFuncArgs args,std::string &outLocaleId) {
     auto localeObj = StarbytesFuncArgsGetArg(args);
     if(!localeObj) {
+        starbytes::Runtime::stdlib::setNativeErrorIfEmpty(args,"expected Locale argument");
         return false;
     }
     auto it = g_localeRegistry.find(localeObj);
     if(it == g_localeRegistry.end()) {
+        starbytes::Runtime::stdlib::setNativeErrorIfEmpty(args,"expected Locale argument");
         return false;
     }
     outLocaleId = it->second;
     return true;
+}
+
+bool validLocaleIdentifier(const std::string &identifier) {
+    if(identifier.empty()) {
+        return false;
+    }
+    return std::all_of(identifier.begin(),identifier.end(),[](unsigned char ch) {
+        return std::isalnum(ch) != 0 || ch == '_' || ch == '-' || ch == '@' || ch == '.' || ch == '=';
+    });
 }
 
 bool validNormalizationForm(int form) {
@@ -150,6 +164,13 @@ std::string toUtf8(const icu::UnicodeString &value) {
     std::string out;
     value.toUTF8String(out);
     return out;
+}
+
+std::string icuStatusMessage(const std::string &context,UErrorCode status) {
+    if(U_SUCCESS(status)) {
+        return context;
+    }
+    return context + ": " + u_errorName(status);
 }
 
 const icu::Normalizer2 *normalizerForForm(int form,UErrorCode &status) {
@@ -225,11 +246,13 @@ bool whitespaceOnly(const std::string &value) {
     });
 }
 
-std::vector<std::string> splitWithBreakIterator(const std::string &text,
-                                                const std::string &localeId,
-                                                int kind,
-                                                bool skipWhitespace) {
-    std::vector<std::string> out;
+bool splitWithBreakIterator(StarbytesFuncArgs args,
+                            const std::string &text,
+                            const std::string &localeId,
+                            int kind,
+                            bool skipWhitespace,
+                            const char *context,
+                            std::vector<std::string> &out) {
     UErrorCode status = U_ZERO_ERROR;
     std::unique_ptr<icu::BreakIterator> iterator;
     auto locale = localeFromId(localeId);
@@ -249,7 +272,8 @@ std::vector<std::string> splitWithBreakIterator(const std::string &text,
             break;
     }
     if(U_FAILURE(status) || !iterator) {
-        return out;
+        starbytes::Runtime::stdlib::setNativeErrorIfEmpty(args,icuStatusMessage(std::string(context) + " failed to create ICU break iterator",status));
+        return false;
     }
 
     auto unicodeText = toUnicode(text);
@@ -267,7 +291,7 @@ std::vector<std::string> splitWithBreakIterator(const std::string &text,
         }
         out.push_back(std::move(utf8));
     }
-    return out;
+    return true;
 }
 
 #else
@@ -299,15 +323,25 @@ STARBYTES_FUNC(Unicode_Locale_from) {
     skipOptionalModuleReceiver(args,1);
 
     std::string identifier;
-    if(!readStringArg(args,identifier) || identifier.empty()) {
+    if(!readStringArg(args,identifier)) {
         return nullptr;
+    }
+    if(identifier.empty()) {
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"localeFrom identifier must not be empty");
+    }
+    if(!validLocaleIdentifier(identifier)) {
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"localeFrom identifier contains invalid characters");
     }
     return makeLocaleObject(identifier);
 }
 
 STARBYTES_FUNC(Unicode_Locale_id) {
     auto self = StarbytesFuncArgsGetArg(args);
-    return makeString(localeIdFromObject(self));
+    auto it = g_localeRegistry.find(self);
+    if(it == g_localeRegistry.end()) {
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"Locale.id requires Locale receiver");
+    }
+    return makeString(it->second);
 }
 
 STARBYTES_FUNC(Unicode_Collator_create) {
@@ -322,7 +356,7 @@ STARBYTES_FUNC(Unicode_Collator_create) {
     UErrorCode status = U_ZERO_ERROR;
     auto collator = std::unique_ptr<icu::Collator>(icu::Collator::createInstance(localeFromId(localeId),status));
     if(U_FAILURE(status) || !collator) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,icuStatusMessage("collatorCreate failed to create ICU collator",status));
     }
 #endif
 
@@ -347,20 +381,22 @@ STARBYTES_FUNC(Unicode_Collator_compare) {
 
 #ifdef STARBYTES_HAS_ICU
     auto it = g_collatorRegistry.find(self);
-    if(it != g_collatorRegistry.end() && it->second && it->second->collator) {
-        UErrorCode status = U_ZERO_ERROR;
-        auto result = it->second->collator->compare(toUnicode(lhs),toUnicode(rhs),status);
-        if(U_FAILURE(status)) {
-            return nullptr;
-        }
-        if(result == UCOL_LESS) {
-            return makeInt(-1);
-        }
-        if(result == UCOL_GREATER) {
-            return makeInt(1);
-        }
-        return makeInt(0);
+    if(it == g_collatorRegistry.end() || !it->second || !it->second->collator) {
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"Collator.compare requires Collator receiver");
     }
+
+    UErrorCode status = U_ZERO_ERROR;
+    auto result = it->second->collator->compare(toUnicode(lhs),toUnicode(rhs),status);
+    if(U_FAILURE(status)) {
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,icuStatusMessage("Collator.compare failed",status));
+    }
+    if(result == UCOL_LESS) {
+        return makeInt(-1);
+    }
+    if(result == UCOL_GREATER) {
+        return makeInt(1);
+    }
+    return makeInt(0);
 #endif
 
     if(lhs < rhs) {
@@ -381,32 +417,34 @@ STARBYTES_FUNC(Unicode_Collator_sortKey) {
 
 #ifdef STARBYTES_HAS_ICU
     auto it = g_collatorRegistry.find(self);
-    if(it != g_collatorRegistry.end() && it->second && it->second->collator) {
-        auto unicodeText = toUnicode(text);
-        int32_t needed = it->second->collator->getSortKey(unicodeText,nullptr,0);
-        if(needed <= 0) {
-            return makeIntArray({});
-        }
-        std::vector<uint8_t> buffer((size_t)needed);
-        it->second->collator->getSortKey(unicodeText,buffer.data(),needed);
-        if(!buffer.empty() && buffer.back() == 0) {
-            buffer.pop_back();
-        }
-        std::vector<int> ints;
-        ints.reserve(buffer.size());
-        for(auto byte : buffer) {
-            ints.push_back((int)byte);
-        }
-        return makeIntArray(ints);
+    if(it == g_collatorRegistry.end() || !it->second || !it->second->collator) {
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"Collator.sortKey requires Collator receiver");
     }
-#endif
 
+    auto unicodeText = toUnicode(text);
+    int32_t needed = it->second->collator->getSortKey(unicodeText,nullptr,0);
+    if(needed <= 0) {
+        return makeIntArray({});
+    }
+    std::vector<uint8_t> buffer((size_t)needed);
+    it->second->collator->getSortKey(unicodeText,buffer.data(),needed);
+    if(!buffer.empty() && buffer.back() == 0) {
+        buffer.pop_back();
+    }
     std::vector<int> ints;
-    ints.reserve(text.size());
-    for(unsigned char c : text) {
-        ints.push_back((int)c);
+    ints.reserve(buffer.size());
+    for(auto byte : buffer) {
+        ints.push_back((int)byte);
     }
     return makeIntArray(ints);
+#endif
+
+    std::vector<int> fallbackInts;
+    fallbackInts.reserve(text.size());
+    for(unsigned char c : text) {
+        fallbackInts.push_back((int)c);
+    }
+    return makeIntArray(fallbackInts);
 }
 
 STARBYTES_FUNC(Unicode_BreakIterator_create) {
@@ -417,7 +455,7 @@ STARBYTES_FUNC(Unicode_BreakIterator_create) {
         return nullptr;
     }
     if(!validBreakKind(kind)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"breakIteratorCreate kind must be WORD, SENTENCE, LINE, or GRAPHEME");
     }
     std::string localeId;
     if(!readLocaleArg(args,localeId)) {
@@ -447,7 +485,7 @@ STARBYTES_FUNC(Unicode_BreakIterator_create) {
             break;
     }
     if(U_FAILURE(status) || !iterator) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,icuStatusMessage("breakIteratorCreate failed to create ICU break iterator",status));
     }
 
     auto object = StarbytesObjectNew(StarbytesMakeClass("BreakIterator"));
@@ -470,7 +508,7 @@ STARBYTES_FUNC(Unicode_BreakIterator_boundaries) {
 #ifdef STARBYTES_HAS_ICU
     auto it = g_breakRegistry.find(self);
     if(it == g_breakRegistry.end() || !it->second || !it->second->iterator) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"BreakIterator.boundaries requires BreakIterator receiver");
     }
 
     std::vector<int> boundaries;
@@ -495,20 +533,20 @@ STARBYTES_FUNC(Unicode_normalize) {
         return nullptr;
     }
     if(!validNormalizationForm(form)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"normalize form must be one of NFC, NFD, NFKC, or NFKD");
     }
 
 #ifdef STARBYTES_HAS_ICU
     UErrorCode status = U_ZERO_ERROR;
     auto normalizer = normalizerForForm(form,status);
     if(U_FAILURE(status) || !normalizer) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,icuStatusMessage("normalize failed to load ICU normalizer",status));
     }
 
     icu::UnicodeString out;
     normalizer->normalize(toUnicode(text),out,status);
     if(U_FAILURE(status)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,icuStatusMessage("normalize failed",status));
     }
     return makeString(toUtf8(out));
 #else
@@ -525,18 +563,18 @@ STARBYTES_FUNC(Unicode_isNormalized) {
         return nullptr;
     }
     if(!validNormalizationForm(form)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"isNormalized form must be one of NFC, NFD, NFKC, or NFKD");
     }
 
 #ifdef STARBYTES_HAS_ICU
     UErrorCode status = U_ZERO_ERROR;
     auto normalizer = normalizerForForm(form,status);
     if(U_FAILURE(status) || !normalizer) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,icuStatusMessage("isNormalized failed to load ICU normalizer",status));
     }
     auto isNorm = normalizer->isNormalized(toUnicode(text),status);
     if(U_FAILURE(status)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,icuStatusMessage("isNormalized failed",status));
     }
     return makeBool(isNorm);
 #else
@@ -644,7 +682,11 @@ STARBYTES_FUNC(Unicode_graphemes) {
         return nullptr;
     }
 #ifdef STARBYTES_HAS_ICU
-    return makeStringArray(splitWithBreakIterator(text,localeId,3,false));
+    std::vector<std::string> out;
+    if(!splitWithBreakIterator(args,text,localeId,3,false,"graphemes",out)) {
+        return nullptr;
+    }
+    return makeStringArray(out);
 #else
     std::vector<std::string> chars;
     for(char c : text) {
@@ -666,7 +708,11 @@ STARBYTES_FUNC(Unicode_words) {
         return nullptr;
     }
 #ifdef STARBYTES_HAS_ICU
-    return makeStringArray(splitWithBreakIterator(text,localeId,0,true));
+    std::vector<std::string> out;
+    if(!splitWithBreakIterator(args,text,localeId,0,true,"words",out)) {
+        return nullptr;
+    }
+    return makeStringArray(out);
 #else
     std::vector<std::string> out;
     std::string current;
@@ -700,7 +746,11 @@ STARBYTES_FUNC(Unicode_sentences) {
         return nullptr;
     }
 #ifdef STARBYTES_HAS_ICU
-    return makeStringArray(splitWithBreakIterator(text,localeId,1,true));
+    std::vector<std::string> out;
+    if(!splitWithBreakIterator(args,text,localeId,1,true,"sentences",out)) {
+        return nullptr;
+    }
+    return makeStringArray(out);
 #else
     return makeStringArray({text});
 #endif
@@ -718,7 +768,11 @@ STARBYTES_FUNC(Unicode_lines) {
         return nullptr;
     }
 #ifdef STARBYTES_HAS_ICU
-    return makeStringArray(splitWithBreakIterator(text,localeId,2,false));
+    std::vector<std::string> out;
+    if(!splitWithBreakIterator(args,text,localeId,2,false,"lines",out)) {
+        return nullptr;
+    }
+    return makeStringArray(out);
 #else
     std::vector<std::string> out;
     std::string line;
@@ -767,7 +821,7 @@ STARBYTES_FUNC(Unicode_fromCodepoints) {
 
     auto values = StarbytesFuncArgsGetArg(args);
     if(!values || !StarbytesObjectTypecheck(values,StarbytesArrayType())) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"fromCodepoints requires Array<Int> argument");
     }
 
 #ifdef STARBYTES_HAS_ICU
@@ -776,11 +830,11 @@ STARBYTES_FUNC(Unicode_fromCodepoints) {
     for(unsigned i = 0; i < len; ++i) {
         auto value = StarbytesArrayIndex(values,i);
         if(!value || !StarbytesObjectTypecheck(value,StarbytesNumType()) || StarbytesNumGetType(value) != NumTypeInt) {
-            return nullptr;
+            return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"fromCodepoints values must be Int scalars");
         }
         int cp = StarbytesNumGetIntValue(value);
         if(!isScalarValid(cp)) {
-            return nullptr;
+            return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"fromCodepoints values must be supported Unicode scalar values");
         }
         out.append((UChar32)cp);
     }
@@ -791,11 +845,11 @@ STARBYTES_FUNC(Unicode_fromCodepoints) {
     for(unsigned i = 0; i < len; ++i) {
         auto value = StarbytesArrayIndex(values,i);
         if(!value || !StarbytesObjectTypecheck(value,StarbytesNumType()) || StarbytesNumGetType(value) != NumTypeInt) {
-            return nullptr;
+            return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"fromCodepoints values must be Int scalars");
         }
         int cp = StarbytesNumGetIntValue(value);
         if(cp < 0 || cp > 255) {
-            return nullptr;
+            return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"fromCodepoints values must be supported Unicode scalar values");
         }
         out.push_back((char)cp);
     }
@@ -813,7 +867,7 @@ STARBYTES_FUNC(Unicode_scalarInfo) {
 
 #ifdef STARBYTES_HAS_ICU
     if(!isScalarValid(codepoint)) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"scalarInfo codepoint must be a valid Unicode scalar value");
     }
 #endif
 
@@ -826,7 +880,7 @@ STARBYTES_FUNC(Unicode_ScalarInfo_codepoint) {
     auto self = StarbytesFuncArgsGetArg(args);
     auto it = g_scalarInfoRegistry.find(self);
     if(it == g_scalarInfoRegistry.end()) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"UnicodeScalarInfo.codepoint requires UnicodeScalarInfo receiver");
     }
     return makeInt((int)it->second);
 }
@@ -835,7 +889,7 @@ STARBYTES_FUNC(Unicode_ScalarInfo_name) {
     auto self = StarbytesFuncArgsGetArg(args);
     auto it = g_scalarInfoRegistry.find(self);
     if(it == g_scalarInfoRegistry.end()) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"UnicodeScalarInfo.name requires UnicodeScalarInfo receiver");
     }
 #ifdef STARBYTES_HAS_ICU
     char buffer[256] = {0};
@@ -854,7 +908,7 @@ STARBYTES_FUNC(Unicode_ScalarInfo_category) {
     auto self = StarbytesFuncArgsGetArg(args);
     auto it = g_scalarInfoRegistry.find(self);
     if(it == g_scalarInfoRegistry.end()) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"UnicodeScalarInfo.category requires UnicodeScalarInfo receiver");
     }
 #ifdef STARBYTES_HAS_ICU
     return makeString(scalarCategoryName(it->second));
@@ -867,7 +921,7 @@ STARBYTES_FUNC(Unicode_ScalarInfo_script) {
     auto self = StarbytesFuncArgsGetArg(args);
     auto it = g_scalarInfoRegistry.find(self);
     if(it == g_scalarInfoRegistry.end()) {
-        return nullptr;
+        return starbytes::Runtime::stdlib::failNativeIfEmpty(args,"UnicodeScalarInfo.script requires UnicodeScalarInfo receiver");
     }
 #ifdef STARBYTES_HAS_ICU
     UErrorCode status = U_ZERO_ERROR;

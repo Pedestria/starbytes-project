@@ -27,7 +27,7 @@ decl PI:Float = 3.141592653589793
 decl SOLAR_MASS:Float = 4.0 * PI * PI
 decl DAYS_PER_YEAR:Float = 365.24
 
-decl args = positionals()
+decl args = CmdLine.positionals()
 decl steps:Int = intArg(args,0,500)
 
 decl x:Float[] = [0.0, 4.84143144246472090, 8.34336671824457987, 12.8943695621391310, 15.3796971148509165]

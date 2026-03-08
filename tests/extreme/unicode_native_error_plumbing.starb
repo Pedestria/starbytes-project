@@ -1,0 +1,28 @@
+import Unicode
+
+secure(decl loc = Unicode.localeCurrent()) catch (error:String) {
+    print("UNICODE-LOC-CATCH")
+    print(error)
+}
+
+secure(decl badNorm = Unicode.normalize("abc",99)) catch (error:String) {
+    print(error)
+}
+
+secure(decl badLocale = Unicode.localeFrom("")) catch (error:String) {
+    print(error)
+}
+
+secure(decl badLocaleChars = Unicode.localeFrom("en US")) catch (error:String) {
+    print(error)
+}
+
+secure(decl badBreak = Unicode.breakIteratorCreate(99,loc,"hello")) catch (error:String) {
+    print(error)
+}
+
+secure(decl badCodepoints = Unicode.fromCodepoints([65,-1])) catch (error:String) {
+    print(error)
+}
+
+print("UNICODE-NATIVE-ERROR-PLUMBING-OK")

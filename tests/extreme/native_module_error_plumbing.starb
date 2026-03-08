@@ -1,0 +1,11 @@
+import Math
+
+secure(decl badPow = Math.pow("abc",2)) catch (error:String) {
+    print(error)
+}
+
+secure(decl badLog = Math.log(0)) catch (error:String) {
+    print(error)
+}
+
+print("NATIVE-MODULE-ERROR-PLUMBING-OK")

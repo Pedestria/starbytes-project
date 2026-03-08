@@ -1,5 +1,6 @@
 #include <starbytes/interop.h>
 #include "starbytes/base/ADT.h"
+#include "starbytes/runtime/NativeModuleSupport.h"
 
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
@@ -14,6 +15,8 @@
 namespace {
 
 using starbytes::optional;
+using starbytes::Runtime::stdlib::failNativeIfEmpty;
+using starbytes::Runtime::stdlib::setNativeErrorIfEmpty;
 using rapidjson::Document;
 using rapidjson::Value;
 
@@ -37,6 +40,7 @@ StarbytesObject makeInt(int value) {
 bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())) {
+        setNativeErrorIfEmpty(args,"expected String argument");
         return false;
     }
     outValue = StarbytesStrGetBuffer(arg);
@@ -46,6 +50,7 @@ bool readStringArg(StarbytesFuncArgs args,std::string &outValue) {
 bool readIntArg(StarbytesFuncArgs args,int &outValue) {
     auto arg = StarbytesFuncArgsGetArg(args);
     if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType()) || StarbytesNumGetType(arg) != NumTypeInt) {
+        setNativeErrorIfEmpty(args,"expected Int argument");
         return false;
     }
     outValue = StarbytesNumGetIntValue(arg);
@@ -294,12 +299,12 @@ STARBYTES_FUNC(json_parse) {
     Document document;
     document.Parse(source.c_str());
     if(document.HasParseError()) {
-        return nullptr;
+        return failNativeIfEmpty(args,"JSON parse failed");
     }
 
     StarbytesObject out = nullptr;
     if(!jsonToStarbytes(document,out,0)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"JSON parse exceeded supported conversion depth");
     }
     return out;
 }
@@ -326,13 +331,13 @@ STARBYTES_FUNC(json_stringify) {
     auto &allocator = document.GetAllocator();
     Value root;
     if(!starbytesToJson(object,root,allocator,0)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"stringify cannot encode the provided value");
     }
 
     rapidjson::StringBuffer buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     if(!root.Accept(writer)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"stringify failed");
     }
 
     return StarbytesStrNewWithData(buffer.GetString());
@@ -357,14 +362,14 @@ STARBYTES_FUNC(json_pretty) {
     auto &allocator = document.GetAllocator();
     Value root;
     if(!starbytesToJson(object,root,allocator,0)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"pretty cannot encode the provided value");
     }
 
     rapidjson::StringBuffer buffer;
     rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
     writer.SetIndent(' ',static_cast<unsigned>(indent));
     if(!root.Accept(writer)) {
-        return nullptr;
+        return failNativeIfEmpty(args,"pretty failed");
     }
 
     return StarbytesStrNewWithData(buffer.GetString());

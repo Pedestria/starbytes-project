@@ -29,7 +29,7 @@ func A(i:Int,j:Int) Float {
     return 1.0 / Float(denom)
 }
 
-decl args = positionals()
+decl args = CmdLine.positionals()
 decl n:Int = intArg(args,0,120)
 decl iterations:Int = intArg(args,1,8)
 

@@ -12,81 +12,81 @@ decl root = ".starbytes/extreme-suite"
 decl textPath = root + "/sample.txt"
 decl binPath = root + "/sample.bin"
 
-secure(decl mk = createDirectory(root,true)) catch {
+secure(decl mk = IO.createDirectory(root,true)) catch {
     print("IO-MKDIR-CATCH")
 }
-print(exists(root))
-secure(decl wt = writeText(textPath,"alpha\nbeta","utf-8")) catch {
+print(IO.exists(root))
+secure(decl wt = IO.writeText(textPath,"alpha\nbeta","utf-8")) catch {
     print("IO-WT-CATCH")
 }
-secure(decl rt = readText(textPath,"utf-8")) catch {
+secure(decl rt = IO.readText(textPath,"utf-8")) catch {
     print("IO-RT-CATCH")
 }
 print(rt)
-secure(decl ls = listDirectory(root)) catch {
+secure(decl ls = IO.listDirectory(root)) catch {
     print("IO-LS-CATCH")
 }
 print(ls)
-secure(decl cwd = currentDirectory()) catch {
+secure(decl cwd = FS.currentDirectory()) catch {
     print("FS-CWD-CATCH")
 }
-print(pathIsAbsolute(cwd))
-secure(decl joined = pathJoin([cwd,"tests","extreme"])) catch {
+print(FS.pathIsAbsolute(cwd))
+secure(decl joined = FS.pathJoin([cwd,"tests","extreme"])) catch {
     print("FS-JOIN-CATCH")
 }
-print(pathFilename(joined))
-print(isDirectory(cwd))
-secure(decl normalized = pathNormalize("./tests/../tests/extreme")) catch {
+print(FS.pathFilename(joined))
+print(FS.isDirectory(cwd))
+secure(decl normalized = FS.pathNormalize("./tests/../tests/extreme")) catch {
     print("FS-NORM-CATCH")
 }
-print(pathStem(normalized))
-secure(decl fileBytes = fileSize(textPath)) catch {
+print(FS.pathStem(normalized))
+secure(decl fileBytes = FS.fileSize(textPath)) catch {
     print("FS-SIZE-CATCH")
 }
 print(fileBytes)
-secure(decl walked = walkPaths(root,false,true)) catch {
+secure(decl walked = FS.walkPaths(root,false,true)) catch {
     print("FS-WALK-CATCH")
 }
 print(walked)
-secure(decl wb = writeBytes(binPath,[65,66,67,68])) catch {
+secure(decl wb = IO.writeBytes(binPath,[65,66,67,68])) catch {
     print("IO-WB-CATCH")
 }
-secure(decl rb = readBytes(binPath)) catch {
+secure(decl rb = IO.readBytes(binPath)) catch {
     print("IO-RB-CATCH")
 }
 print(rb[0])
 print(rb[3])
 
-decl d0 = durationZero()
-secure(decl d5 = durationFromMillis(5)) catch {
+decl d0 = Time.durationZero()
+secure(decl d5 = Time.durationFromMillis(5)) catch {
     print("TIME-D5-CATCH")
 }
-secure(decl da = durationAdd(d0,d5)) catch {
+secure(decl da = Time.durationAdd(d0,d5)) catch {
     print("TIME-ADD-CATCH")
 }
 print(da.milliseconds())
 
-secure(decl tz = timezoneUTC()) catch {
+secure(decl tz = Time.timezoneUTC()) catch {
     print("TIME-TZ-CATCH")
 }
 print(tz.id())
-secure(decl now = utcNow()) catch {
+secure(decl now = Time.utcNow()) catch {
     print("TIME-NOW-CATCH")
 }
-secure(decl iso = formatISO8601(now,tz)) catch {
+secure(decl iso = Time.formatISO8601(now,tz)) catch {
     print("TIME-ISO-CATCH")
 }
 print(iso)
-secure(decl parsed = parseISO8601("2024-01-02T03:04:05Z")) catch {
+secure(decl parsed = Time.parseISO8601("2024-01-02T03:04:05Z")) catch {
     print("TIME-PARSE-CATCH")
 }
 print(parsed.year())
-secure(decl badTime = parseISO8601("bad")) catch (error:String) {
+secure(decl badTime = Time.parseISO8601("bad")) catch (error:String) {
     print("TIME-BAD-PARSE-CATCH")
     print(error)
 }
 
-secure(decl mx = mutexCreate()) catch {
+secure(decl mx = Threading.mutexCreate()) catch {
     print("TH-MX-CATCH")
 }
 print(mx.tryLock())
@@ -94,7 +94,7 @@ secure(decl mxUnlock = mx.unlock()) catch {
     print("TH-MX-UNLOCK-CATCH")
 }
 
-secure(decl sem = semaphoreCreate(0,2)) catch {
+secure(decl sem = Threading.semaphoreCreate(0,2)) catch {
     print("TH-SEM-CATCH")
 }
 print(sem.currentCount())
@@ -110,7 +110,7 @@ secure(decl acq1 = sem.acquire(0)) catch {
 }
 print(acq1)
 
-secure(decl evt = eventCreate(false,true)) catch {
+secure(decl evt = Threading.eventCreate(false,true)) catch {
     print("TH-EVT-CATCH")
 }
 print(evt.isSet())
@@ -130,81 +130,81 @@ secure(decl reset0 = evt.reset()) catch {
 }
 print(evt.isSet())
 
-secure(decl y = yieldNow()) catch {
+secure(decl y = Threading.yieldNow()) catch {
     print("TH-YIELD-CATCH")
 }
-secure(decl s = sleepMillis(0)) catch {
+secure(decl s = Threading.sleepMillis(0)) catch {
     print("TH-SLEEP-CATCH")
 }
-print(hardwareConcurrency())
-print(currentThreadId())
+print(Threading.hardwareConcurrency())
+print(Threading.currentThreadId())
 
-secure(decl loc = localeCurrent()) catch {
+secure(decl loc = Unicode.localeCurrent()) catch {
     print("UNI-LOC-CATCH")
 }
 print(loc.id())
-secure(decl folded = caseFold("Straße")) catch {
+secure(decl folded = Unicode.caseFold("Straße")) catch {
     print("UNI-FOLD-CATCH")
 }
 print(folded)
 
-decl seeded = setSeed(42)
-secure(decl roll = int(1,6)) catch {
+decl seeded = Random.setSeed(42)
+secure(decl roll = Random.int(1,6)) catch {
     print("RND-INT-CATCH")
 }
 print(roll)
-secure(decl randHex = secureHex(8)) catch {
+secure(decl randHex = Random.secureHex(8)) catch {
     print("RND-HEX-CATCH")
 }
 print(randHex)
-secure(decl uuid = uuid4()) catch {
+secure(decl uuid = Random.uuid4()) catch {
     print("RND-UUID-CATCH")
 }
 print(uuid)
 
-secure(decl sha = sha256Hex("starbytes")) catch {
+secure(decl sha = Crypto.sha256Hex("starbytes")) catch {
     print("CRYPTO-SHA-CATCH")
 }
 print(sha)
-secure(decl hmac = hmacSha256Hex("key","starbytes")) catch {
+secure(decl hmac = Crypto.hmacSha256Hex("key","starbytes")) catch {
     print("CRYPTO-HMAC-CATCH")
 }
 print(hmac)
-secure(decl kdf = pbkdf2Sha256Hex("password","73616c74",1000,16)) catch {
+secure(decl kdf = Crypto.pbkdf2Sha256Hex("password","73616c74",1000,16)) catch {
     print("CRYPTO-KDF-CATCH")
 }
 print(kdf)
-print(constantTimeHexEquals(sha,sha))
+print(Crypto.constantTimeHexEquals(sha,sha))
 
-secure(decl gz = gzipTextHex("hello-zlib",6)) catch {
+secure(decl gz = Compression.gzipTextHex("hello-zlib",6)) catch {
     print("CMP-GZIP-CATCH")
 }
-secure(decl gun = gunzipText(gz)) catch {
+secure(decl gun = Compression.gunzipText(gz)) catch {
     print("CMP-GUNZIP-CATCH")
 }
 print(gun)
-secure(decl zdef = deflateHex("68656c6c6f2d686578",6)) catch {
+secure(decl zdef = Compression.deflateHex("68656c6c6f2d686578",6)) catch {
     print("CMP-DEF-CATCH")
 }
-secure(decl inf = inflateHex(zdef)) catch {
+secure(decl inf = Compression.inflateHex(zdef)) catch {
     print("CMP-INF-CATCH")
 }
 print(inf)
-secure(decl csum = crc32Hex("hello-zlib")) catch {
+secure(decl csum = Compression.crc32Hex("hello-zlib")) catch {
     print("CMP-CRC-CATCH")
 }
 print(csum)
 
 decl files:Dict = {"a.txt":"alpha","b.txt":"beta"}
-secure(decl packed = packTextMapHex(files,true)) catch {
+secure(decl packed = Archive.packTextMapHex(files,true)) catch {
     print("ARC-PACK-CATCH")
 }
-print(isValid(packed))
-secure(decl names = listEntries(packed)) catch {
+print(Archive.isValid(packed))
+secure(decl names = Archive.listEntries(packed)) catch {
     print("ARC-LIST-CATCH")
 }
 print(names.length)
-secure(decl unpacked = unpackTextMapHex(packed)) catch {
+secure(decl unpacked = Archive.unpackTextMapHex(packed)) catch {
     print("ARC-UNPACK-CATCH")
 }
 secure(decl alpha = unpacked.get("a.txt")) catch {
@@ -212,13 +212,13 @@ secure(decl alpha = unpacked.get("a.txt")) catch {
 }
 print(alpha)
 
-secure(decl rmText = remove(textPath)) catch {
+secure(decl rmText = IO.remove(textPath)) catch {
     print("IO-RM-TEXT-CATCH")
 }
-secure(decl rmBin = remove(binPath)) catch {
+secure(decl rmBin = IO.remove(binPath)) catch {
     print("IO-RM-BIN-CATCH")
 }
-secure(decl rmRoot = removeTree(root)) catch {
+secure(decl rmRoot = FS.removeTree(root)) catch {
     print("FS-RMROOT-CATCH")
 }
 

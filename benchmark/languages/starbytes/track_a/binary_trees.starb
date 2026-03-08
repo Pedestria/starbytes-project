@@ -43,7 +43,7 @@ func checkTree(node:Node) Int {
     return node.item + leftValue - rightValue
 }
 
-decl args = positionals()
+decl args = CmdLine.positionals()
 decl minDepth:Int = 4
 decl maxDepth:Int = intArg(args,0,12)
 decl stretchDepth:Int = maxDepth + 1

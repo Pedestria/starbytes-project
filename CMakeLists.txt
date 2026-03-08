@@ -207,6 +207,94 @@ else()
     endif()
 endif()
 
+set(STARBYTES_ICU_INCLUDE_DIRS "")
+set(STARBYTES_ICU_LIBS "")
+set(STARBYTES_ICU_DEFINES "")
+set(STARBYTES_VENDORED_ICU_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/icu")
+set(STARBYTES_VENDORED_ICU_PREFIX "${STARBYTES_VENDORED_ICU_ROOT}/out")
+set(STARBYTES_VENDORED_ICU_INCLUDE_CANDIDATES
+    "${STARBYTES_VENDORED_ICU_PREFIX}/include"
+    "${STARBYTES_VENDORED_ICU_ROOT}/icu4c/source/common"
+    "${STARBYTES_VENDORED_ICU_ROOT}/source/common")
+set(STARBYTES_VENDORED_ICU_LIBRARY_CANDIDATES
+    "${STARBYTES_VENDORED_ICU_PREFIX}/lib"
+    "${STARBYTES_VENDORED_ICU_PREFIX}/lib64"
+    "${STARBYTES_VENDORED_ICU_ROOT}/icu4c/source/lib"
+    "${STARBYTES_VENDORED_ICU_ROOT}/source/lib")
+
+find_path(STARBYTES_VENDORED_ICU_INCLUDE_DIR
+    NAMES unicode/utypes.h
+    PATHS ${STARBYTES_VENDORED_ICU_INCLUDE_CANDIDATES}
+    NO_DEFAULT_PATH)
+find_library(STARBYTES_VENDORED_ICU_UC_LIBRARY
+    NAMES icuuc libicuuc sicuuc
+    PATHS ${STARBYTES_VENDORED_ICU_LIBRARY_CANDIDATES}
+    NO_DEFAULT_PATH)
+find_library(STARBYTES_VENDORED_ICU_I18N_LIBRARY
+    NAMES icui18n icuin libicui18n sicuin
+    PATHS ${STARBYTES_VENDORED_ICU_LIBRARY_CANDIDATES}
+    NO_DEFAULT_PATH)
+find_library(STARBYTES_VENDORED_ICU_DATA_LIBRARY
+    NAMES icudata libicudata sicudata
+    PATHS ${STARBYTES_VENDORED_ICU_LIBRARY_CANDIDATES}
+    NO_DEFAULT_PATH)
+
+if(STARBYTES_VENDORED_ICU_INCLUDE_DIR AND STARBYTES_VENDORED_ICU_UC_LIBRARY AND STARBYTES_VENDORED_ICU_I18N_LIBRARY)
+    message(STATUS "Using vendored ICU from ${STARBYTES_VENDORED_ICU_ROOT}")
+    add_library(starbytesVendoredIcuUc UNKNOWN IMPORTED GLOBAL)
+    set_target_properties(starbytesVendoredIcuUc PROPERTIES
+        IMPORTED_LOCATION "${STARBYTES_VENDORED_ICU_UC_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${STARBYTES_VENDORED_ICU_INCLUDE_DIR}")
+
+    add_library(starbytesVendoredIcuI18n UNKNOWN IMPORTED GLOBAL)
+    set_target_properties(starbytesVendoredIcuI18n PROPERTIES
+        IMPORTED_LOCATION "${STARBYTES_VENDORED_ICU_I18N_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${STARBYTES_VENDORED_ICU_INCLUDE_DIR}")
+
+    if(STARBYTES_VENDORED_ICU_DATA_LIBRARY)
+        add_library(starbytesVendoredIcuData UNKNOWN IMPORTED GLOBAL)
+        set_target_properties(starbytesVendoredIcuData PROPERTIES
+            IMPORTED_LOCATION "${STARBYTES_VENDORED_ICU_DATA_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${STARBYTES_VENDORED_ICU_INCLUDE_DIR}")
+        list(APPEND STARBYTES_ICU_LIBS starbytesVendoredIcuData)
+    endif()
+
+    list(APPEND STARBYTES_ICU_LIBS starbytesVendoredIcuI18n starbytesVendoredIcuUc)
+    list(APPEND STARBYTES_ICU_INCLUDE_DIRS "${STARBYTES_VENDORED_ICU_INCLUDE_DIR}")
+    list(APPEND STARBYTES_ICU_DEFINES STARBYTES_HAS_ICU=1)
+
+    if(STARBYTES_VENDORED_ICU_UC_LIBRARY MATCHES "\\.(a|lib)$" OR STARBYTES_VENDORED_ICU_I18N_LIBRARY MATCHES "\\.(a|lib)$")
+        list(APPEND STARBYTES_ICU_DEFINES U_STATIC_IMPLEMENTATION=1)
+    endif()
+elseif(EXISTS "${STARBYTES_VENDORED_ICU_ROOT}")
+    message(STATUS "Vendored ICU source found but usable vendored ICU libraries were not found; falling back to system ICU discovery.")
+endif()
+
+if(NOT STARBYTES_ICU_LIBS)
+    find_package(ICU QUIET COMPONENTS uc i18n data)
+    if(ICU_FOUND)
+        if(ICU_INCLUDE_DIRS)
+            list(APPEND STARBYTES_ICU_INCLUDE_DIRS ${ICU_INCLUDE_DIRS})
+        endif()
+        if(TARGET ICU::data)
+            list(APPEND STARBYTES_ICU_LIBS ICU::data)
+        elseif(ICU_DATA_LIBRARY)
+            list(APPEND STARBYTES_ICU_LIBS "${ICU_DATA_LIBRARY}")
+        endif()
+        if(TARGET ICU::i18n)
+            list(APPEND STARBYTES_ICU_LIBS ICU::i18n)
+        elseif(ICU_I18N_LIBRARY)
+            list(APPEND STARBYTES_ICU_LIBS "${ICU_I18N_LIBRARY}")
+        endif()
+        if(TARGET ICU::uc)
+            list(APPEND STARBYTES_ICU_LIBS ICU::uc)
+        elseif(ICU_UC_LIBRARY)
+            list(APPEND STARBYTES_ICU_LIBS "${ICU_UC_LIBRARY}")
+        endif()
+        list(APPEND STARBYTES_ICU_DEFINES STARBYTES_HAS_ICU=1)
+    endif()
+endif()
+
 set(STARBYTES_OPENSSL_INCLUDE_DIRS "")
 set(STARBYTES_OPENSSL_CRYPTO_TARGET "")
 set(STARBYTES_VENDORED_OPENSSL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/openssl/out")
@@ -244,6 +332,9 @@ target_link_libraries(starbytesRuntime PRIVATE ${STARBYTES_PCRE2_TARGET})
 add_subdirectory("tools")
 add_subdirectory("tests")
 add_subdirectory("stdlib")
+if(TARGET starbytes AND TARGET starbytesStdlibModules)
+    add_dependencies(starbytes starbytesStdlibModules)
+endif()
 # add_subdirectory("ide")
 # TODO : Get Starbytes Compilation to work!
 # add_subdirectory("starbytes-modules")

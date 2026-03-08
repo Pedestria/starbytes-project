@@ -2,8 +2,7 @@
 #include "starbytes/compiler/RTCode.h"
 
 #include "starbytes/base/ADT.h"
-#include <string>
-#include <vector>
+#include "starbytes/runtime/StdlibMath.h"
 
 #ifndef STARBYTES_RT_RTSTDLIB_H
 #define STARBYTES_RT_RTSTDLIB_H
@@ -13,11 +12,6 @@ namespace Runtime::stdlib {
 
 
 void print(StarbytesObject object,map<StarbytesClassType,std::string> &reg);
-void addMathBuiltinTemplates(std::vector<RTFuncTemplate> &functions);
-bool isMathBuiltinFunction(string_ref funcName);
-StarbytesObject invokeMathBuiltinFunction(string_ref funcName,
-                                          ArrayRef<StarbytesObject> args,
-                                          std::string &lastRuntimeError);
 
 
 }

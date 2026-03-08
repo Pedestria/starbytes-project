@@ -1,6 +1,6 @@
 import Time
 
-secure(decl tz = timezoneUTC()) catch (error:String) {
+secure(decl tz = Time.timezoneUTC()) catch (error:String) {
     print("NO-NATIVE-CATCH")
     print(error)
 }
