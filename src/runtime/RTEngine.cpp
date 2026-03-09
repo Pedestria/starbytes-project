@@ -215,6 +215,61 @@ static StarbytesObject makeNumber(long double value,StarbytesNumT numType){
     return StarbytesNumNew(NumTypeInt,(int)value);
 }
 
+static RTTypedNumericKind typedKindFromNumType(StarbytesNumT numType){
+    switch(numType){
+        case NumTypeInt:
+            return RTTYPED_NUM_INT;
+        case NumTypeLong:
+            return RTTYPED_NUM_LONG;
+        case NumTypeFloat:
+            return RTTYPED_NUM_FLOAT;
+        case NumTypeDouble:
+            return RTTYPED_NUM_DOUBLE;
+        default:
+            return RTTYPED_NUM_OBJECT;
+    }
+}
+
+static StarbytesNumT numTypeFromTypedKind(RTTypedNumericKind kind){
+    switch(kind){
+        case RTTYPED_NUM_INT:
+            return NumTypeInt;
+        case RTTYPED_NUM_LONG:
+            return NumTypeLong;
+        case RTTYPED_NUM_FLOAT:
+            return NumTypeFloat;
+        case RTTYPED_NUM_DOUBLE:
+            return NumTypeDouble;
+        default:
+            return NumTypeInt;
+    }
+}
+
+static bool extractTypedNumericValue(StarbytesObject object,RTTypedNumericKind kind,long double &valueOut){
+    StarbytesNumT actualType = NumTypeInt;
+    long double rawValue = 0.0;
+    if(!objectToNumber(object,rawValue,actualType)){
+        return false;
+    }
+    switch(kind){
+        case RTTYPED_NUM_INT:
+            valueOut = (long double)((int)rawValue);
+            return true;
+        case RTTYPED_NUM_LONG:
+            valueOut = (long double)((int64_t)rawValue);
+            return true;
+        case RTTYPED_NUM_FLOAT:
+            valueOut = (long double)((float)rawValue);
+            return true;
+        case RTTYPED_NUM_DOUBLE:
+            valueOut = (long double)((double)rawValue);
+            return true;
+        default:
+            break;
+    }
+    return false;
+}
+
 static std::string objectToString(StarbytesObject object){
     if(!object){
         return "null";
@@ -457,7 +512,22 @@ struct ScheduledTaskCall {
 };
 
 class InterpImpl final : public Interp {
+    struct LocalSlot {
+        RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+        bool hasNumericValue = false;
+        StarbytesObject object = nullptr;
+        int intValue = 0;
+        int64_t longValue = 0;
+        float floatValue = 0.0f;
+        double doubleValue = 0.0;
+    };
+
+    struct LocalFrame {
+        std::vector<LocalSlot> slots;
+    };
+
     std::unique_ptr<RTAllocator> allocator;
+    std::vector<LocalFrame> localFrames;
     
     std::vector<RTClass> classes;
     
@@ -482,6 +552,14 @@ class InterpImpl final : public Interp {
     bool buildClassHierarchy(RTClass *classMeta,std::vector<RTClass *> &hierarchy);
     RTClass *findMethodOwnerInHierarchy(RTClass *classMeta,const std::string &methodName);
     RTFuncTemplate *findFunctionByName(string_ref functionName);
+    LocalFrame *currentLocalFrame();
+    const LocalFrame *currentLocalFrame() const;
+    void pushLocalFrame(const RTFuncTemplate *funcTemp);
+    void popLocalFrame();
+    StarbytesObject referenceLocalSlot(uint32_t slot);
+    bool localSlotToNumber(uint32_t slot,RTTypedNumericKind kind,long double &valueOut);
+    void storeLocalSlotOwned(uint32_t slot,StarbytesObject value);
+    void storeLocalSlotBorrowed(uint32_t slot,StarbytesObject value);
     void discardExprArgs(std::istream &in,unsigned argCount);
     void skipExpr(std::istream &in);
     void skipExprFromCode(std::istream &in,RTCode code);
@@ -599,6 +677,209 @@ RTFuncTemplate *InterpImpl::findFunctionByName(string_ref functionName){
         }
     }
     return nullptr;
+}
+
+InterpImpl::LocalFrame *InterpImpl::currentLocalFrame(){
+    if(localFrames.empty()){
+        return nullptr;
+    }
+    return &localFrames.back();
+}
+
+const InterpImpl::LocalFrame *InterpImpl::currentLocalFrame() const{
+    if(localFrames.empty()){
+        return nullptr;
+    }
+    return &localFrames.back();
+}
+
+void InterpImpl::pushLocalFrame(const RTFuncTemplate *funcTemp){
+    LocalFrame frame;
+    size_t slotCount = 0;
+    if(funcTemp){
+        slotCount = funcTemp->argsTemplate.size() + funcTemp->localSlotNames.size();
+    }
+    frame.slots.resize(slotCount);
+    if(funcTemp){
+        for(size_t i = 0;i < slotCount;++i){
+            frame.slots[i].kind = (i < funcTemp->slotKinds.size())? funcTemp->slotKinds[i] : RTTYPED_NUM_OBJECT;
+        }
+    }
+    localFrames.push_back(std::move(frame));
+}
+
+void InterpImpl::popLocalFrame(){
+    if(localFrames.empty()){
+        return;
+    }
+    auto frame = std::move(localFrames.back());
+    localFrames.pop_back();
+    for(auto &slot : frame.slots){
+        if(slot.object){
+            StarbytesObjectRelease(slot.object);
+        }
+    }
+}
+
+StarbytesObject InterpImpl::referenceLocalSlot(uint32_t slot){
+    auto *frame = currentLocalFrame();
+    if(!frame || slot >= frame->slots.size()){
+        return nullptr;
+    }
+    auto &slotValue = frame->slots[slot];
+    if(slotValue.kind == RTTYPED_NUM_OBJECT){
+        if(!slotValue.object){
+            return nullptr;
+        }
+        StarbytesObjectReference(slotValue.object);
+        return slotValue.object;
+    }
+    if(slotValue.object){
+        StarbytesObjectReference(slotValue.object);
+        return slotValue.object;
+    }
+    if(!slotValue.hasNumericValue){
+        return nullptr;
+    }
+    switch(slotValue.kind){
+        case RTTYPED_NUM_INT:
+            return StarbytesNumNew(NumTypeInt,slotValue.intValue);
+        case RTTYPED_NUM_LONG:
+            return StarbytesNumNew(NumTypeLong,slotValue.longValue);
+        case RTTYPED_NUM_FLOAT:
+            return StarbytesNumNew(NumTypeFloat,slotValue.floatValue);
+        case RTTYPED_NUM_DOUBLE:
+            return StarbytesNumNew(NumTypeDouble,slotValue.doubleValue);
+        default:
+            return nullptr;
+    }
+}
+
+bool InterpImpl::localSlotToNumber(uint32_t slot,RTTypedNumericKind kind,long double &valueOut){
+    auto *frame = currentLocalFrame();
+    if(!frame || slot >= frame->slots.size()){
+        return false;
+    }
+    auto &slotValue = frame->slots[slot];
+    if(slotValue.object){
+        return extractTypedNumericValue(slotValue.object,kind,valueOut);
+    }
+    if(!slotValue.hasNumericValue){
+        return false;
+    }
+    switch(kind){
+        case RTTYPED_NUM_INT:
+            valueOut = (long double)slotValue.intValue;
+            return true;
+        case RTTYPED_NUM_LONG:
+            valueOut = (long double)slotValue.longValue;
+            return true;
+        case RTTYPED_NUM_FLOAT:
+            if(slotValue.kind == RTTYPED_NUM_DOUBLE){
+                valueOut = (long double)((float)slotValue.doubleValue);
+            }
+            else if(slotValue.kind == RTTYPED_NUM_LONG){
+                valueOut = (long double)((float)slotValue.longValue);
+            }
+            else {
+                valueOut = (long double)((slotValue.kind == RTTYPED_NUM_FLOAT)? slotValue.floatValue : (float)slotValue.intValue);
+            }
+            return true;
+        case RTTYPED_NUM_DOUBLE:
+            if(slotValue.kind == RTTYPED_NUM_DOUBLE){
+                valueOut = slotValue.doubleValue;
+            }
+            else if(slotValue.kind == RTTYPED_NUM_FLOAT){
+                valueOut = slotValue.floatValue;
+            }
+            else if(slotValue.kind == RTTYPED_NUM_LONG){
+                valueOut = (long double)slotValue.longValue;
+            }
+            else {
+                valueOut = (long double)slotValue.intValue;
+            }
+            return true;
+        default:
+            break;
+    }
+    return false;
+}
+
+void InterpImpl::storeLocalSlotOwned(uint32_t slot,StarbytesObject value){
+    auto *frame = currentLocalFrame();
+    if(!frame || slot >= frame->slots.size()){
+        if(value){
+            StarbytesObjectRelease(value);
+        }
+        return;
+    }
+    auto &target = frame->slots[slot];
+    if(target.object){
+        StarbytesObjectRelease(target.object);
+        target.object = nullptr;
+    }
+    target.hasNumericValue = false;
+    if(!value){
+        return;
+    }
+    if(target.kind != RTTYPED_NUM_OBJECT){
+        long double numericValue = 0.0;
+        if(extractTypedNumericValue(value,target.kind,numericValue)){
+            target.hasNumericValue = true;
+            if(target.kind == RTTYPED_NUM_INT){
+                target.intValue = (int)numericValue;
+            }
+            else if(target.kind == RTTYPED_NUM_LONG){
+                target.longValue = (int64_t)numericValue;
+            }
+            else if(target.kind == RTTYPED_NUM_FLOAT){
+                target.floatValue = (float)numericValue;
+            }
+            else if(target.kind == RTTYPED_NUM_DOUBLE){
+                target.doubleValue = (double)numericValue;
+            }
+            StarbytesObjectRelease(value);
+            return;
+        }
+    }
+    target.object = value;
+}
+
+void InterpImpl::storeLocalSlotBorrowed(uint32_t slot,StarbytesObject value){
+    auto *frame = currentLocalFrame();
+    if(!frame || slot >= frame->slots.size()){
+        return;
+    }
+    auto &target = frame->slots[slot];
+    if(target.object){
+        StarbytesObjectRelease(target.object);
+        target.object = nullptr;
+    }
+    target.hasNumericValue = false;
+    if(!value){
+        return;
+    }
+    if(target.kind != RTTYPED_NUM_OBJECT){
+        long double numericValue = 0.0;
+        if(extractTypedNumericValue(value,target.kind,numericValue)){
+            target.hasNumericValue = true;
+            if(target.kind == RTTYPED_NUM_INT){
+                target.intValue = (int)numericValue;
+            }
+            else if(target.kind == RTTYPED_NUM_LONG){
+                target.longValue = (int64_t)numericValue;
+            }
+            else if(target.kind == RTTYPED_NUM_FLOAT){
+                target.floatValue = (float)numericValue;
+            }
+            else if(target.kind == RTTYPED_NUM_DOUBLE){
+                target.doubleValue = (double)numericValue;
+            }
+            return;
+        }
+    }
+    StarbytesObjectReference(value);
+    target.object = value;
 }
 
 void InterpImpl::discardExprArgs(std::istream &in,unsigned argCount){
@@ -766,23 +1047,25 @@ StarbytesObject InterpImpl::invokeFuncWithValues(RTFuncTemplate *func_temp,
     funcScopeBuilder + func_name.str();
     funcScopeBuilder + std::to_string(func_temp->invocations);
     std::string funcScope = funcScopeBuilder.str();
+    pushLocalFrame(func_temp);
     if(boundSelf){
         StarbytesObjectReference(boundSelf);
         allocator->allocVariable(string_ref("self"),boundSelf,funcScope);
     }
 
-    auto func_param_it = func_temp->argsTemplate.begin();
+    uint32_t paramSlot = 0;
     for(auto *arg : args){
-        if(func_param_it != func_temp->argsTemplate.end()){
+        if(paramSlot < func_temp->argsTemplate.size()){
             StarbytesObjectReference(arg);
-            allocator->allocVariable(string_ref(func_param_it->value,func_param_it->len),arg,funcScope);
-            ++func_param_it;
+            storeLocalSlotOwned(paramSlot,arg);
+            ++paramSlot;
         }
     }
 
     allocator->setScope(funcScope);
     auto current_pos = func_temp->block_start_pos;
     if(!activeInput){
+        popLocalFrame();
         allocator->clearScope();
         allocator->setScope(parentScope);
         return nullptr;
@@ -797,6 +1080,7 @@ StarbytesObject InterpImpl::invokeFuncWithValues(RTFuncTemplate *func_temp,
     if(!bodyIn.read((char *)&code,sizeof(RTCode))){
         bodyIn.clear();
         bodyIn.seekg(resumePos);
+        popLocalFrame();
         allocator->clearScope();
         allocator->setScope(parentScope);
         return nullptr;
@@ -814,6 +1098,7 @@ StarbytesObject InterpImpl::invokeFuncWithValues(RTFuncTemplate *func_temp,
     }
     bodyIn.clear();
     bodyIn.seekg(resumePos);
+    popLocalFrame();
     allocator->clearScope();
     allocator->setScope(parentScope);
     return return_val;
@@ -987,26 +1272,30 @@ StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_te
     funcScopeBuilder + func_name.str();
     funcScopeBuilder + std::to_string(func_temp->invocations);
     std::string funcScope = funcScopeBuilder.str();
+    std::vector<StarbytesObject> args;
+    args.reserve(argCount);
+    while(argCount > 0){
+        args.push_back(evalExpr(in));
+        --argCount;
+    }
+    auto resumePos = in.tellg();
+    pushLocalFrame(func_temp);
 
     if(boundSelf){
         StarbytesObjectReference(boundSelf);
         allocator->allocVariable(string_ref("self"),boundSelf,funcScope);
     }
-                
-    auto callSitePos = in.tellg();
-    auto func_param_it = func_temp->argsTemplate.begin();
-    while(argCount > 0){
-        StarbytesObject obj = evalExpr(in);
-        if(func_param_it != func_temp->argsTemplate.end()){
-            allocator->allocVariable(string_ref(func_param_it->value,func_param_it->len),obj,funcScope);
-            ++func_param_it;
+
+    uint32_t paramSlot = 0;
+    for(auto *arg : args){
+        if(paramSlot < func_temp->argsTemplate.size()){
+            storeLocalSlotOwned(paramSlot,arg);
+            ++paramSlot;
         }
-        else if(obj){
-            StarbytesObjectRelease(obj);
+        else if(arg){
+            StarbytesObjectRelease(arg);
         }
-        --argCount;
-    };
-    auto resumePos = in.tellg();
+    }
     allocator->setScope(funcScope);
     auto current_pos = func_temp->block_start_pos;
     /// Invoke
@@ -1017,7 +1306,8 @@ StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_te
     RTCode code = CODE_MODULE_END;
     if(!in.read((char *)&code,sizeof(RTCode))){
         in.clear();
-        in.seekg(callSitePos);
+        in.seekg(resumePos);
+        popLocalFrame();
         allocator->clearScope();
         allocator->setScope(parentScope);
         return nullptr;
@@ -1035,6 +1325,7 @@ StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_te
     };
     in.seekg(resumePos);
     
+    popLocalFrame();
     allocator->clearScope();
     allocator->setScope(parentScope);
     
@@ -1065,6 +1356,19 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             return allocator->referenceVariable(allocator->currentScope,var_name);
             
             break;
+        }
+        case CODE_RTLOCAL_REF: {
+            uint32_t slot = 0;
+            in.read((char *)&slot,sizeof(slot));
+            return referenceLocalSlot(slot);
+        }
+        case CODE_RTTYPED_LOCAL_REF: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            uint32_t slot = 0;
+            in.read((char *)&kind,sizeof(kind));
+            in.read((char *)&slot,sizeof(slot));
+            (void)kind;
+            return referenceLocalSlot(slot);
         }
         case CODE_RTFUNC_REF : {
             RTID var_id;
@@ -1202,6 +1506,23 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             }
             StarbytesObjectRelease(operand);
             return nullptr;
+        }
+        case CODE_RTTYPED_NEGATE: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            in.read((char *)&kind,sizeof(kind));
+            auto operand = evalExpr(in);
+            if(!operand){
+                return nullptr;
+            }
+            long double value = 0.0;
+            auto finish = [&](StarbytesObject result){
+                StarbytesObjectRelease(operand);
+                return result;
+            };
+            if(!extractTypedNumericValue(operand,kind,value)){
+                return finish(nullptr);
+            }
+            return finish(makeNumber(-value,numTypeFromTypedKind(kind)));
         }
         case CODE_BINARY_OPERATOR: {
             RTCode binaryCode = BINARY_OP_PLUS;
@@ -1405,6 +1726,107 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             }
             return finish(nullptr);
         }
+        case CODE_RTTYPED_BINARY: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            RTTypedBinaryOp op = RTTYPED_BINARY_ADD;
+            in.read((char *)&kind,sizeof(kind));
+            in.read((char *)&op,sizeof(op));
+            auto lhs = evalExpr(in);
+            if(!lhs){
+                skipExpr(in);
+                return nullptr;
+            }
+            auto rhs = evalExpr(in);
+            if(!rhs){
+                StarbytesObjectRelease(lhs);
+                return nullptr;
+            }
+            long double lhsVal = 0.0;
+            long double rhsVal = 0.0;
+            auto finish = [&](StarbytesObject result){
+                StarbytesObjectRelease(lhs);
+                StarbytesObjectRelease(rhs);
+                return result;
+            };
+            if(!extractTypedNumericValue(lhs,kind,lhsVal) || !extractTypedNumericValue(rhs,kind,rhsVal)){
+                return finish(nullptr);
+            }
+            if((op == RTTYPED_BINARY_DIV || op == RTTYPED_BINARY_MOD) && rhsVal == 0.0){
+                return finish(nullptr);
+            }
+            switch(op){
+                case RTTYPED_BINARY_ADD:
+                    return finish(makeNumber(lhsVal + rhsVal,numTypeFromTypedKind(kind)));
+                case RTTYPED_BINARY_SUB:
+                    return finish(makeNumber(lhsVal - rhsVal,numTypeFromTypedKind(kind)));
+                case RTTYPED_BINARY_MUL:
+                    return finish(makeNumber(lhsVal * rhsVal,numTypeFromTypedKind(kind)));
+                case RTTYPED_BINARY_DIV:
+                    if(kind == RTTYPED_NUM_INT){
+                        return finish(makeNumber((long double)((int)lhsVal / (int)rhsVal),NumTypeInt));
+                    }
+                    if(kind == RTTYPED_NUM_LONG){
+                        return finish(makeNumber((long double)((int64_t)lhsVal / (int64_t)rhsVal),NumTypeLong));
+                    }
+                    return finish(makeNumber(lhsVal / rhsVal,numTypeFromTypedKind(kind)));
+                case RTTYPED_BINARY_MOD:
+                    if(kind == RTTYPED_NUM_INT){
+                        return finish(makeNumber((long double)((int)lhsVal % (int)rhsVal),NumTypeInt));
+                    }
+                    if(kind == RTTYPED_NUM_LONG){
+                        return finish(makeNumber((long double)((int64_t)lhsVal % (int64_t)rhsVal),NumTypeLong));
+                    }
+                    return finish(makeNumber(std::fmod((double)lhsVal,(double)rhsVal),numTypeFromTypedKind(kind)));
+                default:
+                    return finish(nullptr);
+            }
+        }
+        case CODE_RTTYPED_COMPARE: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            RTTypedCompareOp op = RTTYPED_COMPARE_EQ;
+            in.read((char *)&kind,sizeof(kind));
+            in.read((char *)&op,sizeof(op));
+            auto lhs = evalExpr(in);
+            if(!lhs){
+                skipExpr(in);
+                return nullptr;
+            }
+            auto rhs = evalExpr(in);
+            if(!rhs){
+                StarbytesObjectRelease(lhs);
+                return nullptr;
+            }
+            long double lhsVal = 0.0;
+            long double rhsVal = 0.0;
+            auto finish = [&](bool result){
+                StarbytesObjectRelease(lhs);
+                StarbytesObjectRelease(rhs);
+                return StarbytesBoolNew((StarbytesBoolVal)result);
+            };
+            if(!extractTypedNumericValue(lhs,kind,lhsVal) || !extractTypedNumericValue(rhs,kind,rhsVal)){
+                StarbytesObjectRelease(lhs);
+                StarbytesObjectRelease(rhs);
+                return nullptr;
+            }
+            switch(op){
+                case RTTYPED_COMPARE_EQ:
+                    return finish(lhsVal == rhsVal);
+                case RTTYPED_COMPARE_NE:
+                    return finish(lhsVal != rhsVal);
+                case RTTYPED_COMPARE_LT:
+                    return finish(lhsVal < rhsVal);
+                case RTTYPED_COMPARE_LE:
+                    return finish(lhsVal <= rhsVal);
+                case RTTYPED_COMPARE_GT:
+                    return finish(lhsVal > rhsVal);
+                case RTTYPED_COMPARE_GE:
+                    return finish(lhsVal >= rhsVal);
+                default:
+                    StarbytesObjectRelease(lhs);
+                    StarbytesObjectRelease(rhs);
+                    return nullptr;
+            }
+        }
         case CODE_RTVAR_SET: {
             RTID varId;
             in >> &varId;
@@ -1416,10 +1838,21 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             StarbytesObjectReference(value);
             return value;
         }
+        case CODE_RTLOCAL_SET: {
+            uint32_t slot = 0;
+            in.read((char *)&slot,sizeof(slot));
+            auto value = evalExpr(in);
+            if(!value){
+                value = StarbytesBoolNew((StarbytesBoolVal)false);
+            }
+            storeLocalSlotBorrowed(slot,value);
+            return value;
+        }
         case CODE_RTARRAY_LITERAL: {
             unsigned elementCount = 0;
             in.read((char *)&elementCount,sizeof(elementCount));
             auto array = StarbytesArrayNew();
+            StarbytesArrayReserve(array,elementCount);
             while(elementCount > 0){
                 auto element = evalExpr(in);
                 if(!element){
@@ -1451,6 +1884,34 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 --pairCount;
             }
             return dict;
+        }
+        case CODE_RTTYPED_INTRINSIC: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            RTTypedIntrinsicOp op = RTTYPED_INTRINSIC_SQRT;
+            in.read((char *)&kind,sizeof(kind));
+            in.read((char *)&op,sizeof(op));
+            auto argument = evalExpr(in);
+            if(!argument){
+                return nullptr;
+            }
+            long double value = 0.0;
+            auto finish = [&](StarbytesObject result){
+                StarbytesObjectRelease(argument);
+                return result;
+            };
+            if(!extractTypedNumericValue(argument,kind,value)){
+                return finish(nullptr);
+            }
+            switch(op){
+                case RTTYPED_INTRINSIC_SQRT:
+                    if(value < 0.0){
+                        lastRuntimeError = "sqrt requires non-negative numeric input";
+                        return finish(nullptr);
+                    }
+                    return finish(makeNumber(std::sqrt((double)value),NumTypeDouble));
+                default:
+                    return finish(nullptr);
+            }
         }
         case CODE_RTTYPECHECK: {
             auto object = evalExpr(in);
@@ -1808,6 +2269,42 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             StarbytesObjectRelease(index);
             return result;
         }
+        case CODE_RTTYPED_INDEX_GET: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            in.read((char *)&kind,sizeof(kind));
+            auto collection = evalExpr(in);
+            auto index = evalExpr(in);
+            if(!collection || !index){
+                if(collection){
+                    StarbytesObjectRelease(collection);
+                }
+                if(index){
+                    StarbytesObjectRelease(index);
+                }
+                return nullptr;
+            }
+            StarbytesObject result = nullptr;
+            if(StarbytesObjectTypecheck(collection,StarbytesArrayType()) &&
+               StarbytesObjectTypecheck(index,StarbytesNumType())){
+                int idx = -1;
+                auto indexType = StarbytesNumGetType(index);
+                if(indexType == NumTypeInt){
+                    idx = StarbytesNumGetIntValue(index);
+                }
+                else if(indexType == NumTypeLong){
+                    idx = (int)StarbytesNumGetLongValue(index);
+                }
+                if(idx >= 0 && (unsigned)idx < StarbytesArrayGetLength(collection)){
+                    long double value = 0.0;
+                    if(StarbytesArrayTryGetNumeric(collection,(unsigned)idx,numTypeFromTypedKind(kind),&value)){
+                        result = makeNumber(value,numTypeFromTypedKind(kind));
+                    }
+                }
+            }
+            StarbytesObjectRelease(collection);
+            StarbytesObjectRelease(index);
+            return result;
+        }
         case CODE_RTINDEX_SET: {
             auto collection = evalExpr(in);
             auto index = evalExpr(in);
@@ -1847,6 +2344,53 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                     (StarbytesObjectTypecheck(index,StarbytesStrType()) || StarbytesObjectTypecheck(index,StarbytesNumType()))){
                 StarbytesDictSet(collection,index,value);
                 success = true;
+            }
+            StarbytesObjectRelease(collection);
+            StarbytesObjectRelease(index);
+            if(!success){
+                StarbytesObjectRelease(value);
+                return nullptr;
+            }
+            return value;
+        }
+        case CODE_RTTYPED_INDEX_SET: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            in.read((char *)&kind,sizeof(kind));
+            auto collection = evalExpr(in);
+            auto index = evalExpr(in);
+            auto value = evalExpr(in);
+            if(!collection || !index){
+                if(collection){
+                    StarbytesObjectRelease(collection);
+                }
+                if(index){
+                    StarbytesObjectRelease(index);
+                }
+                if(value){
+                    StarbytesObjectRelease(value);
+                }
+                return nullptr;
+            }
+            if(!value){
+                value = StarbytesBoolNew((StarbytesBoolVal)false);
+            }
+            bool success = false;
+            if(StarbytesObjectTypecheck(collection,StarbytesArrayType()) &&
+               StarbytesObjectTypecheck(index,StarbytesNumType())){
+                int idx = -1;
+                auto indexType = StarbytesNumGetType(index);
+                if(indexType == NumTypeInt){
+                    idx = StarbytesNumGetIntValue(index);
+                }
+                else if(indexType == NumTypeLong){
+                    idx = (int)StarbytesNumGetLongValue(index);
+                }
+                if(idx >= 0 && (unsigned)idx < StarbytesArrayGetLength(collection)){
+                    long double numericValue = 0.0;
+                    if(extractTypedNumericValue(value,kind,numericValue)){
+                        success = StarbytesArrayTrySetNumeric(collection,(unsigned)idx,numTypeFromTypedKind(kind),numericValue) != 0;
+                    }
+                }
             }
             StarbytesObjectRelease(collection);
             StarbytesObjectRelease(index);
@@ -2497,6 +3041,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                             end = start;
                         }
                         auto out = StarbytesArrayNew();
+                        StarbytesArrayReserve(out,(unsigned)(end - start));
                         for(int i = start;i < end;++i){
                             auto value = StarbytesArrayIndex(object,(unsigned)i);
                             StarbytesArrayPush(out,value);
@@ -2539,6 +3084,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                         }
                         auto out = StarbytesArrayNew();
                         auto len = StarbytesArrayGetLength(object);
+                        StarbytesArrayReserve(out,len);
                         for(unsigned i = len;i > 0;--i){
                             StarbytesArrayPush(out,StarbytesArrayIndex(object,i - 1));
                         }
@@ -2774,6 +3320,18 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             in >> &id;
             break;
         }
+        case CODE_RTLOCAL_REF: {
+            uint32_t slot = 0;
+            in.read((char *)&slot,sizeof(slot));
+            break;
+        }
+        case CODE_RTTYPED_LOCAL_REF: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            uint32_t slot = 0;
+            in.read((char *)&kind,sizeof(kind));
+            in.read((char *)&slot,sizeof(slot));
+            break;
+        }
         case CODE_RTIVKFUNC: {
             skipExpr(in);
             unsigned argCount = 0;
@@ -2795,6 +3353,30 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             RTCode binaryCode = BINARY_OP_PLUS;
             in.read((char *)&binaryCode,sizeof(binaryCode));
             (void)binaryCode;
+            skipExpr(in);
+            skipExpr(in);
+            break;
+        }
+        case CODE_RTTYPED_BINARY: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            RTTypedBinaryOp op = RTTYPED_BINARY_ADD;
+            in.read((char *)&kind,sizeof(kind));
+            in.read((char *)&op,sizeof(op));
+            skipExpr(in);
+            skipExpr(in);
+            break;
+        }
+        case CODE_RTTYPED_NEGATE: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            in.read((char *)&kind,sizeof(kind));
+            skipExpr(in);
+            break;
+        }
+        case CODE_RTTYPED_COMPARE: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            RTTypedCompareOp op = RTTYPED_COMPARE_EQ;
+            in.read((char *)&kind,sizeof(kind));
+            in.read((char *)&op,sizeof(op));
             skipExpr(in);
             skipExpr(in);
             break;
@@ -2848,12 +3430,66 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             skipExpr(in);
             break;
         }
+        case CODE_RTLOCAL_SET: {
+            uint32_t slot = 0;
+            in.read((char *)&slot,sizeof(slot));
+            skipExpr(in);
+            break;
+        }
+        case CODE_RTLOCAL_DECL: {
+            uint32_t slot = 0;
+            bool hasInitValue = false;
+            in.read((char *)&slot,sizeof(slot));
+            in.read((char *)&hasInitValue,sizeof(hasInitValue));
+            if(hasInitValue){
+                skipExpr(in);
+            }
+            break;
+        }
+        case CODE_RTSECURE_LOCAL_DECL: {
+            uint32_t targetSlot = 0;
+            bool hasCatchSlot = false;
+            bool hasCatchType = false;
+            in.read((char *)&targetSlot,sizeof(targetSlot));
+            in.read((char *)&hasCatchSlot,sizeof(hasCatchSlot));
+            if(hasCatchSlot){
+                uint32_t catchSlot = 0;
+                in.read((char *)&catchSlot,sizeof(catchSlot));
+            }
+            in.read((char *)&hasCatchType,sizeof(hasCatchType));
+            if(hasCatchType){
+                RTID catchTypeId;
+                in >> &catchTypeId;
+            }
+            skipExpr(in);
+            RTCode blockBegin = CODE_MODULE_END;
+            in.read((char *)&blockBegin,sizeof(blockBegin));
+            if(blockBegin == CODE_RTBLOCK_BEGIN){
+                skipRuntimeBlock(in,CODE_RTBLOCK_END);
+            }
+            break;
+        }
         case CODE_RTINDEX_GET: {
             skipExpr(in);
             skipExpr(in);
             break;
         }
+        case CODE_RTTYPED_INDEX_GET: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            in.read((char *)&kind,sizeof(kind));
+            skipExpr(in);
+            skipExpr(in);
+            break;
+        }
         case CODE_RTINDEX_SET: {
+            skipExpr(in);
+            skipExpr(in);
+            skipExpr(in);
+            break;
+        }
+        case CODE_RTTYPED_INDEX_SET: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            in.read((char *)&kind,sizeof(kind));
             skipExpr(in);
             skipExpr(in);
             skipExpr(in);
@@ -2896,6 +3532,14 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             in >> &typeId;
             break;
         }
+        case CODE_RTTYPED_INTRINSIC: {
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            RTTypedIntrinsicOp op = RTTYPED_INTRINSIC_SQRT;
+            in.read((char *)&kind,sizeof(kind));
+            in.read((char *)&op,sizeof(op));
+            skipExpr(in);
+            break;
+        }
         default:
             break;
     }
@@ -2936,6 +3580,39 @@ void InterpImpl::skipRuntimeStmt(std::istream &in,RTCode code){
             in >> &catchBindingId;
         }
         bool hasCatchType = false;
+        in.read((char *)&hasCatchType,sizeof(hasCatchType));
+        if(hasCatchType){
+            RTID catchTypeId;
+            in >> &catchTypeId;
+        }
+        skipExpr(in);
+        RTCode blockBegin = CODE_MODULE_END;
+        in.read((char *)&blockBegin,sizeof(blockBegin));
+        if(blockBegin == CODE_RTBLOCK_BEGIN){
+            skipRuntimeBlock(in,CODE_RTBLOCK_END);
+        }
+        return;
+    }
+    if(code == CODE_RTLOCAL_DECL){
+        uint32_t slot = 0;
+        bool hasInitValue = false;
+        in.read((char *)&slot,sizeof(slot));
+        in.read((char *)&hasInitValue,sizeof(hasInitValue));
+        if(hasInitValue){
+            skipExpr(in);
+        }
+        return;
+    }
+    if(code == CODE_RTSECURE_LOCAL_DECL){
+        uint32_t targetSlot = 0;
+        bool hasCatchSlot = false;
+        bool hasCatchType = false;
+        in.read((char *)&targetSlot,sizeof(targetSlot));
+        in.read((char *)&hasCatchSlot,sizeof(hasCatchSlot));
+        if(hasCatchSlot){
+            uint32_t catchSlot = 0;
+            in.read((char *)&catchSlot,sizeof(catchSlot));
+        }
         in.read((char *)&hasCatchType,sizeof(hasCatchType));
         if(hasCatchType){
             RTID catchTypeId;
@@ -3047,6 +3724,16 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
             }
         }
     }
+    else if(code == CODE_RTLOCAL_DECL){
+        uint32_t slot = 0;
+        bool hasInitValue = false;
+        in.read((char *)&slot,sizeof(slot));
+        in.read((char *)&hasInitValue,sizeof(hasInitValue));
+        if(hasInitValue){
+            auto val = evalExpr(in);
+            storeLocalSlotOwned(slot,val);
+        }
+    }
     else if(code == CODE_RTSECURE_DECL){
         RTID targetVarId;
         in >> &targetVarId;
@@ -3083,6 +3770,47 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
                 auto errorText = lastRuntimeError.empty()? std::string("error") : lastRuntimeError;
                 auto errorObject = StarbytesStrNewWithData(errorText.c_str());
                 allocator->allocVariable(string_ref(catchBindingId.value,catchBindingId.len),errorObject);
+            }
+            lastRuntimeError.clear();
+            executeRuntimeBlock(in,CODE_RTBLOCK_END,willReturn,return_val);
+        }
+    }
+    else if(code == CODE_RTSECURE_LOCAL_DECL){
+        uint32_t targetSlot = 0;
+        bool hasCatchSlot = false;
+        bool hasCatchType = false;
+        in.read((char *)&targetSlot,sizeof(targetSlot));
+        in.read((char *)&hasCatchSlot,sizeof(hasCatchSlot));
+        uint32_t catchSlot = 0;
+        if(hasCatchSlot){
+            in.read((char *)&catchSlot,sizeof(catchSlot));
+        }
+        in.read((char *)&hasCatchType,sizeof(hasCatchType));
+        if(hasCatchType){
+            RTID catchTypeId;
+            in >> &catchTypeId;
+        }
+
+        auto guardedValue = evalExpr(in);
+        RTCode blockBegin = CODE_MODULE_END;
+        in.read((char *)&blockBegin,sizeof(blockBegin));
+        if(blockBegin != CODE_RTBLOCK_BEGIN){
+            if(guardedValue){
+                StarbytesObjectRelease(guardedValue);
+            }
+            return;
+        }
+
+        if(guardedValue){
+            storeLocalSlotOwned(targetSlot,guardedValue);
+            skipRuntimeBlock(in,CODE_RTBLOCK_END);
+            lastRuntimeError.clear();
+        }
+        else {
+            if(hasCatchSlot){
+                auto errorText = lastRuntimeError.empty()? std::string("error") : lastRuntimeError;
+                auto errorObject = StarbytesStrNewWithData(errorText.c_str());
+                storeLocalSlotOwned(catchSlot,errorObject);
             }
             lastRuntimeError.clear();
             executeRuntimeBlock(in,CODE_RTBLOCK_END,willReturn,return_val);
@@ -3201,19 +3929,28 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
     }
     else if(code == CODE_RTIVKFUNC
          || code == CODE_UNARY_OPERATOR
+         || code == CODE_RTTYPED_NEGATE
          || code == CODE_BINARY_OPERATOR
+         || code == CODE_RTTYPED_BINARY
+         || code == CODE_RTTYPED_COMPARE
          || code == CODE_RTTYPECHECK
          || code == CODE_RTTERNARY
          || code == CODE_RTCAST
+         || code == CODE_RTTYPED_INTRINSIC
          || code == CODE_RTMEMBER_SET
          || code == CODE_RTMEMBER_IVK
          || code == CODE_RTMEMBER_GET
          || code == CODE_RTNEWOBJ
          || code == CODE_RTREGEX_LITERAL
          || code == CODE_RTVAR_SET
+         || code == CODE_RTLOCAL_REF
+         || code == CODE_RTTYPED_LOCAL_REF
+         || code == CODE_RTLOCAL_SET
          || code == CODE_RTARRAY_LITERAL
          || code == CODE_RTINDEX_GET
+         || code == CODE_RTTYPED_INDEX_GET
          || code == CODE_RTINDEX_SET
+         || code == CODE_RTTYPED_INDEX_SET
          || code == CODE_RTDICT_LITERAL){
         in.seekg(-static_cast<std::streamoff>(sizeof(RTCode)),std::ios_base::cur);
         auto result = evalExpr(in);
@@ -3262,6 +3999,9 @@ void InterpImpl::exec(std::istream & in){
 }
 
 InterpImpl::~InterpImpl(){
+    while(!localFrames.empty()){
+        popLocalFrame();
+    }
     while(!microtaskQueue.empty()){
         auto call = std::move(microtaskQueue.front());
         microtaskQueue.pop_front();

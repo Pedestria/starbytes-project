@@ -116,6 +116,7 @@ void StarbytesStrDestroy(StarbytesStr );
 /// @{
 StarbytesArray  StarbytesArrayNew();
 StarbytesArray StarbytesArrayCopy(StarbytesArray);
+void StarbytesArrayReserve(StarbytesArray array,unsigned int capacity);
 void StarbytesArrayPush(StarbytesArray array,StarbytesObject obj);
 void StarbytesArrayPop(StarbytesArray array);
 unsigned int StarbytesArrayGetLength(StarbytesArray array);
@@ -131,6 +132,9 @@ typedef enum {
     NumTypeInt,
     NumTypeLong
 } StarbytesNumT;
+
+int StarbytesArrayTryGetNumeric(StarbytesArray array,unsigned int index,StarbytesNumT outType,long double *valueOut);
+int StarbytesArrayTrySetNumeric(StarbytesArray array,unsigned int index,StarbytesNumT valueType,long double value);
 
 StarbytesNum StarbytesNumNew(StarbytesNumT type,...);
 StarbytesNum StarbytesNumCopy(StarbytesNum);

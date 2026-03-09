@@ -1,0 +1,61 @@
+class SlotCounter {
+    decl base:Int = 0
+
+    func crunch(seed:Int) Int {
+        decl total:Int = seed + self.base
+        decl present:Int? = seed
+        decl idx:Int = 0
+
+        while(idx < 5){
+            total += idx
+            idx += 1
+        }
+
+        secure(decl kept = present) catch(hit:String) {
+            total = -100
+        }
+        total += kept
+
+        decl missing:Int?
+        secure(decl recovered = missing) catch(miss:String) {
+            if(miss == miss){
+                total += 1
+            }
+            else {
+                total += 1000
+            }
+        }
+
+        return total
+    }
+}
+
+func slotFib(seed:Int) Int {
+    decl a:Int = seed
+    decl b:Int = seed + 1
+    decl i:Int = 0
+
+    while(i < 6){
+        decl next:Int = a + b
+        a = b
+        b = next
+        i += 1
+    }
+
+    return a + b
+}
+
+decl counter = new SlotCounter()
+counter.base = 3
+
+decl first:Int = counter.crunch(4)
+decl second:Int = slotFib(2)
+
+if(first == 22 && second == 89){
+    print("SLOT-LOCALS-PHASE2-OK")
+}
+else {
+    print("SLOT-LOCALS-PHASE2-FAIL")
+    print(first)
+    print(second)
+}

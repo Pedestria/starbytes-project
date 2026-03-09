@@ -50,6 +50,17 @@ typedef unsigned char RTCode;
 #define CODE_RTTERNARY 0x1C
 #define CODE_RTCAST 0x1D
 #define CODE_RTARRAY_LITERAL 0x1E
+#define CODE_RTLOCAL_REF 0x1F
+#define CODE_RTLOCAL_SET 0x20
+#define CODE_RTLOCAL_DECL 0x21
+#define CODE_RTSECURE_LOCAL_DECL 0x22
+#define CODE_RTTYPED_LOCAL_REF 0x23
+#define CODE_RTTYPED_BINARY 0x24
+#define CODE_RTTYPED_NEGATE 0x25
+#define CODE_RTTYPED_COMPARE 0x26
+#define CODE_RTTYPED_INDEX_GET 0x27
+#define CODE_RTTYPED_INDEX_SET 0x28
+#define CODE_RTTYPED_INTRINSIC 0x29
 
 /// Condtional Type
 #define COND_TYPE_IF 0x0 // if()
@@ -91,6 +102,31 @@ typedef unsigned char RTCode;
 #define BINARY_BITWISE_XOR 0x0F // ^
 #define BINARY_SHIFT_LEFT 0x10 // <<
 #define BINARY_SHIFT_RIGHT 0x11 // >>
+
+typedef uint8_t RTTypedNumericKind;
+#define RTTYPED_NUM_OBJECT 0x00
+#define RTTYPED_NUM_INT 0x01
+#define RTTYPED_NUM_LONG 0x02
+#define RTTYPED_NUM_FLOAT 0x03
+#define RTTYPED_NUM_DOUBLE 0x04
+
+typedef uint8_t RTTypedBinaryOp;
+#define RTTYPED_BINARY_ADD 0x00
+#define RTTYPED_BINARY_SUB 0x01
+#define RTTYPED_BINARY_MUL 0x02
+#define RTTYPED_BINARY_DIV 0x03
+#define RTTYPED_BINARY_MOD 0x04
+
+typedef uint8_t RTTypedCompareOp;
+#define RTTYPED_COMPARE_EQ 0x00
+#define RTTYPED_COMPARE_NE 0x01
+#define RTTYPED_COMPARE_LT 0x02
+#define RTTYPED_COMPARE_LE 0x03
+#define RTTYPED_COMPARE_GT 0x04
+#define RTTYPED_COMPARE_GE 0x05
+
+typedef uint8_t RTTypedIntrinsicOp;
+#define RTTYPED_INTRINSIC_SQRT 0x00
 
 #define RTCODE_STREAM_OBJECT(object) \
 std::ostream & operator <<(std::ostream & os,object * obj); \
@@ -142,6 +178,8 @@ struct RTFuncTemplate {
     RTID name;
     unsigned invocations = 0;
     std::vector<RTID> argsTemplate;
+    std::vector<RTID> localSlotNames;
+    std::vector<RTTypedNumericKind> slotKinds;
     std::vector<RTAttribute> attributes;
     bool isLazy = false;
     size_t blockByteSize = 0;

@@ -1,0 +1,56 @@
+decl ints:Int[] = []
+decl i:Int = 0
+
+while(i < 256){
+    ints.push(i)
+    i += 1
+}
+
+decl sum:Int = 0
+i = 0
+while(i < ints.length){
+    sum += ints[i]
+    i += 1
+}
+
+ints.set(10,999)
+decl copy:Int[] = ints.copy()
+decl slice:Int[] = ints.slice(8,12)
+decl reversed:Int[] = ints.reverse()
+
+decl doubles:Double[] = [1.5,2.25,3.25]
+decl dsum:Double = 0.0
+i = 0
+while(i < doubles.length){
+    dsum += doubles[i]
+    i += 1
+}
+
+decl mixed:Any[] = [1,2,3]
+mixed.push("tail")
+
+if(sum == 32640
+   && ints[10] == 999
+   && copy[10] == 999
+   && slice[0] == 8
+   && slice[2] == 999
+   && reversed[0] == 255
+   && reversed[245] == 999
+   && dsum == 7.0
+   && mixed[0] == 1
+   && mixed[3] == "tail"){
+    print("NUMERIC-ARRAYS-PHASE3-OK")
+}
+else {
+    print("NUMERIC-ARRAYS-PHASE3-FAIL")
+    print(sum)
+    print(ints[10])
+    print(copy[10])
+    print(slice[0])
+    print(slice[2])
+    print(reversed[0])
+    print(reversed[245])
+    print(dsum)
+    print(mixed[0])
+    print(mixed[3])
+}

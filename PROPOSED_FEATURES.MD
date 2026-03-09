@@ -28,7 +28,7 @@ Expand/fix generics:
     Variance annotations 
 
 
-
+Fix LSP scoped symbol resolution (Hovers should resolve symbols in function scopes, classes, etc.)
 
 Implement Qualified type refs
 
@@ -42,4 +42,7 @@ Fix contextual expected-type inference
 
 Fix full-file integration (so files execute appropriately)
 
-Debug the suite-only track-a-parity flake in /Users/alextopper/Documents/GitHub/starbytes-project/benchmark/runners/check_track_a_parity.py and /Users/alextopper/Documents/GitHub/starbytes-project/benchmark/languages/starbytes/track_a/regex_redux.starb
+Long bitwise ops in runtime
+    width-specific integer semantics beyond current Int
+    unsigned rotate helpers like rotl/rotr
+    explicit overflow/truncation policy beyond native Int behavior

@@ -63,6 +63,15 @@ class Disassembler {
                 string_ref arg_name (arg.value,arg.len);
                 out << arg_name << " ";
             };
+            out << funcTemp.localSlotNames.size() << " ";
+            for(auto slot : funcTemp.localSlotNames){
+                string_ref slotName(slot.value,slot.len);
+                out << slotName << " ";
+            }
+            out << funcTemp.slotKinds.size() << " ";
+            for(auto kind : funcTemp.slotKinds){
+                out << (unsigned)kind << " ";
+            }
             out << std::endl;
             in.seekg(funcTemp.block_start_pos);
             RTCode code2;
@@ -180,6 +189,18 @@ class Disassembler {
             out << "CODE_RTVAR_REF " << id.len << " ";
             out.write(id.value,sizeof(char) * id.len);
         }
+        else if(code == CODE_RTLOCAL_REF){
+            uint32_t slot = 0;
+            in.read((char *)&slot,sizeof(slot));
+            out << "CODE_RTLOCAL_REF " << slot;
+        }
+        else if(code == CODE_RTTYPED_LOCAL_REF){
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            uint32_t slot = 0;
+            in.read((char *)&kind,sizeof(kind));
+            in.read((char *)&slot,sizeof(slot));
+            out << "CODE_RTTYPED_LOCAL_REF " << (unsigned)kind << " " << slot;
+        }
         else if(code == CODE_RTVAR_SET){
             RTID id;
             in >> &id;
@@ -189,6 +210,88 @@ class Disassembler {
             in.read((char *)&code,sizeof(RTCode));
             _disasm_expr(code);
         }
+        else if(code == CODE_RTLOCAL_SET){
+            uint32_t slot = 0;
+            in.read((char *)&slot,sizeof(slot));
+            out << "CODE_RTLOCAL_SET " << slot << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
+        else if(code == CODE_RTLOCAL_DECL){
+            uint32_t slot = 0;
+            bool hasInitValue = false;
+            in.read((char *)&slot,sizeof(slot));
+            in.read((char *)&hasInitValue,sizeof(hasInitValue));
+            out << "CODE_RTLOCAL_DECL " << slot << " " << std::boolalpha << hasInitValue << std::noboolalpha;
+            if(hasInitValue){
+                out << " ";
+                in.read((char *)&code,sizeof(RTCode));
+                _disasm_expr(code);
+            }
+        }
+        else if(code == CODE_RTTYPED_NEGATE){
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            in.read((char *)&kind,sizeof(kind));
+            out << "CODE_RTTYPED_NEGATE " << (unsigned)kind << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
+        else if(code == CODE_RTTYPED_BINARY){
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            RTTypedBinaryOp op = RTTYPED_BINARY_ADD;
+            in.read((char *)&kind,sizeof(kind));
+            in.read((char *)&op,sizeof(op));
+            out << "CODE_RTTYPED_BINARY " << (unsigned)kind << " " << (unsigned)op << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            out << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
+        else if(code == CODE_RTTYPED_COMPARE){
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            RTTypedCompareOp op = RTTYPED_COMPARE_EQ;
+            in.read((char *)&kind,sizeof(kind));
+            in.read((char *)&op,sizeof(op));
+            out << "CODE_RTTYPED_COMPARE " << (unsigned)kind << " " << (unsigned)op << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            out << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
+        else if(code == CODE_RTSECURE_LOCAL_DECL){
+            uint32_t targetSlot = 0;
+            bool hasCatchSlot = false;
+            bool hasCatchType = false;
+            in.read((char *)&targetSlot,sizeof(targetSlot));
+            in.read((char *)&hasCatchSlot,sizeof(hasCatchSlot));
+            out << "CODE_RTSECURE_LOCAL_DECL " << targetSlot << " " << std::boolalpha << hasCatchSlot << std::noboolalpha;
+            if(hasCatchSlot){
+                uint32_t catchSlot = 0;
+                in.read((char *)&catchSlot,sizeof(catchSlot));
+                out << " " << catchSlot;
+            }
+            in.read((char *)&hasCatchType,sizeof(hasCatchType));
+            out << " " << std::boolalpha << hasCatchType << std::noboolalpha;
+            if(hasCatchType){
+                RTID catchType;
+                in >> &catchType;
+                out << " " << catchType.len << " ";
+                out.write(catchType.value,sizeof(char) * catchType.len);
+            }
+            out << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            in.read((char *)&code,sizeof(RTCode));
+            out << " CODE_RTBLOCK_BEGIN" << std::endl;
+            while(code != CODE_RTBLOCK_END){
+                _disasm_expr(code);
+                in.read((char *)&code,sizeof(RTCode));
+                out << std::endl;
+            }
+            out << "CODE_RTBLOCK_END";
+        }
         else if(code == CODE_RTINDEX_GET){
             out << "CODE_RTINDEX_GET ";
             in.read((char *)&code,sizeof(RTCode));
@@ -197,8 +300,31 @@ class Disassembler {
             in.read((char *)&code,sizeof(RTCode));
             _disasm_expr(code);
         }
+        else if(code == CODE_RTTYPED_INDEX_GET){
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            in.read((char *)&kind,sizeof(kind));
+            out << "CODE_RTTYPED_INDEX_GET " << (unsigned)kind << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            out << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
         else if(code == CODE_RTINDEX_SET){
             out << "CODE_RTINDEX_SET ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            out << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            out << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
+        else if(code == CODE_RTTYPED_INDEX_SET){
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            in.read((char *)&kind,sizeof(kind));
+            out << "CODE_RTTYPED_INDEX_SET " << (unsigned)kind << " ";
             in.read((char *)&code,sizeof(RTCode));
             _disasm_expr(code);
             out << " ";
@@ -262,6 +388,15 @@ class Disassembler {
             out << " " << typeId.len << " ";
             out.write(typeId.value,sizeof(char) * typeId.len);
         }
+        else if(code == CODE_RTTYPED_INTRINSIC){
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            RTTypedIntrinsicOp op = RTTYPED_INTRINSIC_SQRT;
+            in.read((char *)&kind,sizeof(kind));
+            in.read((char *)&op,sizeof(op));
+            out << "CODE_RTTYPED_INTRINSIC " << (unsigned)kind << " " << (unsigned)op << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
         else if(code == CODE_CONDITIONAL){
             unsigned count;
             in.read((char *)&count,sizeof(count));
@@ -304,11 +439,14 @@ public:
         in.read((char *)&code,sizeof(RTCode));
         while (code != CODE_MODULE_END) {
             if(code == CODE_RTIVKFUNC || code == CODE_CONDITIONAL || code == CODE_RTREGEX_LITERAL
-               || code == CODE_UNARY_OPERATOR || code == CODE_BINARY_OPERATOR
-               || code == CODE_RTVAR_SET || code == CODE_RTINDEX_GET || code == CODE_RTINDEX_SET
+               || code == CODE_UNARY_OPERATOR || code == CODE_RTTYPED_NEGATE || code == CODE_BINARY_OPERATOR
+               || code == CODE_RTTYPED_BINARY || code == CODE_RTTYPED_COMPARE
+               || code == CODE_RTVAR_SET || code == CODE_RTLOCAL_REF || code == CODE_RTTYPED_LOCAL_REF || code == CODE_RTLOCAL_SET
+               || code == CODE_RTLOCAL_DECL || code == CODE_RTSECURE_LOCAL_DECL
+               || code == CODE_RTINDEX_GET || code == CODE_RTTYPED_INDEX_GET || code == CODE_RTINDEX_SET || code == CODE_RTTYPED_INDEX_SET
                || code == CODE_RTARRAY_LITERAL
                || code == CODE_RTDICT_LITERAL || code == CODE_RTTYPECHECK
-               || code == CODE_RTTERNARY || code == CODE_RTCAST){
+               || code == CODE_RTTERNARY || code == CODE_RTCAST || code == CODE_RTTYPED_INTRINSIC){
                 _disasm_expr(code);
             }
             else {

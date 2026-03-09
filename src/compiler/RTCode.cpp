@@ -129,6 +129,12 @@ namespace Runtime {
             case CODE_RTFUNC_REF:
                 skipRTIDPayload(is);
                 break;
+            case CODE_RTLOCAL_REF:
+                is.seekg((std::streamoff)sizeof(uint32_t),std::ios_base::cur);
+                break;
+            case CODE_RTTYPED_LOCAL_REF:
+                is.seekg((std::streamoff)(sizeof(RTTypedNumericKind) + sizeof(uint32_t)),std::ios_base::cur);
+                break;
             case CODE_RTIVKFUNC: {
                 skipExpr(is);
                 unsigned argCount = 0;
@@ -150,6 +156,35 @@ namespace Runtime {
                 RTCode binaryCode = BINARY_OP_PLUS;
                 is.read((char *)&binaryCode,sizeof(binaryCode));
                 (void)binaryCode;
+                skipExpr(is);
+                skipExpr(is);
+                break;
+            }
+            case CODE_RTTYPED_BINARY: {
+                RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+                RTTypedBinaryOp op = RTTYPED_BINARY_ADD;
+                is.read((char *)&kind,sizeof(kind));
+                is.read((char *)&op,sizeof(op));
+                (void)kind;
+                (void)op;
+                skipExpr(is);
+                skipExpr(is);
+                break;
+            }
+            case CODE_RTTYPED_NEGATE: {
+                RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+                is.read((char *)&kind,sizeof(kind));
+                (void)kind;
+                skipExpr(is);
+                break;
+            }
+            case CODE_RTTYPED_COMPARE: {
+                RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+                RTTypedCompareOp op = RTTYPED_COMPARE_EQ;
+                is.read((char *)&kind,sizeof(kind));
+                is.read((char *)&op,sizeof(op));
+                (void)kind;
+                (void)op;
                 skipExpr(is);
                 skipExpr(is);
                 break;
@@ -192,15 +227,65 @@ namespace Runtime {
                 skipRTIDPayload(is);
                 skipExpr(is);
                 break;
+            case CODE_RTLOCAL_SET:
+                is.seekg((std::streamoff)sizeof(uint32_t),std::ios_base::cur);
+                skipExpr(is);
+                break;
+            case CODE_RTLOCAL_DECL: {
+                is.seekg((std::streamoff)sizeof(uint32_t),std::ios_base::cur);
+                bool hasInitValue = false;
+                is.read((char *)&hasInitValue,sizeof(hasInitValue));
+                if(hasInitValue){
+                    skipExpr(is);
+                }
+                break;
+            }
+            case CODE_RTSECURE_LOCAL_DECL: {
+                is.seekg((std::streamoff)sizeof(uint32_t),std::ios_base::cur);
+                bool hasCatchSlot = false;
+                is.read((char *)&hasCatchSlot,sizeof(hasCatchSlot));
+                if(hasCatchSlot){
+                    is.seekg((std::streamoff)sizeof(uint32_t),std::ios_base::cur);
+                }
+                bool hasCatchType = false;
+                is.read((char *)&hasCatchType,sizeof(hasCatchType));
+                if(hasCatchType){
+                    skipRTIDPayload(is);
+                }
+                skipExpr(is);
+                RTCode blockBegin = CODE_MODULE_END;
+                is.read((char *)&blockBegin,sizeof(blockBegin));
+                if(blockBegin == CODE_RTBLOCK_BEGIN){
+                    skipRuntimeBlock(is,CODE_RTBLOCK_END);
+                }
+                break;
+            }
             case CODE_RTINDEX_GET:
                 skipExpr(is);
                 skipExpr(is);
                 break;
+            case CODE_RTTYPED_INDEX_GET: {
+                RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+                is.read((char *)&kind,sizeof(kind));
+                (void)kind;
+                skipExpr(is);
+                skipExpr(is);
+                break;
+            }
             case CODE_RTINDEX_SET:
                 skipExpr(is);
                 skipExpr(is);
                 skipExpr(is);
                 break;
+            case CODE_RTTYPED_INDEX_SET: {
+                RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+                is.read((char *)&kind,sizeof(kind));
+                (void)kind;
+                skipExpr(is);
+                skipExpr(is);
+                skipExpr(is);
+                break;
+            }
             case CODE_RTARRAY_LITERAL: {
                 unsigned elementCount = 0;
                 is.read((char *)&elementCount,sizeof(elementCount));
@@ -233,6 +318,16 @@ namespace Runtime {
                 skipExpr(is);
                 skipRTIDPayload(is);
                 break;
+            case CODE_RTTYPED_INTRINSIC: {
+                RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+                RTTypedIntrinsicOp op = RTTYPED_INTRINSIC_SQRT;
+                is.read((char *)&kind,sizeof(kind));
+                is.read((char *)&op,sizeof(op));
+                (void)kind;
+                (void)op;
+                skipExpr(is);
+                break;
+            }
             default:
                 break;
         }
@@ -261,6 +356,17 @@ namespace Runtime {
         while(argCount > 0){
             skipRTIDPayload(is);
             --argCount;
+        }
+        unsigned localSlotCount = 0;
+        is.read((char *)&localSlotCount,sizeof(localSlotCount));
+        while(localSlotCount > 0){
+            skipRTIDPayload(is);
+            --localSlotCount;
+        }
+        unsigned slotKindCount = 0;
+        is.read((char *)&slotKindCount,sizeof(slotKindCount));
+        if(slotKindCount > 0){
+            is.seekg((std::streamoff)(sizeof(RTTypedNumericKind) * slotKindCount),std::ios_base::cur);
         }
         bool isLazy = false;
         is.read((char *)&isLazy,sizeof(isLazy));
@@ -358,6 +464,38 @@ namespace Runtime {
                 skipRTIDPayload(is);
             }
             bool hasCatchType = false;
+            is.read((char *)&hasCatchType,sizeof(hasCatchType));
+            if(hasCatchType){
+                skipRTIDPayload(is);
+            }
+            skipExpr(is);
+            RTCode blockBegin = CODE_MODULE_END;
+            is.read((char *)&blockBegin,sizeof(blockBegin));
+            if(blockBegin == CODE_RTBLOCK_BEGIN){
+                skipRuntimeBlock(is,CODE_RTBLOCK_END);
+            }
+            return;
+        }
+        if(code == CODE_RTLOCAL_DECL){
+            uint32_t slot = 0;
+            bool hasInitValue = false;
+            is.read((char *)&slot,sizeof(slot));
+            is.read((char *)&hasInitValue,sizeof(hasInitValue));
+            if(hasInitValue){
+                skipExpr(is);
+            }
+            return;
+        }
+        if(code == CODE_RTSECURE_LOCAL_DECL){
+            uint32_t targetSlot = 0;
+            bool hasCatchSlot = false;
+            bool hasCatchType = false;
+            is.read((char *)&targetSlot,sizeof(targetSlot));
+            is.read((char *)&hasCatchSlot,sizeof(hasCatchSlot));
+            if(hasCatchSlot){
+                uint32_t catchSlot = 0;
+                is.read((char *)&catchSlot,sizeof(catchSlot));
+            }
             is.read((char *)&hasCatchType,sizeof(hasCatchType));
             if(hasCatchType){
                 skipRTIDPayload(is);
@@ -475,6 +613,22 @@ namespace Runtime {
             obj->argsTemplate.push_back(std::move(id));
             --argCount;
         };
+        unsigned localSlotCount = 0;
+        is.read((char *)&localSlotCount,sizeof(localSlotCount));
+        while(localSlotCount > 0){
+            RTID id;
+            is >> &id;
+            obj->localSlotNames.push_back(std::move(id));
+            --localSlotCount;
+        }
+        unsigned slotKindCount = 0;
+        is.read((char *)&slotKindCount,sizeof(slotKindCount));
+        while(slotKindCount > 0){
+            RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+            is.read((char *)&kind,sizeof(kind));
+            obj->slotKinds.push_back(kind);
+            --slotKindCount;
+        }
         is.read((char *)&obj->isLazy,sizeof(obj->isLazy));
         is.read((char *)&obj->blockByteSize,sizeof(obj->blockByteSize));
         auto checkpoint = is.tellg();
@@ -505,6 +659,16 @@ namespace Runtime {
         for(auto & arg : obj->argsTemplate){
             os << &arg;
         };
+        unsigned localSlotCount = obj->localSlotNames.size();
+        os.write((char *)&localSlotCount,sizeof(localSlotCount));
+        for(auto &slotName : obj->localSlotNames){
+            os << &slotName;
+        }
+        unsigned slotKindCount = obj->slotKinds.size();
+        os.write((char *)&slotKindCount,sizeof(slotKindCount));
+        if(slotKindCount > 0){
+            os.write((char *)obj->slotKinds.data(),(std::streamsize)(sizeof(RTTypedNumericKind) * slotKindCount));
+        }
         os.write((char *)&obj->isLazy,sizeof(obj->isLazy));
         os.write((char *)&obj->blockByteSize,sizeof(obj->blockByteSize));
         return os;

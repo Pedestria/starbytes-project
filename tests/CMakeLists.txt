@@ -251,4 +251,31 @@ add_starbytes_test(
     DEPENDENCIES
     ${STARBYTES_ALL_LIBS})
 
+add_starbytes_test(
+    NAME
+    "slot-locals-phase2-test"
+    INCLUDE_LIB
+    FILES
+    "SlotLocalsPhase2Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "numeric-arrays-phase3-test"
+    INCLUDE_LIB
+    FILES
+    "NumericArraysPhase3Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "specialized-numeric-bytecode-phase4-test"
+    INCLUDE_LIB
+    FILES
+    "SpecializedNumericBytecodePhase4Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
 configure_file("test.starb" "${CMAKE_CURRENT_BINARY_DIR}/test.starb" COPYONLY)

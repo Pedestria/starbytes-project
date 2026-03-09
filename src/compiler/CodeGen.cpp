@@ -65,7 +65,12 @@ static std::string emitBlockBodyToBuffer(ASTBlockStmt *blockStmt,ModuleGenContex
     return bodyBuffer.str();
 }
 
-static void emitRuntimeFunction(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,CodeGen *astConsumer,RTFuncTemplate &templ){
+static void emitRuntimeFunction(ASTBlockStmt *blockStmt,
+                                const std::vector<std::pair<ASTIdentifier *,ASTType *>> &orderedParams,
+                                ModuleGenContext *ctxt,
+                                CodeGen *astConsumer,
+                                RTFuncTemplate &templ){
+    astConsumer->pushLocalSlotContext(orderedParams,blockStmt,templ);
     auto bodyBytes = emitBlockBodyToBuffer(blockStmt,ctxt,astConsumer);
     templ.blockByteSize = bodyBytes.size();
     ctxt->out << &templ;
@@ -76,10 +81,15 @@ static void emitRuntimeFunction(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,C
     }
     code = CODE_RTFUNCBLOCK_END;
     ctxt->out.write((char *)&code,sizeof(RTCode));
+    astConsumer->popLocalSlotContext();
 }
 
 inline void ASTIdentifier_to_RTID(ASTIdentifier *var,RTID &out);
 static RTID makeOwnedRTID(string_ref value);
+static void collectLocalSlotInfosFromBlock(ASTBlockStmt *blockStmt,
+                                           std::set<std::string> &seen,
+                                           std::vector<std::pair<std::string,CodeGen::FastTypeInfo>> &out,
+                                           const CodeGen *codeGen);
 
 static bool paramComesBefore(ASTIdentifier *lhs,ASTIdentifier *rhs){
     if(lhs == rhs){
@@ -161,7 +171,7 @@ void CodeGen::ensureInlineFunctionTemplate(ASTExpr *inlineExpr,const std::string
         ASTIdentifier_to_RTID(paramPair.first,paramId);
         inlineTemplate.argsTemplate.push_back(paramId);
     }
-    emitRuntimeFunction(inlineExpr->inlineFuncBlock,genContext,this,inlineTemplate);
+    emitRuntimeFunction(inlineExpr->inlineFuncBlock,orderedParams,genContext,this,inlineTemplate);
     emittedInlineRuntimeFuncs.insert(inlineExpr->inlineFuncRuntimeName);
 }
 
@@ -171,6 +181,187 @@ void CodeGen::ensureInlineExprTemplates(ASTExpr *expr){
     for(auto *inlineExpr : inlineExprs){
         ensureInlineFunctionTemplate(inlineExpr,"expr");
     }
+}
+
+static RTTypedNumericKind fastScalarKindFromType(ASTType *type){
+    if(!type){
+        return RTTYPED_NUM_OBJECT;
+    }
+    if(type->nameMatches(INT_TYPE)){
+        return RTTYPED_NUM_INT;
+    }
+    if(type->nameMatches(LONG_TYPE)){
+        return RTTYPED_NUM_LONG;
+    }
+    if(type->nameMatches(FLOAT_TYPE)){
+        return RTTYPED_NUM_FLOAT;
+    }
+    if(type->nameMatches(DOUBLE_TYPE)){
+        return RTTYPED_NUM_DOUBLE;
+    }
+    return RTTYPED_NUM_OBJECT;
+}
+
+CodeGen::FastTypeInfo CodeGen::fastTypeFromTypeNode(ASTType *type) const{
+    FastTypeInfo info;
+    if(!type){
+        return info;
+    }
+    info.scalarKind = fastScalarKindFromType(type);
+    if(type->nameMatches(ARRAY_TYPE) && type->typeParams.size() == 1 && type->typeParams.front()){
+        info.arrayElementKind = fastScalarKindFromType(type->typeParams.front());
+    }
+    return info;
+}
+
+static void recordLocalSlotInfo(ASTIdentifier *id,
+                                ASTType *type,
+                                std::set<std::string> &seen,
+                                std::vector<std::pair<std::string,CodeGen::FastTypeInfo>> &out,
+                                const CodeGen *codeGen){
+    if(!id){
+        return;
+    }
+    auto inserted = seen.insert(id->val);
+    if(inserted.second){
+        (void)codeGen;
+        CodeGen::FastTypeInfo info;
+        if(type){
+            info.scalarKind = fastScalarKindFromType(type);
+            if(type->nameMatches(ARRAY_TYPE) && type->typeParams.size() == 1 && type->typeParams.front()){
+                info.arrayElementKind = fastScalarKindFromType(type->typeParams.front());
+            }
+        }
+        out.push_back({id->val,info});
+    }
+}
+
+static void collectLocalSlotInfosFromDecl(ASTDecl *decl,
+                                          std::set<std::string> &seen,
+                                          std::vector<std::pair<std::string,CodeGen::FastTypeInfo>> &out,
+                                          const CodeGen *codeGen);
+
+static void collectLocalSlotInfosFromBlock(ASTBlockStmt *blockStmt,
+                                           std::set<std::string> &seen,
+                                           std::vector<std::pair<std::string,CodeGen::FastTypeInfo>> &out,
+                                           const CodeGen *codeGen){
+    if(!blockStmt){
+        return;
+    }
+    for(auto *stmt : blockStmt->body){
+        if(stmt && (stmt->type & DECL)){
+            collectLocalSlotInfosFromDecl(static_cast<ASTDecl *>(stmt),seen,out,codeGen);
+        }
+    }
+}
+
+static void collectLocalSlotInfosFromDecl(ASTDecl *decl,
+                                          std::set<std::string> &seen,
+                                          std::vector<std::pair<std::string,CodeGen::FastTypeInfo>> &out,
+                                          const CodeGen *codeGen){
+    if(!decl){
+        return;
+    }
+    if(decl->type == VAR_DECL){
+        auto *varDecl = static_cast<ASTVarDecl *>(decl);
+        for(auto &spec : varDecl->specs){
+            recordLocalSlotInfo(spec.id,spec.type,seen,out,codeGen);
+        }
+        return;
+    }
+    if(decl->type == SECURE_DECL){
+        auto *secureDecl = static_cast<ASTSecureDecl *>(decl);
+        if(secureDecl->guardedDecl){
+            collectLocalSlotInfosFromDecl(secureDecl->guardedDecl,seen,out,codeGen);
+        }
+        recordLocalSlotInfo(secureDecl->catchErrorId,secureDecl->catchErrorType,seen,out,codeGen);
+        collectLocalSlotInfosFromBlock(secureDecl->catchBlock,seen,out,codeGen);
+        return;
+    }
+    if(decl->type == COND_DECL){
+        auto *condDecl = static_cast<ASTConditionalDecl *>(decl);
+        for(auto &spec : condDecl->specs){
+            collectLocalSlotInfosFromBlock(spec.blockStmt,seen,out,codeGen);
+        }
+        return;
+    }
+    if(decl->type == FOR_DECL){
+        auto *forDecl = static_cast<ASTForDecl *>(decl);
+        collectLocalSlotInfosFromBlock(forDecl->blockStmt,seen,out,codeGen);
+        return;
+    }
+    if(decl->type == WHILE_DECL){
+        auto *whileDecl = static_cast<ASTWhileDecl *>(decl);
+        collectLocalSlotInfosFromBlock(whileDecl->blockStmt,seen,out,codeGen);
+        return;
+    }
+}
+
+void CodeGen::pushLocalSlotContext(const std::vector<std::pair<ASTIdentifier *,ASTType *>> &orderedParams,
+                                   ASTBlockStmt *blockStmt,
+                                   RTFuncTemplate &templ){
+    LocalSlotContext context;
+    context.argSlotCount = (unsigned)orderedParams.size();
+
+    std::set<std::string> seen;
+    uint32_t nextSlot = 0;
+    for(const auto &paramPair : orderedParams){
+        if(!paramPair.first){
+            continue;
+        }
+        std::string argName = paramPair.first->val;
+        seen.insert(argName);
+        context.slotMap.emplace(argName,nextSlot++);
+        auto typeInfo = fastTypeFromTypeNode(paramPair.second);
+        context.slotTypeMap[argName] = typeInfo;
+        context.slotKinds.push_back(typeInfo.scalarKind);
+    }
+
+    std::vector<std::pair<std::string,FastTypeInfo>> localInfos;
+    collectLocalSlotInfosFromBlock(blockStmt,seen,localInfos,this);
+    for(const auto &localInfo : localInfos){
+        context.slotMap.emplace(localInfo.first,nextSlot++);
+        context.slotTypeMap[localInfo.first] = localInfo.second;
+        auto slotId = makeOwnedRTID(localInfo.first);
+        templ.localSlotNames.push_back(slotId);
+        context.localSlotNames.push_back(slotId);
+        context.slotKinds.push_back(localInfo.second.scalarKind);
+    }
+
+    templ.slotKinds = context.slotKinds;
+    localSlotStack.push_back(std::move(context));
+}
+
+void CodeGen::popLocalSlotContext(){
+    if(!localSlotStack.empty()){
+        localSlotStack.pop_back();
+    }
+}
+
+bool CodeGen::currentLocalSlotForName(string_ref name,uint32_t &slotOut) const{
+    if(localSlotStack.empty()){
+        return false;
+    }
+    auto &context = localSlotStack.back();
+    auto found = context.slotMap.find(name.str());
+    if(found == context.slotMap.end()){
+        return false;
+    }
+    slotOut = found->second;
+    return true;
+}
+
+bool CodeGen::currentLocalSlotFastType(string_ref name,FastTypeInfo &typeOut) const{
+    if(localSlotStack.empty()){
+        return false;
+    }
+    auto &context = localSlotStack.back();
+    auto found = context.slotTypeMap.find(name.str());
+    if(found == context.slotTypeMap.end()){
+        return false;
+    }
+    typeOut = found->second;
+    return true;
 }
 
 
@@ -224,6 +415,12 @@ static void writeNamedVarRef(std::ostream &out,string_ref name){
     out << &id;
 }
 
+static void writeLocalSlotRef(std::ostream &out,uint32_t slot){
+    RTCode code = CODE_RTLOCAL_REF;
+    out.write((const char *)&code,sizeof(RTCode));
+    out.write((const char *)&slot,sizeof(slot));
+}
+
 static bool getMemberName(ASTExpr *memberExpr,std::string &memberName){
     if(!memberExpr || memberExpr->type != MEMBER_EXPR){
         return false;
@@ -250,6 +447,153 @@ static std::string emittedNameForScopeMember(ModuleGenContext *context,ASTExpr *
     return entry->name;
 }
 
+static RTTypedNumericKind promotedFastKind(RTTypedNumericKind lhs,RTTypedNumericKind rhs){
+    return lhs >= rhs ? lhs : rhs;
+}
+
+static bool isFastNumericKind(RTTypedNumericKind kind){
+    return kind != RTTYPED_NUM_OBJECT;
+}
+
+CodeGen::FastTypeInfo CodeGen::inferFastType(ASTExpr *expr) const{
+    FastTypeInfo info;
+    if(!expr){
+        return info;
+    }
+
+    if(expr->type & LITERAL){
+        auto *literal = static_cast<ASTLiteralExpr *>(expr);
+        if(literal->intValue.has_value()){
+            info.scalarKind = RTTYPED_NUM_INT;
+        }
+        else if(literal->floatValue.has_value()){
+            info.scalarKind = RTTYPED_NUM_DOUBLE;
+        }
+        return info;
+    }
+
+    if(expr->type == ID_EXPR && expr->id){
+        if(expr->id->type == ASTIdentifier::Var){
+            if(currentLocalSlotFastType(expr->id->val,info)){
+                return info;
+            }
+            if(genContext && genContext->tableContext){
+                if(auto *entry = genContext->tableContext->findEntryByEmittedNoDiag(expr->id->val)){
+                    if(entry->type == Semantics::SymbolTable::Entry::Var){
+                        auto *varData = static_cast<Semantics::SymbolTable::Var *>(entry->data);
+                        return fastTypeFromTypeNode(varData->type);
+                    }
+                }
+            }
+        }
+        else if(expr->id->type == ASTIdentifier::Function && genContext && genContext->tableContext){
+            if(auto *entry = genContext->tableContext->findEntryByEmittedNoDiag(expr->id->val)){
+                if(entry->type == Semantics::SymbolTable::Entry::Function){
+                    auto *funcData = static_cast<Semantics::SymbolTable::Function *>(entry->data);
+                    return fastTypeFromTypeNode(funcData->returnType);
+                }
+            }
+        }
+        return info;
+    }
+
+    if(expr->type == MEMBER_EXPR){
+        std::string memberName;
+        if(!getMemberName(expr,memberName)){
+            return info;
+        }
+        auto baseType = inferFastType(expr->leftExpr);
+        if(memberName == "length"){
+            info.scalarKind = RTTYPED_NUM_INT;
+            return info;
+        }
+        if(expr->isScopeAccess && genContext && genContext->tableContext && expr->resolvedScope){
+            if(auto *entry = genContext->tableContext->findEntryInExactScopeNoDiag(expr->rightExpr->id->val,expr->resolvedScope)){
+                if(entry->type == Semantics::SymbolTable::Entry::Var){
+                    auto *varData = static_cast<Semantics::SymbolTable::Var *>(entry->data);
+                    return fastTypeFromTypeNode(varData->type);
+                }
+                if(entry->type == Semantics::SymbolTable::Entry::Function){
+                    auto *funcData = static_cast<Semantics::SymbolTable::Function *>(entry->data);
+                    return fastTypeFromTypeNode(funcData->returnType);
+                }
+            }
+        }
+        (void)baseType;
+        return info;
+    }
+
+    if(expr->type == INDEX_EXPR){
+        auto baseType = inferFastType(expr->leftExpr);
+        info.scalarKind = baseType.arrayElementKind;
+        return info;
+    }
+
+    if(expr->type == UNARY_EXPR){
+        auto operandType = inferFastType(expr->leftExpr);
+        auto op = expr->oprtr_str.value_or("");
+        if(op == "+" || op == "-"){
+            info.scalarKind = operandType.scalarKind;
+        }
+        return info;
+    }
+
+    if(expr->type == BINARY_EXPR){
+        auto lhsType = inferFastType(expr->leftExpr);
+        auto rhsType = inferFastType(expr->rightExpr);
+        auto op = expr->oprtr_str.value_or("");
+        if(op == "+" || op == "-" || op == "*" || op == "/" || op == "%"){
+            if(isFastNumericKind(lhsType.scalarKind) && isFastNumericKind(rhsType.scalarKind)){
+                info.scalarKind = promotedFastKind(lhsType.scalarKind,rhsType.scalarKind);
+            }
+        }
+        return info;
+    }
+
+    if(expr->type == IVKE_EXPR){
+        if(expr->runtimeCastTargetName.has_value()){
+            auto targetName = expr->runtimeCastTargetName.value();
+            if(targetName == INT_TYPE->getName().str()){
+                info.scalarKind = RTTYPED_NUM_INT;
+            }
+            else if(targetName == LONG_TYPE->getName().str()){
+                info.scalarKind = RTTYPED_NUM_LONG;
+            }
+            else if(targetName == FLOAT_TYPE->getName().str()){
+                info.scalarKind = RTTYPED_NUM_FLOAT;
+            }
+            else if(targetName == DOUBLE_TYPE->getName().str()){
+                info.scalarKind = RTTYPED_NUM_DOUBLE;
+            }
+            return info;
+        }
+        if(!expr->callee){
+            return info;
+        }
+        auto *callee = expr->callee;
+        if(callee->type == ID_EXPR && callee->id && callee->id->type == ASTIdentifier::Function){
+            if(genContext && genContext->tableContext){
+                if(auto *entry = genContext->tableContext->findEntryByEmittedNoDiag(callee->id->val)){
+                    if(entry->type == Semantics::SymbolTable::Entry::Function){
+                        auto *funcData = static_cast<Semantics::SymbolTable::Function *>(entry->data);
+                        return fastTypeFromTypeNode(funcData->returnType);
+                    }
+                }
+            }
+        }
+        if(callee->type == MEMBER_EXPR && callee->isScopeAccess && genContext && genContext->tableContext && callee->resolvedScope){
+            if(auto *entry = genContext->tableContext->findEntryInExactScopeNoDiag(callee->rightExpr->id->val,callee->resolvedScope)){
+                if(entry->type == Semantics::SymbolTable::Entry::Function){
+                    auto *funcData = static_cast<Semantics::SymbolTable::Function *>(entry->data);
+                    return fastTypeFromTypeNode(funcData->returnType);
+                }
+            }
+        }
+    }
+
+    return info;
+}
+
 static bool unaryOpCodeFromSymbol(const std::string &op,RTCode &out){
     if(op == "+"){
         out = UNARY_OP_PLUS;
@@ -269,6 +613,58 @@ static bool unaryOpCodeFromSymbol(const std::string &op,RTCode &out){
     }
     if(op == "await"){
         out = UNARY_OP_AWAIT;
+        return true;
+    }
+    return false;
+}
+
+static bool typedBinaryOpFromSymbol(const std::string &op,RTTypedBinaryOp &out){
+    if(op == "+"){
+        out = RTTYPED_BINARY_ADD;
+        return true;
+    }
+    if(op == "-"){
+        out = RTTYPED_BINARY_SUB;
+        return true;
+    }
+    if(op == "*"){
+        out = RTTYPED_BINARY_MUL;
+        return true;
+    }
+    if(op == "/"){
+        out = RTTYPED_BINARY_DIV;
+        return true;
+    }
+    if(op == "%"){
+        out = RTTYPED_BINARY_MOD;
+        return true;
+    }
+    return false;
+}
+
+static bool typedCompareOpFromSymbol(const std::string &op,RTTypedCompareOp &out){
+    if(op == "=="){
+        out = RTTYPED_COMPARE_EQ;
+        return true;
+    }
+    if(op == "!="){
+        out = RTTYPED_COMPARE_NE;
+        return true;
+    }
+    if(op == "<"){
+        out = RTTYPED_COMPARE_LT;
+        return true;
+    }
+    if(op == "<="){
+        out = RTTYPED_COMPARE_LE;
+        return true;
+    }
+    if(op == ">"){
+        out = RTTYPED_COMPARE_GT;
+        return true;
+    }
+    if(op == ">="){
+        out = RTTYPED_COMPARE_GE;
         return true;
     }
     return false;
@@ -350,6 +746,52 @@ static bool binaryOpCodeFromSymbol(const std::string &op,RTCode &out){
     return false;
 }
 
+static void writeTypedLocalSlotRef(std::ostream &out,RTTypedNumericKind kind,uint32_t slot){
+    RTCode code = CODE_RTTYPED_LOCAL_REF;
+    out.write((const char *)&code,sizeof(code));
+    out.write((const char *)&kind,sizeof(kind));
+    out.write((const char *)&slot,sizeof(slot));
+}
+
+static void writeTypedBinaryHeader(std::ostream &out,RTTypedNumericKind kind,RTTypedBinaryOp op){
+    RTCode code = CODE_RTTYPED_BINARY;
+    out.write((const char *)&code,sizeof(code));
+    out.write((const char *)&kind,sizeof(kind));
+    out.write((const char *)&op,sizeof(op));
+}
+
+static void writeTypedNegateHeader(std::ostream &out,RTTypedNumericKind kind){
+    RTCode code = CODE_RTTYPED_NEGATE;
+    out.write((const char *)&code,sizeof(code));
+    out.write((const char *)&kind,sizeof(kind));
+}
+
+static void writeTypedCompareHeader(std::ostream &out,RTTypedNumericKind kind,RTTypedCompareOp op){
+    RTCode code = CODE_RTTYPED_COMPARE;
+    out.write((const char *)&code,sizeof(code));
+    out.write((const char *)&kind,sizeof(kind));
+    out.write((const char *)&op,sizeof(op));
+}
+
+static void writeTypedIndexGetHeader(std::ostream &out,RTTypedNumericKind kind){
+    RTCode code = CODE_RTTYPED_INDEX_GET;
+    out.write((const char *)&code,sizeof(code));
+    out.write((const char *)&kind,sizeof(kind));
+}
+
+static void writeTypedIndexSetHeader(std::ostream &out,RTTypedNumericKind kind){
+    RTCode code = CODE_RTTYPED_INDEX_SET;
+    out.write((const char *)&code,sizeof(code));
+    out.write((const char *)&kind,sizeof(kind));
+}
+
+static void writeTypedIntrinsicHeader(std::ostream &out,RTTypedNumericKind kind,RTTypedIntrinsicOp op){
+    RTCode code = CODE_RTTYPED_INTRINSIC;
+    out.write((const char *)&code,sizeof(code));
+    out.write((const char *)&kind,sizeof(kind));
+    out.write((const char *)&op,sizeof(op));
+}
+
 static std::vector<RTAttribute> convertAttributes(const std::vector<ASTAttribute> &astAttrs){
     std::vector<RTAttribute> out;
     out.reserve(astAttrs.size());
@@ -420,22 +862,45 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
                 }
             }
 
-            RTVar code_var;
-            ASTIdentifier_to_RTID(var_id,code_var.id);
-            code_var.hasInitValue = (spec.expr != nullptr);
-            code_var.attributes = convertAttributes(varDecl->attributes);
-            genContext->out << &code_var;
-            if(spec.expr) {
-                ASTExpr *initialVal = spec.expr;
-                if(initialVal->type == INLINE_FUNC_EXPR){
-                    ensureInlineFunctionTemplate(initialVal,var_id ? var_id->val : "var");
-                    RTCode code = CODE_RTFUNC_REF;
-                    genContext->out.write((const char *)&code,sizeof(RTCode));
-                    RTID funcId = makeOwnedRTID(initialVal->inlineFuncRuntimeName);
-                    genContext->out << &funcId;
+            uint32_t localSlot = 0;
+            if(var_id && currentLocalSlotForName(var_id->val,localSlot)){
+                RTCode code = CODE_RTLOCAL_DECL;
+                bool hasInitValue = (spec.expr != nullptr);
+                genContext->out.write((const char *)&code,sizeof(RTCode));
+                genContext->out.write((const char *)&localSlot,sizeof(localSlot));
+                genContext->out.write((const char *)&hasInitValue,sizeof(hasInitValue));
+                if(spec.expr){
+                    ASTExpr *initialVal = spec.expr;
+                    if(initialVal->type == INLINE_FUNC_EXPR){
+                        ensureInlineFunctionTemplate(initialVal,var_id ? var_id->val : "var");
+                        RTCode funcCode = CODE_RTFUNC_REF;
+                        genContext->out.write((const char *)&funcCode,sizeof(RTCode));
+                        RTID funcId = makeOwnedRTID(initialVal->inlineFuncRuntimeName);
+                        genContext->out << &funcId;
+                    }
+                    else {
+                        consumeStmt(initialVal);
+                    }
                 }
-                else {
-                    consumeStmt(initialVal);
+            }
+            else {
+                RTVar code_var;
+                ASTIdentifier_to_RTID(var_id,code_var.id);
+                code_var.hasInitValue = (spec.expr != nullptr);
+                code_var.attributes = convertAttributes(varDecl->attributes);
+                genContext->out << &code_var;
+                if(spec.expr) {
+                    ASTExpr *initialVal = spec.expr;
+                    if(initialVal->type == INLINE_FUNC_EXPR){
+                        ensureInlineFunctionTemplate(initialVal,var_id ? var_id->val : "var");
+                        RTCode code = CODE_RTFUNC_REF;
+                        genContext->out.write((const char *)&code,sizeof(RTCode));
+                        RTID funcId = makeOwnedRTID(initialVal->inlineFuncRuntimeName);
+                        genContext->out << &funcId;
+                    }
+                    else {
+                        consumeStmt(initialVal);
+                    }
                 }
             }
         };
@@ -451,25 +916,48 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
         }
         ensureInlineExprTemplates(guardedSpec.expr);
 
-        RTCode code = CODE_RTSECURE_DECL;
-        genContext->out.write((const char *)&code,sizeof(RTCode));
-        RTID targetVarId;
-        ASTIdentifier_to_RTID(guardedSpec.id,targetVarId);
-        genContext->out << &targetVarId;
+        uint32_t targetSlot = 0;
+        if(currentLocalSlotForName(guardedSpec.id->val,targetSlot)){
+            RTCode code = CODE_RTSECURE_LOCAL_DECL;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            genContext->out.write((const char *)&targetSlot,sizeof(targetSlot));
 
-        bool hasCatchBinding = secureDecl->catchErrorId != nullptr;
-        genContext->out.write((const char *)&hasCatchBinding,sizeof(hasCatchBinding));
-        if(hasCatchBinding){
-            RTID catchBindingId;
-            ASTIdentifier_to_RTID(secureDecl->catchErrorId,catchBindingId);
-            genContext->out << &catchBindingId;
+            bool hasCatchBinding = secureDecl->catchErrorId != nullptr;
+            genContext->out.write((const char *)&hasCatchBinding,sizeof(hasCatchBinding));
+            if(hasCatchBinding){
+                uint32_t catchSlot = targetSlot;
+                currentLocalSlotForName(secureDecl->catchErrorId->val,catchSlot);
+                genContext->out.write((const char *)&catchSlot,sizeof(catchSlot));
+            }
+
+            bool hasCatchType = secureDecl->catchErrorType != nullptr;
+            genContext->out.write((const char *)&hasCatchType,sizeof(hasCatchType));
+            if(hasCatchType){
+                RTID catchTypeId = makeOwnedRTID(std::string(secureDecl->catchErrorType->getName()));
+                genContext->out << &catchTypeId;
+            }
         }
+        else {
+            RTCode code = CODE_RTSECURE_DECL;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+            RTID targetVarId;
+            ASTIdentifier_to_RTID(guardedSpec.id,targetVarId);
+            genContext->out << &targetVarId;
 
-        bool hasCatchType = secureDecl->catchErrorType != nullptr;
-        genContext->out.write((const char *)&hasCatchType,sizeof(hasCatchType));
-        if(hasCatchType){
-            RTID catchTypeId = makeOwnedRTID(std::string(secureDecl->catchErrorType->getName()));
-            genContext->out << &catchTypeId;
+            bool hasCatchBinding = secureDecl->catchErrorId != nullptr;
+            genContext->out.write((const char *)&hasCatchBinding,sizeof(hasCatchBinding));
+            if(hasCatchBinding){
+                RTID catchBindingId;
+                ASTIdentifier_to_RTID(secureDecl->catchErrorId,catchBindingId);
+                genContext->out << &catchBindingId;
+            }
+
+            bool hasCatchType = secureDecl->catchErrorType != nullptr;
+            genContext->out.write((const char *)&hasCatchType,sizeof(hasCatchType));
+            if(hasCatchType){
+                RTID catchTypeId = makeOwnedRTID(std::string(secureDecl->catchErrorType->getName()));
+                genContext->out << &catchTypeId;
+            }
         }
 
         consumeStmt(guardedSpec.expr);
@@ -488,7 +976,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             ASTIdentifier_to_RTID(param_pair.first,param_id);
             funcTemplate.argsTemplate.push_back(param_id);
         };
-        emitRuntimeFunction(func_node->blockStmt,genContext,this,funcTemplate);
+        emitRuntimeFunction(func_node->blockStmt,orderedParams,genContext,this,funcTemplate);
     }
     else if(stmt->type == CLASS_DECL){
         auto class_decl = (ASTClassDecl *)stmt;
@@ -562,7 +1050,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
                 ASTIdentifier_to_RTID(paramPair.first,paramId);
                 runtimeMethod.argsTemplate.push_back(paramId);
             }
-            emitRuntimeFunction(methodDecl->blockStmt,genContext,this,runtimeMethod);
+            emitRuntimeFunction(methodDecl->blockStmt,orderedMethodParams,genContext,this,runtimeMethod);
         }
         for(auto &ctorDecl : class_decl->constructors){
             RTFuncTemplate runtimeCtor;
@@ -574,7 +1062,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
                 ASTIdentifier_to_RTID(paramPair.first,paramId);
                 runtimeCtor.argsTemplate.push_back(paramId);
             }
-            emitRuntimeFunction(ctorDecl->blockStmt,genContext,this,runtimeCtor);
+            emitRuntimeFunction(ctorDecl->blockStmt,orderedCtorParams,genContext,this,runtimeCtor);
         }
         if(!fieldInitializers.empty()){
             RTFuncTemplate runtimeFieldInit;
@@ -861,11 +1349,23 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
     }
     else if(stmt->type == ID_EXPR){
         if(expr->id->type == ASTIdentifier::Var) {
-            RTCode code = CODE_RTVAR_REF;
-            genContext->out.write((const char *)&code,sizeof(RTCode));
-            RTID id;
-            ASTIdentifier_to_RTID(expr->id,id);
-            genContext->out << &id;
+            uint32_t localSlot = 0;
+            if(currentLocalSlotForName(expr->id->val,localSlot)){
+                FastTypeInfo localType;
+                if(currentLocalSlotFastType(expr->id->val,localType) && isFastNumericKind(localType.scalarKind)){
+                    writeTypedLocalSlotRef(genContext->out,localType.scalarKind,localSlot);
+                }
+                else {
+                    writeLocalSlotRef(genContext->out,localSlot);
+                }
+            }
+            else {
+                RTCode code = CODE_RTVAR_REF;
+                genContext->out.write((const char *)&code,sizeof(RTCode));
+                RTID id;
+                ASTIdentifier_to_RTID(expr->id,id);
+                genContext->out << &id;
+            }
         }
         else if(expr->id->type == ASTIdentifier::Function) {
             RTCode code = CODE_RTFUNC_REF;
@@ -907,13 +1407,25 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         genContext->out << &memberId;
     }
     else if(stmt->type == INDEX_EXPR){
-        RTCode code = CODE_RTINDEX_GET;
-        genContext->out.write((const char *)&code,sizeof(RTCode));
+        auto baseType = inferFastType(expr->leftExpr);
+        if(isFastNumericKind(baseType.arrayElementKind)){
+            writeTypedIndexGetHeader(genContext->out,baseType.arrayElementKind);
+        }
+        else {
+            RTCode code = CODE_RTINDEX_GET;
+            genContext->out.write((const char *)&code,sizeof(RTCode));
+        }
         consumeStmt(expr->leftExpr);
         consumeStmt(expr->rightExpr);
     }
     else if(stmt->type == UNARY_EXPR){
         auto op = expr->oprtr_str.value_or("");
+        auto operandType = inferFastType(expr->leftExpr);
+        if(op == "-" && isFastNumericKind(operandType.scalarKind)){
+            writeTypedNegateHeader(genContext->out,operandType.scalarKind);
+            consumeStmt(expr->leftExpr);
+            return;
+        }
         RTCode unaryCode = UNARY_OP_NOT;
         if(!unaryOpCodeFromSymbol(op,unaryCode)){
             return;
@@ -935,6 +1447,25 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
             RTID typeId = makeOwnedRTID(expr->runtimeTypeCheckName.value());
             genContext->out << &typeId;
             return;
+        }
+        auto lhsType = inferFastType(expr->leftExpr);
+        auto rhsType = inferFastType(expr->rightExpr);
+        if(isFastNumericKind(lhsType.scalarKind) && isFastNumericKind(rhsType.scalarKind)){
+            auto resultKind = promotedFastKind(lhsType.scalarKind,rhsType.scalarKind);
+            RTTypedBinaryOp typedBinaryOp = RTTYPED_BINARY_ADD;
+            if(typedBinaryOpFromSymbol(op,typedBinaryOp)){
+                writeTypedBinaryHeader(genContext->out,resultKind,typedBinaryOp);
+                consumeStmt(expr->leftExpr);
+                consumeStmt(expr->rightExpr);
+                return;
+            }
+            RTTypedCompareOp typedCompareOp = RTTYPED_COMPARE_EQ;
+            if(typedCompareOpFromSymbol(op,typedCompareOp)){
+                writeTypedCompareHeader(genContext->out,resultKind,typedCompareOp);
+                consumeStmt(expr->leftExpr);
+                consumeStmt(expr->rightExpr);
+                return;
+            }
         }
         RTCode binaryCode = BINARY_OP_PLUS;
         if(!binaryOpCodeFromSymbol(op,binaryCode)){
@@ -1008,6 +1539,34 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
                 consumeStmt(expr->rightExpr);
                 return;
             }
+            auto lhsType = inferFastType(expr->leftExpr);
+            auto rhsType = inferFastType(expr->rightExpr);
+            if(isFastNumericKind(lhsType.scalarKind) && isFastNumericKind(rhsType.scalarKind)){
+                auto resultKind = promotedFastKind(lhsType.scalarKind,rhsType.scalarKind);
+                RTTypedBinaryOp typedBinaryOp = RTTYPED_BINARY_ADD;
+                std::string binarySymbol;
+                if(compoundBinaryCode == BINARY_OP_PLUS){
+                    binarySymbol = "+";
+                }
+                else if(compoundBinaryCode == BINARY_OP_MINUS){
+                    binarySymbol = "-";
+                }
+                else if(compoundBinaryCode == BINARY_OP_MUL){
+                    binarySymbol = "*";
+                }
+                else if(compoundBinaryCode == BINARY_OP_DIV){
+                    binarySymbol = "/";
+                }
+                else if(compoundBinaryCode == BINARY_OP_MOD){
+                    binarySymbol = "%";
+                }
+                if(!binarySymbol.empty() && typedBinaryOpFromSymbol(binarySymbol,typedBinaryOp)){
+                    writeTypedBinaryHeader(genContext->out,resultKind,typedBinaryOp);
+                    consumeStmt(expr->leftExpr);
+                    consumeStmt(expr->rightExpr);
+                    return;
+                }
+            }
             RTCode code = CODE_BINARY_OPERATOR;
             genContext->out.write((const char *)&code,sizeof(RTCode));
             genContext->out.write((const char *)&compoundBinaryCode,sizeof(compoundBinaryCode));
@@ -1016,11 +1575,19 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         };
 
         if(expr->leftExpr->type == ID_EXPR && expr->leftExpr->id && expr->leftExpr->id->type == ASTIdentifier::Var){
-            RTCode code = CODE_RTVAR_SET;
-            genContext->out.write((const char *)&code,sizeof(RTCode));
-            RTID varId;
-            ASTIdentifier_to_RTID(expr->leftExpr->id,varId);
-            genContext->out << &varId;
+            uint32_t localSlot = 0;
+            if(currentLocalSlotForName(expr->leftExpr->id->val,localSlot)){
+                RTCode code = CODE_RTLOCAL_SET;
+                genContext->out.write((const char *)&code,sizeof(RTCode));
+                genContext->out.write((const char *)&localSlot,sizeof(localSlot));
+            }
+            else {
+                RTCode code = CODE_RTVAR_SET;
+                genContext->out.write((const char *)&code,sizeof(RTCode));
+                RTID varId;
+                ASTIdentifier_to_RTID(expr->leftExpr->id,varId);
+                genContext->out << &varId;
+            }
             emitAssignedValueExpr();
             return;
         }
@@ -1040,8 +1607,14 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         }
 
         if(expr->leftExpr->type == INDEX_EXPR){
-            RTCode code = CODE_RTINDEX_SET;
-            genContext->out.write((const char *)&code,sizeof(RTCode));
+            auto baseType = inferFastType(expr->leftExpr->leftExpr);
+            if(isFastNumericKind(baseType.arrayElementKind)){
+                writeTypedIndexSetHeader(genContext->out,baseType.arrayElementKind);
+            }
+            else {
+                RTCode code = CODE_RTINDEX_SET;
+                genContext->out.write((const char *)&code,sizeof(RTCode));
+            }
             consumeStmt(expr->leftExpr->leftExpr);
             consumeStmt(expr->leftExpr->rightExpr);
             emitAssignedValueExpr();
@@ -1109,6 +1682,40 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
                 consumeStmt(arg);
             }
             return;
+        }
+
+        auto calleeName = [&]() -> std::string {
+            if(!expr->callee){
+                return {};
+            }
+            if(expr->callee->type == ID_EXPR && expr->callee->id){
+                return expr->callee->id->val;
+            }
+            if(expr->callee->type == MEMBER_EXPR){
+                std::string memberName;
+                if(getMemberName(expr->callee,memberName)){
+                    return memberName;
+                }
+            }
+            return {};
+        }();
+        bool canUseSqrtIntrinsic = false;
+        if(calleeName == "sqrt" && expr->exprArrayData.size() == 1){
+            if(expr->callee->type == ID_EXPR){
+                canUseSqrtIntrinsic = !(genContext && genContext->tableContext
+                                        && genContext->tableContext->findEntryByEmittedNoDiag("sqrt"));
+            }
+            else if(expr->callee->type == MEMBER_EXPR && expr->callee->isScopeAccess){
+                canUseSqrtIntrinsic = true;
+            }
+        }
+        if(canUseSqrtIntrinsic){
+            auto argType = inferFastType(expr->exprArrayData.front());
+            if(isFastNumericKind(argType.scalarKind)){
+                writeTypedIntrinsicHeader(genContext->out,RTTYPED_NUM_DOUBLE,RTTYPED_INTRINSIC_SQRT);
+                consumeStmt(expr->exprArrayData.front());
+                return;
+            }
         }
 
         RTCode code = CODE_RTIVKFUNC;

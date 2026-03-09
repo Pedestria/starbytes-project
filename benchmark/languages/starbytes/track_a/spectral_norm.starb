@@ -7,22 +7,6 @@ func intArg(args:String[],index:Int,fallback:Int) Int {
     return fallback
 }
 
-func sqrtApprox(value:Float) Float {
-    if(value <= 0.0){
-        return 0.0
-    }
-    decl guess:Float = value
-    if(guess < 1.0){
-        guess = 1.0
-    }
-    decl i:Int = 0
-    while(i < 24){
-        guess = Float(0.5 * (guess + (value / guess)))
-        i += 1
-    }
-    return guess
-}
-
 func A(i:Int,j:Int) Float {
     decl ij:Int = i + j
     decl denom:Int = ((ij * (ij + 1) / 2) + i + 1)
@@ -107,4 +91,4 @@ while(i < n){
     i += 1
 }
 
-print(sqrtApprox(vBv / vv))
+print(sqrt(vBv / vv))

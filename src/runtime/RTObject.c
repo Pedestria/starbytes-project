@@ -747,18 +747,321 @@ unsigned int StarbytesStrGetLength(StarbytesStr str){
 
 /// Array Class
 
+typedef enum {
+    StarbytesArrayStorageBoxed = 0,
+    StarbytesArrayStorageInt = 1,
+    StarbytesArrayStorageLong = 2,
+    StarbytesArrayStorageFloat = 3,
+    StarbytesArrayStorageDouble = 4
+} StarbytesArrayStorageKind;
+
 typedef struct {
-    StarbytesObject *data;
+    unsigned int length;
+    unsigned int capacity;
+    StarbytesArrayStorageKind storageKind;
+    void *data;
+    StarbytesObject *cache;
 } StarbytesArrayPriv;
+
+static StarbytesNum StarbytesArrayLengthObject(StarbytesArray array){
+    return (StarbytesNum)StarbytesObjectGetProperty(array,"length");
+}
+
+static void StarbytesArraySyncLength(StarbytesArray array,unsigned int length){
+    StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
+    priv->length = length;
+    StarbytesNumAssign(StarbytesArrayLengthObject(array),NumTypeInt,(int)length);
+}
+
+static size_t StarbytesArrayElementSize(StarbytesArrayStorageKind kind){
+    switch(kind){
+        case StarbytesArrayStorageInt:
+            return sizeof(int);
+        case StarbytesArrayStorageLong:
+            return sizeof(int64_t);
+        case StarbytesArrayStorageFloat:
+            return sizeof(float);
+        case StarbytesArrayStorageDouble:
+            return sizeof(double);
+        case StarbytesArrayStorageBoxed:
+        default:
+            return sizeof(StarbytesObject);
+    }
+}
+
+static int StarbytesArrayKindIsNumeric(StarbytesArrayStorageKind kind){
+    return kind != StarbytesArrayStorageBoxed;
+}
+
+static StarbytesArrayStorageKind StarbytesArrayKindFromNumType(StarbytesNumT type){
+    switch(type){
+        case NumTypeLong:
+            return StarbytesArrayStorageLong;
+        case NumTypeFloat:
+            return StarbytesArrayStorageFloat;
+        case NumTypeDouble:
+            return StarbytesArrayStorageDouble;
+        case NumTypeInt:
+        default:
+            return StarbytesArrayStorageInt;
+    }
+}
+
+static StarbytesNumT StarbytesNumTypeFromArrayKind(StarbytesArrayStorageKind kind){
+    switch(kind){
+        case StarbytesArrayStorageLong:
+            return NumTypeLong;
+        case StarbytesArrayStorageFloat:
+            return NumTypeFloat;
+        case StarbytesArrayStorageDouble:
+            return NumTypeDouble;
+        case StarbytesArrayStorageInt:
+        default:
+            return NumTypeInt;
+    }
+}
+
+static int StarbytesArrayKindRank(StarbytesArrayStorageKind kind){
+    switch(kind){
+        case StarbytesArrayStorageInt:
+            return 0;
+        case StarbytesArrayStorageLong:
+            return 1;
+        case StarbytesArrayStorageFloat:
+            return 2;
+        case StarbytesArrayStorageDouble:
+            return 3;
+        case StarbytesArrayStorageBoxed:
+        default:
+            return -1;
+    }
+}
+
+static StarbytesArrayStorageKind StarbytesPromotedArrayKind(StarbytesArrayStorageKind lhs,StarbytesArrayStorageKind rhs){
+    if(StarbytesArrayKindRank(lhs) >= StarbytesArrayKindRank(rhs)){
+        return lhs;
+    }
+    return rhs;
+}
+
+static int StarbytesObjectToArrayNumeric(StarbytesObject obj,StarbytesArrayStorageKind *kindOut,long double *valueOut){
+    StarbytesNumPriv *priv;
+    if(obj == NULL || !StarbytesObjectTypecheck(obj,StarbytesNumType())){
+        return 0;
+    }
+    priv = (StarbytesNumPriv *)obj->privData;
+    *kindOut = StarbytesArrayKindFromNumType(priv->type);
+    *valueOut = StarbytesNumAsLongDouble(priv);
+    return 1;
+}
+
+static long double StarbytesArrayReadNumericValue(const StarbytesArrayPriv *priv,unsigned int index){
+    switch(priv->storageKind){
+        case StarbytesArrayStorageLong:
+            return (long double)((int64_t *)priv->data)[index];
+        case StarbytesArrayStorageFloat:
+            return (long double)((float *)priv->data)[index];
+        case StarbytesArrayStorageDouble:
+            return (long double)((double *)priv->data)[index];
+        case StarbytesArrayStorageInt:
+        default:
+            return (long double)((int *)priv->data)[index];
+    }
+}
+
+static void StarbytesArrayWriteNumericValue(StarbytesArrayPriv *priv,unsigned int index,long double value){
+    switch(priv->storageKind){
+        case StarbytesArrayStorageLong:
+            ((int64_t *)priv->data)[index] = (int64_t)value;
+            break;
+        case StarbytesArrayStorageFloat:
+            ((float *)priv->data)[index] = (float)value;
+            break;
+        case StarbytesArrayStorageDouble:
+            ((double *)priv->data)[index] = (double)value;
+            break;
+        case StarbytesArrayStorageInt:
+        default:
+            ((int *)priv->data)[index] = (int)value;
+            break;
+    }
+}
+
+static StarbytesObject StarbytesArrayBoxNumericValue(const StarbytesArrayPriv *priv,unsigned int index){
+    switch(priv->storageKind){
+        case StarbytesArrayStorageLong:
+            return StarbytesNumNew(NumTypeLong,((int64_t *)priv->data)[index]);
+        case StarbytesArrayStorageFloat:
+            return StarbytesNumNew(NumTypeFloat,(float)((float *)priv->data)[index]);
+        case StarbytesArrayStorageDouble:
+            return StarbytesNumNew(NumTypeDouble,((double *)priv->data)[index]);
+        case StarbytesArrayStorageInt:
+        default:
+            return StarbytesNumNew(NumTypeInt,((int *)priv->data)[index]);
+    }
+}
+
+static void StarbytesArrayReleaseNumericCache(StarbytesArrayPriv *priv){
+    unsigned int i;
+    if(priv->cache == NULL){
+        return;
+    }
+    for(i = 0;i < priv->length;i++){
+        if(priv->cache[i] != NULL){
+            StarbytesObjectRelease(priv->cache[i]);
+            priv->cache[i] = NULL;
+        }
+    }
+}
+
+static int StarbytesArrayEnsureCapacity(StarbytesArrayPriv *priv,unsigned int minCapacity){
+    unsigned int newCapacity;
+    void *newData;
+    StarbytesObject *newCache;
+    if(minCapacity <= priv->capacity){
+        return 1;
+    }
+    newCapacity = priv->capacity == 0 ? 4u : priv->capacity;
+    while(newCapacity < minCapacity){
+        if(newCapacity > 0x7fffffffu){
+            newCapacity = minCapacity;
+            break;
+        }
+        newCapacity *= 2u;
+    }
+
+    newData = realloc(priv->data,StarbytesArrayElementSize(priv->storageKind) * newCapacity);
+    if(newData == NULL){
+        return 0;
+    }
+    priv->data = newData;
+
+    if(StarbytesArrayKindIsNumeric(priv->storageKind)){
+        newCache = (StarbytesObject *)realloc(priv->cache,sizeof(StarbytesObject) * newCapacity);
+        if(newCache == NULL){
+            return 0;
+        }
+        if(newCapacity > priv->capacity){
+            memset(newCache + priv->capacity,0,sizeof(StarbytesObject) * (newCapacity - priv->capacity));
+        }
+        priv->cache = newCache;
+    }
+    priv->capacity = newCapacity;
+    return 1;
+}
+
+static void StarbytesArrayAdoptNumericKind(StarbytesArrayPriv *priv,StarbytesArrayStorageKind kind){
+    if(priv->storageKind == kind){
+        return;
+    }
+    StarbytesArrayReleaseNumericCache(priv);
+    free(priv->cache);
+    free(priv->data);
+    priv->cache = NULL;
+    priv->data = NULL;
+    priv->capacity = 0;
+    priv->storageKind = kind;
+}
+
+static int StarbytesArrayConvertNumericKind(StarbytesArrayPriv *priv,StarbytesArrayStorageKind newKind){
+    void *newData;
+    StarbytesObject *newCache;
+    unsigned int i;
+    if(priv->storageKind == newKind){
+        return 1;
+    }
+    newData = NULL;
+    newCache = NULL;
+    if(priv->capacity > 0){
+        newData = malloc(StarbytesArrayElementSize(newKind) * priv->capacity);
+        if(newData == NULL){
+            return 0;
+        }
+        for(i = 0;i < priv->length;i++){
+            long double value = StarbytesArrayReadNumericValue(priv,i);
+            switch(newKind){
+                case StarbytesArrayStorageLong:
+                    ((int64_t *)newData)[i] = (int64_t)value;
+                    break;
+                case StarbytesArrayStorageFloat:
+                    ((float *)newData)[i] = (float)value;
+                    break;
+                case StarbytesArrayStorageDouble:
+                    ((double *)newData)[i] = (double)value;
+                    break;
+                case StarbytesArrayStorageInt:
+                default:
+                    ((int *)newData)[i] = (int)value;
+                    break;
+            }
+        }
+        newCache = (StarbytesObject *)calloc(priv->capacity,sizeof(StarbytesObject));
+        if(newCache == NULL){
+            free(newData);
+            return 0;
+        }
+    }
+    StarbytesArrayReleaseNumericCache(priv);
+    free(priv->cache);
+    free(priv->data);
+    priv->data = newData;
+    priv->cache = newCache;
+    priv->storageKind = newKind;
+    return 1;
+}
+
+static int StarbytesArrayMaterializeBoxed(StarbytesArrayPriv *priv){
+    StarbytesObject *boxedData;
+    unsigned int i;
+    if(priv->storageKind == StarbytesArrayStorageBoxed){
+        return 1;
+    }
+    boxedData = NULL;
+    if(priv->capacity > 0){
+        boxedData = (StarbytesObject *)malloc(sizeof(StarbytesObject) * priv->capacity);
+        if(boxedData == NULL){
+            return 0;
+        }
+        for(i = 0;i < priv->length;i++){
+            if(priv->cache != NULL && priv->cache[i] != NULL){
+                boxedData[i] = priv->cache[i];
+                priv->cache[i] = NULL;
+            }
+            else {
+                boxedData[i] = StarbytesArrayBoxNumericValue(priv,i);
+            }
+        }
+    }
+    StarbytesArrayReleaseNumericCache(priv);
+    free(priv->cache);
+    free(priv->data);
+    priv->cache = NULL;
+    priv->data = boxedData;
+    priv->storageKind = StarbytesArrayStorageBoxed;
+    return 1;
+}
+
+static void StarbytesArrayInvalidateNumericCache(StarbytesArrayPriv *priv,unsigned int index){
+    if(priv->cache != NULL && index < priv->capacity && priv->cache[index] != NULL){
+        StarbytesObjectRelease(priv->cache[index]);
+        priv->cache[index] = NULL;
+    }
+}
 
 void _StarbytesArrayFree(StarbytesObject array){
     StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
-    StarbytesObject *data_it = priv->data;
-    int len = StarbytesNumGetIntValue(StarbytesObjectGetProperty(array,"length"));
-    for(;len > 0;len--){
-        StarbytesObjectRelease(*data_it);
-        ++data_it;
-    };
+    if(priv->storageKind == StarbytesArrayStorageBoxed){
+        StarbytesObject *data_it = (StarbytesObject *)priv->data;
+        unsigned int len = priv->length;
+        for(;len > 0;len--){
+            StarbytesObjectRelease(*data_it);
+            ++data_it;
+        }
+    }
+    else {
+        StarbytesArrayReleaseNumericCache(priv);
+        free(priv->cache);
+    }
     free(priv->data);
     free(priv);
 }
@@ -768,7 +1071,11 @@ StarbytesArray StarbytesArrayNew(){
     int len = 0;
     StarbytesObjectAddProperty(obj,"length",StarbytesNumNew(NumTypeInt,len));
     StarbytesArrayPriv privData;
+    privData.length = 0;
+    privData.capacity = 0;
+    privData.storageKind = StarbytesArrayStorageBoxed;
     privData.data = NULL;
+    privData.cache = NULL;
     obj->privData = malloc(sizeof(StarbytesArrayPriv));
     memcpy(obj->privData,&privData,sizeof(StarbytesArrayPriv));
 
@@ -777,67 +1084,191 @@ StarbytesArray StarbytesArrayNew(){
 
 StarbytesArray StarbytesArrayCopy(StarbytesArray array){
     StarbytesArray copy = StarbytesArrayNew();
-    unsigned int len = StarbytesArrayGetLength(array);
-    for(unsigned idx = 0;idx < len;idx++){
-        StarbytesArrayPush(copy,StarbytesArrayIndex(array,idx));
+    StarbytesArrayPriv *src = (StarbytesArrayPriv *)array->privData;
+    StarbytesArrayPriv *dst = (StarbytesArrayPriv *)copy->privData;
+    unsigned int idx;
+    if(src->length == 0){
+        return copy;
     }
+    dst->storageKind = src->storageKind;
+    if(!StarbytesArrayEnsureCapacity(dst,src->length)){
+        return copy;
+    }
+    if(src->storageKind == StarbytesArrayStorageBoxed){
+        for(idx = 0;idx < src->length;idx++){
+            StarbytesObject element = ((StarbytesObject *)src->data)[idx];
+            StarbytesObjectReference(element);
+            ((StarbytesObject *)dst->data)[idx] = element;
+        }
+    }
+    else {
+        memcpy(dst->data,src->data,StarbytesArrayElementSize(src->storageKind) * src->length);
+    }
+    StarbytesArraySyncLength(copy,src->length);
     return copy;
 }
 
+void StarbytesArrayReserve(StarbytesArray array,unsigned int capacity){
+    StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
+    if(capacity <= priv->capacity){
+        return;
+    }
+    (void)StarbytesArrayEnsureCapacity(priv,capacity);
+}
+
 unsigned int StarbytesArrayGetLength(StarbytesArray array){
-    StarbytesNum len = StarbytesObjectGetProperty(array,"length");
-    return (uint32_t)StarbytesNumGetIntValue(len);
+    StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
+    return priv->length;
 }
 
 void StarbytesArrayPush(StarbytesArray array,StarbytesObject obj){
     StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
+    unsigned int len = priv->length;
+    StarbytesArrayStorageKind incomingKind;
+    long double incomingValue;
+    if(StarbytesObjectToArrayNumeric(obj,&incomingKind,&incomingValue)){
+        if(priv->length == 0){
+            StarbytesArrayAdoptNumericKind(priv,incomingKind);
+        }
+        if(StarbytesArrayKindIsNumeric(priv->storageKind)){
+            if(StarbytesArrayKindRank(incomingKind) != StarbytesArrayKindRank(priv->storageKind)){
+                if(!StarbytesArrayConvertNumericKind(priv,StarbytesPromotedArrayKind(priv->storageKind,incomingKind))){
+                    return;
+                }
+            }
+            if(!StarbytesArrayEnsureCapacity(priv,len + 1)){
+                return;
+            }
+            StarbytesArrayWriteNumericValue(priv,len,incomingValue);
+            StarbytesArrayInvalidateNumericCache(priv,len);
+            StarbytesArraySyncLength(array,len + 1);
+            return;
+        }
+    }
+
+    if(priv->storageKind != StarbytesArrayStorageBoxed){
+        if(!StarbytesArrayMaterializeBoxed(priv)){
+            return;
+        }
+    }
+    if(!StarbytesArrayEnsureCapacity(priv,len + 1)){
+        return;
+    }
     StarbytesObjectReference(obj);
-    StarbytesNum num = StarbytesObjectGetProperty(array,"length");
-    int len = StarbytesNumGetIntValue(num);
-    if(priv->data == NULL){
-        priv->data = (StarbytesObject *)malloc(sizeof(StarbytesObject));
-    }
-    else {
-        priv->data = (StarbytesObject *)realloc(priv->data,sizeof(StarbytesObject) * (len + 1));
-    }
-    memcpy(priv->data + len,&obj,sizeof(StarbytesObject));
-    StarbytesNumAssign(num,NumTypeInt,len + 1);
-    
+    ((StarbytesObject *)priv->data)[len] = obj;
+    StarbytesArraySyncLength(array,len + 1);
 }
 
 void StarbytesArrayPop(StarbytesArray array){
     StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
-    StarbytesNum num = StarbytesObjectGetProperty(array,"length");
-    int len = StarbytesNumGetIntValue(num);
+    unsigned int len = priv->length;
     if(len <= 0){
         return;
     }
-    StarbytesObjectRelease(priv->data[len - 1]);
-    if(len == 1){
-        free(priv->data);
-        priv->data = NULL;
+    if(priv->storageKind == StarbytesArrayStorageBoxed){
+        StarbytesObjectRelease(((StarbytesObject *)priv->data)[len - 1]);
     }
     else {
-        priv->data = (StarbytesObject *)realloc(priv->data,sizeof(StarbytesObject) * (len - 1));
+        StarbytesArrayInvalidateNumericCache(priv,len - 1);
     }
-    StarbytesNumAssign(num,NumTypeInt,len - 1);
-};
+    StarbytesArraySyncLength(array,len - 1);
+}
 
 StarbytesObject StarbytesArrayIndex(StarbytesArray array,unsigned int index){
     StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
-    unsigned int len = StarbytesArrayGetLength(array);
+    unsigned int len = priv->length;
     assert(index < len && "Cannot index object outside of bounds");
-    return priv->data[index];
+    if(priv->storageKind == StarbytesArrayStorageBoxed){
+        return ((StarbytesObject *)priv->data)[index];
+    }
+    if(priv->cache[index] == NULL){
+        priv->cache[index] = StarbytesArrayBoxNumericValue(priv,index);
+    }
+    return priv->cache[index];
 }
 
 void StarbytesArraySet(StarbytesArray array,unsigned int index,StarbytesObject obj){
     StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
-    unsigned int len = StarbytesArrayGetLength(array);
+    unsigned int len = priv->length;
+    StarbytesArrayStorageKind incomingKind;
+    long double incomingValue;
     assert(index < len && "Cannot index object outside of bounds");
-    StarbytesObject old = priv->data[index];
-    StarbytesObjectRelease(old);
-    StarbytesObjectReference(obj);
-    priv->data[index] = obj;
+    if(StarbytesObjectToArrayNumeric(obj,&incomingKind,&incomingValue) && StarbytesArrayKindIsNumeric(priv->storageKind)){
+        if(StarbytesArrayKindRank(incomingKind) != StarbytesArrayKindRank(priv->storageKind)){
+            if(!StarbytesArrayConvertNumericKind(priv,StarbytesPromotedArrayKind(priv->storageKind,incomingKind))){
+                return;
+            }
+        }
+        StarbytesArrayWriteNumericValue(priv,index,incomingValue);
+        StarbytesArrayInvalidateNumericCache(priv,index);
+        return;
+    }
+    if(priv->storageKind != StarbytesArrayStorageBoxed){
+        if(!StarbytesArrayMaterializeBoxed(priv)){
+            return;
+        }
+    }
+    {
+        StarbytesObject old = ((StarbytesObject *)priv->data)[index];
+        StarbytesObjectRelease(old);
+        StarbytesObjectReference(obj);
+        ((StarbytesObject *)priv->data)[index] = obj;
+    }
+}
+
+int StarbytesArrayTryGetNumeric(StarbytesArray array,unsigned int index,StarbytesNumT outType,long double *valueOut){
+    StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
+    long double value;
+    if(index >= priv->length){
+        return 0;
+    }
+    if(priv->storageKind == StarbytesArrayStorageBoxed){
+        StarbytesObject valueObj = ((StarbytesObject *)priv->data)[index];
+        StarbytesArrayStorageKind valueKind;
+        if(!StarbytesObjectToArrayNumeric(valueObj,&valueKind,&value)){
+            return 0;
+        }
+    }
+    else {
+        value = StarbytesArrayReadNumericValue(priv,index);
+    }
+    if(valueOut != NULL){
+        switch(outType){
+            case NumTypeLong:
+                *valueOut = (long double)((int64_t)value);
+                break;
+            case NumTypeFloat:
+                *valueOut = (long double)((float)value);
+                break;
+            case NumTypeDouble:
+                *valueOut = (long double)((double)value);
+                break;
+            case NumTypeInt:
+            default:
+                *valueOut = (long double)((int)value);
+                break;
+        }
+    }
+    return 1;
+}
+
+int StarbytesArrayTrySetNumeric(StarbytesArray array,unsigned int index,StarbytesNumT valueType,long double value){
+    StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
+    StarbytesArrayStorageKind incomingKind = StarbytesArrayKindFromNumType(valueType);
+    if(index >= priv->length){
+        return 0;
+    }
+    if(!StarbytesArrayKindIsNumeric(priv->storageKind)){
+        return 0;
+    }
+    if(StarbytesArrayKindRank(incomingKind) != StarbytesArrayKindRank(priv->storageKind)){
+        if(!StarbytesArrayConvertNumericKind(priv,StarbytesPromotedArrayKind(priv->storageKind,incomingKind))){
+            return 0;
+        }
+    }
+    StarbytesArrayWriteNumericValue(priv,index,value);
+    StarbytesArrayInvalidateNumericCache(priv,index);
+    return 1;
 }
 
 
@@ -862,9 +1293,6 @@ void StarbytesDictSet(StarbytesDict dict,StarbytesObject key,StarbytesObject val
     assert(key->type == StarbytesNumType() || key->type == StarbytesStrType());
     StarbytesArray keys = StarbytesObjectGetProperty(dict,"keys");
     StarbytesArray vals = StarbytesObjectGetProperty(dict,"values");
-    
-    StarbytesArrayPriv *priv = (StarbytesArrayPriv *)vals->privData;
-    
     unsigned int len = StarbytesArrayGetLength(keys);
     int willReturn = 0;
     for(unsigned i = 0;i < len;i++){
@@ -872,20 +1300,14 @@ void StarbytesDictSet(StarbytesDict dict,StarbytesObject key,StarbytesObject val
         if(_key->type == StarbytesNumType()){
             if(StarbytesNumCompare(key,_key) == COMPARE_EQUAL){
                 willReturn = 1;
-                StarbytesObject old_val = priv->data[i];
-                StarbytesObjectRelease(old_val);
-                StarbytesObjectReference(val);
-                memcpy(priv->data + i,&val,sizeof(StarbytesObject));
+                StarbytesArraySet(vals,i,val);
                 break;
             }
         }
         else if(_key->type == StarbytesStrType()){
             if(StarbytesStrCompare(key,_key) == COMPARE_EQUAL){
                 willReturn = 1;
-                StarbytesObject old_val = priv->data[i];
-                StarbytesObjectRelease(old_val);
-                StarbytesObjectReference(val);
-                memcpy(priv->data + i,&val,sizeof(StarbytesObject));
+                StarbytesArraySet(vals,i,val);
                 break;
             }
         }
