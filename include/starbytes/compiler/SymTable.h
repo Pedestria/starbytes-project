@@ -120,6 +120,7 @@ namespace starbytes {
 
         struct STableContext {
             std::unique_ptr<SymbolTable> main;
+            SymbolTable *mainBorrowed = nullptr;
             std::vector<std::shared_ptr<SymbolTable>> otherTables;
             std::vector<std::shared_ptr<SymbolTable>> importTables;
             bool hasTable(SymbolTable *ptr);

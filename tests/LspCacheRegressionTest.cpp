@@ -76,6 +76,13 @@ bool ensure(bool cond, const char *message) {
     return false;
 }
 
+struct DecodedSemanticToken {
+    unsigned line = 0;
+    unsigned start = 0;
+    unsigned length = 0;
+    unsigned type = 0;
+};
+
 std::string jsonEscape(const std::string &value) {
     std::string out;
     out.reserve(value.size() + 16);
@@ -118,7 +125,48 @@ std::vector<unsigned> readSemanticData(const rapidjson::Document &doc) {
             out.push_back(item.GetUint());
         }
     }
+  return out;
+}
+
+std::vector<DecodedSemanticToken> decodeSemanticData(const std::vector<unsigned> &encoded) {
+    std::vector<DecodedSemanticToken> out;
+    if(encoded.size() % 5 != 0) {
+        return out;
+    }
+
+    unsigned line = 0;
+    unsigned start = 0;
+    bool first = true;
+    for(size_t i = 0;i < encoded.size();i += 5) {
+        unsigned deltaLine = encoded[i];
+        unsigned deltaStart = encoded[i + 1];
+        unsigned length = encoded[i + 2];
+        unsigned type = encoded[i + 3];
+        if(first) {
+            line = deltaLine;
+            start = deltaStart;
+            first = false;
+        }
+        else {
+            line += deltaLine;
+            start = deltaLine == 0 ? start + deltaStart : deltaStart;
+        }
+        out.push_back({line, start, length, type});
+    }
     return out;
+}
+
+bool hasSemanticToken(const std::vector<DecodedSemanticToken> &tokens,
+                      unsigned line,
+                      unsigned start,
+                      unsigned length,
+                      unsigned type) {
+    for(const auto &token : tokens) {
+        if(token.line == line && token.start == start && token.length == length && token.type == type) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::vector<std::string> readDiagnosticMessages(const rapidjson::Value &items) {
@@ -146,16 +194,25 @@ int main(int argc, char *argv[]) {
     std::stringstream output;
 
     const std::string uri = "file:///tmp/lsp-cache-regression.starb";
+    const std::string helperUri = "file:///tmp/Helper/main.starb";
     const std::string invalidText = "decl value:Int =\nvalue\n";
     const std::string validText =
+        "import Helper\n"
         "decl value:Int = 42\n"
         "func add(a:Int, b:Int) Int {\n"
         "  return a + b\n"
         "}\n"
-        "add(value, 1)\n";
+        "add(value, 1)\n"
+        "Helper.helperValue()\n";
+    const std::string helperText =
+        "func helperValue() Int {\n"
+        "  return 7\n"
+        "}\n";
 
     appendMessage(input, R"({"jsonrpc":"2.0","id":100,"method":"initialize","params":{}})");
     appendMessage(input, R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    appendMessage(input, std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                         helperUri + R"(","languageId":"starbytes","version":1,"text":")" + jsonEscape(helperText) + R"("}}})");
     appendMessage(input, std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
                          uri + R"(","languageId":"starbytes","version":1,"text":")" + jsonEscape(invalidText) + R"("}}})");
     appendMessage(input, std::string(R"({"jsonrpc":"2.0","id":101,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")") +
@@ -224,10 +281,17 @@ int main(int argc, char *argv[]) {
 
     auto invalidData = readSemanticData(*invalidTokens);
     auto validData = readSemanticData(*validTokens);
+    auto validDecoded = decodeSemanticData(validData);
     if(!ensure(!validData.empty(), "post-edit semantic token data should not be empty")) {
         return 1;
     }
     if(!ensure(invalidData != validData, "semantic tokens should change after document edit")) {
+        return 1;
+    }
+    if(!ensure(hasSemanticToken(validDecoded, 6, 0, 6, 0), "imported module receiver should be namespace-highlighted")) {
+        return 1;
+    }
+    if(!ensure(hasSemanticToken(validDecoded, 6, 7, 11, 2), "imported module member should be function-highlighted")) {
         return 1;
     }
 

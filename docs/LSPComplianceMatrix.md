@@ -1,6 +1,6 @@
 # Starbytes LSP Feature and Compliance Matrix
 
-Date: February 28, 2026  
+Date: March 9, 2026  
 Server: `starbytes-lsp` (version `0.11.0`)
 
 ## Scope
@@ -21,13 +21,13 @@ Status labels:
 | Capability | Status | Notes |
 |---|---|---|
 | `textDocumentSync` (`openClose`, incremental change, save includeText) | Implemented | Open/change/save/close wired. |
-| `completionProvider` + resolve | Implemented | Trigger chars: `.` and `:`. |
+| `completionProvider` + resolve | Implemented | Trigger chars: `.` and `:`. Scoped completion uses cached semantic parse for locals, modules, scopes, and members. |
 | `hoverProvider` | Implemented | Symbol/builtin/doc rendering. |
-| `definitionProvider` | Implemented | Works for local + builtins index cases. |
+| `definitionProvider` | Implemented | Scoped/local/class/scope/import/builtin resolution. |
 | `declarationProvider` | Partial | Aliases definition logic. |
 | `typeDefinitionProvider` | Partial | Aliases definition logic. |
-| `implementationProvider` | Partial | Aliases definition logic. |
-| `referencesProvider` | Partial | Lexical occurrence model, not semantic identity. |
+| `implementationProvider` | Partial | Semantic implementation lookup for class/interface inheritance and method implementations; falls back to definition for unsupported symbol kinds. |
+| `referencesProvider` | Partial | Scoped semantic identity across loaded documents; still occurrence-scan based and not project-index driven. |
 | `documentSymbolProvider` | Partial | Flat list, no symbol tree hierarchy. |
 | `workspaceSymbolProvider` | Partial | Loaded-document scan, not full project index. |
 | `renameProvider` (`prepareProvider=true`) | Partial | Lexical rename, no deep semantic safety. |
@@ -67,14 +67,14 @@ Status labels:
 
 | Method | Status | Notes |
 |---|---|---|
-| `textDocument/completion` | Implemented | Keywords, document symbols, builtin/member-aware. |
-| `completionItem/resolve` | Implemented | Resolves detail/documentation/signature metadata. |
+| `textDocument/completion` | Implemented | Keywords + scoped semantic completion for locals, imports, scopes, and receiver members; builtin member-aware. |
+| `completionItem/resolve` | Implemented | Uses exact symbol identity when present in completion item data; label-based fallback remains. |
 | `textDocument/hover` | Implemented | Signature/docs/inheritance/type-oriented hover text. |
-| `textDocument/definition` | Implemented | Symbol + builtins resolution path. |
+| `textDocument/definition` | Implemented | Scoped symbol + builtin resolution path. |
 | `textDocument/declaration` | Partial | Definition alias. |
 | `textDocument/typeDefinition` | Partial | Definition alias. |
-| `textDocument/implementation` | Partial | Definition alias. |
-| `textDocument/references` | Partial | Occurrence-based references (non-semantic). |
+| `textDocument/implementation` | Partial | Scoped resolver plus inheritance/method implementation search for loaded documents. |
+| `textDocument/references` | Partial | Scoped resolver + semantic declaration-identity filtering across loaded documents. |
 | `textDocument/documentSymbol` | Partial | Flat symbols only. |
 | `workspace/symbol` | Partial | No global persisted index walk. |
 | `textDocument/prepareRename`, `textDocument/rename` | Partial | Lexical rename; no semantic symbol ownership checks. |
@@ -111,11 +111,12 @@ Status labels:
 
 ### High-impact remaining gaps
 
-1. Split `declaration`, `typeDefinition`, and `implementation` into distinct semantic resolvers.
-2. Upgrade `references` and `rename` to semantic symbol identity (not lexical occurrence).
+1. Split `declaration` and `typeDefinition` into distinct semantic resolvers instead of definition aliases.
+2. Upgrade `rename` to semantic symbol identity and ownership checks, matching the newer scoped references path.
 3. Upgrade `documentSymbol` to hierarchical `DocumentSymbol` trees where applicable.
 4. Add `diagnosticProvider` capability negotiation semantics and incremental `resultId` lifecycle quality.
 5. Add richer `workspace/executeCommand` command registration + execution.
+6. Broaden `implementation` beyond current class/interface/method inheritance cases.
 
 ### Medium-impact gaps
 
@@ -128,6 +129,7 @@ Status labels:
 
 - Shared linguistics pipeline wired into diagnostics, formatting, and code actions.
 - Incremental per-document linguistics caches in LSP server state.
+- Shared semantic resolved-document cache now backs hover, completion, definition, references, and implementation.
 - Optional LSP profiling hooks (`STARBYTES_LSP_PROFILE`) with summary at shutdown.
 
 ---
@@ -136,6 +138,6 @@ Status labels:
 
 Starbytes LSP can be treated as release-ready for common editor workflows when:
 1. All currently advertised capabilities keep non-stub behavior.
-2. Semantic correctness is added for references/rename/declaration/typeDefinition/implementation split.
+2. Semantic correctness is completed for rename/declaration/typeDefinition and the remaining implementation edge cases.
 3. Diagnostic pull semantics (`resultId` behavior + capability negotiation) are standardized.
 4. Optional advanced features remain unadvertised until implemented.

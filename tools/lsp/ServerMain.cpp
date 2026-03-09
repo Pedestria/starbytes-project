@@ -4,6 +4,13 @@
 #include "starbytes/base/CodeView.h"
 #include "starbytes/base/Diagnostic.h"
 #include "starbytes/base/DoxygenDoc.h"
+#include "starbytes/compiler/AST.h"
+#include "starbytes/compiler/ASTDecl.h"
+#include "starbytes/compiler/ASTExpr.h"
+#include "starbytes/compiler/Lexer.h"
+#include "starbytes/compiler/Parser.h"
+#include "starbytes/compiler/SymTable.h"
+#include "starbytes/compiler/Type.h"
 
 #include <algorithm>
 #include <cctype>
@@ -15,12 +22,19 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <regex>
 #include <utility>
 
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
 namespace starbytes::lsp {
+
+struct SemanticResolvedDocument {
+  std::vector<ASTStmt *> statements;
+  std::vector<std::string> imports;
+  std::shared_ptr<Semantics::SymbolTable> mainTable;
+};
 
 namespace {
 
@@ -40,6 +54,9 @@ struct CompletionEntry {
   std::string label;
   int kind = COMPLETION_KIND_TEXT;
   std::string detail;
+  bool hasResolvedSymbol = false;
+  std::string resolvedUri;
+  SymbolEntry resolvedSymbol;
 };
 
 const std::vector<std::string> kKeywordCompletions = {
@@ -74,6 +91,22 @@ bool envTruthy(const char *value) {
   return !(text.empty() || text == "0" || text == "false" || text == "off" || text == "no");
 }
 
+std::string diagnosticPhaseToStringLocal(Diagnostic::Phase phase) {
+  switch (phase) {
+    case Diagnostic::Phase::Parser:
+      return "parser";
+    case Diagnostic::Phase::Semantic:
+      return "semantic";
+    case Diagnostic::Phase::Runtime:
+      return "runtime";
+    case Diagnostic::Phase::Lsp:
+      return "lsp";
+    case Diagnostic::Phase::Unknown:
+    default:
+      return "unknown";
+  }
+}
+
 std::vector<std::string> splitCommaList(const std::string &text) {
   std::vector<std::string> out;
   std::string current;
@@ -94,6 +127,436 @@ std::vector<std::string> splitCommaList(const std::string &text) {
   }
   return out;
 }
+
+std::string absolutePathString(const std::filesystem::path &path) {
+  std::error_code ec;
+  auto absolute = std::filesystem::absolute(path, ec);
+  if (ec) {
+    return path.lexically_normal().string();
+  }
+  return absolute.lexically_normal().string();
+}
+
+void appendUniquePath(std::vector<std::filesystem::path> &paths,
+                      std::unordered_set<std::string> &seen,
+                      const std::filesystem::path &path) {
+  if (path.empty()) {
+    return;
+  }
+  auto normalized = absolutePathString(path);
+  if (seen.insert(normalized).second) {
+    paths.emplace_back(normalized);
+  }
+}
+
+bool lineIsCommentOrEmpty(const std::string &line) {
+  size_t index = 0;
+  while (index < line.size() && std::isspace(static_cast<unsigned char>(line[index])) != 0) {
+    ++index;
+  }
+  if (index >= line.size()) {
+    return true;
+  }
+  if (line[index] == '#') {
+    return true;
+  }
+  return line[index] == '/' && (index + 1) < line.size() && line[index + 1] == '/';
+}
+
+void loadModulePathFileForLsp(const std::filesystem::path &path,
+                              std::vector<std::filesystem::path> &outDirs,
+                              std::unordered_set<std::string> &seenDirs) {
+  std::ifstream in(path, std::ios::in);
+  if (!in.is_open()) {
+    return;
+  }
+
+  const auto baseDir = path.parent_path();
+  std::string rawLine;
+  while (std::getline(in, rawLine)) {
+    if (lineIsCommentOrEmpty(rawLine)) {
+      continue;
+    }
+    auto begin = rawLine.find_first_not_of(" \t\r\n");
+    auto end = rawLine.find_last_not_of(" \t\r\n");
+    if (begin == std::string::npos || end == std::string::npos) {
+      continue;
+    }
+    std::filesystem::path entryPath(rawLine.substr(begin, end - begin + 1));
+    if (entryPath.is_relative()) {
+      entryPath = baseDir / entryPath;
+    }
+
+    std::error_code ec;
+    if (!std::filesystem::exists(entryPath, ec) || ec || !std::filesystem::is_directory(entryPath, ec) || ec) {
+      continue;
+    }
+    appendUniquePath(outDirs, seenDirs, entryPath);
+  }
+}
+
+std::vector<std::string> splitLinesCopy(const std::string &text) {
+  std::vector<std::string> lines;
+  std::istringstream in(text);
+  std::string line;
+  while (std::getline(in, line)) {
+    lines.push_back(line);
+  }
+  return lines;
+}
+
+bool regionContainsPosition(const Region &region, unsigned lineOneBased, unsigned character) {
+  if (region.startLine == 0 || lineOneBased == 0) {
+    return false;
+  }
+  if (lineOneBased < region.startLine || lineOneBased > region.endLine) {
+    return false;
+  }
+  if (lineOneBased == region.startLine && character < region.startCol) {
+    return false;
+  }
+  if (lineOneBased == region.endLine && character >= std::max(region.endCol, region.startCol + 1)) {
+    return false;
+  }
+  return true;
+}
+
+std::string sourceSliceForRegion(const std::vector<std::string> &lines, const Region &region) {
+  if (region.startLine == 0 || region.startLine != region.endLine) {
+    return {};
+  }
+  auto zeroBasedLine = region.startLine - 1;
+  if (zeroBasedLine >= lines.size()) {
+    return {};
+  }
+  const auto &line = lines[zeroBasedLine];
+  if (region.startCol >= line.size()) {
+    return {};
+  }
+  auto endCol = std::min(region.endCol, static_cast<unsigned>(line.size()));
+  if (endCol <= region.startCol) {
+    return {};
+  }
+  return line.substr(region.startCol, endCol - region.startCol);
+}
+
+std::string trimRightCopy(std::string value) {
+  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) {
+    value.pop_back();
+  }
+  return value;
+}
+
+std::string trimLeftCopy(std::string value) {
+  size_t i = 0;
+  while (i < value.size() && std::isspace(static_cast<unsigned char>(value[i]))) {
+    ++i;
+  }
+  return value.substr(i);
+}
+
+std::string hoverDocCommentForLine(const std::vector<std::string> &lines, unsigned declarationLineZeroBased) {
+  if (declarationLineZeroBased == 0 || declarationLineZeroBased - 1 >= lines.size()) {
+    return {};
+  }
+
+  int index = static_cast<int>(declarationLineZeroBased) - 1;
+  auto first = trimCopy(lines[static_cast<size_t>(index)]);
+  if (first.empty()) {
+    return {};
+  }
+
+  std::vector<std::string> collected;
+  if (first.rfind("//", 0) == 0) {
+    while (index >= 0) {
+      auto candidate = trimCopy(lines[static_cast<size_t>(index)]);
+      if (candidate.rfind("//", 0) != 0) {
+        break;
+      }
+      auto raw = trimLeftCopy(lines[static_cast<size_t>(index)]);
+      if (raw.rfind("///", 0) == 0) {
+        raw = raw.substr(3);
+      } else {
+        raw = raw.substr(2);
+      }
+      collected.push_back(trimLeftCopy(trimRightCopy(raw)));
+      --index;
+    }
+    std::reverse(collected.begin(), collected.end());
+  } else if (first.size() >= 2 && first.find("*/") != std::string::npos) {
+    bool foundStart = false;
+    while (index >= 0) {
+      auto raw = trimLeftCopy(lines[static_cast<size_t>(index)]);
+      collected.push_back(raw);
+      if (raw.find("/*") != std::string::npos) {
+        foundStart = true;
+        break;
+      }
+      --index;
+    }
+    if (!foundStart) {
+      return {};
+    }
+    std::reverse(collected.begin(), collected.end());
+    for (auto &line : collected) {
+      auto trimmed = trimLeftCopy(line);
+      if (trimmed.rfind("/*", 0) == 0) {
+        trimmed = trimmed.substr(2);
+      }
+      auto endPos = trimmed.find("*/");
+      if (endPos != std::string::npos) {
+        trimmed = trimmed.substr(0, endPos);
+      }
+      if (!trimmed.empty() && trimmed.front() == '*') {
+        trimmed.erase(trimmed.begin());
+      }
+      line = trimLeftCopy(trimRightCopy(trimmed));
+    }
+  } else {
+    return {};
+  }
+
+  std::ostringstream out;
+  bool firstLine = true;
+  for (const auto &line : collected) {
+    if (!firstLine) {
+      out << "\n";
+    }
+    out << line;
+    firstLine = false;
+  }
+  return trimRightCopy(out.str());
+}
+
+std::string hoverTypeToString(ASTType *type) {
+  if (!type) {
+    return "Any";
+  }
+
+  auto renderType = [&](auto &&self, ASTType *subject) -> std::string {
+    if (!subject) {
+      return "Any";
+    }
+    auto name = subject->getName().str();
+    if (subject->nameMatches(FUNCTION_TYPE)) {
+      std::string rendered = "(";
+      if (!subject->typeParams.empty()) {
+        for (size_t i = 1; i < subject->typeParams.size(); ++i) {
+          if (i > 1) {
+            rendered += ", ";
+          }
+          rendered += self(self, subject->typeParams[i]);
+        }
+        rendered += ") ";
+        rendered += self(self, subject->typeParams.front());
+      } else {
+        rendered += ") Void";
+      }
+      if (subject->isOptional) {
+        rendered += "?";
+      }
+      if (subject->isThrowable) {
+        rendered += "!";
+      }
+      return rendered;
+    }
+
+    std::string rendered = name;
+    if (!subject->typeParams.empty()) {
+      rendered += "<";
+      for (size_t i = 0; i < subject->typeParams.size(); ++i) {
+        if (i > 0) {
+          rendered += ", ";
+        }
+        rendered += self(self, subject->typeParams[i]);
+      }
+      rendered += ">";
+    }
+    if (subject->isOptional) {
+      rendered += "?";
+    }
+    if (subject->isThrowable) {
+      rendered += "!";
+    }
+    return rendered;
+  };
+
+  return renderType(renderType, type);
+}
+
+std::string completionDeclaredBaseTypeFromSignature(const std::string &signature) {
+  auto colonPos = signature.find(':');
+  if (colonPos == std::string::npos) {
+    return {};
+  }
+  auto typePart = trimCopy(signature.substr(colonPos + 1));
+  auto eqPos = typePart.find('=');
+  if (eqPos != std::string::npos) {
+    typePart = trimCopy(typePart.substr(0, eqPos));
+  }
+  while (!typePart.empty() && (typePart.back() == '?' || typePart.back() == '!')) {
+    typePart.pop_back();
+  }
+  auto genericPos = typePart.find('<');
+  if (genericPos != std::string::npos) {
+    typePart = typePart.substr(0, genericPos);
+  }
+  typePart = trimCopy(typePart);
+  if (typePart.size() >= 2 && typePart.substr(typePart.size() - 2) == "[]") {
+    return "Array";
+  }
+  return typePart;
+}
+
+unsigned semanticTokenTypeFromSymbolKindForLsp(int symbolKind) {
+  switch (symbolKind) {
+    case SYMBOL_KIND_NAMESPACE:
+      return TOKEN_TYPE_NAMESPACE;
+    case SYMBOL_KIND_CLASS:
+    case SYMBOL_KIND_INTERFACE:
+    case SYMBOL_KIND_STRUCT:
+    case SYMBOL_KIND_ENUM:
+      return TOKEN_TYPE_CLASS;
+    case SYMBOL_KIND_FUNCTION:
+    case SYMBOL_KIND_METHOD:
+      return TOKEN_TYPE_FUNCTION;
+    case SYMBOL_KIND_VARIABLE:
+    case SYMBOL_KIND_FIELD:
+    case SYMBOL_KIND_CONSTANT:
+    default:
+      return TOKEN_TYPE_VARIABLE;
+  }
+}
+
+std::string hoverFunctionSignature(ASTFuncDecl *funcDecl, const std::vector<std::string> &lines) {
+  if (!funcDecl || !funcDecl->funcId) {
+    return "func <anonymous>()";
+  }
+  auto lineIndex = funcDecl->funcId->codeRegion.startLine > 0 ? funcDecl->funcId->codeRegion.startLine - 1 : 0;
+  bool isStructDecl = lineIndex < lines.size() && trimLeftCopy(lines[lineIndex]).rfind("lazy func", 0) == 0;
+  std::string signature = isStructDecl ? "lazy func " : "func ";
+  signature += sourceSliceForRegion(lines, funcDecl->funcId->codeRegion);
+  signature += "(";
+  bool first = true;
+  for (const auto &param : funcDecl->params) {
+    if (!first) {
+      signature += ", ";
+    }
+    first = false;
+    auto *paramId = param.first;
+    signature += paramId ? sourceSliceForRegion(lines, paramId->codeRegion) : "_";
+    signature += ":";
+    signature += hoverTypeToString(param.second);
+  }
+  signature += ")";
+  if (funcDecl->returnType) {
+    signature += " ";
+    signature += hoverTypeToString(funcDecl->returnType);
+  }
+  return signature;
+}
+
+std::string hoverVarSignature(bool isConst,
+                              const std::string &displayName,
+                              ASTType *type,
+                              const char *keyword = "decl") {
+  std::string signature = keyword;
+  if (isConst) {
+    signature += " imut";
+  }
+  signature += " ";
+  signature += displayName;
+  if (type) {
+    signature += ":";
+    signature += hoverTypeToString(type);
+  }
+  return signature;
+}
+
+std::vector<std::string> extractImportsForHover(const std::string &sourceText) {
+  static const std::regex importRegex(R"(^\s*import\s+([A-Za-z_][A-Za-z0-9_]*)\s*$)");
+  std::vector<std::string> imports;
+  std::istringstream in(sourceText);
+  std::string line;
+  while (std::getline(in, line)) {
+    auto commentPos = line.find("//");
+    if (commentPos != std::string::npos) {
+      line = line.substr(0, commentPos);
+    }
+    std::smatch match;
+    if (!std::regex_match(line, match, importRegex) || match.size() < 2) {
+      continue;
+    }
+    auto moduleName = match[1].str();
+    if (std::find(imports.begin(), imports.end(), moduleName) == imports.end()) {
+      imports.push_back(std::move(moduleName));
+    }
+  }
+  return imports;
+}
+
+void appendImportedSymbolTablesForHover(
+    Semantics::STableContext &context,
+    const std::vector<std::string> &dependencyKeys,
+    const std::unordered_map<std::string, std::shared_ptr<Semantics::SymbolTable>> &depTables) {
+  for (const auto &depKey : dependencyKeys) {
+    auto depIt = depTables.find(depKey);
+    if (depIt == depTables.end() || !depIt->second) {
+      continue;
+    }
+    context.importTables.push_back(depIt->second);
+    auto overlay = depIt->second->createImportNamespaceOverlay(depKey);
+    if (overlay) {
+      context.otherTables.push_back(std::move(overlay));
+    }
+  }
+}
+
+class SemanticCapturingConsumer final : public ASTStreamConsumer {
+public:
+  std::vector<ASTStmt *> statements;
+  bool acceptsSymbolTableContext() override { return false; }
+  void consumeDecl(ASTDecl *stmt) override { statements.push_back(stmt); }
+  void consumeStmt(ASTStmt *stmt) override { statements.push_back(stmt); }
+};
+
+class SemanticNoopConsumer final : public ASTStreamConsumer {
+public:
+  bool acceptsSymbolTableContext() override { return false; }
+  void consumeDecl(ASTDecl *stmt) override { (void)stmt; }
+  void consumeStmt(ASTStmt *stmt) override { (void)stmt; }
+};
+
+struct HoverBinding {
+  ASTIdentifier *declId = nullptr;
+  ASTStmt *declOwner = nullptr;
+  ASTType *type = nullptr;
+  bool isConst = false;
+  std::string lookupName;
+  std::string displayName;
+};
+
+struct HoverFrame {
+  std::shared_ptr<ASTScope> scope;
+  bool functionBoundary = false;
+  std::vector<HoverBinding> bindings;
+};
+
+struct HoverResolvedSymbol {
+  std::string uri;
+  SymbolEntry symbol;
+};
+
+bool isNumericTypeForHover(ASTType *type) {
+  return type && (type->nameMatches(INT_TYPE) || type->nameMatches(LONG_TYPE) ||
+                  type->nameMatches(FLOAT_TYPE) || type->nameMatches(DOUBLE_TYPE));
+}
+
+bool isStringTypeForHover(ASTType *type) { return type && type->nameMatches(STRING_TYPE); }
+bool isArrayTypeForHover(ASTType *type) { return type && type->nameMatches(ARRAY_TYPE); }
+bool isDictTypeForHover(ASTType *type) { return type && type->nameMatches(DICTIONARY_TYPE); }
+bool isMapTypeForHover(ASTType *type) { return type && type->nameMatches(MAP_TYPE); }
+bool isRegexTypeForHover(ASTType *type) { return type && type->nameMatches(REGEX_TYPE); }
 
 void appendInheritanceMarkdown(std::string &markdown, const SymbolEntry &symbol) {
   if (symbol.kind != SYMBOL_KIND_CLASS && symbol.kind != SYMBOL_KIND_STRUCT &&
@@ -997,28 +1460,259 @@ void Server::configureSymbolCache() {
   symbolCache.setCachePath(cacheRoot / ".cache" / "lsp_symbols_cache.v1");
 }
 
+void Server::refreshAnalysisState(DocumentState &state) {
+  if (state.analysis.version == state.version && state.analysis.textHash == state.textHash) {
+    return;
+  }
+  state.analysis = {};
+  state.analysis.version = state.version;
+  state.analysis.textHash = state.textHash;
+}
+
+std::shared_ptr<SemanticResolvedDocument> Server::buildSemanticResolvedDocumentForUri(
+    const std::string &uri,
+    DocumentState &state,
+    std::unordered_set<std::string> &activeUris) {
+  refreshAnalysisState(state);
+  if (state.analysis.semanticResolvedReady) {
+    return state.analysis.semanticResolvedDocument;
+  }
+  if (!activeUris.insert(uri).second) {
+    return nullptr;
+  }
+
+  auto imports = extractImportsForHover(state.text);
+  std::unordered_map<std::string, std::shared_ptr<Semantics::SymbolTable>> depTables;
+  for (const auto &importName : imports) {
+    std::string depUri;
+    std::string depText;
+    if (!findModuleDocumentByName(importName, uri, depUri, depText)) {
+      continue;
+    }
+    auto depIt = documents.find(depUri);
+    if (depIt == documents.end()) {
+      continue;
+    }
+    auto depDocument = buildSemanticResolvedDocumentForUri(depUri, depIt->second, activeUris);
+    if (depDocument && depDocument->mainTable) {
+      depTables[importName] = depDocument->mainTable;
+    }
+  }
+
+  std::ostringstream sink;
+  auto diagnostics = DiagnosticHandler::createDefault(sink);
+  diagnostics->setOutputMode(DiagnosticHandler::OutputMode::Machine);
+  diagnostics->setDefaultSourceName(uri);
+  SemanticCapturingConsumer consumer;
+  Parser parser(consumer, std::move(diagnostics));
+  auto parseContext = ModuleParseContext::Create(uri);
+  appendImportedSymbolTablesForHover(parseContext.sTableContext, imports, depTables);
+  std::istringstream in(state.text);
+  parser.parseFromStream(in, parseContext);
+  parser.finish();
+
+  std::shared_ptr<SemanticResolvedDocument> resolvedDocument;
+  if (parseContext.sTableContext.main) {
+    resolvedDocument = std::make_shared<SemanticResolvedDocument>();
+    resolvedDocument->statements = std::move(consumer.statements);
+    resolvedDocument->imports = std::move(imports);
+    resolvedDocument->mainTable = std::shared_ptr<Semantics::SymbolTable>(parseContext.sTableContext.main.release());
+  }
+
+  state.analysis.semanticResolvedDocument = resolvedDocument;
+  state.analysis.semanticResolvedReady = true;
+  activeUris.erase(uri);
+  return resolvedDocument;
+}
+
+const SemanticResolvedDocument *Server::getSemanticResolvedDocumentForUri(const std::string &uri, DocumentState &state) {
+  refreshAnalysisState(state);
+  if (!state.analysis.semanticResolvedReady) {
+    std::unordered_set<std::string> activeUris;
+    buildSemanticResolvedDocumentForUri(uri, state, activeUris);
+  }
+  return state.analysis.semanticResolvedDocument.get();
+}
+
 const std::vector<CompilerDiagnosticEntry> &Server::getCompilerDiagnosticsForDocument(const std::string &uri,
                                                                                        DocumentState &state) {
-  if (state.analysis.version != state.version || state.analysis.textHash != state.textHash) {
-    state.analysis = {};
-    state.analysis.version = state.version;
-    state.analysis.textHash = state.textHash;
-  }
+  refreshAnalysisState(state);
   if (!state.analysis.diagnosticsReady) {
-    state.analysis.diagnostics = collectCompilerDiagnosticsForText(uri, state.text);
+    state.analysis.diagnostics = buildCompilerDiagnosticsFromSemanticContext(uri, state);
     state.analysis.diagnosticsReady = true;
   }
   return state.analysis.diagnostics;
 }
 
-const std::vector<SemanticTokenEntry> &Server::getSemanticTokensForDocument(const std::string &uri, DocumentState &state) {
-  if (state.analysis.version != state.version || state.analysis.textHash != state.textHash) {
-    state.analysis = {};
-    state.analysis.version = state.version;
-    state.analysis.textHash = state.textHash;
+std::vector<CompilerDiagnosticEntry> Server::buildCompilerDiagnosticsFromSemanticContext(const std::string &uri,
+                                                                                         DocumentState &state) {
+  std::vector<CompilerDiagnosticEntry> diagnosticsOut;
+  auto imports = extractImportsForHover(state.text);
+  std::unordered_map<std::string, std::shared_ptr<Semantics::SymbolTable>> depTables;
+  std::unordered_set<std::string> activeUris;
+  activeUris.insert(uri);
+
+  for (const auto &importName : imports) {
+    std::string depUri;
+    std::string depText;
+    if (!findModuleDocumentByName(importName, uri, depUri, depText)) {
+      continue;
+    }
+    auto depIt = documents.find(depUri);
+    if (depIt == documents.end()) {
+      continue;
+    }
+    auto depDocument = buildSemanticResolvedDocumentForUri(depUri, depIt->second, activeUris);
+    if (depDocument && depDocument->mainTable) {
+      depTables[importName] = depDocument->mainTable;
+    }
   }
+
+  std::ostringstream sink;
+  auto diagnostics = DiagnosticHandler::createDefault(sink);
+  diagnostics->setOutputMode(DiagnosticHandler::OutputMode::Lsp);
+  diagnostics->setDefaultSourceName(uri);
+  auto *handler = diagnostics.get();
+
+  SemanticNoopConsumer consumer;
+  Parser parser(consumer, std::move(diagnostics));
+  auto parseContext = ModuleParseContext::Create(uri);
+  parseContext.name = uri;
+  appendImportedSymbolTablesForHover(parseContext.sTableContext, imports, depTables);
+  std::istringstream in(state.text);
+  parser.parseFromStream(in, parseContext);
+
+  if (!handler) {
+    return diagnosticsOut;
+  }
+
+  auto buffered = handler->collectLspRecords();
+  diagnosticsOut.reserve(buffered.size());
+  for (const auto &diag : buffered) {
+    CompilerDiagnosticEntry mapped;
+    if (diag.location.has_value()) {
+      mapped.region = *diag.location;
+    }
+    mapped.severity = diag.isError() ? 1 : 2;
+    mapped.message = diag.message;
+    mapped.id = diag.id;
+    mapped.code = diag.code;
+    mapped.phase = diagnosticPhaseToStringLocal(diag.phase);
+    mapped.source = "starbytes-compiler";
+    mapped.producerSource = diag.sourceName;
+    mapped.relatedSpans = diag.relatedSpans;
+    mapped.notes = diag.notes;
+    mapped.fixits = diag.fixits;
+    diagnosticsOut.push_back(std::move(mapped));
+  }
+  handler->clear();
+  return diagnosticsOut;
+}
+
+std::vector<SemanticTokenEntry> Server::buildSemanticTokensFromSemanticCache(const std::string &uri, DocumentState &state) {
+  const auto *parsedDocument = getSemanticResolvedDocumentForUri(uri, state);
+  if (!parsedDocument || !parsedDocument->mainTable) {
+    return collectSemanticTokenEntries(state.text, 0, 0, false);
+  }
+
+  BuiltinApiIndex builtinsIndex;
+  if (const auto *cachedBuiltins = getBuiltinsApiIndex()) {
+    builtinsIndex = *cachedBuiltins;
+  }
+
+  std::ostringstream sink;
+  auto diagnostics = DiagnosticHandler::createDefault(sink);
+  Syntax::Lexer lexer(*diagnostics);
+  std::vector<Syntax::Tok> tokenStream;
+  std::istringstream input(state.text);
+  lexer.tokenizeFromIStream(input, tokenStream);
+
+  std::vector<SemanticTokenEntry> tokens;
+  tokens.reserve(tokenStream.size());
+  for (const auto &token : tokenStream) {
+    unsigned line = token.srcPos.line > 0 ? token.srcPos.line - 1 : 0;
+    unsigned start = token.srcPos.startCol;
+    unsigned length = token.srcPos.endCol > token.srcPos.startCol ? token.srcPos.endCol - token.srcPos.startCol
+                                                                  : static_cast<unsigned>(token.content.size());
+    if (length == 0) {
+      continue;
+    }
+
+    if (token.type == Syntax::Tok::Keyword || token.type == Syntax::Tok::BooleanLiteral) {
+      tokens.push_back({line, start, length, TOKEN_TYPE_KEYWORD});
+      continue;
+    }
+
+    if (token.type != Syntax::Tok::Identifier) {
+      continue;
+    }
+
+    unsigned semanticType = TOKEN_TYPE_VARIABLE;
+    bool resolved = false;
+    auto tokenOffset = offsetFromPosition(state.text, line, start);
+
+    if (std::find(parsedDocument->imports.begin(), parsedDocument->imports.end(), token.content) != parsedDocument->imports.end()) {
+      semanticType = TOKEN_TYPE_NAMESPACE;
+      resolved = true;
+    }
+
+    if (!resolved) {
+      SymbolEntry resolvedSymbol;
+      std::string resolvedUri;
+      unsigned lookupCharacter = start;
+      if (length > 1) {
+        lookupCharacter += 1;
+      }
+      if (resolveHoverSymbol(uri, state.text, line, lookupCharacter, token.content, tokenOffset, resolvedUri, resolvedSymbol)) {
+        semanticType = semanticTokenTypeFromSymbolKindForLsp(resolvedSymbol.kind);
+        resolved = true;
+      }
+    }
+
+    std::string memberReceiver;
+    if (!resolved && extractReceiverBeforeOffset(state.text, tokenOffset, memberReceiver) && !builtinsIndex.membersByType.empty()) {
+      auto inferredType = inferBuiltinTypeForReceiver(state.text, memberReceiver, line, builtinsIndex);
+      if (inferredType.has_value()) {
+        auto typeMembers = builtinsIndex.membersByType.find(*inferredType);
+        if (typeMembers != builtinsIndex.membersByType.end()) {
+          auto memberIt = typeMembers->second.find(token.content);
+          if (memberIt != typeMembers->second.end()) {
+            semanticType = semanticTokenTypeFromSymbolKindForLsp(memberIt->second.kind);
+            resolved = true;
+          }
+        }
+      }
+    }
+
+    if (!resolved && !builtinsIndex.topLevelByName.empty()) {
+      auto topLevel = builtinsIndex.topLevelByName.find(token.content);
+      if (topLevel != builtinsIndex.topLevelByName.end()) {
+        semanticType = semanticTokenTypeFromSymbolKindForLsp(topLevel->second.kind);
+      }
+    }
+
+    tokens.push_back({line, start, length, semanticType});
+  }
+
+  std::sort(tokens.begin(), tokens.end(), [](const SemanticTokenEntry &lhs, const SemanticTokenEntry &rhs) {
+    if (lhs.line != rhs.line) {
+      return lhs.line < rhs.line;
+    }
+    if (lhs.start != rhs.start) {
+      return lhs.start < rhs.start;
+    }
+    if (lhs.length != rhs.length) {
+      return lhs.length < rhs.length;
+    }
+    return lhs.type < rhs.type;
+  });
+  return tokens;
+}
+
+const std::vector<SemanticTokenEntry> &Server::getSemanticTokensForDocument(const std::string &uri, DocumentState &state) {
+  refreshAnalysisState(state);
   if (!state.analysis.semanticTokensReady) {
-    state.analysis.semanticTokens = collectSemanticTokenEntries(state.text, 0, 0, false);
+    state.analysis.semanticTokens = buildSemanticTokensFromSemanticCache(uri, state);
     state.analysis.semanticTokensReady = true;
   }
   (void)uri;
@@ -1027,11 +1721,7 @@ const std::vector<SemanticTokenEntry> &Server::getSemanticTokensForDocument(cons
 
 const std::vector<starbytes::linguistics::LintFinding> &Server::getLintFindingsForDocument(const std::string &uri,
                                                                                             DocumentState &state) {
-  if (state.analysis.version != state.version || state.analysis.textHash != state.textHash) {
-    state.analysis = {};
-    state.analysis.version = state.version;
-    state.analysis.textHash = state.textHash;
-  }
+  refreshAnalysisState(state);
   if (!state.analysis.lintReady) {
     auto start = std::chrono::steady_clock::now();
     starbytes::linguistics::LinguisticsSession session(uri, state.text);
@@ -1048,11 +1738,7 @@ const std::vector<starbytes::linguistics::LintFinding> &Server::getLintFindingsF
 
 const std::vector<starbytes::linguistics::Suggestion> &Server::getSuggestionsForDocument(const std::string &uri,
                                                                                           DocumentState &state) {
-  if (state.analysis.version != state.version || state.analysis.textHash != state.textHash) {
-    state.analysis = {};
-    state.analysis.version = state.version;
-    state.analysis.textHash = state.textHash;
-  }
+  refreshAnalysisState(state);
   if (!state.analysis.suggestionsReady) {
     auto start = std::chrono::steady_clock::now();
     starbytes::linguistics::LinguisticsSession session(uri, state.text);
@@ -1098,11 +1784,7 @@ const std::vector<starbytes::linguistics::CodeAction> &Server::getCodeActionsFor
 }
 
 bool Server::getFormattedTextForDocument(const std::string &uri, DocumentState &state, std::string &formattedTextOut) {
-  if (state.analysis.version != state.version || state.analysis.textHash != state.textHash) {
-    state.analysis = {};
-    state.analysis.version = state.version;
-    state.analysis.textHash = state.textHash;
-  }
+  refreshAnalysisState(state);
 
   if(!state.analysis.formatReady) {
     auto start = std::chrono::steady_clock::now();
@@ -1162,6 +1844,912 @@ std::vector<SymbolEntry> Server::collectSymbolsForUri(const std::string &uri, co
 
 void Server::invalidateSymbolCacheForUri(const std::string &uri) {
   symbolCache.invalidate(uri);
+}
+
+bool Server::findModuleDocumentByName(const std::string &moduleName,
+                                      const std::string &anchorUri,
+                                      std::string &uriOut,
+                                      std::string &textOut) {
+  auto scorePath = [&](const std::filesystem::path &fsPath) -> int {
+    if (fsPath.stem() == moduleName && fsPath.extension() == ".starbint") {
+      return 7;
+    }
+    if (fsPath.filename() == "main.starb" && fsPath.parent_path().filename() == moduleName) {
+      return 6;
+    }
+    if (fsPath.stem() == moduleName && fsPath.extension() == ".starb") {
+      return 5;
+    }
+    if (fsPath.extension() == ".starbint" && fsPath.parent_path().filename() == moduleName) {
+      return 4;
+    }
+    if (fsPath.extension() == ".starb" && fsPath.parent_path().filename() == moduleName) {
+      return 3;
+    }
+    return 0;
+  };
+
+  auto considerDocument = [&](const std::string &candidateUri, const std::string &candidateText, int &bestScore) {
+    std::string path;
+    if (!parseUriToPath(candidateUri, path)) {
+      return;
+    }
+    int score = scorePath(std::filesystem::path(path));
+    if (score > bestScore) {
+      bestScore = score;
+      uriOut = candidateUri;
+      textOut = candidateText;
+    }
+  };
+
+  int bestScore = 0;
+  for (const auto &doc : documents) {
+    considerDocument(doc.first, doc.second.text, bestScore);
+  }
+  if (bestScore >= 6) {
+    return true;
+  }
+
+  std::vector<std::filesystem::path> searchRoots;
+  std::unordered_set<std::string> seenRoots;
+  auto addSearchBase = [&](const std::filesystem::path &base) {
+    appendUniquePath(searchRoots, seenRoots, base);
+    appendUniquePath(searchRoots, seenRoots, base / "modules");
+    appendUniquePath(searchRoots, seenRoots, base / "stdlib");
+    loadModulePathFileForLsp(base / ".starbmodpath", searchRoots, seenRoots);
+  };
+  auto addAncestors = [&](std::filesystem::path start) {
+    if (start.empty()) {
+      return;
+    }
+    start = std::filesystem::path(absolutePathString(start));
+    for (unsigned depth = 0; depth < 8; ++depth) {
+      addSearchBase(start);
+      auto parent = start.parent_path();
+      if (parent.empty() || parent == start) {
+        break;
+      }
+      start = parent;
+    }
+  };
+
+  std::filesystem::path anchorRoot;
+  std::string anchorPath;
+  if (!anchorUri.empty() && parseUriToPath(anchorUri, anchorPath)) {
+    std::error_code ec;
+    auto anchorFsPath = std::filesystem::path(anchorPath);
+    anchorRoot = std::filesystem::is_directory(anchorFsPath, ec) && !ec ? anchorFsPath : anchorFsPath.parent_path();
+    addAncestors(anchorRoot);
+  }
+  for (const auto &workspaceUri : workspaceRoots) {
+    std::string workspacePath;
+    if (!parseUriToPath(workspaceUri, workspacePath)) {
+      continue;
+    }
+    addAncestors(std::filesystem::path(workspacePath));
+  }
+  addAncestors(std::filesystem::current_path());
+
+  std::vector<std::filesystem::path> moduleDirs;
+  std::unordered_set<std::string> seenModuleDirs;
+  auto addModuleDir = [&](const std::filesystem::path &path) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || ec || !std::filesystem::is_directory(path, ec) || ec) {
+      return;
+    }
+    appendUniquePath(moduleDirs, seenModuleDirs, path);
+  };
+  if (!anchorRoot.empty()) {
+    addModuleDir(anchorRoot / moduleName);
+    addModuleDir(anchorRoot.parent_path() / moduleName);
+  }
+  for (const auto &root : searchRoots) {
+    addModuleDir(root / moduleName);
+  }
+
+  std::vector<std::filesystem::path> candidateFiles;
+  std::unordered_set<std::string> seenFiles;
+  auto addCandidateFile = [&](const std::filesystem::path &path) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || ec || !std::filesystem::is_regular_file(path, ec) || ec) {
+      return;
+    }
+    appendUniquePath(candidateFiles, seenFiles, path);
+  };
+
+  for (const auto &root : searchRoots) {
+    addCandidateFile(root / (moduleName + ".starbint"));
+    addCandidateFile(root / (moduleName + ".starb"));
+  }
+
+  for (const auto &moduleDir : moduleDirs) {
+    addCandidateFile(moduleDir / (moduleName + ".starbint"));
+    addCandidateFile(moduleDir / "main.starb");
+    addCandidateFile(moduleDir / (moduleName + ".starb"));
+
+    std::error_code iterErr;
+    for (std::filesystem::directory_iterator it(moduleDir, iterErr), end; it != end; it.increment(iterErr)) {
+      if (iterErr) {
+        break;
+      }
+      if (!it->is_regular_file()) {
+        continue;
+      }
+      auto ext = it->path().extension().string();
+      if (ext != ".starbint" && ext != ".starb") {
+        continue;
+      }
+      addCandidateFile(it->path());
+    }
+  }
+
+  for (const auto &candidatePath : candidateFiles) {
+    auto candidateUri = pathToUri(candidatePath.string());
+    std::string candidateText;
+    if (!getDocumentTextByUri(candidateUri, candidateText) || candidateText.empty()) {
+      continue;
+    }
+    considerDocument(candidateUri, candidateText, bestScore);
+  }
+
+  return bestScore > 0;
+}
+
+bool Server::resolveHoverSymbol(const std::string &uri,
+                                const std::string &text,
+                                unsigned line,
+                                unsigned character,
+                                const std::string &word,
+                                size_t wordStart,
+                                std::string &resolvedUriOut,
+                                SymbolEntry &symbolOut) {
+  auto lines = splitLinesCopy(text);
+
+  auto findSymbolAtRegion = [&](const std::string &symbolUri,
+                                const std::string &symbolText,
+                                const Region &region) -> std::optional<HoverResolvedSymbol> {
+    auto symbols = collectSymbolsForUri(symbolUri, symbolText);
+    unsigned symbolLine = region.startLine > 0 ? region.startLine - 1 : 0;
+    for (const auto &symbol : symbols) {
+      if (symbol.line == symbolLine && symbol.start == region.startCol) {
+        return HoverResolvedSymbol{symbolUri, symbol};
+      }
+    }
+    return std::nullopt;
+  };
+
+  auto findSymbolByName = [&](const std::string &symbolUri,
+                              const std::string &symbolText,
+                              const std::string &name,
+                              const std::string &containerName) -> std::optional<HoverResolvedSymbol> {
+    auto symbols = collectSymbolsForUri(symbolUri, symbolText);
+    for (const auto &symbol : symbols) {
+      if (symbol.name != name) {
+        continue;
+      }
+      if (!containerName.empty() && symbol.containerName != containerName) {
+        continue;
+      }
+      if (containerName.empty() && symbol.isMember) {
+        continue;
+      }
+      return HoverResolvedSymbol{symbolUri, symbol};
+    }
+    return std::nullopt;
+  };
+
+  auto synthesizeSymbol = [&](ASTIdentifier *id,
+                              ASTStmt *owner,
+                              ASTType *typeOverride,
+                              const std::string &displayName,
+                              const std::string &detailOverride) -> std::optional<HoverResolvedSymbol> {
+    if (!id || !owner) {
+      return std::nullopt;
+    }
+    if (auto existing = findSymbolAtRegion(uri, text, id->codeRegion)) {
+      return existing;
+    }
+
+    SymbolEntry symbol;
+    symbol.name = displayName.empty() ? sourceSliceForRegion(lines, id->codeRegion) : displayName;
+    symbol.line = id->codeRegion.startLine > 0 ? id->codeRegion.startLine - 1 : 0;
+    symbol.start = id->codeRegion.startCol;
+    symbol.length = id->codeRegion.endCol > id->codeRegion.startCol ? id->codeRegion.endCol - id->codeRegion.startCol
+                                                                     : static_cast<unsigned>(symbol.name.size());
+    symbol.documentation = hoverDocCommentForLine(lines, symbol.line);
+
+    if (owner->type == VAR_DECL) {
+      auto *varDecl = static_cast<ASTVarDecl *>(owner);
+      bool isConst = varDecl->isConst;
+      symbol.kind = isConst ? SYMBOL_KIND_CONSTANT : SYMBOL_KIND_VARIABLE;
+      symbol.detail = detailOverride.empty() ? (isConst ? "constant" : "variable") : detailOverride;
+      symbol.signature = hoverVarSignature(isConst, symbol.name, typeOverride);
+      return HoverResolvedSymbol{uri, symbol};
+    }
+
+    if (owner->type == SECURE_DECL) {
+      symbol.kind = SYMBOL_KIND_VARIABLE;
+      symbol.detail = detailOverride.empty() ? "catch error" : detailOverride;
+      symbol.signature = "catch " + symbol.name;
+      if (typeOverride) {
+        symbol.signature += ":";
+        symbol.signature += hoverTypeToString(typeOverride);
+      }
+      return HoverResolvedSymbol{uri, symbol};
+    }
+
+    if (owner->type == FUNC_DECL || owner->type == CLASS_CTOR_DECL) {
+      symbol.kind = SYMBOL_KIND_VARIABLE;
+      symbol.detail = detailOverride.empty() ? "parameter" : detailOverride;
+      symbol.signature = hoverVarSignature(false, symbol.name, typeOverride, "param");
+      return HoverResolvedSymbol{uri, symbol};
+    }
+
+    return std::nullopt;
+  };
+
+  auto stateIt = documents.find(uri);
+  if (stateIt == documents.end()) {
+    return false;
+  }
+  const auto *parsedDocument = getSemanticResolvedDocumentForUri(uri, stateIt->second);
+  if (!parsedDocument || !parsedDocument->mainTable) {
+    return false;
+  }
+
+  auto directImports = parsedDocument->imports;
+  std::unordered_map<std::string, std::shared_ptr<Semantics::SymbolTable>> currentDeps;
+  for (const auto &importName : directImports) {
+    std::string depUri;
+    std::string depText;
+    if (!findModuleDocumentByName(importName, uri, depUri, depText)) {
+      continue;
+    }
+    auto depIt = documents.find(depUri);
+    if (depIt == documents.end()) {
+      continue;
+    }
+    if (const auto *depDocument = getSemanticResolvedDocumentForUri(depUri, depIt->second);
+        depDocument && depDocument->mainTable) {
+      currentDeps[importName] = depDocument->mainTable;
+    }
+  }
+
+  Semantics::STableContext resolutionContext;
+  resolutionContext.mainBorrowed = parsedDocument->mainTable.get();
+  appendImportedSymbolTablesForHover(resolutionContext, directImports, currentDeps);
+
+  auto makeSymbolFromEntry = [&](Semantics::SymbolTable::Entry *entry,
+                                 const std::string &moduleNameHint,
+                                 const std::string &containerNameHint) -> std::optional<HoverResolvedSymbol> {
+    if (!entry) {
+      return std::nullopt;
+    }
+    if (!moduleNameHint.empty()) {
+      std::string moduleUri;
+      std::string moduleText;
+      if (findModuleDocumentByName(moduleNameHint, uri, moduleUri, moduleText)) {
+        if (containerNameHint == moduleNameHint) {
+          if (auto found = findSymbolByName(moduleUri, moduleText, entry->name, std::string())) {
+            return found;
+          }
+        }
+        if (auto found = findSymbolByName(moduleUri, moduleText, entry->name, containerNameHint)) {
+          return found;
+        }
+      }
+    }
+    if (auto found = findSymbolByName(uri, text, entry->name, containerNameHint)) {
+      return found;
+    }
+    return std::nullopt;
+  };
+
+  auto findLocalBinding = [&](const std::vector<HoverFrame> &frames,
+                              std::shared_ptr<ASTScope> currentScope,
+                              const std::string &lookupName,
+                              const std::string &sourceName,
+                              std::shared_ptr<ASTScope> &outerScopeStart) -> const HoverBinding * {
+    outerScopeStart = nullptr;
+    for (auto it = frames.rbegin(); it != frames.rend(); ++it) {
+      for (auto bindingIt = it->bindings.rbegin(); bindingIt != it->bindings.rend(); ++bindingIt) {
+        if (bindingIt->lookupName == lookupName || bindingIt->displayName == sourceName) {
+          return &*bindingIt;
+        }
+      }
+      if (it->functionBoundary) {
+        outerScopeStart = it->scope ? it->scope->parentScope : nullptr;
+        break;
+      }
+    }
+    return nullptr;
+  };
+
+  std::function<ASTType *(ASTExpr *, std::vector<HoverFrame> &, ASTClassDecl *)> inferExprType;
+  std::function<std::optional<HoverResolvedSymbol>(ASTExpr *, std::vector<HoverFrame> &, ASTClassDecl *)> resolveExprHover;
+  std::function<bool(ASTStmt *, std::vector<HoverFrame> &, ASTClassDecl *)> walkStmt;
+  std::function<bool(ASTBlockStmt *, std::vector<HoverFrame> &, ASTClassDecl *, bool)> walkBlock;
+
+  auto findClassEntry = [&](ASTType *type, std::shared_ptr<ASTScope> scope) -> Semantics::SymbolTable::Entry * {
+    if (!type) {
+      return nullptr;
+    }
+    auto *entry = resolutionContext.findEntryNoDiag(type->getName(), scope);
+    if (!entry) {
+      entry = resolutionContext.findEntryByEmittedNoDiag(type->getName());
+    }
+    if (entry && entry->type == Semantics::SymbolTable::Entry::Class) {
+      return entry;
+    }
+    return nullptr;
+  };
+
+  std::function<Semantics::SymbolTable::Var *(Semantics::SymbolTable::Class *, const std::string &, std::shared_ptr<ASTScope>)>
+      findClassFieldRecursive = [&](Semantics::SymbolTable::Class *classData,
+                                    const std::string &fieldName,
+                                    std::shared_ptr<ASTScope> scope) -> Semantics::SymbolTable::Var * {
+    if (!classData) {
+      return nullptr;
+    }
+    for (auto *field : classData->fields) {
+      if (field && field->name == fieldName) {
+        return field;
+      }
+    }
+    if (!classData->superClassType) {
+      return nullptr;
+    }
+    auto *superEntry = findClassEntry(classData->superClassType, scope);
+    if (!superEntry) {
+      return nullptr;
+    }
+    return findClassFieldRecursive(static_cast<Semantics::SymbolTable::Class *>(superEntry->data), fieldName, scope);
+  };
+
+  std::function<Semantics::SymbolTable::Function *(Semantics::SymbolTable::Class *, const std::string &, std::shared_ptr<ASTScope>)>
+      findClassMethodRecursive = [&](Semantics::SymbolTable::Class *classData,
+                                     const std::string &methodName,
+                                     std::shared_ptr<ASTScope> scope) -> Semantics::SymbolTable::Function * {
+    if (!classData) {
+      return nullptr;
+    }
+    for (auto *method : classData->instMethods) {
+      if (method && method->name == methodName) {
+        return method;
+      }
+    }
+    if (!classData->superClassType) {
+      return nullptr;
+    }
+    auto *superEntry = findClassEntry(classData->superClassType, scope);
+    if (!superEntry) {
+      return nullptr;
+    }
+    return findClassMethodRecursive(static_cast<Semantics::SymbolTable::Class *>(superEntry->data), methodName, scope);
+  };
+
+  inferExprType = [&](ASTExpr *expr, std::vector<HoverFrame> &frames, ASTClassDecl *currentClass) -> ASTType * {
+    if (!expr) {
+      return nullptr;
+    }
+    switch (expr->type) {
+      case STR_LITERAL:
+        return STRING_TYPE;
+      case REGEX_LITERAL:
+        return REGEX_TYPE;
+      case BOOL_LITERAL:
+        return BOOL_TYPE;
+      case NUM_LITERAL: {
+        auto *literal = static_cast<ASTLiteralExpr *>(expr);
+        if (literal->floatValue.has_value()) {
+          return DOUBLE_TYPE;
+        }
+        return INT_TYPE;
+      }
+      case ARRAY_EXPR:
+        return ARRAY_TYPE;
+      case DICT_EXPR:
+        return DICTIONARY_TYPE;
+      case ID_EXPR: {
+        auto *id = expr->id;
+        if (!id) {
+          return nullptr;
+        }
+        std::shared_ptr<ASTScope> outerScopeStart;
+        if (const auto *binding =
+                findLocalBinding(frames, frames.empty() ? ASTScopeGlobal : frames.back().scope, id->val, word, outerScopeStart)) {
+          return binding->type;
+        }
+        auto lookupScope = outerScopeStart ? outerScopeStart : (frames.empty() ? ASTScopeGlobal : frames.back().scope);
+        auto *entry = resolutionContext.findEntryNoDiag(id->val, lookupScope);
+        if (!entry) {
+          return nullptr;
+        }
+        if (entry->type == Semantics::SymbolTable::Entry::Var) {
+          return static_cast<Semantics::SymbolTable::Var *>(entry->data)->type;
+        }
+        if (entry->type == Semantics::SymbolTable::Entry::Class) {
+          return static_cast<Semantics::SymbolTable::Class *>(entry->data)->classType;
+        }
+        if (entry->type == Semantics::SymbolTable::Entry::Function) {
+          return static_cast<Semantics::SymbolTable::Function *>(entry->data)->returnType;
+        }
+        return nullptr;
+      }
+      case MEMBER_EXPR: {
+        if (!expr->rightExpr || !expr->rightExpr->id) {
+          return nullptr;
+        }
+        if (expr->isScopeAccess && expr->resolvedScope) {
+          auto *entry =
+              resolutionContext.findEntryInExactScopeNoDiag(expr->rightExpr->id->val, expr->resolvedScope);
+          if (!entry) {
+            return nullptr;
+          }
+          if (entry->type == Semantics::SymbolTable::Entry::Var) {
+            return static_cast<Semantics::SymbolTable::Var *>(entry->data)->type;
+          }
+          if (entry->type == Semantics::SymbolTable::Entry::Class) {
+            return static_cast<Semantics::SymbolTable::Class *>(entry->data)->classType;
+          }
+          if (entry->type == Semantics::SymbolTable::Entry::Function) {
+            return static_cast<Semantics::SymbolTable::Function *>(entry->data)->returnType;
+          }
+          return nullptr;
+        }
+
+        auto *leftType = inferExprType(expr->leftExpr, frames, currentClass);
+        if (!leftType) {
+          return nullptr;
+        }
+        auto memberName = expr->rightExpr->id->val;
+        if (isStringTypeForHover(leftType)) {
+          if (memberName == "length") {
+            return INT_TYPE;
+          }
+          if (memberName == "trim" || memberName == "lower" || memberName == "upper" || memberName == "slice" ||
+              memberName == "replace" || memberName == "repeat") {
+            return STRING_TYPE;
+          }
+          return ANY_TYPE;
+        }
+        if (isArrayTypeForHover(leftType) || isDictTypeForHover(leftType) || isMapTypeForHover(leftType)) {
+          if (memberName == "length") {
+            return INT_TYPE;
+          }
+          return ANY_TYPE;
+        }
+        auto *classEntry = findClassEntry(leftType, frames.empty() ? ASTScopeGlobal : frames.back().scope);
+        if (classEntry) {
+          auto *classData = static_cast<Semantics::SymbolTable::Class *>(classEntry->data);
+          if (auto *field = findClassFieldRecursive(classData, memberName, frames.empty() ? ASTScopeGlobal : frames.back().scope)) {
+            return field->type;
+          }
+          if (auto *method =
+                  findClassMethodRecursive(classData, memberName, frames.empty() ? ASTScopeGlobal : frames.back().scope)) {
+            return method->returnType;
+          }
+        }
+        return nullptr;
+      }
+      case IVKE_EXPR: {
+        if (expr->isConstructorCall && expr->callee) {
+          if (expr->callee->type == ID_EXPR && expr->callee->id) {
+            auto *entry = resolutionContext.findEntryNoDiag(expr->callee->id->val,
+                                                              frames.empty() ? ASTScopeGlobal : frames.back().scope);
+            if (entry && entry->type == Semantics::SymbolTable::Entry::Class) {
+              return static_cast<Semantics::SymbolTable::Class *>(entry->data)->classType;
+            }
+          } else if (expr->callee->type == MEMBER_EXPR && expr->callee->rightExpr && expr->callee->rightExpr->id &&
+                     expr->callee->resolvedScope) {
+            auto *entry = resolutionContext.findEntryInExactScopeNoDiag(expr->callee->rightExpr->id->val,
+                                                                          expr->callee->resolvedScope);
+            if (entry && entry->type == Semantics::SymbolTable::Entry::Class) {
+              return static_cast<Semantics::SymbolTable::Class *>(entry->data)->classType;
+            }
+          }
+        }
+        return inferExprType(expr->callee, frames, currentClass);
+      }
+      default:
+        return nullptr;
+    }
+  };
+
+  resolveExprHover = [&](ASTExpr *expr,
+                         std::vector<HoverFrame> &frames,
+                         ASTClassDecl *currentClass) -> std::optional<HoverResolvedSymbol> {
+    if (!expr) {
+      return std::nullopt;
+    }
+
+    if (expr->type == ID_EXPR && expr->id && regionContainsPosition(expr->id->codeRegion, line + 1, character)) {
+      std::shared_ptr<ASTScope> outerScopeStart;
+      if (const auto *binding =
+              findLocalBinding(frames, frames.empty() ? ASTScopeGlobal : frames.back().scope, expr->id->val, word,
+                               outerScopeStart)) {
+        return synthesizeSymbol(binding->declId, binding->declOwner, binding->type, binding->displayName, "");
+      }
+      auto lookupScope = outerScopeStart ? outerScopeStart : (frames.empty() ? ASTScopeGlobal : frames.back().scope);
+      auto *entry = resolutionContext.findEntryNoDiag(expr->id->val, lookupScope);
+      if (entry) {
+        return makeSymbolFromEntry(entry, std::string(), std::string());
+      }
+      return std::nullopt;
+    }
+
+    if (expr->type == MEMBER_EXPR && expr->rightExpr && expr->rightExpr->id &&
+        regionContainsPosition(expr->rightExpr->id->codeRegion, line + 1, character)) {
+      if (expr->isScopeAccess && expr->resolvedScope) {
+        auto *entry = resolutionContext.findEntryInExactScopeNoDiag(expr->rightExpr->id->val, expr->resolvedScope);
+        std::string moduleHint;
+        std::string containerHint = expr->resolvedScope->name;
+        if (!entry && expr->leftExpr && expr->leftExpr->type == ID_EXPR && expr->leftExpr->id) {
+          auto leftName = sourceSliceForRegion(lines, expr->leftExpr->id->codeRegion);
+          if (std::find(directImports.begin(), directImports.end(), leftName) != directImports.end()) {
+            moduleHint = leftName;
+            auto depTableIt = currentDeps.find(leftName);
+            if (depTableIt != currentDeps.end() && depTableIt->second) {
+              if (auto *depEntries =
+                      depTableIt->second->findEntriesInExactScope(expr->rightExpr->id->val, ASTScopeGlobal);
+                  depEntries && !depEntries->empty()) {
+                entry = depEntries->front();
+              }
+            }
+          }
+        }
+        if (!entry) {
+          return std::nullopt;
+        }
+        if (expr->leftExpr && expr->leftExpr->type == ID_EXPR && expr->leftExpr->id) {
+          auto leftName = sourceSliceForRegion(lines, expr->leftExpr->id->codeRegion);
+          if (moduleHint.empty() && std::find(directImports.begin(), directImports.end(), leftName) != directImports.end()) {
+            moduleHint = leftName;
+          }
+        }
+        return makeSymbolFromEntry(entry, moduleHint, containerHint);
+      }
+
+      auto *leftType = inferExprType(expr->leftExpr, frames, currentClass);
+      if (!leftType) {
+        return std::nullopt;
+      }
+
+      auto memberName = sourceSliceForRegion(lines, expr->rightExpr->id->codeRegion);
+      if (isStringTypeForHover(leftType) || isArrayTypeForHover(leftType) || isDictTypeForHover(leftType) ||
+          isMapTypeForHover(leftType) || isRegexTypeForHover(leftType)) {
+        return std::nullopt;
+      }
+
+      auto *classEntry = findClassEntry(leftType, frames.empty() ? ASTScopeGlobal : frames.back().scope);
+      if (classEntry) {
+        auto *classData = static_cast<Semantics::SymbolTable::Class *>(classEntry->data);
+        auto *field = findClassFieldRecursive(classData, memberName, frames.empty() ? ASTScopeGlobal : frames.back().scope);
+        if (field) {
+          return findSymbolByName(uri, text, field->name, leftType->getName().str());
+        }
+        auto *method =
+            findClassMethodRecursive(classData, memberName, frames.empty() ? ASTScopeGlobal : frames.back().scope);
+        if (method) {
+          return findSymbolByName(uri, text, method->name, leftType->getName().str());
+        }
+      }
+      return std::nullopt;
+    }
+
+    if (expr->callee) {
+      if (auto resolved = resolveExprHover(expr->callee, frames, currentClass)) {
+        return resolved;
+      }
+    }
+    if (expr->leftExpr) {
+      if (auto resolved = resolveExprHover(expr->leftExpr, frames, currentClass)) {
+        return resolved;
+      }
+    }
+    if (expr->middleExpr) {
+      if (auto resolved = resolveExprHover(expr->middleExpr, frames, currentClass)) {
+        return resolved;
+      }
+    }
+    if (expr->rightExpr) {
+      if (auto resolved = resolveExprHover(expr->rightExpr, frames, currentClass)) {
+        return resolved;
+      }
+    }
+    for (auto *arg : expr->exprArrayData) {
+      if (auto resolved = resolveExprHover(arg, frames, currentClass)) {
+        return resolved;
+      }
+    }
+    for (const auto &entry : expr->dictExpr) {
+      if (auto resolved = resolveExprHover(entry.first, frames, currentClass)) {
+        return resolved;
+      }
+      if (auto resolved = resolveExprHover(entry.second, frames, currentClass)) {
+        return resolved;
+      }
+    }
+    return std::nullopt;
+  };
+
+  walkBlock = [&](ASTBlockStmt *block,
+                  std::vector<HoverFrame> &frames,
+                  ASTClassDecl *currentClass,
+                  bool functionBoundary) -> bool {
+    if (!block) {
+      return false;
+    }
+    frames.push_back(HoverFrame{block->parentScope, functionBoundary, {}});
+    for (auto *stmt : block->body) {
+      if (walkStmt(stmt, frames, currentClass)) {
+        frames.pop_back();
+        return true;
+      }
+    }
+    frames.pop_back();
+    return false;
+  };
+
+  walkStmt = [&](ASTStmt *stmt, std::vector<HoverFrame> &frames, ASTClassDecl *currentClass) -> bool {
+    if (!stmt) {
+      return false;
+    }
+
+    if (stmt->type & EXPR) {
+      return resolveExprHover(static_cast<ASTExpr *>(stmt), frames, currentClass).has_value() &&
+             ([&]() {
+               auto resolved = resolveExprHover(static_cast<ASTExpr *>(stmt), frames, currentClass);
+               if (!resolved.has_value()) {
+                 return false;
+               }
+               resolvedUriOut = resolved->uri;
+               symbolOut = resolved->symbol;
+               return true;
+             })();
+    }
+
+    if (!(stmt->type & DECL)) {
+      return false;
+    }
+
+    auto *decl = static_cast<ASTDecl *>(stmt);
+    switch (decl->type) {
+      case VAR_DECL: {
+        auto *varDecl = static_cast<ASTVarDecl *>(decl);
+        for (auto &spec : varDecl->specs) {
+          if (spec.expr) {
+            if (auto resolved = resolveExprHover(spec.expr, frames, currentClass)) {
+              resolvedUriOut = resolved->uri;
+              symbolOut = resolved->symbol;
+              return true;
+            }
+          }
+          if (spec.id && regionContainsPosition(spec.id->codeRegion, line + 1, character)) {
+            if (auto resolved =
+                    synthesizeSymbol(spec.id, decl, spec.type, sourceSliceForRegion(lines, spec.id->codeRegion), "")) {
+              resolvedUriOut = resolved->uri;
+              symbolOut = resolved->symbol;
+              return true;
+            }
+          }
+          if (!frames.empty() && spec.id) {
+            frames.back().bindings.push_back(
+                HoverBinding{spec.id, decl, spec.type, varDecl->isConst, spec.id->val,
+                             sourceSliceForRegion(lines, spec.id->codeRegion)});
+          }
+        }
+        return false;
+      }
+      case FUNC_DECL: {
+        auto *funcDecl = static_cast<ASTFuncDecl *>(decl);
+        if (funcDecl->funcId && regionContainsPosition(funcDecl->funcId->codeRegion, line + 1, character)) {
+          if (auto resolved = findSymbolAtRegion(uri, text, funcDecl->funcId->codeRegion)) {
+            resolvedUriOut = resolved->uri;
+            symbolOut = resolved->symbol;
+            return true;
+          }
+        }
+        if (!frames.empty() && funcDecl->funcId) {
+          frames.back().bindings.push_back(
+              HoverBinding{funcDecl->funcId, decl, funcDecl->returnType, false, funcDecl->funcId->val,
+                           sourceSliceForRegion(lines, funcDecl->funcId->codeRegion)});
+        }
+        if (!funcDecl->blockStmt) {
+          return false;
+        }
+        frames.push_back(HoverFrame{funcDecl->blockStmt->parentScope, true, {}});
+        for (const auto &param : funcDecl->params) {
+          if (!param.first) {
+            continue;
+          }
+          if (regionContainsPosition(param.first->codeRegion, line + 1, character)) {
+            if (auto resolved = synthesizeSymbol(param.first,
+                                                 decl,
+                                                 param.second,
+                                                 sourceSliceForRegion(lines, param.first->codeRegion),
+                                                 "parameter")) {
+              resolvedUriOut = resolved->uri;
+              symbolOut = resolved->symbol;
+              frames.pop_back();
+              return true;
+            }
+          }
+          frames.back().bindings.push_back(
+              HoverBinding{param.first, decl, param.second, false, param.first->val,
+                           sourceSliceForRegion(lines, param.first->codeRegion)});
+        }
+        if (currentClass) {
+          auto selfName = std::string("self");
+          auto selfRegion = funcDecl->funcId ? funcDecl->funcId->codeRegion : Region{};
+          auto *selfId = new ASTIdentifier();
+          selfId->val = selfName;
+          selfId->codeRegion = selfRegion;
+          frames.back().bindings.push_back(HoverBinding{selfId, decl, currentClass->classType, false, selfName, selfName});
+        }
+        for (auto *innerStmt : funcDecl->blockStmt->body) {
+          if (walkStmt(innerStmt, frames, currentClass)) {
+            frames.pop_back();
+            return true;
+          }
+        }
+        frames.pop_back();
+        return false;
+      }
+      case CLASS_DECL: {
+        auto *classDecl = static_cast<ASTClassDecl *>(decl);
+        if (classDecl->id && regionContainsPosition(classDecl->id->codeRegion, line + 1, character)) {
+          if (auto resolved = findSymbolAtRegion(uri, text, classDecl->id->codeRegion)) {
+            resolvedUriOut = resolved->uri;
+            symbolOut = resolved->symbol;
+            return true;
+          }
+        }
+        if (!frames.empty() && classDecl->id) {
+          frames.back().bindings.push_back(
+              HoverBinding{classDecl->id, decl, classDecl->classType, false, classDecl->id->val,
+                           sourceSliceForRegion(lines, classDecl->id->codeRegion)});
+        }
+        for (auto *field : classDecl->fields) {
+          if (walkStmt(field, frames, classDecl)) {
+            return true;
+          }
+        }
+        for (auto *method : classDecl->methods) {
+          if (walkStmt(method, frames, classDecl)) {
+            return true;
+          }
+        }
+        return false;
+      }
+      case SCOPE_DECL: {
+        auto *scopeDecl = static_cast<ASTScopeDecl *>(decl);
+        if (scopeDecl->scopeId && regionContainsPosition(scopeDecl->scopeId->codeRegion, line + 1, character)) {
+          if (auto resolved = findSymbolAtRegion(uri, text, scopeDecl->scopeId->codeRegion)) {
+            resolvedUriOut = resolved->uri;
+            symbolOut = resolved->symbol;
+            return true;
+          }
+        }
+        if (!frames.empty() && scopeDecl->scopeId) {
+          frames.back().bindings.push_back(
+              HoverBinding{scopeDecl->scopeId, decl, nullptr, false, scopeDecl->scopeId->val,
+                           sourceSliceForRegion(lines, scopeDecl->scopeId->codeRegion)});
+        }
+        if (!scopeDecl->blockStmt) {
+          return false;
+        }
+        frames.push_back(HoverFrame{scopeDecl->blockStmt->parentScope, false, {}});
+        for (auto *innerStmt : scopeDecl->blockStmt->body) {
+          if (walkStmt(innerStmt, frames, currentClass)) {
+            frames.pop_back();
+            return true;
+          }
+        }
+        frames.pop_back();
+        return false;
+      }
+      case SECURE_DECL: {
+        auto *secureDecl = static_cast<ASTSecureDecl *>(decl);
+        if (secureDecl->guardedDecl && walkStmt(secureDecl->guardedDecl, frames, currentClass)) {
+          return true;
+        }
+        if (!secureDecl->catchBlock) {
+          return false;
+        }
+        frames.push_back(HoverFrame{secureDecl->catchBlock->parentScope, false, {}});
+        if (secureDecl->catchErrorId) {
+          if (regionContainsPosition(secureDecl->catchErrorId->codeRegion, line + 1, character)) {
+            if (auto resolved = synthesizeSymbol(secureDecl->catchErrorId,
+                                                 decl,
+                                                 secureDecl->catchErrorType,
+                                                 sourceSliceForRegion(lines, secureDecl->catchErrorId->codeRegion),
+                                                 "catch error")) {
+              resolvedUriOut = resolved->uri;
+              symbolOut = resolved->symbol;
+              frames.pop_back();
+              return true;
+            }
+          }
+          frames.back().bindings.push_back(HoverBinding{secureDecl->catchErrorId,
+                                                        decl,
+                                                        secureDecl->catchErrorType,
+                                                        false,
+                                                        secureDecl->catchErrorId->val,
+                                                        sourceSliceForRegion(lines, secureDecl->catchErrorId->codeRegion)});
+        }
+        for (auto *innerStmt : secureDecl->catchBlock->body) {
+          if (walkStmt(innerStmt, frames, currentClass)) {
+            frames.pop_back();
+            return true;
+          }
+        }
+        frames.pop_back();
+        return false;
+      }
+      case COND_DECL: {
+        auto *condDecl = static_cast<ASTConditionalDecl *>(decl);
+        for (auto &spec : condDecl->specs) {
+          if (spec.expr) {
+            if (auto resolved = resolveExprHover(spec.expr, frames, currentClass)) {
+              resolvedUriOut = resolved->uri;
+              symbolOut = resolved->symbol;
+              return true;
+            }
+          }
+          if (walkBlock(spec.blockStmt, frames, currentClass, false)) {
+            return true;
+          }
+        }
+        return false;
+      }
+      case FOR_DECL: {
+        auto *forDecl = static_cast<ASTForDecl *>(decl);
+        if (forDecl->expr) {
+          if (auto resolved = resolveExprHover(forDecl->expr, frames, currentClass)) {
+            resolvedUriOut = resolved->uri;
+            symbolOut = resolved->symbol;
+            return true;
+          }
+        }
+        return walkBlock(forDecl->blockStmt, frames, currentClass, false);
+      }
+      case WHILE_DECL: {
+        auto *whileDecl = static_cast<ASTWhileDecl *>(decl);
+        if (whileDecl->expr) {
+          if (auto resolved = resolveExprHover(whileDecl->expr, frames, currentClass)) {
+            resolvedUriOut = resolved->uri;
+            symbolOut = resolved->symbol;
+            return true;
+          }
+        }
+        return walkBlock(whileDecl->blockStmt, frames, currentClass, false);
+      }
+      case RETURN_DECL: {
+        auto *returnDecl = static_cast<ASTReturnDecl *>(decl);
+        if (!returnDecl->expr) {
+          return false;
+        }
+        if (auto resolved = resolveExprHover(returnDecl->expr, frames, currentClass)) {
+          resolvedUriOut = resolved->uri;
+          symbolOut = resolved->symbol;
+          return true;
+        }
+        return false;
+      }
+      default:
+        return false;
+    }
+  };
+
+  std::vector<HoverFrame> frames;
+  frames.push_back(HoverFrame{ASTScopeGlobal, false, {}});
+  for (auto *stmt : parsedDocument->statements) {
+    if (walkStmt(stmt, frames, nullptr)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void Server::setDocumentTextByUri(const std::string &uri, const std::string &text, int version, bool isOpen) {
@@ -1624,6 +3212,7 @@ void Server::handleCompletion(rapidjson::Document &request) {
 
   auto prefix = extractPrefixAtPosition(text, line, character);
   auto loweredPrefix = toLower(prefix);
+  auto cursorOffset = offsetFromPosition(text, line, character);
 
   BuiltinApiIndex builtinsIndex;
   if (const auto *cachedBuiltins = getBuiltinsApiIndex()) {
@@ -1632,8 +3221,7 @@ void Server::handleCompletion(rapidjson::Document &request) {
 
   std::string memberReceiver;
   std::string memberPrefix;
-  bool memberContext =
-      extractMemberCompletionContext(text, offsetFromPosition(text, line, character), memberReceiver, memberPrefix);
+  bool memberContext = extractMemberCompletionContext(text, cursorOffset, memberReceiver, memberPrefix);
   if (memberContext) {
     loweredPrefix = toLower(memberPrefix);
   }
@@ -1641,21 +3229,81 @@ void Server::handleCompletion(rapidjson::Document &request) {
   if (memberContext && !builtinsIndex.membersByType.empty()) {
     inferredMemberType = inferBuiltinTypeForReceiver(text, memberReceiver, line, builtinsIndex);
   }
-  if (memberContext && !inferredMemberType.has_value()) {
-    memberContext = false;
-    loweredPrefix = toLower(prefix);
-  }
+
+  auto stateIt = documents.find(uri);
+  const auto *parsedDocument = stateIt != documents.end() ? getSemanticResolvedDocumentForUri(uri, stateIt->second) : nullptr;
+  auto lines = splitLinesCopy(text);
 
   std::vector<CompletionEntry> entries;
   std::set<std::string> seen;
-  auto pushEntry = [&](const std::string &label, int kind, const std::string &detail) {
+  auto pushEntry = [&](const std::string &label,
+                       int kind,
+                       const std::string &detail,
+                       const SymbolEntry *resolvedSymbol = nullptr,
+                       const std::string &resolvedUri = std::string()) {
     auto loweredLabel = toLower(label);
     if (!loweredPrefix.empty() && loweredLabel.rfind(loweredPrefix, 0) != 0) {
       return;
     }
     if (seen.insert(label).second) {
-      entries.push_back({label, kind, detail});
+      CompletionEntry entry;
+      entry.label = label;
+      entry.kind = kind;
+      entry.detail = detail;
+      if (resolvedSymbol) {
+        entry.hasResolvedSymbol = true;
+        entry.resolvedUri = resolvedUri;
+        entry.resolvedSymbol = *resolvedSymbol;
+      }
+      entries.push_back(std::move(entry));
     }
+  };
+
+  auto makeLocalSymbol = [&](ASTIdentifier *id,
+                             ASTStmt *owner,
+                             ASTType *typeOverride,
+                             const std::string &displayName,
+                             const std::string &detailOverride) -> std::optional<SymbolEntry> {
+    if (!id || !owner) {
+      return std::nullopt;
+    }
+
+    SymbolEntry symbol;
+    symbol.name = displayName.empty() ? sourceSliceForRegion(lines, id->codeRegion) : displayName;
+    symbol.line = id->codeRegion.startLine > 0 ? id->codeRegion.startLine - 1 : 0;
+    symbol.start = id->codeRegion.startCol;
+    symbol.length = id->codeRegion.endCol > id->codeRegion.startCol ? id->codeRegion.endCol - id->codeRegion.startCol
+                                                                     : static_cast<unsigned>(symbol.name.size());
+    symbol.documentation = hoverDocCommentForLine(lines, symbol.line);
+
+    if (owner->type == VAR_DECL) {
+      auto *varDecl = static_cast<ASTVarDecl *>(owner);
+      bool isConst = varDecl->isConst;
+      symbol.kind = isConst ? SYMBOL_KIND_CONSTANT : SYMBOL_KIND_VARIABLE;
+      symbol.detail = detailOverride.empty() ? (isConst ? "constant" : "variable") : detailOverride;
+      symbol.signature = hoverVarSignature(isConst, symbol.name, typeOverride);
+      return symbol;
+    }
+
+    if (owner->type == SECURE_DECL) {
+      symbol.kind = SYMBOL_KIND_VARIABLE;
+      symbol.detail = detailOverride.empty() ? "catch error" : detailOverride;
+      symbol.signature = "catch " + symbol.name;
+      if (typeOverride) {
+        symbol.signature += ":";
+        symbol.signature += hoverTypeToString(typeOverride);
+      }
+      return symbol;
+    }
+
+    if (owner->type == FUNC_DECL || owner->type == CLASS_CTOR_DECL) {
+      symbol.kind = SYMBOL_KIND_VARIABLE;
+      symbol.detail = detailOverride.empty() ? "parameter" : detailOverride;
+      symbol.signature = hoverVarSignature(false, symbol.name, typeOverride, "param");
+      return symbol;
+    }
+
+    return std::nullopt;
   };
 
   if (!memberContext) {
@@ -1668,9 +3316,319 @@ void Server::handleCompletion(rapidjson::Document &request) {
       auto memberIt = builtinsIndex.membersByType.find(*inferredMemberType);
       if (memberIt != builtinsIndex.membersByType.end()) {
         for (const auto &member : memberIt->second) {
-          pushEntry(member.second.name, completionKindFromSymbolKind(member.second.kind), member.second.detail);
+          pushEntry(member.second.name,
+                    completionKindFromSymbolKind(member.second.kind),
+                    member.second.detail,
+                    &member.second,
+                    builtinsIndex.uri);
         }
       }
+  }
+
+  if (memberContext && parsedDocument) {
+    bool handledScopedReceiver = false;
+    if (std::find(parsedDocument->imports.begin(), parsedDocument->imports.end(), memberReceiver) != parsedDocument->imports.end()) {
+      std::string moduleUri;
+      std::string moduleText;
+      if (findModuleDocumentByName(memberReceiver, uri, moduleUri, moduleText)) {
+        auto symbols = collectSymbolsForUri(moduleUri, moduleText);
+        for (const auto &symbol : symbols) {
+          if (symbol.isMember) {
+            continue;
+          }
+          pushEntry(symbol.name, completionKindFromSymbolKind(symbol.kind), symbol.detail, &symbol, moduleUri);
+        }
+        handledScopedReceiver = true;
+      }
+    }
+
+    if (!handledScopedReceiver && !memberReceiver.empty()) {
+      std::string receiverUri;
+      SymbolEntry receiverSymbol;
+      size_t memberStart = cursorOffset >= memberPrefix.size() ? cursorOffset - memberPrefix.size() : 0;
+      if (memberStart > memberReceiver.size()) {
+        size_t receiverStart = memberStart - memberReceiver.size() - 1;
+        if (receiverStart + memberReceiver.size() <= text.size()) {
+          unsigned receiverLine = 0;
+          unsigned receiverChar = 0;
+          positionFromOffset(text, receiverStart, receiverLine, receiverChar);
+          if (resolveHoverSymbol(uri,
+                                 text,
+                                 receiverLine,
+                                 receiverChar,
+                                 memberReceiver,
+                                 receiverStart,
+                                 receiverUri,
+                                 receiverSymbol)) {
+            std::string receiverContainer;
+            if (receiverSymbol.kind == SYMBOL_KIND_NAMESPACE || receiverSymbol.kind == SYMBOL_KIND_CLASS ||
+                receiverSymbol.kind == SYMBOL_KIND_INTERFACE || receiverSymbol.kind == SYMBOL_KIND_STRUCT) {
+              receiverContainer = receiverSymbol.name;
+            } else {
+              receiverContainer = completionDeclaredBaseTypeFromSignature(receiverSymbol.signature);
+            }
+
+            if (!receiverContainer.empty()) {
+              for (const auto &doc : documents) {
+                auto symbols = collectSymbolsForUri(doc.first, doc.second.text);
+                for (const auto &symbol : symbols) {
+                  if (!symbol.isMember || symbol.containerName != receiverContainer) {
+                    continue;
+                  }
+                  pushEntry(symbol.name,
+                            completionKindFromSymbolKind(symbol.kind),
+                            symbol.detail,
+                            &symbol,
+                            doc.first);
+                }
+              }
+              handledScopedReceiver = true;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (!memberContext && parsedDocument) {
+    for (const auto &importName : parsedDocument->imports) {
+      SymbolEntry importSymbol;
+      importSymbol.name = importName;
+      importSymbol.kind = SYMBOL_KIND_NAMESPACE;
+      importSymbol.detail = "module";
+      importSymbol.signature = "import " + importName;
+      pushEntry(importName, COMPLETION_KIND_MODULE, "module", &importSymbol, uri);
+    }
+
+    auto cursorLineOneBased = line + 1;
+    auto cursorBeforeRegion = [&](const Region &region) {
+      if (region.startLine == 0) {
+        return false;
+      }
+      if (cursorLineOneBased < region.startLine) {
+        return true;
+      }
+      if (cursorLineOneBased == region.startLine && character < region.startCol) {
+        return true;
+      }
+      return false;
+    };
+    auto regionEndsBeforeCursor = [&](const Region &region) {
+      if (region.endLine == 0) {
+        return false;
+      }
+      auto endCol = region.endCol > region.startCol ? region.endCol : (region.startCol + 1);
+      if (cursorLineOneBased > region.endLine) {
+        return true;
+      }
+      if (cursorLineOneBased == region.endLine && character >= endCol) {
+        return true;
+      }
+      return false;
+    };
+
+    std::vector<HoverFrame> frames;
+    frames.push_back(HoverFrame{ASTScopeGlobal, false, {}});
+
+    std::function<bool(ASTStmt *, ASTClassDecl *)> collectStmtPath;
+    std::function<bool(ASTBlockStmt *, ASTClassDecl *, bool)> collectBlockPath;
+
+    auto registerVarBindings = [&](ASTVarDecl *varDecl, ASTDecl *decl) {
+      if (!varDecl || frames.empty()) {
+        return;
+      }
+      for (const auto &spec : varDecl->specs) {
+        if (!spec.id) {
+          continue;
+        }
+        frames.back().bindings.push_back(
+            HoverBinding{spec.id, decl, spec.type, varDecl->isConst, spec.id->val,
+                         sourceSliceForRegion(lines, spec.id->codeRegion)});
+      }
+    };
+
+    collectBlockPath = [&](ASTBlockStmt *block, ASTClassDecl *currentClass, bool functionBoundary) -> bool {
+      if (!block) {
+        return false;
+      }
+      frames.push_back(HoverFrame{block->parentScope, functionBoundary, {}});
+      for (auto *stmt : block->body) {
+        if (!stmt) {
+          continue;
+        }
+        if (cursorBeforeRegion(stmt->codeRegion)) {
+          break;
+        }
+        if (collectStmtPath(stmt, currentClass)) {
+          return true;
+        }
+      }
+      return true;
+    };
+
+    collectStmtPath = [&](ASTStmt *stmt, ASTClassDecl *currentClass) -> bool {
+      if (!stmt) {
+        return false;
+      }
+      if (!regionContainsPosition(stmt->codeRegion, cursorLineOneBased, character)) {
+        if (regionEndsBeforeCursor(stmt->codeRegion) && stmt->type == VAR_DECL) {
+          auto *varDecl = static_cast<ASTVarDecl *>(static_cast<ASTDecl *>(stmt));
+          registerVarBindings(varDecl, static_cast<ASTDecl *>(stmt));
+        }
+        return false;
+      }
+
+      if (!(stmt->type & DECL)) {
+        return true;
+      }
+
+      auto *decl = static_cast<ASTDecl *>(stmt);
+      switch (decl->type) {
+        case VAR_DECL:
+          return true;
+        case FUNC_DECL: {
+          auto *funcDecl = static_cast<ASTFuncDecl *>(decl);
+          if (!funcDecl->blockStmt) {
+            return true;
+          }
+          frames.push_back(HoverFrame{funcDecl->blockStmt->parentScope, true, {}});
+          for (const auto &param : funcDecl->params) {
+            if (!param.first) {
+              continue;
+            }
+            frames.back().bindings.push_back(
+                HoverBinding{param.first, decl, param.second, false, param.first->val,
+                             sourceSliceForRegion(lines, param.first->codeRegion)});
+          }
+          if (currentClass) {
+            auto selfName = std::string("self");
+            auto *selfId = new ASTIdentifier();
+            selfId->val = selfName;
+            selfId->codeRegion = funcDecl->funcId ? funcDecl->funcId->codeRegion : Region{};
+            frames.back().bindings.push_back(HoverBinding{selfId, decl, currentClass->classType, false, selfName, selfName});
+          }
+          if (collectBlockPath(funcDecl->blockStmt, currentClass, true)) {
+            return true;
+          }
+          return true;
+        }
+        case CLASS_DECL: {
+          auto *classDecl = static_cast<ASTClassDecl *>(decl);
+          for (auto *field : classDecl->fields) {
+            if (collectStmtPath(field, classDecl)) {
+              return true;
+            }
+          }
+          for (auto *method : classDecl->methods) {
+            if (collectStmtPath(method, classDecl)) {
+              return true;
+            }
+          }
+          return true;
+        }
+        case SCOPE_DECL: {
+          auto *scopeDecl = static_cast<ASTScopeDecl *>(decl);
+          if (scopeDecl->blockStmt && collectBlockPath(scopeDecl->blockStmt, currentClass, false)) {
+            return true;
+          }
+          return true;
+        }
+        case SECURE_DECL: {
+          auto *secureDecl = static_cast<ASTSecureDecl *>(decl);
+          if (secureDecl->guardedDecl && collectStmtPath(secureDecl->guardedDecl, currentClass)) {
+            return true;
+          }
+          if (secureDecl->catchBlock) {
+            frames.push_back(HoverFrame{secureDecl->catchBlock->parentScope, false, {}});
+            if (secureDecl->catchErrorId) {
+              frames.back().bindings.push_back(
+                  HoverBinding{secureDecl->catchErrorId,
+                               decl,
+                               secureDecl->catchErrorType,
+                               false,
+                               secureDecl->catchErrorId->val,
+                               sourceSliceForRegion(lines, secureDecl->catchErrorId->codeRegion)});
+            }
+            if (collectBlockPath(secureDecl->catchBlock, currentClass, false)) {
+              return true;
+            }
+          }
+          return true;
+        }
+        case COND_DECL: {
+          auto *condDecl = static_cast<ASTConditionalDecl *>(decl);
+          for (auto &spec : condDecl->specs) {
+            if (spec.blockStmt && collectBlockPath(spec.blockStmt, currentClass, false)) {
+              return true;
+            }
+          }
+          return true;
+        }
+        case FOR_DECL: {
+          auto *forDecl = static_cast<ASTForDecl *>(decl);
+          if (forDecl->blockStmt && collectBlockPath(forDecl->blockStmt, currentClass, false)) {
+            return true;
+          }
+          return true;
+        }
+        case WHILE_DECL: {
+          auto *whileDecl = static_cast<ASTWhileDecl *>(decl);
+          if (whileDecl->blockStmt && collectBlockPath(whileDecl->blockStmt, currentClass, false)) {
+            return true;
+          }
+          return true;
+        }
+        default:
+          return true;
+      }
+    };
+
+    for (auto *stmt : parsedDocument->statements) {
+      if (!stmt) {
+        continue;
+      }
+      if (cursorBeforeRegion(stmt->codeRegion)) {
+        break;
+      }
+      if (collectStmtPath(stmt, nullptr)) {
+        break;
+      }
+    }
+
+    for (const auto &frame : frames) {
+      for (const auto &binding : frame.bindings) {
+        auto localSymbol = makeLocalSymbol(binding.declId, binding.declOwner, binding.type, binding.displayName, "");
+        if (!localSymbol.has_value()) {
+          continue;
+        }
+        pushEntry(localSymbol->name,
+                  completionKindFromSymbolKind(localSymbol->kind),
+                  localSymbol->detail,
+                  &*localSymbol,
+                  uri);
+      }
+    }
+
+    std::string resolvedWord;
+    size_t resolvedWordStart = 0;
+    size_t resolvedWordEnd = 0;
+    SymbolEntry resolvedScopedSymbol;
+    std::string resolvedScopedUri;
+    if (wordRangeAtPosition(text, line, character, resolvedWord, resolvedWordStart, resolvedWordEnd) &&
+        resolveHoverSymbol(uri,
+                           text,
+                           line,
+                           character,
+                           resolvedWord,
+                           resolvedWordStart,
+                           resolvedScopedUri,
+                           resolvedScopedSymbol)) {
+      pushEntry(resolvedScopedSymbol.name,
+                completionKindFromSymbolKind(resolvedScopedSymbol.kind),
+                resolvedScopedSymbol.detail,
+                &resolvedScopedSymbol,
+                resolvedScopedUri);
+    }
   }
 
   for (const auto &doc : documents) {
@@ -1686,7 +3644,7 @@ void Server::handleCompletion(rapidjson::Document &request) {
       } else if (symbol.isMember) {
         continue;
       }
-      pushEntry(symbol.name, completionKindFromSymbolKind(symbol.kind), symbol.detail);
+      pushEntry(symbol.name, completionKindFromSymbolKind(symbol.kind), symbol.detail, &symbol, doc.first);
     }
   }
 
@@ -1696,7 +3654,7 @@ void Server::handleCompletion(rapidjson::Document &request) {
       if (symbol.isMember) {
         continue;
       }
-      pushEntry(symbol.name, completionKindFromSymbolKind(symbol.kind), symbol.detail);
+      pushEntry(symbol.name, completionKindFromSymbolKind(symbol.kind), symbol.detail, &symbol, builtinsIndex.uri);
     }
   }
 
@@ -1709,6 +3667,20 @@ void Server::handleCompletion(rapidjson::Document &request) {
     item.AddMember("kind", entry.kind, alloc);
     item.AddMember("detail", rapidjson::Value(entry.detail.c_str(), alloc), alloc);
     item.AddMember("insertText", rapidjson::Value(entry.label.c_str(), alloc), alloc);
+    if (entry.hasResolvedSymbol) {
+      rapidjson::Value data(rapidjson::kObjectType);
+      data.AddMember("uri", rapidjson::Value(entry.resolvedUri.c_str(), alloc), alloc);
+      data.AddMember("symbolLine", entry.resolvedSymbol.line, alloc);
+      data.AddMember("symbolStart", entry.resolvedSymbol.start, alloc);
+      data.AddMember("symbolLength", entry.resolvedSymbol.length, alloc);
+      data.AddMember("symbolKind", entry.resolvedSymbol.kind, alloc);
+      data.AddMember("detail", rapidjson::Value(entry.resolvedSymbol.detail.c_str(), alloc), alloc);
+      data.AddMember("signature", rapidjson::Value(entry.resolvedSymbol.signature.c_str(), alloc), alloc);
+      data.AddMember("documentation", rapidjson::Value(entry.resolvedSymbol.documentation.c_str(), alloc), alloc);
+      data.AddMember("containerName", rapidjson::Value(entry.resolvedSymbol.containerName.c_str(), alloc), alloc);
+      data.AddMember("isMember", entry.resolvedSymbol.isMember, alloc);
+      item.AddMember("data", data, alloc);
+    }
     items.PushBack(item, alloc);
   }
 
@@ -1738,20 +3710,63 @@ void Server::handleCompletionResolve(rapidjson::Document &request) {
   }
 
   std::optional<SymbolEntry> resolvedSymbol;
+  std::string resolvedUri;
   BuiltinApiIndex builtinsIndex;
   if(const auto *cachedBuiltins = getBuiltinsApiIndex()) {
     builtinsIndex = *cachedBuiltins;
   }
+  if (item.HasMember("data") && item["data"].IsObject()) {
+    const auto &data = item["data"];
+    if (data.HasMember("uri") && data["uri"].IsString()) {
+      resolvedUri = data["uri"].GetString();
+    }
+    SymbolEntry exact;
+    bool exactOk = false;
+    if (data.HasMember("symbolLine") && data["symbolLine"].IsUint() &&
+        data.HasMember("symbolStart") && data["symbolStart"].IsUint() &&
+        data.HasMember("symbolLength") && data["symbolLength"].IsUint()) {
+      exact.line = data["symbolLine"].GetUint();
+      exact.start = data["symbolStart"].GetUint();
+      exact.length = data["symbolLength"].GetUint();
+      exactOk = true;
+    }
+    exact.name = label;
+    if (data.HasMember("symbolKind") && data["symbolKind"].IsInt()) {
+      exact.kind = data["symbolKind"].GetInt();
+    }
+    if (data.HasMember("detail") && data["detail"].IsString()) {
+      exact.detail = data["detail"].GetString();
+    }
+    if (data.HasMember("signature") && data["signature"].IsString()) {
+      exact.signature = data["signature"].GetString();
+    }
+    if (data.HasMember("documentation") && data["documentation"].IsString()) {
+      exact.documentation = data["documentation"].GetString();
+    }
+    if (data.HasMember("containerName") && data["containerName"].IsString()) {
+      exact.containerName = data["containerName"].GetString();
+    }
+    if (data.HasMember("isMember") && data["isMember"].IsBool()) {
+      exact.isMember = data["isMember"].GetBool();
+    }
+    if (exactOk) {
+      resolvedSymbol = exact;
+    }
+  }
   if(!label.empty()) {
-    auto top = builtinsIndex.topLevelByName.find(label);
-    if(top != builtinsIndex.topLevelByName.end()) {
-      resolvedSymbol = top->second;
+    if(!resolvedSymbol.has_value()) {
+      auto top = builtinsIndex.topLevelByName.find(label);
+      if(top != builtinsIndex.topLevelByName.end()) {
+        resolvedSymbol = top->second;
+        resolvedUri = builtinsIndex.uri;
+      }
     }
     if(!resolvedSymbol.has_value()) {
       for(const auto &memberType : builtinsIndex.membersByType) {
         auto m = memberType.second.find(label);
         if(m != memberType.second.end()) {
           resolvedSymbol = m->second;
+          resolvedUri = builtinsIndex.uri;
           break;
         }
       }
@@ -1764,6 +3779,7 @@ void Server::handleCompletionResolve(rapidjson::Document &request) {
         });
         if(it != symbols.end()) {
           resolvedSymbol = *it;
+          resolvedUri = doc.first;
           break;
         }
       }
@@ -1793,6 +3809,14 @@ void Server::handleCompletionResolve(rapidjson::Document &request) {
       else {
         item.AddMember("documentation", rapidjson::Value(renderedDoc.c_str(), alloc), alloc);
       }
+    }
+    if (!resolvedUri.empty() && !item.HasMember("data")) {
+      rapidjson::Value data(rapidjson::kObjectType);
+      data.AddMember("uri", rapidjson::Value(resolvedUri.c_str(), alloc), alloc);
+      data.AddMember("symbolLine", resolvedSymbol->line, alloc);
+      data.AddMember("symbolStart", resolvedSymbol->start, alloc);
+      data.AddMember("symbolLength", resolvedSymbol->length, alloc);
+      item.AddMember("data", data, alloc);
     }
   }
   else if (!item.HasMember("documentation")) {
@@ -1877,6 +3901,22 @@ void Server::handleHover(rapidjson::Document &request) {
       }
     }
   };
+
+  if (!bestSymbol.has_value()) {
+    SymbolEntry resolvedScopedSymbol;
+    std::string resolvedScopedUri;
+    if (resolveHoverSymbol(uri,
+                           text,
+                           params["position"]["line"].GetUint(),
+                           params["position"]["character"].GetUint(),
+                           word,
+                           wordStart,
+                           resolvedScopedUri,
+                           resolvedScopedSymbol)) {
+      bestSymbol = resolvedScopedSymbol;
+      bestUri = resolvedScopedUri;
+    }
+  }
 
   if (!bestSymbol.has_value()) {
     for (const auto &doc : documents) {
@@ -2051,6 +4091,21 @@ void Server::handleDefinition(rapidjson::Document &request) {
     }
   }
 
+  SymbolEntry resolvedSymbol;
+  std::string resolvedUri;
+  if (resolveHoverSymbol(uri,
+                         text,
+                         params["position"]["line"].GetUint(),
+                         params["position"]["character"].GetUint(),
+                         word,
+                         start,
+                         resolvedUri,
+                         resolvedSymbol)) {
+    appendLocation(resolvedUri, resolvedSymbol);
+    writeResult(request["id"], locations);
+    return;
+  }
+
   for (const auto &doc : documents) {
     auto symbols = collectSymbolsForUri(doc.first, doc.second.text);
     for (const auto &symbol : symbols) {
@@ -2080,7 +4135,151 @@ void Server::handleTypeDefinition(rapidjson::Document &request) {
 }
 
 void Server::handleImplementation(rapidjson::Document &request) {
-  handleDefinition(request);
+  if (!request.HasMember("id")) {
+    return;
+  }
+  if (!request.HasMember("params") || !request["params"].IsObject()) {
+    writeError(request["id"], JSONRPC_INVALID_PARAMS, "Missing implementation params");
+    return;
+  }
+
+  auto &params = request["params"];
+  if (!params.HasMember("textDocument") || !params["textDocument"].IsObject() ||
+      !params["textDocument"].HasMember("uri") || !params["textDocument"]["uri"].IsString() ||
+      !params.HasMember("position") || !params["position"].IsObject() || !params["position"].HasMember("line") ||
+      !params["position"].HasMember("character") || !params["position"]["line"].IsUint() ||
+      !params["position"]["character"].IsUint()) {
+    writeError(request["id"], JSONRPC_INVALID_PARAMS, "Invalid implementation params");
+    return;
+  }
+
+  auto uri = std::string(params["textDocument"]["uri"].GetString());
+  std::string text;
+  if (!getDocumentTextByUri(uri, text)) {
+    rapidjson::Value locations(rapidjson::kArrayType);
+    writeResult(request["id"], locations);
+    return;
+  }
+
+  std::string word;
+  size_t start = 0;
+  size_t end = 0;
+  if (!wordRangeAtPosition(text, params["position"]["line"].GetUint(), params["position"]["character"].GetUint(), word,
+                           start, end)) {
+    rapidjson::Value locations(rapidjson::kArrayType);
+    writeResult(request["id"], locations);
+    return;
+  }
+
+  SymbolEntry targetSymbol;
+  std::string targetUri;
+  if (!resolveHoverSymbol(uri,
+                          text,
+                          params["position"]["line"].GetUint(),
+                          params["position"]["character"].GetUint(),
+                          word,
+                          start,
+                          targetUri,
+                          targetSymbol)) {
+    handleDefinition(request);
+    return;
+  }
+
+  rapidjson::Document payloadDoc(rapidjson::kObjectType);
+  auto &alloc = payloadDoc.GetAllocator();
+  rapidjson::Value locations(rapidjson::kArrayType);
+  std::set<std::string> seen;
+
+  auto appendLocation = [&](const std::string &defUri, const SymbolEntry &symbol) {
+    auto key = defUri + ":" + std::to_string(symbol.line) + ":" + std::to_string(symbol.start);
+    if (!seen.insert(key).second) {
+      return;
+    }
+    rapidjson::Value location(rapidjson::kObjectType);
+    location.AddMember("uri", rapidjson::Value(defUri.c_str(), alloc), alloc);
+
+    rapidjson::Value range(rapidjson::kObjectType);
+    rapidjson::Value rangeStart(rapidjson::kObjectType);
+    rapidjson::Value rangeEnd(rapidjson::kObjectType);
+    rangeStart.AddMember("line", symbol.line, alloc);
+    rangeStart.AddMember("character", symbol.start, alloc);
+    rangeEnd.AddMember("line", symbol.line, alloc);
+    rangeEnd.AddMember("character", symbol.start + symbol.length, alloc);
+    range.AddMember("start", rangeStart, alloc);
+    range.AddMember("end", rangeEnd, alloc);
+    location.AddMember("range", range, alloc);
+    locations.PushBack(location, alloc);
+  };
+
+  auto inheritanceMatches = [&](const SymbolEntry &containerSymbol) -> bool {
+    auto colonPos = containerSymbol.signature.find(':');
+    if (colonPos == std::string::npos) {
+      return false;
+    }
+    auto bases = splitCommaList(trimCopy(containerSymbol.signature.substr(colonPos + 1)));
+    if (bases.empty()) {
+      return false;
+    }
+    if (targetSymbol.kind == SYMBOL_KIND_CLASS) {
+      return bases.front() == targetSymbol.name;
+    }
+    if (targetSymbol.kind == SYMBOL_KIND_INTERFACE) {
+      return std::find(bases.begin(), bases.end(), targetSymbol.name) != bases.end();
+    }
+    return false;
+  };
+
+  auto containerImplementsTarget = [&](const std::string &candidateUri,
+                                       const std::vector<SymbolEntry> &symbols,
+                                       const std::string &containerName) -> bool {
+    for (const auto &symbol : symbols) {
+      if (symbol.name != containerName || symbol.isMember) {
+        continue;
+      }
+      if (symbol.kind != SYMBOL_KIND_CLASS && symbol.kind != SYMBOL_KIND_STRUCT && symbol.kind != SYMBOL_KIND_INTERFACE) {
+        continue;
+      }
+      return inheritanceMatches(symbol);
+    }
+    (void)candidateUri;
+    return false;
+  };
+
+  for (const auto &doc : documents) {
+    auto symbols = collectSymbolsForUri(doc.first, doc.second.text);
+    for (const auto &symbol : symbols) {
+      if (targetSymbol.kind == SYMBOL_KIND_CLASS || targetSymbol.kind == SYMBOL_KIND_INTERFACE) {
+        if (symbol.isMember) {
+          continue;
+        }
+        if (symbol.kind != SYMBOL_KIND_CLASS && symbol.kind != SYMBOL_KIND_STRUCT && symbol.kind != SYMBOL_KIND_INTERFACE) {
+          continue;
+        }
+        if (inheritanceMatches(symbol)) {
+          appendLocation(doc.first, symbol);
+        }
+        continue;
+      }
+
+      if (targetSymbol.kind == SYMBOL_KIND_METHOD && !targetSymbol.containerName.empty()) {
+        if (symbol.kind != SYMBOL_KIND_METHOD || symbol.name != targetSymbol.name || symbol.containerName.empty()) {
+          continue;
+        }
+        if (symbol.containerName == targetSymbol.containerName) {
+          continue;
+        }
+        if (containerImplementsTarget(doc.first, symbols, symbol.containerName)) {
+          appendLocation(doc.first, symbol);
+        }
+      }
+    }
+  }
+
+  if (locations.Empty()) {
+    appendLocation(targetUri, targetSymbol);
+  }
+
+  writeResult(request["id"], locations);
 }
 
 void Server::handleReferences(rapidjson::Document &request) {
@@ -2129,6 +4328,140 @@ void Server::handleReferences(rapidjson::Document &request) {
   rapidjson::Document payloadDoc(rapidjson::kObjectType);
   auto &alloc = payloadDoc.GetAllocator();
   rapidjson::Value refs(rapidjson::kArrayType);
+  std::set<std::string> seen;
+
+  auto appendReferenceLocation = [&](const std::string &refUri, unsigned startLine, unsigned startChar, unsigned endLine,
+                                     unsigned endChar) {
+    auto key = refUri + ":" + std::to_string(startLine) + ":" + std::to_string(startChar);
+    if (!seen.insert(key).second) {
+      return;
+    }
+    rapidjson::Value location(rapidjson::kObjectType);
+    location.AddMember("uri", rapidjson::Value(refUri.c_str(), alloc), alloc);
+
+    rapidjson::Value range(rapidjson::kObjectType);
+    rapidjson::Value rangeStart(rapidjson::kObjectType);
+    rapidjson::Value rangeEnd(rapidjson::kObjectType);
+    rangeStart.AddMember("line", startLine, alloc);
+    rangeStart.AddMember("character", startChar, alloc);
+    rangeEnd.AddMember("line", endLine, alloc);
+    rangeEnd.AddMember("character", endChar, alloc);
+    range.AddMember("start", rangeStart, alloc);
+    range.AddMember("end", rangeEnd, alloc);
+    location.AddMember("range", range, alloc);
+    refs.PushBack(location, alloc);
+  };
+
+  BuiltinApiIndex builtinsIndex;
+  if (const auto *cachedBuiltins = getBuiltinsApiIndex()) {
+    builtinsIndex = *cachedBuiltins;
+  }
+
+  SymbolEntry targetSymbol;
+  std::string targetUri;
+  bool targetResolved = false;
+
+  std::string memberReceiver;
+  bool memberContext = extractReceiverBeforeOffset(text, wordStart, memberReceiver);
+  if (memberContext && !builtinsIndex.membersByType.empty()) {
+    auto inferredType = inferBuiltinTypeForReceiver(text, memberReceiver, params["position"]["line"].GetUint(), builtinsIndex);
+    if (inferredType.has_value()) {
+      auto typeMembers = builtinsIndex.membersByType.find(*inferredType);
+      if (typeMembers != builtinsIndex.membersByType.end()) {
+        auto memberIt = typeMembers->second.find(word);
+        if (memberIt != typeMembers->second.end()) {
+          targetResolved = true;
+          targetSymbol = memberIt->second;
+          targetUri = builtinsIndex.uri;
+        }
+      }
+    }
+  }
+
+  if (!targetResolved && resolveHoverSymbol(uri,
+                                            text,
+                                            params["position"]["line"].GetUint(),
+                                            params["position"]["character"].GetUint(),
+                                            word,
+                                            wordStart,
+                                            targetUri,
+                                            targetSymbol)) {
+    targetResolved = true;
+  }
+
+  if (!targetResolved && !builtinsIndex.topLevelByName.empty()) {
+    auto topLevel = builtinsIndex.topLevelByName.find(word);
+    if (topLevel != builtinsIndex.topLevelByName.end()) {
+      targetResolved = true;
+      targetSymbol = topLevel->second;
+      targetUri = builtinsIndex.uri;
+    }
+  }
+
+  if (targetResolved) {
+    for (const auto &doc : documents) {
+      std::vector<size_t> occurrences;
+      appendOccurrences(doc.second.text, word, occurrences);
+      for (size_t offset : occurrences) {
+        unsigned startLine = 0;
+        unsigned startChar = 0;
+        unsigned endLine = 0;
+        unsigned endChar = 0;
+        positionFromOffset(doc.second.text, offset, startLine, startChar);
+        positionFromOffset(doc.second.text, offset + word.size(), endLine, endChar);
+
+        SymbolEntry occurrenceSymbol;
+        std::string occurrenceUri;
+        bool occurrenceResolved = false;
+
+        std::string occurrenceReceiver;
+        if (extractReceiverBeforeOffset(doc.second.text, offset, occurrenceReceiver) && !builtinsIndex.membersByType.empty()) {
+          auto inferredType = inferBuiltinTypeForReceiver(doc.second.text, occurrenceReceiver, startLine, builtinsIndex);
+          if (inferredType.has_value()) {
+            auto typeMembers = builtinsIndex.membersByType.find(*inferredType);
+            if (typeMembers != builtinsIndex.membersByType.end()) {
+              auto memberIt = typeMembers->second.find(word);
+              if (memberIt != typeMembers->second.end()) {
+                occurrenceResolved = true;
+                occurrenceSymbol = memberIt->second;
+                occurrenceUri = builtinsIndex.uri;
+              }
+            }
+          }
+        }
+
+        if (!occurrenceResolved &&
+            resolveHoverSymbol(doc.first, doc.second.text, startLine, startChar, word, offset, occurrenceUri, occurrenceSymbol)) {
+          occurrenceResolved = true;
+        }
+
+        if (!occurrenceResolved && !builtinsIndex.topLevelByName.empty()) {
+          auto topLevel = builtinsIndex.topLevelByName.find(word);
+          if (topLevel != builtinsIndex.topLevelByName.end()) {
+            occurrenceResolved = true;
+            occurrenceSymbol = topLevel->second;
+            occurrenceUri = builtinsIndex.uri;
+          }
+        }
+
+        if (!occurrenceResolved) {
+          continue;
+        }
+        if (occurrenceUri != targetUri || occurrenceSymbol.line != targetSymbol.line ||
+            occurrenceSymbol.start != targetSymbol.start || occurrenceSymbol.length != targetSymbol.length) {
+          continue;
+        }
+        if (!includeDeclaration && doc.first == targetUri && startLine == targetSymbol.line &&
+            startChar == targetSymbol.start) {
+          continue;
+        }
+        appendReferenceLocation(doc.first, startLine, startChar, endLine, endChar);
+      }
+    }
+
+    writeResult(request["id"], refs);
+    return;
+  }
 
   for (const auto &doc : documents) {
     std::vector<size_t> occurrences;
@@ -2157,20 +4490,7 @@ void Server::handleReferences(rapidjson::Document &request) {
       positionFromOffset(doc.second.text, offset, startLine, startChar);
       positionFromOffset(doc.second.text, offset + word.size(), endLine, endChar);
 
-      rapidjson::Value location(rapidjson::kObjectType);
-      location.AddMember("uri", rapidjson::Value(doc.first.c_str(), alloc), alloc);
-
-      rapidjson::Value range(rapidjson::kObjectType);
-      rapidjson::Value rangeStart(rapidjson::kObjectType);
-      rapidjson::Value rangeEnd(rapidjson::kObjectType);
-      rangeStart.AddMember("line", startLine, alloc);
-      rangeStart.AddMember("character", startChar, alloc);
-      rangeEnd.AddMember("line", endLine, alloc);
-      rangeEnd.AddMember("character", endChar, alloc);
-      range.AddMember("start", rangeStart, alloc);
-      range.AddMember("end", rangeEnd, alloc);
-      location.AddMember("range", range, alloc);
-      refs.PushBack(location, alloc);
+      appendReferenceLocation(doc.first, startLine, startChar, endLine, endChar);
     }
   }
 

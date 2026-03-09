@@ -23,6 +23,18 @@ function existingPath(candidate) {
     }
     return fs.existsSync(candidate) ? candidate : undefined;
 }
+function uniquePaths(paths) {
+    const seen = new Set();
+    const out = [];
+    for (const candidate of paths) {
+        if (!candidate || seen.has(candidate)) {
+            continue;
+        }
+        seen.add(candidate);
+        out.push(candidate);
+    }
+    return out;
+}
 function expandWorkspaceVariables(inputPath) {
     const primaryWorkspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!primaryWorkspace) {
@@ -47,6 +59,54 @@ function isExecutablePath(candidate) {
         return false;
     }
 }
+function collectAncestorDirectories(startDir) {
+    const ancestors = [];
+    let current = path.resolve(startDir);
+    while (true) {
+        ancestors.push(current);
+        const parent = path.dirname(current);
+        if (parent === current) {
+            break;
+        }
+        current = parent;
+    }
+    return ancestors;
+}
+function candidateBinaryPaths(rootDir, binaryName) {
+    return [
+        path.join(rootDir, "build-ninja", "bin", binaryName),
+        path.join(rootDir, "build", "bin", binaryName),
+        path.join(rootDir, "bin", binaryName),
+        path.join(rootDir, "tools", "bin", binaryName),
+    ];
+}
+function findBinaryFromRoots(roots, binaryName, searchedPaths) {
+    for (const root of roots) {
+        for (const ancestor of collectAncestorDirectories(root)) {
+            const candidates = candidateBinaryPaths(ancestor, binaryName);
+            searchedPaths.push(...candidates);
+            for (const candidate of candidates) {
+                if (existingPath(candidate) && isExecutablePath(candidate)) {
+                    return candidate;
+                }
+            }
+        }
+    }
+    return undefined;
+}
+function findBinaryOnPath(binaryName) {
+    const rawPath = process.env.PATH ?? "";
+    for (const dir of rawPath.split(path.delimiter)) {
+        if (!dir) {
+            continue;
+        }
+        const candidate = path.join(dir, binaryName);
+        if (existingPath(candidate) && isExecutablePath(candidate)) {
+            return candidate;
+        }
+    }
+    return undefined;
+}
 function resolveConfiguredServerPath(configuredPath) {
     const expanded = expandWorkspaceVariables(expandHome(configuredPath));
     if (path.isAbsolute(expanded)) {
@@ -66,34 +126,46 @@ function resolveServerCommand(context) {
     if (configuredPath.length > 0) {
         return resolveConfiguredServerPath(configuredPath);
     }
+    const envPath = (process.env.STARBYTES_LSP_PATH ?? "").trim();
+    if (envPath.length > 0) {
+        return resolveConfiguredServerPath(envPath);
+    }
     const binaryName = process.platform === "win32" ? "starbytes-lsp.exe" : "starbytes-lsp";
-    const folderCandidates = vscode.workspace.workspaceFolders ?? [];
-    for (const folder of folderCandidates) {
-        const workspaceRoot = folder.uri.fsPath;
-        const candidates = [
-            path.join(workspaceRoot, "build-ninja", "bin", binaryName),
-            path.join(workspaceRoot, "build", "bin", binaryName),
-            path.join(workspaceRoot, "bin", binaryName),
-            path.join(workspaceRoot, "tools", "bin", binaryName),
-        ];
-        for (const candidate of candidates) {
-            const found = existingPath(candidate);
-            if (found) {
-                return found;
-            }
+    const searchedPaths = [];
+    const searchRoots = [];
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+        searchRoots.push(folder.uri.fsPath);
+    }
+    const activeFile = vscode.window.activeTextEditor?.document.uri;
+    if (activeFile?.scheme === "file") {
+        searchRoots.push(path.dirname(activeFile.fsPath));
+    }
+    searchRoots.push(context.extensionPath);
+    const foundInRoots = findBinaryFromRoots(uniquePaths(searchRoots), binaryName, searchedPaths);
+    if (foundInRoots) {
+        return foundInRoots;
+    }
+    const foundOnPath = findBinaryOnPath(binaryName);
+    if (foundOnPath) {
+        return foundOnPath;
+    }
+    const searchedPreview = uniquePaths(searchedPaths).slice(0, 12);
+    const searchedSuffix = searchedPaths.length > searchedPreview.length ? " ..." : "";
+    throw new Error(`Could not find ${binaryName}. Searched: ${searchedPreview.join(", ")}${searchedSuffix}. ` +
+        `Set starbytes.lsp.serverPath or STARBYTES_LSP_PATH.`);
+}
+function resolveServerCwd(command) {
+    const primaryWorkspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (primaryWorkspace && existingPath(primaryWorkspace)) {
+        return primaryWorkspace;
+    }
+    if (command.includes(path.sep) || command.startsWith(".")) {
+        const candidate = path.dirname(command);
+        if (existingPath(candidate)) {
+            return candidate;
         }
     }
-    const extensionCandidates = [
-        context.asAbsolutePath(path.join("..", "..", "build", "bin", binaryName)),
-        context.asAbsolutePath(path.join("..", "..", "bin", binaryName)),
-    ];
-    for (const candidate of extensionCandidates) {
-        const found = existingPath(candidate);
-        if (found) {
-            return found;
-        }
-    }
-    return binaryName;
+    return undefined;
 }
 function mapTraceSetting(raw) {
     switch (raw) {
@@ -130,6 +202,9 @@ async function startLanguageClient(context) {
         command,
         args,
         transport: vscode_languageclient_1.TransportKind.stdio,
+        options: {
+            cwd: resolveServerCwd(command),
+        },
     };
     const clientOptions = {
         documentSelector: [{ scheme: "file", language: "starbytes" }],

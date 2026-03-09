@@ -22,7 +22,15 @@
 
 namespace starbytes {
 
+class ASTStmt;
+
+namespace Semantics {
+struct SymbolTable;
+}
+
 namespace lsp {
+
+struct SemanticResolvedDocument;
 
 struct ServerOptions {
   std::istream &in;
@@ -48,6 +56,8 @@ class Server {
     bool formatReady = false;
     bool formatOk = false;
     std::string formattedText;
+    bool semanticResolvedReady = false;
+    std::shared_ptr<SemanticResolvedDocument> semanticResolvedDocument;
   };
 
   struct DocumentState {
@@ -141,6 +151,8 @@ class Server {
   void configureSymbolCache();
   const std::vector<CompilerDiagnosticEntry> &getCompilerDiagnosticsForDocument(const std::string &uri,
                                                                                 DocumentState &state);
+  std::vector<CompilerDiagnosticEntry> buildCompilerDiagnosticsFromSemanticContext(const std::string &uri,
+                                                                                   DocumentState &state);
   const std::vector<SemanticTokenEntry> &getSemanticTokensForDocument(const std::string &uri, DocumentState &state);
   const std::vector<starbytes::linguistics::LintFinding> &getLintFindingsForDocument(const std::string &uri,
                                                                                       DocumentState &state);
@@ -155,6 +167,25 @@ class Server {
   const BuiltinApiIndex *getBuiltinsApiIndex();
   std::vector<SymbolEntry> collectSymbolsForUri(const std::string &uri, const std::string &text);
   void invalidateSymbolCacheForUri(const std::string &uri);
+  void refreshAnalysisState(DocumentState &state);
+  const SemanticResolvedDocument *getSemanticResolvedDocumentForUri(const std::string &uri, DocumentState &state);
+  std::shared_ptr<SemanticResolvedDocument> buildSemanticResolvedDocumentForUri(
+      const std::string &uri,
+      DocumentState &state,
+      std::unordered_set<std::string> &activeUris);
+  std::vector<SemanticTokenEntry> buildSemanticTokensFromSemanticCache(const std::string &uri, DocumentState &state);
+  bool findModuleDocumentByName(const std::string &moduleName,
+                                const std::string &anchorUri,
+                                std::string &uriOut,
+                                std::string &textOut);
+  bool resolveHoverSymbol(const std::string &uri,
+                          const std::string &text,
+                          unsigned line,
+                          unsigned character,
+                          const std::string &word,
+                          size_t wordStart,
+                          std::string &resolvedUriOut,
+                          SymbolEntry &symbolOut);
 
   void handleInitialize(rapidjson::Document &request);
   void handleInitialized(rapidjson::Document &request);

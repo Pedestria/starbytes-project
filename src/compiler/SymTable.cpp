@@ -35,6 +35,13 @@ bool useLegacyLinearSymbolLookup() {
     return useLegacy;
 }
 
+Semantics::SymbolTable *mainTableForContext(Semantics::STableContext &context) {
+    if(context.main) {
+        return context.main.get();
+    }
+    return context.mainBorrowed;
+}
+
 }
 
 struct SymTableID {
@@ -283,13 +290,14 @@ auto Semantics::SymbolTable::indexOf(string_ref symbolName,std::shared_ptr<ASTSc
 }
 
 Semantics::SymbolTable::Entry * Semantics::STableContext::findEntry(string_ref symbolName,SemanticsContext & ctxt,std::shared_ptr<ASTScope> scope){
+    auto *mainTable = mainTableForContext(*this);
     if(useLegacyLinearSymbolLookup()){
         for(auto currentScope = scope; currentScope != nullptr; currentScope = currentScope->parentScope){
             unsigned entryCount = 0;
             Semantics::SymbolTable::Entry *ent = nullptr;
 
-            if(main){
-                for(auto &pair : main->body){
+            if(mainTable){
+                for(auto &pair : mainTable->body){
                     if(pair.first->name == symbolName && pair.second == currentScope){
                         ent = pair.first;
                         ++entryCount;
@@ -328,8 +336,8 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntry(string_ref s
         std::vector<Semantics::SymbolTable::Entry *> matches;
         matches.reserve(4);
 
-        if(main){
-            auto *entries = main->findEntriesInExactScope(symbolName,currentScope);
+        if(mainTable){
+            auto *entries = mainTable->findEntriesInExactScope(symbolName,currentScope);
             if(entries){
                 matches.insert(matches.end(),entries->begin(),entries->end());
             }
@@ -361,10 +369,11 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntry(string_ref s
 }
 
 Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope){
+    auto *mainTable = mainTableForContext(*this);
     if(useLegacyLinearSymbolLookup()){
         for(auto currentScope = scope; currentScope != nullptr; currentScope = currentScope->parentScope){
-            if(main){
-                for(auto &pair : main->body){
+            if(mainTable){
+                for(auto &pair : mainTable->body){
                     if(pair.first->name == symbolName && pair.second == currentScope){
                         return pair.first;
                     }
@@ -382,8 +391,8 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryNoDiag(string
     }
 
     for(auto currentScope = scope; currentScope != nullptr; currentScope = currentScope->parentScope){
-        if(main){
-            auto *entries = main->findEntriesInExactScope(symbolName,currentScope);
+        if(mainTable){
+            auto *entries = mainTable->findEntriesInExactScope(symbolName,currentScope);
             if(entries && !entries->empty()){
                 return entries->front();
             }
@@ -420,9 +429,10 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findImportedGlobalEntr
 }
 
 Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryInExactScopeNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope){
+    auto *mainTable = mainTableForContext(*this);
     if(useLegacyLinearSymbolLookup()){
-        if(main){
-            for(auto &pair : main->body){
+        if(mainTable){
+            for(auto &pair : mainTable->body){
                 if(pair.first->name == symbolName && pair.second == scope){
                     return pair.first;
                 }
@@ -445,8 +455,8 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryInExactScopeN
         return nullptr;
     }
 
-    if(main){
-        auto *entries = main->findEntriesInExactScope(symbolName,scope);
+    if(mainTable){
+        auto *entries = mainTable->findEntriesInExactScope(symbolName,scope);
         if(entries && !entries->empty()){
             return entries->front();
         }
@@ -467,9 +477,10 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryInExactScopeN
 }
 
 Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryByEmittedNoDiag(string_ref emittedName){
+    auto *mainTable = mainTableForContext(*this);
     if(useLegacyLinearSymbolLookup()){
-        if(main){
-            for(auto &pair : main->body){
+        if(mainTable){
+            for(auto &pair : mainTable->body){
                 if(pair.first->emittedName == emittedName){
                     return pair.first;
                 }
@@ -492,8 +503,8 @@ Semantics::SymbolTable::Entry * Semantics::STableContext::findEntryByEmittedNoDi
         return nullptr;
     }
 
-    if(main){
-        auto *entries = main->findEntriesByEmittedName(emittedName);
+    if(mainTable){
+        auto *entries = mainTable->findEntriesByEmittedName(emittedName);
         if(entries && !entries->empty()){
             return entries->front();
         }

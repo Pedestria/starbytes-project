@@ -92,7 +92,7 @@ async function build(file, plist = false) {
         await fs.writeFile(outputFile, PLIST.build(JSON.parse(JSON.stringify(result)), { pretty: true }));
     }
     else {
-        await fs.writeFile(outputFile, (0, prettier_1.format)(JSON.stringify(result), options));
+        await fs.writeFile(outputFile, prettier_1.format(JSON.stringify(result), options));
     }
 }
 build("./syntaxes/starbytes.tmLanguage.yml", false).catch(err => console.error(err));

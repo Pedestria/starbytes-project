@@ -20,6 +20,7 @@
 - Variable type inference is surfaced in LSP for inferred declarations (builtins/custom classes/invocations), with optional `--infer-64bit-numbers` compiler mode for Long/Double literal inference defaults.
 Add a structured error channel to native module callbacks.
 Scope module imports under module name (So constants and funcs are under a scope.)
+Fix LSP scoped symbol resolution (Hovers should properly resolve symbols in function scopes, classes, etc.)
 ## UNFINISHED
 
 Expand/fix generics: 
@@ -28,7 +29,7 @@ Expand/fix generics:
     Variance annotations 
 
 
-Fix LSP scoped symbol resolution (Hovers should resolve symbols in function scopes, classes, etc.)
+LSP variable type resolution from module-scoped symbols.
 
 Implement Qualified type refs
 

@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <filesystem>
 
 namespace {
 
@@ -14,6 +15,34 @@ bool contains(const std::string &haystack, const std::string &needle) {
     return haystack.find(needle) != std::string::npos;
 }
 
+std::string jsonEscape(const std::string &value) {
+    std::string out;
+    out.reserve(value.size() + 16);
+    for(char ch : value) {
+        switch(ch) {
+            case '\"':
+                out += "\\\"";
+                break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                out.push_back(ch);
+                break;
+        }
+    }
+    return out;
+}
+
 }
 
 int main(int argc, char *argv[]) {
@@ -23,9 +52,19 @@ int main(int argc, char *argv[]) {
     std::stringstream input;
     std::stringstream output;
 
-    appendMessage(input, R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})");
+    const auto rootUri = std::string("file://") + std::filesystem::current_path().string();
+    const std::string cmdLineUri = "file:///tmp/lsp-cmdline-test.starb";
+    const std::string cmdLineText =
+        "import CmdLine\n"
+        "CmdLine.argCount()\n";
+
+    appendMessage(input, std::string(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"rootUri":")") +
+                         rootUri + R"(","workspaceFolders":[{"uri":")" + rootUri + R"(","name":"starbytes-project"}]}})");
     appendMessage(input, R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
-    appendMessage(input, R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb","languageId":"starbytes","version":1,"text":"/// Adds two integers.\nfunc add(a:Int,b:Int) Int {\n  return a + b\n}\n/* Primary counter for calls. */\ndecl alpha = 1   \ndecl greeting:String = \" Hello \"\ndecl numbers:Array<Int> = [1,2,3]\nadd(alpha, 2)\nalpha\ngreeting.trim()\nnumbers.push(4)\n/// Computes square.\n/// @param value Input value.\n/// @returns Squared value.\nfunc square(value:Int) Int {\n  return value * value\n}\nsquare(4)\nsecure(decl captured:String? = \"ok\") catch (err:String) {\n  print(err)\n}\nclass Base {\n}\ninterface Runnable {\n}\nclass Worker : Base, Runnable {\n}\ndecl worker = new Worker()\nworker\n"}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/Helper/main.starb","languageId":"starbytes","version":1,"text":"/// Shared helper docs.\nfunc helperValue() Int {\n  return 7\n}\n"}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb","languageId":"starbytes","version":1,"text":"/// Adds two integers.\nfunc add(a:Int,b:Int) Int {\n  return a + b\n}\n/* Primary counter for calls. */\ndecl alpha = 1   \ndecl greeting:String = \" Hello \"\ndecl numbers:Array<Int> = [1,2,3]\nadd(alpha, 2)\nalpha\ngreeting.trim()\nnumbers.push(4)\n/// Computes square.\n/// @param value Input value.\n/// @returns Squared value.\nfunc square(value:Int) Int {\n  return value * value\n}\nsquare(4)\nsecure(decl captured:String? = \"ok\") catch (err:String) {\n  print(err)\n}\nclass Base {\n}\ninterface Runnable {\n}\nclass Worker : Base, Runnable {\n}\ndecl worker = new Worker()\nworker\nimport Helper\nscope Tools {\n  /// Scope helper docs.\n  func ping() Int {\n    return 1\n  }\n}\nclass Box {\n  decl value:Int = 0\n  /// Reads the boxed value.\n  func read() Int {\n    return self.value\n  }\n}\nfunc scoped(alpha:Int) Int {\n  decl beta:Int = alpha\n  return beta\n}\nHelper.helperValue()\nTools.ping()\ndecl box = new Box()\nbox.read()\n"}}})");
+    appendMessage(input, std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                         cmdLineUri + R"(","languageId":"starbytes","version":1,"text":")" + jsonEscape(cmdLineText) + R"("}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":5,"character":4}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":9,"character":1}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":4,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":9,"character":1}}})");
@@ -44,6 +83,29 @@ int main(int argc, char *argv[]) {
     appendMessage(input, R"({"jsonrpc":"2.0","id":19,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":26,"character":8}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":20,"method":"textDocument/formatting","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"options":{"tabSize":2,"insertSpaces":true}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":21,"method":"textDocument/codeAction","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"range":{"start":{"line":5,"character":0},"end":{"line":5,"character":24}},"context":{"diagnostics":[]}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":22,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":45,"character":20}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":23,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":46,"character":10}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":24,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":48,"character":10}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":25,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":49,"character":7}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":26,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":41,"character":17}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":27,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":51,"character":5}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":28,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":46,"character":10}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":29,"method":"textDocument/references","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":46,"character":10},"context":{"includeDeclaration":true}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":30,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":48,"character":10}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":31,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":49,"character":7}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":32,"method":"textDocument/references","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":38,"character":9},"context":{"includeDeclaration":true}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":33,"method":"textDocument/implementation","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":24,"character":11}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":34,"method":"textDocument/implementation","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":22,"character":8}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":35,"method":"textDocument/references","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":48,"character":10},"context":{"includeDeclaration":true}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":36,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":46,"character":12}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":37,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":48,"character":10}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":38,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":49,"character":8}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":39,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":51,"character":6}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":40,"method":"completionItem/resolve","params":{"label":"beta","kind":6,"detail":"variable","data":{"uri":"file:///tmp/lsp-test.starb","symbolLine":45,"symbolStart":7,"symbolLength":4,"symbolKind":13,"detail":"variable","signature":"decl beta:Int","documentation":"","containerName":"","isMember":false}}})");
+    appendMessage(input, std::string(R"({"jsonrpc":"2.0","id":41,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")") +
+                         cmdLineUri + R"("}}})");
+    appendMessage(input, std::string(R"({"jsonrpc":"2.0","id":42,"method":"textDocument/hover","params":{"textDocument":{"uri":")") +
+                         cmdLineUri + R"("},"position":{"line":1,"character":10}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":16,"method":"shutdown","params":null})");
     appendMessage(input, R"({"jsonrpc":"2.0","method":"exit"})");
 
@@ -91,6 +153,39 @@ int main(int argc, char *argv[]) {
     if(!requireContains("\"id\":20","formatting-id") || !requireContains("\"newText\"","formatting-new-text")) return 1;
     if(!requireContains("\"id\":21","code-action-id") || !requireContains("\"kind\":\"quickfix\"","code-action-kind")
        || !requireContains("Trim trailing whitespace","code-action-trim-title")) return 1;
+    if(!requireContains("\"id\":22","function-param-hover-id") || !requireContains("param alpha:Int","function-param-hover-signature")) return 1;
+    if(!requireContains("\"id\":23","local-hover-id") || !requireContains("decl beta:Int","local-hover-signature")) return 1;
+    if(!requireContains("\"id\":24","imported-module-hover-id") || !requireContains("func helperValue() Int","imported-module-hover-signature")
+       || !requireContains("Shared helper docs.","imported-module-hover-doc")) return 1;
+    if(!requireContains("\"id\":25","scope-hover-id") || !requireContains("func ping() Int","scope-hover-signature")
+       || !requireContains("Scope helper docs.","scope-hover-doc")) return 1;
+    if(!requireContains("\"id\":26","class-field-hover-id") || !requireContains("decl value:Int","class-field-hover-signature")) return 1;
+    if(!requireContains("\"id\":27","class-method-hover-id") || !requireContains("func read() Int","class-method-hover-signature")
+       || !requireContains("Reads the boxed value.","class-method-hover-doc")) return 1;
+    if(!requireContains("\"id\":28","local-definition-id") || !requireContains("\"line\":45,\"character\":7","local-definition-range")) return 1;
+    if(!requireContains("\"id\":29","local-references-id") || !requireContains("\"line\":45,\"character\":7","local-references-decl")
+       || !requireContains("\"line\":46,\"character\":9","local-references-use")) return 1;
+    if(!requireContains("\"id\":30","imported-definition-id") || !requireContains("\"uri\":\"file:///tmp/Helper/main.starb\"","imported-definition-uri")
+       || !requireContains("\"line\":1,\"character\":5","imported-definition-range")) return 1;
+    if(!requireContains("\"id\":31","scope-definition-id") || !requireContains("\"line\":33,\"character\":7","scope-definition-range")) return 1;
+    if(!requireContains("\"id\":32","field-references-id") || !requireContains("\"line\":38,\"character\":7","field-references-decl")
+       || !requireContains("\"line\":41,\"character\":16","field-references-use")) return 1;
+    if(!requireContains("\"id\":33","interface-implementation-id") || !requireContains("\"line\":26,\"character\":6","interface-implementation-range")) return 1;
+    if(!requireContains("\"id\":34","class-implementation-id") || !requireContains("\"line\":26,\"character\":6","class-implementation-range")) return 1;
+    if(!requireContains("\"id\":35","cross-file-references-id") || !requireContains("\"uri\":\"file:///tmp/Helper/main.starb\"","cross-file-references-uri")
+       || !requireContains("\"line\":48,\"character\":7","cross-file-references-use")) return 1;
+    if(!requireContains("\"id\":36","scoped-completion-local-id") || !requireContains("\"label\":\"beta\"","scoped-completion-local-label")) return 1;
+    if(!requireContains("\"id\":37","scoped-completion-module-id") || !requireContains("\"label\":\"helperValue\"","scoped-completion-module-label")) return 1;
+    if(!requireContains("\"id\":38","scoped-completion-scope-id") || !requireContains("\"label\":\"ping\"","scoped-completion-scope-label")) return 1;
+    if(!requireContains("\"id\":39","scoped-completion-member-id") || !requireContains("\"label\":\"read\"","scoped-completion-member-label")) return 1;
+    if(!requireContains("\"id\":40","scoped-completion-resolve-id") || !requireContains("decl beta:Int","scoped-completion-resolve-signature")) return 1;
+    if(!requireContains("\"id\":41","cmdline-diagnostic-id")) return 1;
+    if(!requireContains("\"id\":42","cmdline-hover-id") || !requireContains("func argCount() Int","cmdline-hover-signature")) return 1;
+    if(contains(result, "Undefined symbol `CmdLine`")) {
+        std::cerr << "CmdLine import should resolve in LSP diagnostics.\n";
+        std::cerr << result << std::endl;
+        return 1;
+    }
     if(!requireContains("\"id\":16","shutdown-id") || !requireContains("\"result\":null","shutdown-null")) return 1;
 
     return 0;
