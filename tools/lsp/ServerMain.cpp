@@ -408,6 +408,213 @@ std::string completionDeclaredBaseTypeFromSignature(const std::string &signature
   return typePart;
 }
 
+std::string declaredTypeTextFromSignature(const std::string &signature) {
+  auto colonPos = signature.find(':');
+  if (colonPos == std::string::npos) {
+    return {};
+  }
+  auto typePart = trimCopy(signature.substr(colonPos + 1));
+  auto eqPos = typePart.find('=');
+  if (eqPos != std::string::npos) {
+    typePart = trimCopy(typePart.substr(0, eqPos));
+  }
+  return typePart;
+}
+
+std::string normalizeTypeTargetName(std::string typeName) {
+  typeName = trimCopy(std::move(typeName));
+  while (!typeName.empty() && (typeName.back() == '?' || typeName.back() == '!')) {
+    typeName.pop_back();
+  }
+  typeName = trimCopy(std::move(typeName));
+  if (typeName.empty() || typeName.front() == '(') {
+    return {};
+  }
+  if (typeName.size() >= 2 && typeName.compare(typeName.size() - 2, 2, "[]") == 0) {
+    return "Array";
+  }
+  auto genericPos = typeName.find('<');
+  if (genericPos != std::string::npos) {
+    typeName = trimCopy(typeName.substr(0, genericPos));
+  }
+  return typeName;
+}
+
+std::vector<std::string> splitTopLevelTypeText(const std::string &text, char delimiter) {
+  std::vector<std::string> parts;
+  std::string current;
+  int parenDepth = 0;
+  int angleDepth = 0;
+  int bracketDepth = 0;
+  for (char ch : text) {
+    switch (ch) {
+      case '(':
+        ++parenDepth;
+        break;
+      case ')':
+        if (parenDepth > 0) {
+          --parenDepth;
+        }
+        break;
+      case '<':
+        ++angleDepth;
+        break;
+      case '>':
+        if (angleDepth > 0) {
+          --angleDepth;
+        }
+        break;
+      case '[':
+        ++bracketDepth;
+        break;
+      case ']':
+        if (bracketDepth > 0) {
+          --bracketDepth;
+        }
+        break;
+      default:
+        break;
+    }
+
+    if (ch == delimiter && parenDepth == 0 && angleDepth == 0 && bracketDepth == 0) {
+      auto trimmed = trimCopy(current);
+      if (!trimmed.empty()) {
+        parts.push_back(trimmed);
+      }
+      current.clear();
+      continue;
+    }
+    current.push_back(ch);
+  }
+
+  auto trimmed = trimCopy(current);
+  if (!trimmed.empty()) {
+    parts.push_back(trimmed);
+  }
+  return parts;
+}
+
+bool extractFunctionTypeParts(const std::string &typeText,
+                              std::vector<std::string> &paramTypesOut,
+                              std::string &returnTypeOut) {
+  auto trimmed = trimCopy(typeText);
+  if (trimmed.empty() || trimmed.front() != '(') {
+    return false;
+  }
+
+  int parenDepth = 0;
+  int angleDepth = 0;
+  int bracketDepth = 0;
+  size_t closePos = std::string::npos;
+  for (size_t i = 0; i < trimmed.size(); ++i) {
+    char ch = trimmed[i];
+    switch (ch) {
+      case '(':
+        ++parenDepth;
+        break;
+      case ')':
+        if (parenDepth > 0) {
+          --parenDepth;
+        }
+        if (parenDepth == 0 && angleDepth == 0 && bracketDepth == 0) {
+          closePos = i;
+        }
+        break;
+      case '<':
+        ++angleDepth;
+        break;
+      case '>':
+        if (angleDepth > 0) {
+          --angleDepth;
+        }
+        break;
+      case '[':
+        ++bracketDepth;
+        break;
+      case ']':
+        if (bracketDepth > 0) {
+          --bracketDepth;
+        }
+        break;
+      default:
+        break;
+    }
+    if (closePos != std::string::npos) {
+      break;
+    }
+  }
+
+  if (closePos == std::string::npos) {
+    return false;
+  }
+
+  auto paramsText = trimmed.substr(1, closePos - 1);
+  returnTypeOut = trimCopy(trimmed.substr(closePos + 1));
+  if (returnTypeOut.empty()) {
+    return false;
+  }
+
+  for (const auto &part : splitTopLevelTypeText(paramsText, ',')) {
+    auto colonPos = part.rfind(':');
+    auto typePart = colonPos == std::string::npos ? trimCopy(part) : trimCopy(part.substr(colonPos + 1));
+    if (!typePart.empty()) {
+      paramTypesOut.push_back(typePart);
+    }
+  }
+  return true;
+}
+
+std::string aliasTargetTypeText(const SymbolEntry &symbol) {
+  if (symbol.detail != "type alias") {
+    return {};
+  }
+  auto eqPos = symbol.signature.find('=');
+  if (eqPos == std::string::npos) {
+    return {};
+  }
+  return trimCopy(symbol.signature.substr(eqPos + 1));
+}
+
+bool isTypeDefinitionSymbol(const SymbolEntry &symbol) {
+  return symbol.kind == SYMBOL_KIND_CLASS || symbol.kind == SYMBOL_KIND_INTERFACE || symbol.kind == SYMBOL_KIND_STRUCT ||
+         symbol.kind == SYMBOL_KIND_ENUM || symbol.detail == "type alias";
+}
+
+std::string typeTargetNameFromSymbol(const SymbolEntry &symbol) {
+  if (symbol.detail == "type alias") {
+    auto eqPos = symbol.signature.find('=');
+    if (eqPos != std::string::npos) {
+      return normalizeTypeTargetName(symbol.signature.substr(eqPos + 1));
+    }
+    return normalizeTypeTargetName(symbol.name);
+  }
+
+  if (symbol.kind == SYMBOL_KIND_CLASS || symbol.kind == SYMBOL_KIND_INTERFACE || symbol.kind == SYMBOL_KIND_STRUCT ||
+      symbol.kind == SYMBOL_KIND_ENUM) {
+    return normalizeTypeTargetName(symbol.name);
+  }
+
+  if (symbol.kind == SYMBOL_KIND_FUNCTION || symbol.kind == SYMBOL_KIND_METHOD) {
+    std::string name;
+    std::string params;
+    std::string returnType;
+    if (signaturePartsFromSignature(symbol.signature, name, params, returnType) && !returnType.empty()) {
+      return normalizeTypeTargetName(returnType);
+    }
+    auto closePos = symbol.signature.rfind(')');
+    if (closePos != std::string::npos) {
+      return normalizeTypeTargetName(symbol.signature.substr(closePos + 1));
+    }
+    return {};
+  }
+
+  if (symbol.kind == SYMBOL_KIND_VARIABLE || symbol.kind == SYMBOL_KIND_FIELD || symbol.kind == SYMBOL_KIND_CONSTANT) {
+    return normalizeTypeTargetName(declaredTypeTextFromSignature(symbol.signature));
+  }
+
+  return {};
+}
+
 unsigned semanticTokenTypeFromSymbolKindForLsp(int symbolKind) {
   switch (symbolKind) {
     case SYMBOL_KIND_NAMESPACE:
@@ -458,7 +665,7 @@ std::string hoverFunctionSignature(ASTFuncDecl *funcDecl, const std::vector<std:
 
 std::string hoverVarSignature(bool isConst,
                               const std::string &displayName,
-                              ASTType *type,
+                              const std::string &typeText,
                               const char *keyword = "decl") {
   std::string signature = keyword;
   if (isConst) {
@@ -466,11 +673,18 @@ std::string hoverVarSignature(bool isConst,
   }
   signature += " ";
   signature += displayName;
-  if (type) {
+  if (!typeText.empty()) {
     signature += ":";
-    signature += hoverTypeToString(type);
+    signature += typeText;
   }
   return signature;
+}
+
+std::string hoverVarSignature(bool isConst,
+                              const std::string &displayName,
+                              ASTType *type,
+                              const char *keyword = "decl") {
+  return hoverVarSignature(isConst, displayName, type ? hoverTypeToString(type) : std::string(), keyword);
 }
 
 std::vector<std::string> extractImportsForHover(const std::string &sourceText) {
@@ -534,6 +748,7 @@ struct HoverBinding {
   bool isConst = false;
   std::string lookupName;
   std::string displayName;
+  std::string renderedType;
 };
 
 struct HoverFrame {
@@ -2015,6 +2230,22 @@ bool Server::resolveHoverSymbol(const std::string &uri,
         return HoverResolvedSymbol{symbolUri, symbol};
       }
     }
+    const SymbolEntry *bestContainingSymbol = nullptr;
+    for (const auto &symbol : symbols) {
+      if (symbol.line != symbolLine || symbol.length == 0) {
+        continue;
+      }
+      auto symbolEnd = symbol.start + symbol.length;
+      if (region.startCol < symbol.start || region.startCol >= symbolEnd) {
+        continue;
+      }
+      if (!bestContainingSymbol || symbol.length < bestContainingSymbol->length) {
+        bestContainingSymbol = &symbol;
+      }
+    }
+    if (bestContainingSymbol) {
+      return HoverResolvedSymbol{symbolUri, *bestContainingSymbol};
+    }
     return std::nullopt;
   };
 
@@ -2038,15 +2269,67 @@ bool Server::resolveHoverSymbol(const std::string &uri,
     return std::nullopt;
   };
 
+  auto findDeclaredSymbolOnLine = [&](const std::string &symbolName,
+                                      const std::string &detail,
+                                      unsigned lineNumber,
+                                      unsigned startCol) -> std::optional<HoverResolvedSymbol> {
+    auto symbols = collectSymbolsForUri(uri, text);
+    const SymbolEntry *bestMatch = nullptr;
+    for (const auto &symbol : symbols) {
+      if (symbol.name != symbolName || symbol.detail != detail || symbol.line != lineNumber) {
+        continue;
+      }
+      if (!bestMatch ||
+          std::abs(static_cast<int>(symbol.start) - static_cast<int>(startCol)) <
+              std::abs(static_cast<int>(bestMatch->start) - static_cast<int>(startCol))) {
+        bestMatch = &symbol;
+      }
+    }
+    if (!bestMatch) {
+      return std::nullopt;
+    }
+    return HoverResolvedSymbol{uri, *bestMatch};
+  };
+
   auto synthesizeSymbol = [&](ASTIdentifier *id,
                               ASTStmt *owner,
                               ASTType *typeOverride,
                               const std::string &displayName,
-                              const std::string &detailOverride) -> std::optional<HoverResolvedSymbol> {
+                              const std::string &detailOverride,
+                              const std::string &typeTextOverride = std::string()) -> std::optional<HoverResolvedSymbol> {
     if (!id || !owner) {
       return std::nullopt;
     }
     if (auto existing = findSymbolAtRegion(uri, text, id->codeRegion)) {
+      auto typeText = typeOverride ? hoverTypeToString(typeOverride) : typeTextOverride;
+      if (owner->type == VAR_DECL) {
+        auto *varDecl = static_cast<ASTVarDecl *>(owner);
+        bool isConst = varDecl->isConst;
+        existing->symbol.kind = isConst ? SYMBOL_KIND_CONSTANT : SYMBOL_KIND_VARIABLE;
+        if (existing->symbol.detail.empty() || existing->symbol.detail == "variable" ||
+            existing->symbol.detail == "constant") {
+          existing->symbol.detail = detailOverride.empty() ? (isConst ? "constant" : "variable") : detailOverride;
+        }
+        if (!typeText.empty()) {
+          existing->symbol.signature = hoverVarSignature(isConst, existing->symbol.name, typeText);
+        }
+      } else if (owner->type == SECURE_DECL) {
+        existing->symbol.kind = SYMBOL_KIND_VARIABLE;
+        if (existing->symbol.detail.empty()) {
+          existing->symbol.detail = detailOverride.empty() ? "catch error" : detailOverride;
+        }
+        if (!typeText.empty()) {
+          existing->symbol.signature = "catch " + existing->symbol.name + ":" + typeText;
+        }
+      } else if (owner->type == FUNC_DECL || owner->type == CLASS_CTOR_DECL) {
+        existing->symbol.kind = SYMBOL_KIND_VARIABLE;
+        if (existing->symbol.detail.empty()) {
+          existing->symbol.detail = detailOverride.empty() ? "parameter" : detailOverride;
+        }
+        if (!typeText.empty()) {
+          existing->symbol.signature = hoverVarSignature(false, existing->symbol.name, typeText, "param");
+        }
+      }
       return existing;
     }
 
@@ -2063,7 +2346,9 @@ bool Server::resolveHoverSymbol(const std::string &uri,
       bool isConst = varDecl->isConst;
       symbol.kind = isConst ? SYMBOL_KIND_CONSTANT : SYMBOL_KIND_VARIABLE;
       symbol.detail = detailOverride.empty() ? (isConst ? "constant" : "variable") : detailOverride;
-      symbol.signature = hoverVarSignature(isConst, symbol.name, typeOverride);
+      symbol.signature = hoverVarSignature(isConst,
+                                           symbol.name,
+                                           typeOverride ? hoverTypeToString(typeOverride) : typeTextOverride);
       return HoverResolvedSymbol{uri, symbol};
     }
 
@@ -2081,7 +2366,10 @@ bool Server::resolveHoverSymbol(const std::string &uri,
     if (owner->type == FUNC_DECL || owner->type == CLASS_CTOR_DECL) {
       symbol.kind = SYMBOL_KIND_VARIABLE;
       symbol.detail = detailOverride.empty() ? "parameter" : detailOverride;
-      symbol.signature = hoverVarSignature(false, symbol.name, typeOverride, "param");
+      symbol.signature = hoverVarSignature(false,
+                                           symbol.name,
+                                           typeOverride ? hoverTypeToString(typeOverride) : typeTextOverride,
+                                           "param");
       return HoverResolvedSymbol{uri, symbol};
     }
 
@@ -2115,9 +2403,32 @@ bool Server::resolveHoverSymbol(const std::string &uri,
     }
   }
 
+  std::function<std::string(const std::string &)> inferCurrentDocumentVarTypeText;
+
   Semantics::STableContext resolutionContext;
   resolutionContext.mainBorrowed = parsedDocument->mainTable.get();
   appendImportedSymbolTablesForHover(resolutionContext, directImports, currentDeps);
+
+  auto applySemanticEntrySymbolData = [&](SymbolEntry &symbol,
+                                          Semantics::SymbolTable::Entry *entry) {
+    if (!entry) {
+      return;
+    }
+    if (entry->type == Semantics::SymbolTable::Entry::Var) {
+      auto *var = static_cast<Semantics::SymbolTable::Var *>(entry->data);
+      bool isConst = var && var->isReadonly;
+      if (symbol.kind == SYMBOL_KIND_CONSTANT) {
+        isConst = true;
+      }
+      symbol.kind = isConst ? SYMBOL_KIND_CONSTANT : SYMBOL_KIND_VARIABLE;
+      if (symbol.detail.empty() || symbol.detail == "variable" || symbol.detail == "constant") {
+        symbol.detail = isConst ? "constant" : "variable";
+      }
+      if (var) {
+        symbol.signature = hoverVarSignature(isConst, symbol.name, var->type);
+      }
+    }
+  };
 
   auto makeSymbolFromEntry = [&](Semantics::SymbolTable::Entry *entry,
                                  const std::string &moduleNameHint,
@@ -2131,15 +2442,34 @@ bool Server::resolveHoverSymbol(const std::string &uri,
       if (findModuleDocumentByName(moduleNameHint, uri, moduleUri, moduleText)) {
         if (containerNameHint == moduleNameHint) {
           if (auto found = findSymbolByName(moduleUri, moduleText, entry->name, std::string())) {
+            applySemanticEntrySymbolData(found->symbol, entry);
+            if (entry->type == Semantics::SymbolTable::Entry::Var &&
+                found->symbol.signature.find(':') == std::string::npos) {
+              auto inferredType = inferCurrentDocumentVarTypeText(entry->name);
+              if (!inferredType.empty()) {
+                bool isConst = found->symbol.kind == SYMBOL_KIND_CONSTANT;
+                found->symbol.signature = hoverVarSignature(isConst, found->symbol.name, inferredType);
+              }
+            }
             return found;
           }
         }
         if (auto found = findSymbolByName(moduleUri, moduleText, entry->name, containerNameHint)) {
+          applySemanticEntrySymbolData(found->symbol, entry);
           return found;
         }
       }
     }
     if (auto found = findSymbolByName(uri, text, entry->name, containerNameHint)) {
+      applySemanticEntrySymbolData(found->symbol, entry);
+      if (entry->type == Semantics::SymbolTable::Entry::Var &&
+          found->symbol.signature.find(':') == std::string::npos) {
+        auto inferredType = inferCurrentDocumentVarTypeText(entry->name);
+        if (!inferredType.empty()) {
+          bool isConst = found->symbol.kind == SYMBOL_KIND_CONSTANT;
+          found->symbol.signature = hoverVarSignature(isConst, found->symbol.name, inferredType);
+        }
+      }
       return found;
     }
     return std::nullopt;
@@ -2166,6 +2496,7 @@ bool Server::resolveHoverSymbol(const std::string &uri,
   };
 
   std::function<ASTType *(ASTExpr *, std::vector<HoverFrame> &, ASTClassDecl *)> inferExprType;
+  std::function<std::string(ASTExpr *, std::vector<HoverFrame> &, ASTClassDecl *)> inferExprTypeText;
   std::function<std::optional<HoverResolvedSymbol>(ASTExpr *, std::vector<HoverFrame> &, ASTClassDecl *)> resolveExprHover;
   std::function<bool(ASTStmt *, std::vector<HoverFrame> &, ASTClassDecl *)> walkStmt;
   std::function<bool(ASTBlockStmt *, std::vector<HoverFrame> &, ASTClassDecl *, bool)> walkBlock;
@@ -2228,6 +2559,34 @@ bool Server::resolveHoverSymbol(const std::string &uri,
     return findClassMethodRecursive(static_cast<Semantics::SymbolTable::Class *>(superEntry->data), methodName, scope);
   };
 
+  auto resolveScopeAccessEntry = [&](ASTExpr *memberExpr) -> Semantics::SymbolTable::Entry * {
+    if (!memberExpr || memberExpr->type != MEMBER_EXPR || !memberExpr->resolvedScope ||
+        !memberExpr->rightExpr || !memberExpr->rightExpr->id) {
+      return nullptr;
+    }
+
+    auto *entry = resolutionContext.findEntryInExactScopeNoDiag(memberExpr->rightExpr->id->val, memberExpr->resolvedScope);
+    if (entry) {
+      return entry;
+    }
+
+    if (memberExpr->leftExpr && memberExpr->leftExpr->type == ID_EXPR && memberExpr->leftExpr->id) {
+      auto leftName = sourceSliceForRegion(lines, memberExpr->leftExpr->id->codeRegion);
+      if (std::find(directImports.begin(), directImports.end(), leftName) != directImports.end()) {
+        auto depTableIt = currentDeps.find(leftName);
+        if (depTableIt != currentDeps.end() && depTableIt->second) {
+          if (auto *depEntries =
+                  depTableIt->second->findEntriesInExactScope(memberExpr->rightExpr->id->val, ASTScopeGlobal);
+              depEntries && !depEntries->empty()) {
+            return depEntries->front();
+          }
+        }
+      }
+    }
+
+    return nullptr;
+  };
+
   inferExprType = [&](ASTExpr *expr, std::vector<HoverFrame> &frames, ASTClassDecl *currentClass) -> ASTType * {
     if (!expr) {
       return nullptr;
@@ -2281,8 +2640,7 @@ bool Server::resolveHoverSymbol(const std::string &uri,
           return nullptr;
         }
         if (expr->isScopeAccess && expr->resolvedScope) {
-          auto *entry =
-              resolutionContext.findEntryInExactScopeNoDiag(expr->rightExpr->id->val, expr->resolvedScope);
+          auto *entry = resolveScopeAccessEntry(expr);
           if (!entry) {
             return nullptr;
           }
@@ -2342,8 +2700,7 @@ bool Server::resolveHoverSymbol(const std::string &uri,
             }
           } else if (expr->callee->type == MEMBER_EXPR && expr->callee->rightExpr && expr->callee->rightExpr->id &&
                      expr->callee->resolvedScope) {
-            auto *entry = resolutionContext.findEntryInExactScopeNoDiag(expr->callee->rightExpr->id->val,
-                                                                          expr->callee->resolvedScope);
+            auto *entry = resolveScopeAccessEntry(expr->callee);
             if (entry && entry->type == Semantics::SymbolTable::Entry::Class) {
               return static_cast<Semantics::SymbolTable::Class *>(entry->data)->classType;
             }
@@ -2354,6 +2711,211 @@ bool Server::resolveHoverSymbol(const std::string &uri,
       default:
         return nullptr;
     }
+  };
+
+  auto functionReturnTypeFromSignature = [&](const std::string &signature) -> std::string {
+    auto closePos = signature.rfind(')');
+    if (closePos == std::string::npos) {
+      return {};
+    }
+    return trimCopy(signature.substr(closePos + 1));
+  };
+
+  auto importedModuleReturnTypeText = [&](ASTExpr *memberExpr) -> std::string {
+    if (!memberExpr || memberExpr->type != MEMBER_EXPR || !memberExpr->leftExpr || !memberExpr->rightExpr ||
+        !memberExpr->rightExpr->id || memberExpr->leftExpr->type != ID_EXPR || !memberExpr->leftExpr->id) {
+      return {};
+    }
+    auto moduleName = memberExpr->leftExpr->id->val;
+    if (moduleName.empty() ||
+        std::find(directImports.begin(), directImports.end(), moduleName) == directImports.end()) {
+      return {};
+    }
+
+    std::string moduleUri;
+    std::string moduleText;
+    if (!findModuleDocumentByName(moduleName, uri, moduleUri, moduleText)) {
+      return {};
+    }
+    if (auto found = findSymbolByName(moduleUri, moduleText, memberExpr->rightExpr->id->val, std::string())) {
+      return functionReturnTypeFromSignature(found->symbol.signature);
+    }
+    return {};
+  };
+
+  auto importedModuleCallTypeTextFromRegion = [&](const Region &region) -> std::string {
+    if (region.startLine == 0 || region.startLine != region.endLine) {
+      return {};
+    }
+    auto exprText = sourceSliceForRegion(lines, region);
+    if (exprText.empty()) {
+      return {};
+    }
+
+    static const std::regex moduleCallRegex(R"(^\s*([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\s*\()");
+    std::smatch match;
+    if (!std::regex_search(exprText, match, moduleCallRegex) || match.size() < 3) {
+      return {};
+    }
+
+    auto moduleName = match[1].str();
+    auto symbolName = match[2].str();
+    if (std::find(directImports.begin(), directImports.end(), moduleName) == directImports.end()) {
+      return {};
+    }
+
+    std::string moduleUri;
+    std::string moduleText;
+    if (!findModuleDocumentByName(moduleName, uri, moduleUri, moduleText)) {
+      return {};
+    }
+    if (auto found = findSymbolByName(moduleUri, moduleText, symbolName, std::string())) {
+      return functionReturnTypeFromSignature(found->symbol.signature);
+    }
+    return {};
+  };
+
+  inferCurrentDocumentVarTypeText = [&](const std::string &varName) -> std::string {
+    for (auto *stmt : parsedDocument->statements) {
+      if (!stmt || stmt->type != VAR_DECL) {
+        continue;
+      }
+      auto *varDecl = static_cast<ASTVarDecl *>(static_cast<ASTDecl *>(stmt));
+      for (const auto &spec : varDecl->specs) {
+        if (!spec.id || spec.id->val != varName) {
+          continue;
+        }
+        if (spec.type) {
+          return hoverTypeToString(spec.type);
+        }
+        if (!spec.expr) {
+          return {};
+        }
+        if (auto inferred = importedModuleCallTypeTextFromRegion(spec.expr->codeRegion); !inferred.empty()) {
+          return inferred;
+        }
+        if (spec.expr->type == IVKE_EXPR && spec.expr->callee) {
+          if (auto inferred = importedModuleCallTypeTextFromRegion(spec.expr->callee->codeRegion); !inferred.empty()) {
+            return inferred;
+          }
+        }
+        return {};
+      }
+    }
+    return {};
+  };
+
+  inferExprTypeText = [&](ASTExpr *expr, std::vector<HoverFrame> &frames, ASTClassDecl *currentClass) -> std::string {
+    if (!expr) {
+      return {};
+    }
+    if (auto *type = inferExprType(expr, frames, currentClass)) {
+      return hoverTypeToString(type);
+    }
+
+    switch (expr->type) {
+      case ID_EXPR: {
+        auto *id = expr->id;
+        if (!id) {
+          return {};
+        }
+        std::shared_ptr<ASTScope> outerScopeStart;
+        if (const auto *binding =
+                findLocalBinding(frames, frames.empty() ? ASTScopeGlobal : frames.back().scope, id->val, word, outerScopeStart)) {
+          return binding->renderedType;
+        }
+        auto lookupScope = outerScopeStart ? outerScopeStart : (frames.empty() ? ASTScopeGlobal : frames.back().scope);
+        auto *entry = resolutionContext.findEntryNoDiag(id->val, lookupScope);
+        if (!entry) {
+          return {};
+        }
+        if (entry->type == Semantics::SymbolTable::Entry::Function) {
+          auto *function = static_cast<Semantics::SymbolTable::Function *>(entry->data);
+          if (function && function->returnType) {
+            return hoverTypeToString(function->returnType);
+          }
+        }
+        return {};
+      }
+      case MEMBER_EXPR: {
+        if (auto importedType = importedModuleReturnTypeText(expr); !importedType.empty()) {
+          return importedType;
+        }
+        if (!(expr->isScopeAccess && expr->resolvedScope)) {
+          return {};
+        }
+        auto *entry = resolveScopeAccessEntry(expr);
+        if (!entry) {
+          return {};
+        }
+        if (entry->type == Semantics::SymbolTable::Entry::Function) {
+          auto *function = static_cast<Semantics::SymbolTable::Function *>(entry->data);
+          if (function && function->returnType) {
+            return hoverTypeToString(function->returnType);
+          }
+          std::string moduleHint;
+          std::string containerHint = expr->resolvedScope ? expr->resolvedScope->name : std::string();
+          if (expr->leftExpr && expr->leftExpr->type == ID_EXPR && expr->leftExpr->id) {
+            auto leftName = sourceSliceForRegion(lines, expr->leftExpr->id->codeRegion);
+            if (std::find(directImports.begin(), directImports.end(), leftName) != directImports.end()) {
+              moduleHint = leftName;
+            }
+          }
+          if (auto found = makeSymbolFromEntry(entry, moduleHint, containerHint)) {
+            return functionReturnTypeFromSignature(found->symbol.signature);
+          }
+        }
+        return {};
+      }
+      case IVKE_EXPR:
+        if (expr->callee) {
+          if (auto importedType = importedModuleReturnTypeText(expr->callee); !importedType.empty()) {
+            return importedType;
+          }
+          if (auto importedType = importedModuleCallTypeTextFromRegion(expr->codeRegion); !importedType.empty()) {
+            return importedType;
+          }
+          return inferExprTypeText(expr->callee, frames, currentClass);
+        }
+        return {};
+      default:
+        return {};
+    }
+  };
+
+  auto inferBindingTypeText = [&](const HoverBinding *binding) -> std::string {
+    if (!binding) {
+      return {};
+    }
+    if (!binding->renderedType.empty()) {
+      return binding->renderedType;
+    }
+    if (!binding->declOwner || binding->declOwner->type != VAR_DECL || !binding->declId) {
+      return {};
+    }
+
+    auto *varDecl = static_cast<ASTVarDecl *>(binding->declOwner);
+    for (const auto &spec : varDecl->specs) {
+      if (!spec.id || spec.id != binding->declId) {
+        continue;
+      }
+      if (spec.type) {
+        return hoverTypeToString(spec.type);
+      }
+      if (!spec.expr) {
+        return {};
+      }
+      if (auto inferred = importedModuleCallTypeTextFromRegion(spec.expr->codeRegion); !inferred.empty()) {
+        return inferred;
+      }
+      if (spec.expr->type == IVKE_EXPR && spec.expr->callee) {
+        if (auto inferred = importedModuleCallTypeTextFromRegion(spec.expr->callee->codeRegion); !inferred.empty()) {
+          return inferred;
+        }
+      }
+      return {};
+    }
+    return {};
   };
 
   resolveExprHover = [&](ASTExpr *expr,
@@ -2368,7 +2930,13 @@ bool Server::resolveHoverSymbol(const std::string &uri,
       if (const auto *binding =
               findLocalBinding(frames, frames.empty() ? ASTScopeGlobal : frames.back().scope, expr->id->val, word,
                                outerScopeStart)) {
-        return synthesizeSymbol(binding->declId, binding->declOwner, binding->type, binding->displayName, "");
+        auto bindingTypeText = inferBindingTypeText(binding);
+        return synthesizeSymbol(binding->declId,
+                                binding->declOwner,
+                                binding->type,
+                                binding->displayName,
+                                "",
+                                bindingTypeText);
       }
       auto lookupScope = outerScopeStart ? outerScopeStart : (frames.empty() ? ASTScopeGlobal : frames.back().scope);
       auto *entry = resolutionContext.findEntryNoDiag(expr->id->val, lookupScope);
@@ -2381,23 +2949,9 @@ bool Server::resolveHoverSymbol(const std::string &uri,
     if (expr->type == MEMBER_EXPR && expr->rightExpr && expr->rightExpr->id &&
         regionContainsPosition(expr->rightExpr->id->codeRegion, line + 1, character)) {
       if (expr->isScopeAccess && expr->resolvedScope) {
-        auto *entry = resolutionContext.findEntryInExactScopeNoDiag(expr->rightExpr->id->val, expr->resolvedScope);
+        auto *entry = resolveScopeAccessEntry(expr);
         std::string moduleHint;
         std::string containerHint = expr->resolvedScope->name;
-        if (!entry && expr->leftExpr && expr->leftExpr->type == ID_EXPR && expr->leftExpr->id) {
-          auto leftName = sourceSliceForRegion(lines, expr->leftExpr->id->codeRegion);
-          if (std::find(directImports.begin(), directImports.end(), leftName) != directImports.end()) {
-            moduleHint = leftName;
-            auto depTableIt = currentDeps.find(leftName);
-            if (depTableIt != currentDeps.end() && depTableIt->second) {
-              if (auto *depEntries =
-                      depTableIt->second->findEntriesInExactScope(expr->rightExpr->id->val, ASTScopeGlobal);
-                  depEntries && !depEntries->empty()) {
-                entry = depEntries->front();
-              }
-            }
-          }
-        }
         if (!entry) {
           return std::nullopt;
         }
@@ -2518,6 +3072,9 @@ bool Server::resolveHoverSymbol(const std::string &uri,
       case VAR_DECL: {
         auto *varDecl = static_cast<ASTVarDecl *>(decl);
         for (auto &spec : varDecl->specs) {
+          auto *resolvedType = spec.type ? spec.type : inferExprType(spec.expr, frames, currentClass);
+          auto resolvedTypeText = resolvedType ? hoverTypeToString(resolvedType)
+                                               : inferExprTypeText(spec.expr, frames, currentClass);
           if (spec.expr) {
             if (auto resolved = resolveExprHover(spec.expr, frames, currentClass)) {
               resolvedUriOut = resolved->uri;
@@ -2527,7 +3084,12 @@ bool Server::resolveHoverSymbol(const std::string &uri,
           }
           if (spec.id && regionContainsPosition(spec.id->codeRegion, line + 1, character)) {
             if (auto resolved =
-                    synthesizeSymbol(spec.id, decl, spec.type, sourceSliceForRegion(lines, spec.id->codeRegion), "")) {
+                    synthesizeSymbol(spec.id,
+                                     decl,
+                                     resolvedType,
+                                     sourceSliceForRegion(lines, spec.id->codeRegion),
+                                     "",
+                                     resolvedTypeText)) {
               resolvedUriOut = resolved->uri;
               symbolOut = resolved->symbol;
               return true;
@@ -2535,8 +3097,8 @@ bool Server::resolveHoverSymbol(const std::string &uri,
           }
           if (!frames.empty() && spec.id) {
             frames.back().bindings.push_back(
-                HoverBinding{spec.id, decl, spec.type, varDecl->isConst, spec.id->val,
-                             sourceSliceForRegion(lines, spec.id->codeRegion)});
+                HoverBinding{spec.id, decl, resolvedType, varDecl->isConst, spec.id->val,
+                             sourceSliceForRegion(lines, spec.id->codeRegion), resolvedTypeText});
           }
         }
         return false;
@@ -2649,6 +3211,34 @@ bool Server::resolveHoverSymbol(const std::string &uri,
         frames.pop_back();
         return false;
       }
+      case TYPE_ALIAS_DECL: {
+        auto *aliasDecl = static_cast<ASTTypeAliasDecl *>(decl);
+        if (aliasDecl->id && regionContainsPosition(aliasDecl->id->codeRegion, line + 1, character)) {
+          if (auto resolved = findSymbolAtRegion(uri, text, aliasDecl->id->codeRegion)) {
+            resolvedUriOut = resolved->uri;
+            symbolOut = resolved->symbol;
+            return true;
+          }
+          unsigned symbolLine = aliasDecl->id->codeRegion.startLine > 0 ? aliasDecl->id->codeRegion.startLine - 1 : 0;
+          if (auto resolved =
+                  findDeclaredSymbolOnLine(aliasDecl->id->val, "type alias", symbolLine, aliasDecl->id->codeRegion.startCol)) {
+            resolvedUriOut = resolved->uri;
+            symbolOut = resolved->symbol;
+            return true;
+          }
+        }
+        if (!frames.empty() && aliasDecl->id) {
+          frames.back().bindings.push_back(
+              HoverBinding{aliasDecl->id,
+                           decl,
+                           aliasDecl->aliasedType,
+                           false,
+                           aliasDecl->id->val,
+                           sourceSliceForRegion(lines, aliasDecl->id->codeRegion),
+                           aliasDecl->aliasedType ? hoverTypeToString(aliasDecl->aliasedType) : std::string()});
+        }
+        return false;
+      }
       case SECURE_DECL: {
         auto *secureDecl = static_cast<ASTSecureDecl *>(decl);
         if (secureDecl->guardedDecl && walkStmt(secureDecl->guardedDecl, frames, currentClass)) {
@@ -2750,6 +3340,263 @@ bool Server::resolveHoverSymbol(const std::string &uri,
     }
   }
   return false;
+}
+
+bool Server::resolveSemanticSymbolTarget(const std::string &uri,
+                                         const std::string &text,
+                                         unsigned line,
+                                         unsigned character,
+                                         const std::string &word,
+                                         size_t wordStart,
+                                         const BuiltinApiIndex &builtinsIndex,
+                                         std::string &resolvedUriOut,
+                                         SymbolEntry &symbolOut) {
+  auto symbols = collectSymbolsForUri(uri, text);
+  const SymbolEntry *bestDeclaredSymbol = nullptr;
+  for (const auto &symbol : symbols) {
+    if (symbol.name != word || symbol.line != line || symbol.length == 0) {
+      continue;
+    }
+    auto symbolEnd = symbol.start + symbol.length;
+    if (character < symbol.start || character >= symbolEnd) {
+      continue;
+    }
+    if (!bestDeclaredSymbol || symbol.length < bestDeclaredSymbol->length) {
+      bestDeclaredSymbol = &symbol;
+    }
+  }
+  if (bestDeclaredSymbol) {
+    resolvedUriOut = uri;
+    symbolOut = *bestDeclaredSymbol;
+    return true;
+  }
+
+  std::string memberReceiver;
+  bool memberContext = extractReceiverBeforeOffset(text, wordStart, memberReceiver);
+  if (memberContext && !builtinsIndex.membersByType.empty()) {
+    auto inferredType = inferBuiltinTypeForReceiver(text, memberReceiver, line, builtinsIndex);
+    if (inferredType.has_value()) {
+      auto typeMembers = builtinsIndex.membersByType.find(*inferredType);
+      if (typeMembers != builtinsIndex.membersByType.end()) {
+        auto memberIt = typeMembers->second.find(word);
+        if (memberIt != typeMembers->second.end()) {
+          resolvedUriOut = builtinsIndex.uri;
+          symbolOut = memberIt->second;
+          return true;
+        }
+      }
+    }
+  }
+
+  if (resolveHoverSymbol(uri, text, line, character, word, wordStart, resolvedUriOut, symbolOut)) {
+    return true;
+  }
+
+  if (!builtinsIndex.topLevelByName.empty()) {
+    auto topLevel = builtinsIndex.topLevelByName.find(word);
+    if (topLevel != builtinsIndex.topLevelByName.end()) {
+      resolvedUriOut = builtinsIndex.uri;
+      symbolOut = topLevel->second;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool Server::resolveSemanticTypeTarget(const std::string &anchorUri,
+                                       const std::string &typeName,
+                                       const BuiltinApiIndex &builtinsIndex,
+                                       const std::string &containerHint,
+                                       std::string &resolvedUriOut,
+                                       SymbolEntry &symbolOut) {
+  auto normalizedTypeName = normalizeTypeTargetName(typeName);
+  if (normalizedTypeName.empty()) {
+    return false;
+  }
+
+  auto findTypeInDocument = [&](const std::string &candidateUri,
+                                const std::string &candidateText,
+                                const std::string &symbolName,
+                                const std::string &containerName,
+                                bool requireTopLevelOnly) -> bool {
+    auto symbols = collectSymbolsForUri(candidateUri, candidateText);
+    for (const auto &symbol : symbols) {
+      if (symbol.name != symbolName || !isTypeDefinitionSymbol(symbol)) {
+        continue;
+      }
+      if (!containerName.empty()) {
+        if (symbol.containerName != containerName) {
+          continue;
+        }
+      } else if (requireTopLevelOnly && symbol.isMember) {
+        continue;
+      }
+      resolvedUriOut = candidateUri;
+      symbolOut = symbol;
+      return true;
+    }
+    return false;
+  };
+
+  auto searchCurrentDocument = [&](const std::string &symbolName) -> bool {
+    std::string candidateText;
+    if (!getDocumentTextByUri(anchorUri, candidateText) || candidateText.empty()) {
+      return false;
+    }
+    return findTypeInDocument(anchorUri, candidateText, symbolName, std::string(), true);
+  };
+
+  auto searchContainerHint = [&](const std::string &symbolName) -> bool {
+    if (containerHint.empty()) {
+      return false;
+    }
+    std::string candidateText;
+    if (getDocumentTextByUri(anchorUri, candidateText) &&
+        findTypeInDocument(anchorUri, candidateText, symbolName, containerHint, false)) {
+      return true;
+    }
+    for (const auto &doc : documents) {
+      if (doc.first == anchorUri) {
+        continue;
+      }
+      if (findTypeInDocument(doc.first, doc.second.text, symbolName, containerHint, false)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  auto qualifiedParts = splitTopLevelTypeText(normalizedTypeName, '.');
+  if (qualifiedParts.size() > 1) {
+    const auto &localName = qualifiedParts.back();
+    auto immediateContainer = qualifiedParts[qualifiedParts.size() - 2];
+
+    std::string moduleUri;
+    std::string moduleText;
+    if (findModuleDocumentByName(qualifiedParts.front(), anchorUri, moduleUri, moduleText)) {
+      if (qualifiedParts.size() == 2) {
+        if (findTypeInDocument(moduleUri, moduleText, localName, std::string(), true)) {
+          return true;
+        }
+      } else if (findTypeInDocument(moduleUri, moduleText, localName, immediateContainer, false)) {
+        return true;
+      }
+    }
+
+    std::string anchorText;
+    if (getDocumentTextByUri(anchorUri, anchorText) &&
+        findTypeInDocument(anchorUri, anchorText, localName, immediateContainer, false)) {
+      return true;
+    }
+
+    for (const auto &doc : documents) {
+      if (doc.first == anchorUri) {
+        continue;
+      }
+      if (findTypeInDocument(doc.first, doc.second.text, localName, immediateContainer, false)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (searchContainerHint(normalizedTypeName)) {
+    return true;
+  }
+
+  if (searchCurrentDocument(normalizedTypeName)) {
+    return true;
+  }
+
+  for (const auto &doc : documents) {
+    if (doc.first == anchorUri) {
+      continue;
+    }
+    if (findTypeInDocument(doc.first, doc.second.text, normalizedTypeName, std::string(), true)) {
+      return true;
+    }
+  }
+
+  if (!builtinsIndex.topLevelByName.empty()) {
+    auto builtinsIt = builtinsIndex.topLevelByName.find(normalizedTypeName);
+    if (builtinsIt != builtinsIndex.topLevelByName.end() && isTypeDefinitionSymbol(builtinsIt->second)) {
+      resolvedUriOut = builtinsIndex.uri;
+      symbolOut = builtinsIt->second;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool Server::resolveSemanticSymbolAtPosition(const std::string &uri,
+                                             const std::string &text,
+                                             unsigned line,
+                                             unsigned character,
+                                             const BuiltinApiIndex &builtinsIndex,
+                                             std::string &resolvedUriOut,
+                                             SymbolEntry &symbolOut,
+                                             size_t *wordStartOut,
+                                             size_t *wordEndOut,
+                                             std::string *wordOut) {
+  std::string word;
+  size_t wordStart = 0;
+  size_t wordEnd = 0;
+  if (!wordRangeAtPosition(text, line, character, word, wordStart, wordEnd)) {
+    return false;
+  }
+
+  if (wordStartOut) {
+    *wordStartOut = wordStart;
+  }
+  if (wordEndOut) {
+    *wordEndOut = wordEnd;
+  }
+  if (wordOut) {
+    *wordOut = word;
+  }
+
+  return resolveSemanticSymbolTarget(uri,
+                                     text,
+                                     line,
+                                     character,
+                                     word,
+                                     wordStart,
+                                     builtinsIndex,
+                                     resolvedUriOut,
+                                     symbolOut);
+}
+
+bool Server::symbolIdentityMatches(const std::string &leftUri,
+                                   const SymbolEntry &left,
+                                   const std::string &rightUri,
+                                   const SymbolEntry &right) const {
+  return leftUri == rightUri && left.line == right.line && left.start == right.start && left.length == right.length &&
+         left.kind == right.kind;
+}
+
+bool Server::symbolIsRenameOwned(const std::string &resolvedUri,
+                                 const SymbolEntry &resolvedSymbol,
+                                 const BuiltinApiIndex &builtinsIndex) {
+  std::string ownerText;
+  if (!getDocumentTextByUri(resolvedUri, ownerText) || ownerText.empty()) {
+    return false;
+  }
+
+  std::string ownerResolvedUri;
+  SymbolEntry ownerResolvedSymbol;
+  if (!resolveSemanticSymbolAtPosition(resolvedUri,
+                                       ownerText,
+                                       resolvedSymbol.line,
+                                       resolvedSymbol.start,
+                                       builtinsIndex,
+                                       ownerResolvedUri,
+                                       ownerResolvedSymbol)) {
+    return false;
+  }
+
+  return symbolIdentityMatches(ownerResolvedUri, ownerResolvedSymbol, resolvedUri, resolvedSymbol);
 }
 
 void Server::setDocumentTextByUri(const std::string &uri, const std::string &text, int version, bool isOpen) {
@@ -3233,6 +4080,147 @@ void Server::handleCompletion(rapidjson::Document &request) {
   auto stateIt = documents.find(uri);
   const auto *parsedDocument = stateIt != documents.end() ? getSemanticResolvedDocumentForUri(uri, stateIt->second) : nullptr;
   auto lines = splitLinesCopy(text);
+  const std::vector<std::string> emptyImports;
+  const auto &directImports = parsedDocument ? parsedDocument->imports : emptyImports;
+
+  auto builtinBaseTypeFromTypeText = [&](const std::string &typeText) -> std::optional<std::string> {
+    if (typeText.empty()) {
+      return std::nullopt;
+    }
+    auto baseType = completionDeclaredBaseTypeFromSignature("decl _:" + typeText);
+    if (baseType.empty()) {
+      return std::nullopt;
+    }
+    if (builtinsIndex.membersByType.find(baseType) == builtinsIndex.membersByType.end()) {
+      return std::nullopt;
+    }
+    return baseType;
+  };
+
+  auto functionReturnTypeTextFromSignature = [&](const std::string &signature) -> std::string {
+    auto closePos = signature.rfind(')');
+    if (closePos == std::string::npos) {
+      return {};
+    }
+    return trimCopy(signature.substr(closePos + 1));
+  };
+
+  auto importedModuleMemberTypeText = [&](ASTExpr *expr) -> std::string {
+    ASTExpr *memberExpr = nullptr;
+    if (!expr) {
+      return {};
+    }
+    if (expr->type == IVKE_EXPR) {
+      memberExpr = expr->callee;
+    } else if (expr->type == MEMBER_EXPR) {
+      memberExpr = expr;
+    }
+    if (!memberExpr || memberExpr->type != MEMBER_EXPR || !memberExpr->leftExpr || !memberExpr->rightExpr ||
+        memberExpr->leftExpr->type != ID_EXPR || !memberExpr->leftExpr->id || !memberExpr->rightExpr->id) {
+      return {};
+    }
+
+    const auto &moduleName = memberExpr->leftExpr->id->val;
+    if (moduleName.empty() || std::find(directImports.begin(), directImports.end(), moduleName) == directImports.end()) {
+      return {};
+    }
+
+    std::string moduleUri;
+    std::string moduleText;
+    if (!findModuleDocumentByName(moduleName, uri, moduleUri, moduleText)) {
+      return {};
+    }
+
+    auto moduleSymbols = collectSymbolsForUri(moduleUri, moduleText);
+    for (const auto &symbol : moduleSymbols) {
+      if (symbol.name != memberExpr->rightExpr->id->val || symbol.isMember) {
+        continue;
+      }
+      if (auto typeText = functionReturnTypeTextFromSignature(symbol.signature); !typeText.empty()) {
+        return typeText;
+      }
+    }
+    return {};
+  };
+
+  auto inferBuiltinReceiverTypeFromSemanticCache = [&]() -> std::optional<std::string> {
+    if (!memberContext || memberReceiver.empty() || !parsedDocument) {
+      return std::nullopt;
+    }
+
+    ASTType *bestType = nullptr;
+    std::string bestTypeText;
+    unsigned bestLine = 0;
+    unsigned bestCol = 0;
+    bool found = false;
+
+    for (auto *stmt : parsedDocument->statements) {
+      if (!stmt || stmt->type != VAR_DECL) {
+        continue;
+      }
+      auto *varDecl = static_cast<ASTVarDecl *>(static_cast<ASTDecl *>(stmt));
+      for (const auto &spec : varDecl->specs) {
+        if (!spec.id || spec.id->val != memberReceiver || spec.id->codeRegion.startLine == 0) {
+          continue;
+        }
+        unsigned specLine = spec.id->codeRegion.startLine - 1;
+        unsigned specCol = spec.id->codeRegion.startCol;
+        if (specLine > line || (specLine == line && specCol > character)) {
+          continue;
+        }
+        if (found && (specLine < bestLine || (specLine == bestLine && specCol < bestCol))) {
+          continue;
+        }
+        found = true;
+        bestLine = specLine;
+        bestCol = specCol;
+        bestType = spec.type;
+        bestTypeText.clear();
+        if (!bestType && spec.expr) {
+          bestTypeText = importedModuleMemberTypeText(spec.expr);
+        }
+      }
+    }
+
+    if (!found) {
+      return std::nullopt;
+    }
+    if (bestType) {
+      return builtinBaseTypeFromTypeText(hoverTypeToString(bestType));
+    }
+    return builtinBaseTypeFromTypeText(bestTypeText);
+  };
+
+  if (memberContext && !inferredMemberType.has_value() && !builtinsIndex.membersByType.empty() && !memberReceiver.empty()) {
+    inferredMemberType = inferBuiltinReceiverTypeFromSemanticCache();
+  }
+
+  if (memberContext && !inferredMemberType.has_value() && !builtinsIndex.membersByType.empty() && !memberReceiver.empty()) {
+    size_t memberStart = cursorOffset >= memberPrefix.size() ? cursorOffset - memberPrefix.size() : 0;
+    if (memberStart > memberReceiver.size()) {
+      size_t receiverStart = memberStart - memberReceiver.size() - 1;
+      if (receiverStart + memberReceiver.size() <= text.size()) {
+        unsigned receiverLine = 0;
+        unsigned receiverChar = 0;
+        positionFromOffset(text, receiverStart, receiverLine, receiverChar);
+        std::string receiverUri;
+        SymbolEntry receiverSymbol;
+        if (resolveHoverSymbol(uri,
+                               text,
+                               receiverLine,
+                               receiverChar,
+                               memberReceiver,
+                               receiverStart,
+                               receiverUri,
+                               receiverSymbol)) {
+          auto declaredBase = completionDeclaredBaseTypeFromSignature(receiverSymbol.signature);
+          if (!declaredBase.empty()) {
+            inferredMemberType = declaredBase;
+          }
+        }
+      }
+    }
+  }
 
   std::vector<CompletionEntry> entries;
   std::set<std::string> seen;
@@ -4056,8 +5044,13 @@ void Server::handleDefinition(rapidjson::Document &request) {
   rapidjson::Document payloadDoc(rapidjson::kObjectType);
   auto &alloc = payloadDoc.GetAllocator();
   rapidjson::Value locations(rapidjson::kArrayType);
+  std::set<std::string> seenLocations;
 
   auto appendLocation = [&](const std::string &defUri, const SymbolEntry &symbol) {
+    auto key = defUri + ":" + std::to_string(symbol.line) + ":" + std::to_string(symbol.start);
+    if (!seenLocations.insert(key).second) {
+      return;
+    }
     rapidjson::Value location(rapidjson::kObjectType);
     location.AddMember("uri", rapidjson::Value(defUri.c_str(), alloc), alloc);
 
@@ -4127,11 +5120,243 @@ void Server::handleDefinition(rapidjson::Document &request) {
 }
 
 void Server::handleDeclaration(rapidjson::Document &request) {
-  handleDefinition(request);
+  if (!request.HasMember("id")) {
+    return;
+  }
+  if (!request.HasMember("params") || !request["params"].IsObject()) {
+    writeError(request["id"], JSONRPC_INVALID_PARAMS, "Missing declaration params");
+    return;
+  }
+
+  auto &params = request["params"];
+  if (!params.HasMember("textDocument") || !params["textDocument"].IsObject() ||
+      !params["textDocument"].HasMember("uri") || !params["textDocument"]["uri"].IsString() ||
+      !params.HasMember("position") || !params["position"].IsObject() || !params["position"].HasMember("line") ||
+      !params["position"].HasMember("character") || !params["position"]["line"].IsUint() ||
+      !params["position"]["character"].IsUint()) {
+    writeError(request["id"], JSONRPC_INVALID_PARAMS, "Invalid declaration params");
+    return;
+  }
+
+  auto uri = std::string(params["textDocument"]["uri"].GetString());
+  std::string text;
+  if (!getDocumentTextByUri(uri, text)) {
+    rapidjson::Value locations(rapidjson::kArrayType);
+    writeResult(request["id"], locations);
+    return;
+  }
+
+  std::string word;
+  size_t start = 0;
+  size_t end = 0;
+  if (!wordRangeAtPosition(text, params["position"]["line"].GetUint(), params["position"]["character"].GetUint(), word,
+                           start, end)) {
+    rapidjson::Value locations(rapidjson::kArrayType);
+    writeResult(request["id"], locations);
+    return;
+  }
+
+  BuiltinApiIndex builtinsIndex;
+  if (const auto *cachedBuiltins = getBuiltinsApiIndex()) {
+    builtinsIndex = *cachedBuiltins;
+  }
+
+  rapidjson::Document payloadDoc(rapidjson::kObjectType);
+  auto &alloc = payloadDoc.GetAllocator();
+  rapidjson::Value locations(rapidjson::kArrayType);
+
+  auto appendLocation = [&](const std::string &defUri, const SymbolEntry &symbol) {
+    rapidjson::Value location(rapidjson::kObjectType);
+    location.AddMember("uri", rapidjson::Value(defUri.c_str(), alloc), alloc);
+
+    rapidjson::Value range(rapidjson::kObjectType);
+    rapidjson::Value rangeStart(rapidjson::kObjectType);
+    rapidjson::Value rangeEnd(rapidjson::kObjectType);
+    rangeStart.AddMember("line", symbol.line, alloc);
+    rangeStart.AddMember("character", symbol.start, alloc);
+    rangeEnd.AddMember("line", symbol.line, alloc);
+    rangeEnd.AddMember("character", symbol.start + symbol.length, alloc);
+    range.AddMember("start", rangeStart, alloc);
+    range.AddMember("end", rangeEnd, alloc);
+    location.AddMember("range", range, alloc);
+    locations.PushBack(location, alloc);
+  };
+
+  SymbolEntry resolvedSymbol;
+  std::string resolvedUri;
+  if (resolveSemanticSymbolTarget(uri,
+                                  text,
+                                  params["position"]["line"].GetUint(),
+                                  params["position"]["character"].GetUint(),
+                                  word,
+                                  start,
+                                  builtinsIndex,
+                                  resolvedUri,
+                                  resolvedSymbol)) {
+    appendLocation(resolvedUri, resolvedSymbol);
+    writeResult(request["id"], locations);
+    return;
+  }
+
+  for (const auto &doc : documents) {
+    auto symbols = collectSymbolsForUri(doc.first, doc.second.text);
+    for (const auto &symbol : symbols) {
+      if (symbol.name != word) {
+        continue;
+      }
+      appendLocation(doc.first, symbol);
+    }
+  }
+
+  writeResult(request["id"], locations);
 }
 
 void Server::handleTypeDefinition(rapidjson::Document &request) {
-  handleDefinition(request);
+  if (!request.HasMember("id")) {
+    return;
+  }
+  if (!request.HasMember("params") || !request["params"].IsObject()) {
+    writeError(request["id"], JSONRPC_INVALID_PARAMS, "Missing type definition params");
+    return;
+  }
+
+  auto &params = request["params"];
+  if (!params.HasMember("textDocument") || !params["textDocument"].IsObject() ||
+      !params["textDocument"].HasMember("uri") || !params["textDocument"]["uri"].IsString() ||
+      !params.HasMember("position") || !params["position"].IsObject() || !params["position"].HasMember("line") ||
+      !params["position"].HasMember("character") || !params["position"]["line"].IsUint() ||
+      !params["position"]["character"].IsUint()) {
+    writeError(request["id"], JSONRPC_INVALID_PARAMS, "Invalid type definition params");
+    return;
+  }
+
+  auto uri = std::string(params["textDocument"]["uri"].GetString());
+  std::string text;
+  if (!getDocumentTextByUri(uri, text)) {
+    rapidjson::Value locations(rapidjson::kArrayType);
+    writeResult(request["id"], locations);
+    return;
+  }
+
+  std::string word;
+  size_t start = 0;
+  size_t end = 0;
+  if (!wordRangeAtPosition(text, params["position"]["line"].GetUint(), params["position"]["character"].GetUint(), word,
+                           start, end)) {
+    rapidjson::Value locations(rapidjson::kArrayType);
+    writeResult(request["id"], locations);
+    return;
+  }
+
+  BuiltinApiIndex builtinsIndex;
+  if (const auto *cachedBuiltins = getBuiltinsApiIndex()) {
+    builtinsIndex = *cachedBuiltins;
+  }
+
+  rapidjson::Document payloadDoc(rapidjson::kObjectType);
+  auto &alloc = payloadDoc.GetAllocator();
+  rapidjson::Value locations(rapidjson::kArrayType);
+
+  auto appendLocation = [&](const std::string &defUri, const SymbolEntry &symbol) {
+    rapidjson::Value location(rapidjson::kObjectType);
+    location.AddMember("uri", rapidjson::Value(defUri.c_str(), alloc), alloc);
+
+    rapidjson::Value range(rapidjson::kObjectType);
+    rapidjson::Value rangeStart(rapidjson::kObjectType);
+    rapidjson::Value rangeEnd(rapidjson::kObjectType);
+    rangeStart.AddMember("line", symbol.line, alloc);
+    rangeStart.AddMember("character", symbol.start, alloc);
+    rangeEnd.AddMember("line", symbol.line, alloc);
+    rangeEnd.AddMember("character", symbol.start + symbol.length, alloc);
+    range.AddMember("start", rangeStart, alloc);
+    range.AddMember("end", rangeEnd, alloc);
+    location.AddMember("range", range, alloc);
+    locations.PushBack(location, alloc);
+  };
+
+  SymbolEntry resolvedSymbol;
+  std::string resolvedUri;
+  if (!resolveSemanticSymbolTarget(uri,
+                                   text,
+                                   params["position"]["line"].GetUint(),
+                                   params["position"]["character"].GetUint(),
+                                   word,
+                                   start,
+                                   builtinsIndex,
+                                   resolvedUri,
+                                   resolvedSymbol)) {
+    writeResult(request["id"], locations);
+    return;
+  }
+
+  std::unordered_set<std::string> visitedTypeTexts;
+  std::unordered_set<std::string> visitedAliasSymbols;
+  std::function<void(const std::string &, const std::string &, const std::string &, unsigned)> collectTypeTargets =
+      [&](const std::string &anchorForType, const std::string &rawTypeText, const std::string &containerHint, unsigned depth) {
+        if (depth > 12) {
+          return;
+        }
+
+        auto trimmedTypeText = trimCopy(rawTypeText);
+        if (trimmedTypeText.empty()) {
+          return;
+        }
+
+        auto visitKey = anchorForType + "::" + containerHint + "::" + trimmedTypeText;
+        if (!visitedTypeTexts.insert(visitKey).second) {
+          return;
+        }
+
+        std::vector<std::string> functionParamTypes;
+        std::string functionReturnType;
+        if (extractFunctionTypeParts(trimmedTypeText, functionParamTypes, functionReturnType)) {
+          for (const auto &paramType : functionParamTypes) {
+            collectTypeTargets(anchorForType, paramType, containerHint, depth + 1);
+          }
+          collectTypeTargets(anchorForType, functionReturnType, containerHint, depth + 1);
+          return;
+        }
+
+        SymbolEntry typeTargetSymbol;
+        std::string typeTargetUri;
+        if (!resolveSemanticTypeTarget(anchorForType,
+                                       trimmedTypeText,
+                                       builtinsIndex,
+                                       containerHint,
+                                       typeTargetUri,
+                                       typeTargetSymbol)) {
+          return;
+        }
+
+        appendLocation(typeTargetUri, typeTargetSymbol);
+        if (typeTargetSymbol.detail != "type alias") {
+          return;
+        }
+
+        auto aliasKey = typeTargetUri + ":" + std::to_string(typeTargetSymbol.line) + ":" + std::to_string(typeTargetSymbol.start);
+        if (!visitedAliasSymbols.insert(aliasKey).second) {
+          return;
+        }
+
+        auto aliasTarget = aliasTargetTypeText(typeTargetSymbol);
+        if (!aliasTarget.empty()) {
+          collectTypeTargets(typeTargetUri, aliasTarget, typeTargetSymbol.containerName, depth + 1);
+        }
+      };
+
+  if (resolvedSymbol.detail == "type alias") {
+    auto aliasTarget = aliasTargetTypeText(resolvedSymbol);
+    if (!aliasTarget.empty()) {
+      collectTypeTargets(resolvedUri.empty() ? uri : resolvedUri, aliasTarget, resolvedSymbol.containerName, 0);
+    }
+  } else {
+    auto typeTargetName = typeTargetNameFromSymbol(resolvedSymbol);
+    if (!typeTargetName.empty()) {
+      collectTypeTargets(resolvedUri.empty() ? uri : resolvedUri, typeTargetName, resolvedSymbol.containerName, 0);
+    }
+  }
+
+  writeResult(request["id"], locations);
 }
 
 void Server::handleImplementation(rapidjson::Document &request) {
@@ -4636,11 +5861,33 @@ void Server::handlePrepareRename(rapidjson::Document &request) {
     return;
   }
 
+  BuiltinApiIndex builtinsIndex;
+  if (const auto *cachedBuiltins = getBuiltinsApiIndex()) {
+    builtinsIndex = *cachedBuiltins;
+  }
+
   std::string word;
   size_t startOffset = 0;
   size_t endOffset = 0;
-  if (!wordRangeAtPosition(text, params["position"]["line"].GetUint(), params["position"]["character"].GetUint(), word,
-                           startOffset, endOffset)) {
+  std::string resolvedUri;
+  SymbolEntry resolvedSymbol;
+  if (!resolveSemanticSymbolAtPosition(uri,
+                                       text,
+                                       params["position"]["line"].GetUint(),
+                                       params["position"]["character"].GetUint(),
+                                       builtinsIndex,
+                                       resolvedUri,
+                                       resolvedSymbol,
+                                       &startOffset,
+                                       &endOffset,
+                                       &word)) {
+    rapidjson::Value nullResult;
+    nullResult.SetNull();
+    writeResult(request["id"], nullResult);
+    return;
+  }
+
+  if (!symbolIsRenameOwned(resolvedUri, resolvedSymbol, builtinsIndex)) {
     rapidjson::Value nullResult;
     nullResult.SetNull();
     writeResult(request["id"], nullResult);
@@ -4708,11 +5955,33 @@ void Server::handleRename(rapidjson::Document &request) {
     return;
   }
 
+  BuiltinApiIndex builtinsIndex;
+  if (const auto *cachedBuiltins = getBuiltinsApiIndex()) {
+    builtinsIndex = *cachedBuiltins;
+  }
+
   std::string oldName;
   size_t startOffset = 0;
   size_t endOffset = 0;
-  if (!wordRangeAtPosition(text, params["position"]["line"].GetUint(), params["position"]["character"].GetUint(), oldName,
-                           startOffset, endOffset)) {
+  std::string targetUri;
+  SymbolEntry targetSymbol;
+  if (!resolveSemanticSymbolAtPosition(uri,
+                                       text,
+                                       params["position"]["line"].GetUint(),
+                                       params["position"]["character"].GetUint(),
+                                       builtinsIndex,
+                                       targetUri,
+                                       targetSymbol,
+                                       &startOffset,
+                                       &endOffset,
+                                       &oldName)) {
+    rapidjson::Value nullResult;
+    nullResult.SetNull();
+    writeResult(request["id"], nullResult);
+    return;
+  }
+
+  if (!symbolIsRenameOwned(targetUri, targetSymbol, builtinsIndex)) {
     rapidjson::Value nullResult;
     nullResult.SetNull();
     writeResult(request["id"], nullResult);
@@ -4740,6 +6009,22 @@ void Server::handleRename(rapidjson::Document &request) {
       positionFromOffset(doc.second.text, occurrence, sLine, sChar);
       positionFromOffset(doc.second.text, occurrence + oldName.size(), eLine, eChar);
 
+      std::string occurrenceResolvedUri;
+      SymbolEntry occurrenceResolvedSymbol;
+      if (!resolveSemanticSymbolAtPosition(doc.first,
+                                           doc.second.text,
+                                           sLine,
+                                           sChar,
+                                           builtinsIndex,
+                                           occurrenceResolvedUri,
+                                           occurrenceResolvedSymbol)) {
+        continue;
+      }
+
+      if (!symbolIdentityMatches(occurrenceResolvedUri, occurrenceResolvedSymbol, targetUri, targetSymbol)) {
+        continue;
+      }
+
       rapidjson::Value edit(rapidjson::kObjectType);
       rapidjson::Value range(rapidjson::kObjectType);
       rapidjson::Value rs(rapidjson::kObjectType);
@@ -4755,7 +6040,9 @@ void Server::handleRename(rapidjson::Document &request) {
       edits.PushBack(edit, alloc);
     }
 
-    changes.AddMember(rapidjson::Value(doc.first.c_str(), alloc), edits, alloc);
+    if (!edits.Empty()) {
+      changes.AddMember(rapidjson::Value(doc.first.c_str(), alloc), edits, alloc);
+    }
   }
 
   rapidjson::Value result(rapidjson::kObjectType);

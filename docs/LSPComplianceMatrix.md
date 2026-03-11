@@ -24,13 +24,13 @@ Status labels:
 | `completionProvider` + resolve | Implemented | Trigger chars: `.` and `:`. Scoped completion uses cached semantic parse for locals, modules, scopes, and members. |
 | `hoverProvider` | Implemented | Symbol/builtin/doc rendering. |
 | `definitionProvider` | Implemented | Scoped/local/class/scope/import/builtin resolution. |
-| `declarationProvider` | Partial | Aliases definition logic. |
-| `typeDefinitionProvider` | Partial | Aliases definition logic. |
+| `declarationProvider` | Implemented | Scoped semantic declaration target resolution. In Starbytes this usually matches definition because there are no separate forward declarations. |
+| `typeDefinitionProvider` | Partial | Distinct semantic type-target resolution for variables, fields, parameters, functions, methods, and builtin members; function-type and deeper alias edge cases remain. |
 | `implementationProvider` | Partial | Semantic implementation lookup for class/interface inheritance and method implementations; falls back to definition for unsupported symbol kinds. |
 | `referencesProvider` | Partial | Scoped semantic identity across loaded documents; still occurrence-scan based and not project-index driven. |
 | `documentSymbolProvider` | Partial | Flat list, no symbol tree hierarchy. |
 | `workspaceSymbolProvider` | Partial | Loaded-document scan, not full project index. |
-| `renameProvider` (`prepareProvider=true`) | Partial | Lexical rename, no deep semantic safety. |
+| `renameProvider` (`prepareProvider=true`) | Implemented | Semantic rename uses exact symbol identity with ownership checks before editing. |
 | `signatureHelpProvider` | Implemented | Trigger/retrigger `(` and `,`. |
 | `documentHighlightProvider` | Implemented | Identifier occurrence highlighting. |
 | `documentFormattingProvider` | Implemented | Uses shared `FormatterEngine`. |
@@ -71,13 +71,13 @@ Status labels:
 | `completionItem/resolve` | Implemented | Uses exact symbol identity when present in completion item data; label-based fallback remains. |
 | `textDocument/hover` | Implemented | Signature/docs/inheritance/type-oriented hover text. |
 | `textDocument/definition` | Implemented | Scoped symbol + builtin resolution path. |
-| `textDocument/declaration` | Partial | Definition alias. |
-| `textDocument/typeDefinition` | Partial | Definition alias. |
+| `textDocument/declaration` | Implemented | Scoped semantic declaration target resolution. |
+| `textDocument/typeDefinition` | Partial | Distinct semantic type-target lookup from resolved symbol type information. |
 | `textDocument/implementation` | Partial | Scoped resolver plus inheritance/method implementation search for loaded documents. |
 | `textDocument/references` | Partial | Scoped resolver + semantic declaration-identity filtering across loaded documents. |
 | `textDocument/documentSymbol` | Partial | Flat symbols only. |
 | `workspace/symbol` | Partial | No global persisted index walk. |
-| `textDocument/prepareRename`, `textDocument/rename` | Partial | Lexical rename; no semantic symbol ownership checks. |
+| `textDocument/prepareRename`, `textDocument/rename` | Implemented | Semantic target resolution, exact declaration identity matching, and rename ownership checks. |
 | `textDocument/signatureHelp` | Implemented | Function signature extraction/lookup. |
 | `textDocument/documentHighlight` | Implemented | Occurrence highlighting. |
 | `textDocument/formatting` | Implemented | Linguistics formatter-backed edits. |
@@ -111,12 +111,11 @@ Status labels:
 
 ### High-impact remaining gaps
 
-1. Split `declaration` and `typeDefinition` into distinct semantic resolvers instead of definition aliases.
-2. Upgrade `rename` to semantic symbol identity and ownership checks, matching the newer scoped references path.
-3. Upgrade `documentSymbol` to hierarchical `DocumentSymbol` trees where applicable.
-4. Add `diagnosticProvider` capability negotiation semantics and incremental `resultId` lifecycle quality.
-5. Add richer `workspace/executeCommand` command registration + execution.
-6. Broaden `implementation` beyond current class/interface/method inheritance cases.
+1. Upgrade `documentSymbol` to hierarchical `DocumentSymbol` trees where applicable.
+2. Add `diagnosticProvider` capability negotiation semantics and incremental `resultId` lifecycle quality.
+3. Add richer `workspace/executeCommand` command registration + execution.
+4. Broaden `implementation` beyond current class/interface/method inheritance cases.
+5. Finish `typeDefinition` edge cases for more qualified type containers beyond current alias/function coverage.
 
 ### Medium-impact gaps
 
@@ -138,6 +137,6 @@ Status labels:
 
 Starbytes LSP can be treated as release-ready for common editor workflows when:
 1. All currently advertised capabilities keep non-stub behavior.
-2. Semantic correctness is completed for rename/declaration/typeDefinition and the remaining implementation edge cases.
+2. Semantic correctness is completed for the remaining `typeDefinition` edge cases and the remaining implementation edge cases.
 3. Diagnostic pull semantics (`resultId` behavior + capability negotiation) are standardized.
 4. Optional advanced features remain unadvertised until implemented.

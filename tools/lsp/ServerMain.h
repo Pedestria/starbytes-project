@@ -186,6 +186,38 @@ class Server {
                           size_t wordStart,
                           std::string &resolvedUriOut,
                           SymbolEntry &symbolOut);
+  bool resolveSemanticSymbolTarget(const std::string &uri,
+                                   const std::string &text,
+                                   unsigned line,
+                                   unsigned character,
+                                   const std::string &word,
+                                   size_t wordStart,
+                                   const BuiltinApiIndex &builtinsIndex,
+                                   std::string &resolvedUriOut,
+                                   SymbolEntry &symbolOut);
+  bool resolveSemanticTypeTarget(const std::string &anchorUri,
+                                 const std::string &typeName,
+                                 const BuiltinApiIndex &builtinsIndex,
+                                 const std::string &containerHint,
+                                 std::string &resolvedUriOut,
+                                 SymbolEntry &symbolOut);
+  bool resolveSemanticSymbolAtPosition(const std::string &uri,
+                                       const std::string &text,
+                                       unsigned line,
+                                       unsigned character,
+                                       const BuiltinApiIndex &builtinsIndex,
+                                       std::string &resolvedUriOut,
+                                       SymbolEntry &symbolOut,
+                                       size_t *wordStartOut = nullptr,
+                                       size_t *wordEndOut = nullptr,
+                                       std::string *wordOut = nullptr);
+  bool symbolIdentityMatches(const std::string &leftUri,
+                             const SymbolEntry &left,
+                             const std::string &rightUri,
+                             const SymbolEntry &right) const;
+  bool symbolIsRenameOwned(const std::string &resolvedUri,
+                           const SymbolEntry &resolvedSymbol,
+                           const BuiltinApiIndex &builtinsIndex);
 
   void handleInitialize(rapidjson::Document &request);
   void handleInitialized(rapidjson::Document &request);

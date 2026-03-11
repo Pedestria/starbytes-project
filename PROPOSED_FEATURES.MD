@@ -21,6 +21,7 @@
 Add a structured error channel to native module callbacks.
 Scope module imports under module name (So constants and funcs are under a scope.)
 Fix LSP scoped symbol resolution (Hovers should properly resolve symbols in function scopes, classes, etc.)
+LSP variable type resolution from module-scoped symbols.
 ## UNFINISHED
 
 Expand/fix generics: 
@@ -28,8 +29,7 @@ Expand/fix generics:
     Constraints / where clauses / trait bounds
     Variance annotations 
 
-
-LSP variable type resolution from module-scoped symbols.
+LSP type resolution from the wrapped variable in secure decls.
 
 Implement Qualified type refs
 

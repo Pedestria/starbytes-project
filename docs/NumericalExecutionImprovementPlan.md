@@ -4,9 +4,9 @@
 
 This plan targets the numerical bottlenecks exposed by Track A and separates three different problems that are currently mixed together:
 
-1. Benchmark parity: several Starbytes Track A programs are not algorithmically equivalent to the Python versions.
-2. Numeric correctness and representation: the runtime exposes `Float` and `Double` at the language level, but the runtime only stores `Int` and `Float`.
-3. Hot-loop execution cost: numeric loops currently pay object boxing, refcount traffic, string-keyed local lookup, and generic array access on nearly every step.
+1. Benchmark parity: Track A must stay algorithmically comparable to Python or benchmark results become misleading.
+2. Numeric correctness and representation: the runtime now has real `Int`, `Long`, `Float`, and `Double`, but those paths still need broader workload validation.
+3. Hot-loop execution cost: the interpreter now has slot locals, typed numeric arrays, and specialized numeric bytecode, but it still lacks quickening/superinstructions and broader kernel cleanup.
 
 The correct order is: fix parity, harden numeric representation, then optimize the execution path.
 
@@ -14,22 +14,28 @@ The correct order is: fix parity, harden numeric representation, then optimize t
 
 ### Track A steady-state results
 
-Source: `benchmark/results/summaries/track_a_steady-state_20260307T020520Z.report.md`
+Current source: `benchmark/results/summaries/track_a_steady-state_20260309T014224Z.report.md`
 
 | workload | starbytes mean | python mean | relative to python |
 |---|---:|---:|---:|
-| binary-trees | 0.131803s | 0.408243s | 0.3229x |
-| fasta | 0.176724s | 0.041856s | 4.2222x slower |
-| k-nucleotide | 0.017569s | 0.040373s | 0.4352x |
-| n-body | 0.440276s | 0.047931s | 9.1855x slower |
-| regex-redux | 0.019853s | 0.045843s | 0.4331x |
-| spectral-norm | 4.049372s | 0.097557s | 41.5078x slower |
+| binary-trees | 39.413791s | 0.415777s | 94.7955x slower |
+| fasta | 0.169502s | 0.043959s | 3.8559x slower |
+| k-nucleotide | 0.127210s | 0.040147s | 3.1686x slower |
+| n-body | 1.025890s | 0.047656s | 21.5269x slower |
+| regex-redux | 0.022985s | 0.049549s | 0.4639x |
+| spectral-norm | 6.430667s | 0.105794s | 60.7849x slower |
 
 The numerical hotspots are clear:
 
 - `spectral-norm`
 - `n-body`
 - `fasta`
+
+Important note:
+
+- the older March 7, 2026 report used pre-parity Starbytes kernels for several workloads
+- after Phase 0, `binary-trees`, `spectral-norm`, and `n-body` are materially heavier and closer to the Python algorithms
+- so the March 7 and March 9 reports are not apples-to-apples speedup numbers; the March 9 report is the correct current baseline
 
 ### Runtime share of the slow cases
 
@@ -45,38 +51,45 @@ This means compiler-front-end work is not the main problem for these benchmarks.
 
 ## Current Findings
 
-### 1. Track A parity is not clean yet
+### 1. Track A parity gate is implemented, but parity-correct kernels changed the benchmark baseline
 
-The current Starbytes and Python programs are not equivalent in several cases.
+Phase 0 is complete:
+
+- `binary-trees` now builds and checks real trees
+- `spectral-norm` now follows the Python power-method shape and final square-root output
+- `n-body` now uses the Python constants, momentum offset, and inverse-distance-cubed update
+- Track A parity checking exists in `benchmark/runners/check_track_a_parity.py`
 
 #### binary-trees
 
 - Python builds real trees and recursively checks them in `benchmark/languages/python/track_a/binary_trees.py`.
-- Starbytes does arithmetic directly without allocating or walking trees in `benchmark/languages/starbytes/track_a/binary_trees.starb`.
+- Starbytes now builds real trees and recursively checks them in `benchmark/languages/starbytes/track_a/binary_trees.starb`.
 
 Conclusion:
 
-- Starbytes being faster here does not say much about runtime numerics.
+- the old benchmark result is obsolete
+- the current result is now a valid runtime signal, and it shows the object-heavy tree path is still very expensive
 
 #### spectral-norm
 
 - Python performs the standard power-method structure with `multiply_av`, `multiply_atv`, and a final `math.sqrt(v_bv / vv)` in `benchmark/languages/python/track_a/spectral_norm.py`.
-- Starbytes performs only one `A^T A` style pass per outer iteration and prints `vBv / vv` without the final square root in `benchmark/languages/starbytes/track_a/spectral_norm.starb`.
+- Starbytes now follows the same broad power-method structure and final square root in `benchmark/languages/starbytes/track_a/spectral_norm.starb`.
 
 Conclusion:
 
-- The Starbytes program does less work and computes a different final value, yet is still dramatically slower.
-- That is a strong signal that the numeric execution path is currently expensive.
+- parity is no longer the reason this benchmark is slow
+- the remaining loss is now a real runtime execution problem
 
 #### n-body
 
 - Python uses the canonical inverse-distance-cubed update with `dist = math.sqrt(dist2)` and `mag = dt / (dist2 * dist)` in `benchmark/languages/python/track_a/n_body.py`.
 - Python also offsets total momentum before advancing.
-- Starbytes uses `dist2 + 0.000001`, skips the square root, and uses `mag = dt / (dist2 * dist2)` in `benchmark/languages/starbytes/track_a/n_body.starb`.
+- Starbytes now uses the same momentum offset and inverse-distance-cubed calculation structure in `benchmark/languages/starbytes/track_a/n_body.starb`.
 
 Conclusion:
 
-- The Starbytes version is not the same algorithm, and it still loses badly.
+- parity is no longer the primary issue
+- the remaining loss is mostly numeric execution and loop cost
 
 #### fasta
 
@@ -87,41 +100,45 @@ Conclusion:
 
 - This benchmark currently mixes numeric cost with avoidable string allocation and comparison cost.
 
-### 2. Numeric representation is not ready for serious numerical work
+### 2. Numeric representation is substantially improved
 
 Current runtime facts:
 
-- `StarbytesNumT` only has `NumTypeFloat` and `NumTypeInt` in `include/starbytes/interop.h`.
-- `StarbytesNumGetFloatValue` returns C `float`, not `double`, in `include/starbytes/interop.h`.
-- `StarbytesNumNew`, `StarbytesNumCompare`, `StarbytesNumAdd`, and `StarbytesNumSub` store and compare through `float` in `src/runtime/RTObject.c`.
-- Runtime type checks currently treat `Double` as `NumTypeFloat` in `src/runtime/RTEngine.cpp`.
-- Runtime casts rewrite `Double` to `Float` in `src/runtime/RTEngine.cpp`.
+- `StarbytesNumT` now carries real `Int`, `Long`, `Float`, and `Double` runtime kinds in `include/starbytes/interop.h`.
+- `StarbytesNumGetDoubleValue` exists with distinct semantics from `StarbytesNumGetFloatValue`.
+- numeric promotion and comparison in `src/runtime/RTObject.c` now preserve `Double` as a first-class runtime kind.
+- runtime casts and type checks in `src/runtime/RTEngine.cpp` treat `Double` as a real type instead of rewriting it to `Float`.
+- standard scientific notation is supported in the lexer for `e` and `E` forms such as `9.732e6` and `9.732e-6`.
+- builtin numeric intrinsics `sqrt`, `abs`, `min`, and `max` are implemented in the runtime and exposed through the `Math` stdlib surface as well.
 
 Implications:
 
-- `Double` is not a real runtime type today.
-- Numerical benchmarks are running on a precision model that is weaker than the surface language suggests.
-- Before optimization, Starbytes should define whether the numerical fast path is `Float`, `Double`, or both.
+- `Double` is now a trustworthy runtime type.
+- the remaining work is no longer correctness-first; it is throughput-first.
+- the next numeric wins come from execution-path improvements, not from fixing the type model.
 
-### 3. Hot loops are paying generic object costs
+### 3. Hot loops are materially better, but not done
 
 Current runtime facts:
 
-- Binary arithmetic goes through boxed objects, type checks, conversion to generic numeric values, and boxed result construction in `src/runtime/RTEngine.cpp`.
-- Array indexing does runtime object checks and increments element references on every read in `src/runtime/RTEngine.cpp`.
-- `StarbytesArrayPush` reallocates on every push and stores boxed objects in `src/runtime/RTObject.c`.
-- Variables are stored in `string_map<string_map<StarbytesObject>>` and looked up by scope name plus variable name in `src/runtime/RTEngine.cpp`.
-- `referenceVariable` linearly scans the scope map entries and `memcmp`s names in `src/runtime/RTEngine.cpp`.
+- function frames now use slot-based locals in `src/compiler/CodeGen.cpp` and `src/runtime/RTEngine.cpp`.
+- runtime frames carry typed numeric slot metadata and can keep numeric local values unboxed.
+- arrays now support typed contiguous numeric storage with capacity growth in `src/runtime/RTObject.c`.
+- numeric arrays lazily fall back to boxed storage only when mixed non-numeric values enter.
+- compile-time specialization now emits typed numeric bytecode for:
+  - local numeric refs
+  - arithmetic
+  - comparisons
+  - typed array get/set
+  - `sqrt`
 
 Implications:
 
-- `spectral-norm` and `n-body` are currently paying for:
-  - boxed numeric values
-  - refcount churn
-  - generic array/object dispatch
-  - string-keyed local lookup inside inner loops
-
-That is the wrong execution model for numerical kernels.
+- the runtime is no longer purely boxed-and-generic for numeric kernels
+- the remaining bottlenecks are now:
+  - missing superinstructions and quickening
+  - remaining generic fallbacks in mixed or less-provable code
+  - workload-specific kernel cleanup, especially for `fasta` and the heavy numeric loops
 
 ## Lessons From CPython
 
@@ -186,7 +203,7 @@ The longer-term goal is adaptive specialization for dynamic hot paths, but Starb
 
 ## Implementation Plan
 
-## Phase 0: Benchmark Parity Gate
+## Phase 0: Benchmark Parity Gate [Implemented]
 
 Do this before claiming any speedup against Python.
 
@@ -210,7 +227,13 @@ Do this before claiming any speedup against Python.
 
 Without parity, optimization work will be guided by mixed signals and can easily optimize the wrong thing.
 
-## Phase 1: Numeric Representation and Correctness
+### Status
+
+- implemented
+- parity checker added
+- Track A baseline intentionally changed after the parity-correct kernels landed
+
+## Phase 1: Numeric Representation and Correctness [Implemented]
 
 This is the first real runtime/compiler phase.
 
@@ -237,7 +260,12 @@ This is the first real runtime/compiler phase.
 
 `spectral-norm` and `n-body` both need correct and fast floating-point math. Right now Starbytes does not have a trustworthy high-performance `Double` path.
 
-## Phase 2: Slot-Based Locals
+### Status
+
+- implemented
+- note: only standard scientific notation remains supported; the temporary `e^` form was removed
+
+## Phase 2: Slot-Based Locals [Implemented]
 
 This is the most important interpreter optimization after numeric representation.
 
@@ -267,9 +295,15 @@ This should materially improve:
 
 even before typed arrays or adaptive specialization arrive.
 
-## Phase 3: Typed Numeric Arrays
+### Status
 
-Starbytes currently stores array elements as boxed `StarbytesObject` values and grows arrays with `realloc` on every push.
+- implemented
+- runtime frames now allocate slot arrays and numeric slot metadata
+- debug names are preserved separately from execution slots
+
+## Phase 3: Typed Numeric Arrays [Implemented]
+
+This phase replaced the old boxed-only array path for numeric-heavy arrays with typed contiguous storage and capacity growth.
 
 ### Work
 
@@ -286,7 +320,12 @@ Starbytes currently stores array elements as boxed `StarbytesObject` values and 
 
 `spectral-norm` and `n-body` are array-heavy. Until numeric arrays stop moving boxed objects around, Starbytes will continue to lose to runtimes with contiguous numeric storage.
 
-## Phase 4: Specialized Numeric Bytecode
+### Status
+
+- implemented
+- typed contiguous storage exists for numeric arrays with capacity growth and boxed fallback
+
+## Phase 4: Specialized Numeric Bytecode [Implemented]
 
 Once locals and arrays have typed storage, the interpreter can execute typed math directly.
 
@@ -313,6 +352,12 @@ Once locals and arrays have typed storage, the interpreter can execute typed mat
 ### Why compile-time specialization first
 
 Starbytes already has strong static type information for the Track A kernels. It should use that before building a more complex adaptive runtime layer.
+
+### Status
+
+- implemented
+- current specialized execution covers typed locals, arithmetic, comparisons, typed array indexing, and `sqrt`
+- this is still a typed interpreter phase, not quickening or JIT compilation
 
 ## Phase 5: Superinstructions and Quickening
 
@@ -395,13 +440,19 @@ This phase applies algorithm-aware cleanup after the execution model is improved
 
 ## Recommended Delivery Order
 
+Completed:
+
 1. Phase 0: benchmark parity
 2. Phase 1: real `Double` and math intrinsics
 3. Phase 2: slot-based locals
 4. Phase 3: typed numeric arrays
 5. Phase 4: specialized numeric bytecode
+
+Next:
+
 6. Phase 6: workload-specific cleanup
 7. Phase 5: adaptive quickening and superinstructions
+8. Phase 7: benchmark and correctness guardrails refresh
 
 That order is intentional:
 
@@ -410,9 +461,9 @@ That order is intentional:
 - slot-based locals and typed arrays remove the biggest interpreter costs
 - specialized bytecode should be built on top of those foundations
 
-## Initial Milestone
+## Completed Milestone
 
-The smallest high-value vertical slice is:
+The initial high-value vertical slice is complete:
 
 1. Make `spectral-norm` algorithmically match Python.
 2. Add real `Double`.
@@ -421,13 +472,18 @@ The smallest high-value vertical slice is:
 5. Add `Double[]` specialized storage.
 6. Re-run `spectral-norm`.
 
-If that slice does not move `spectral-norm` substantially, Starbytes should pause before adding more specialization machinery and inspect where the remaining time is going.
+Current outcome:
+
+- the slice is implemented
+- `spectral-norm` remains dominated by runtime execution
+- that validates continuing with workload cleanup and adaptive specialization rather than reopening the numeric type model
 
 ## Sources
 
 ### Local benchmark data
 
 - `benchmark/results/summaries/track_a_steady-state_20260307T020520Z.report.md`
+- `benchmark/results/summaries/track_a_steady-state_20260309T014224Z.report.md`
 - `benchmark/languages/starbytes/track_a/spectral_norm.starb`
 - `benchmark/languages/starbytes/track_a/n_body.starb`
 - `benchmark/languages/starbytes/track_a/fasta.starb`
@@ -440,8 +496,21 @@ If that slice does not move `spectral-norm` substantially, Starbytes should paus
 ### Local runtime/compiler sources
 
 - `include/starbytes/interop.h`
+- `include/starbytes/compiler/RTCode.h`
 - `src/runtime/RTObject.c`
 - `src/runtime/RTEngine.cpp`
+- `src/compiler/CodeGen.cpp`
+
+### Local validation/tests
+
+- `tests/NumericPhase1LexerTest.cpp`
+- `tests/SlotLocalsPhase2Test.cpp`
+- `tests/NumericArraysPhase3Test.cpp`
+- `tests/SpecializedNumericBytecodePhase4Test.cpp`
+- `tests/extreme/numeric_phase1.starb`
+- `tests/extreme/slot_locals_phase2.starb`
+- `tests/extreme/numeric_arrays_phase3.starb`
+- `tests/extreme/specialized_numeric_bytecode_phase4.starb`
 
 ### External references
 
