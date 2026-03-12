@@ -1,3 +1,4 @@
+#include "starbytes/linguistics/Analysis.h"
 #include "starbytes/linguistics/CodeActionEngine.h"
 #include "starbytes/linguistics/Config.h"
 #include "starbytes/linguistics/LintEngine.h"
@@ -48,11 +49,15 @@ int main() {
         "}");
 
     auto config = starbytes::linguistics::LinguisticsConfig::defaults();
+    auto analysis = starbytes::linguistics::buildCompilerLintAnalysis(session);
+    if(!expect(analysis.view().readyForSemanticLint(), "phase 4 fixture should have compiler-backed lint analysis")) {
+        return fail("analysis-ready");
+    }
 
     starbytes::linguistics::SuggestionEngine suggestionEngine;
     starbytes::linguistics::SuggestionRequest suggestionRequest;
     suggestionRequest.includeLowConfidence = false;
-    auto suggestionResult = suggestionEngine.run(session, config, suggestionRequest);
+    auto suggestionResult = suggestionEngine.run(analysis.view(), config, suggestionRequest);
     if(!expect(!suggestionResult.suggestions.empty(), "expected non-empty suggestions")) {
         return fail("suggestions-empty");
     }
@@ -69,7 +74,7 @@ int main() {
     }
 
     starbytes::linguistics::LintEngine lintEngine;
-    auto lintResult = lintEngine.run(session, config);
+    auto lintResult = lintEngine.run(analysis.view(), config);
     if(!expect(!lintResult.findings.empty(), "expected lint findings for phase 4 action generation")) {
         return fail("lint-findings-empty");
     }

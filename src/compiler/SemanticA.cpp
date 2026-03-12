@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <set>
 #include <memory>
+#include <unordered_map>
 
 namespace starbytes {
 
@@ -44,6 +45,27 @@ namespace starbytes {
         return false;
     }
 
+    static std::optional<std::string> deprecatedMessageFromAttributes(const std::vector<ASTAttribute> &attrs){
+        for(const auto &attr : attrs){
+            if(attr.name != "deprecated"){
+                continue;
+            }
+            for(const auto &arg : attr.args){
+                if(arg.key.has_value() && arg.key.value() != "message"){
+                    continue;
+                }
+                if(arg.value && attributeArgIsString(arg)){
+                    auto *literal = static_cast<ASTLiteralExpr *>(arg.value);
+                    if(literal->strValue.has_value()){
+                        return literal->strValue.value();
+                    }
+                }
+            }
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
+
     static bool validateSystemAttribute(ASTDecl *decl,
                                         const ASTAttribute &attr,
                                         DiagnosticHandler &errStream){
@@ -63,9 +85,22 @@ namespace starbytes {
             return true;
         }
 
+        if(attr.name == "private"){
+            if(decl->type != VAR_DECL || decl->scope->type != ASTScope::Class){
+                pushAttrError("@private is only valid on class fields.");
+                return false;
+            }
+            if(!attr.args.empty()){
+                pushAttrError("@private does not accept arguments.");
+                return false;
+            }
+            return true;
+        }
+
         if(attr.name == "deprecated"){
-            if(!(decl->type == VAR_DECL || decl->type == FUNC_DECL || decl->type == CLASS_DECL)){
-                pushAttrError("@deprecated is only valid on class/function/field declarations.");
+            if(!(decl->type == VAR_DECL || decl->type == FUNC_DECL || decl->type == CLASS_DECL
+                 || decl->type == INTERFACE_DECL || decl->type == TYPE_ALIAS_DECL)){
+                pushAttrError("@deprecated is only valid on class/interface/typealias/function/field declarations.");
                 return false;
             }
             if(attr.args.empty()){
@@ -134,7 +169,7 @@ namespace starbytes {
 
     static bool validateAttributesForDecl(ASTDecl *decl, DiagnosticHandler &errStream){
         for(auto &attr : decl->attributes){
-            if(attr.name == "readonly" || attr.name == "deprecated" || attr.name == "native"){
+            if(attr.name == "readonly" || attr.name == "private" || attr.name == "deprecated" || attr.name == "native"){
                 if(!validateSystemAttribute(decl,attr,errStream)){
                     return false;
                 }
@@ -169,6 +204,816 @@ namespace starbytes {
         out + "__";
         out + symbolName.str();
         return out.str();
+    }
+
+    enum class SemanticFlowBindingKind : uint8_t {
+        Local,
+        Parameter,
+        Catch
+    };
+
+    struct SemanticFlowBinding {
+        std::string name;
+        ASTIdentifier *id = nullptr;
+        SemanticFlowBindingKind kind = SemanticFlowBindingKind::Local;
+        bool initialized = false;
+        bool allowsAbsentRead = false;
+    };
+
+    struct SemanticFlowState {
+        std::vector<std::vector<SemanticFlowBinding>> frames;
+    };
+
+    struct SemanticFlowResult {
+        SemanticFlowState state;
+        bool continues = true;
+        bool errored = false;
+    };
+
+    enum class SemanticUsageBindingKind : uint8_t {
+        Import,
+        Local,
+        Parameter,
+        PrivateField
+    };
+
+    struct SemanticUsageBinding {
+        std::string name;
+        std::string displayName;
+        ASTIdentifier *id = nullptr;
+        SemanticUsageBindingKind kind = SemanticUsageBindingKind::Local;
+        bool used = false;
+        bool warned = false;
+    };
+
+    using SemanticUsageBindingPtr = std::shared_ptr<SemanticUsageBinding>;
+
+    struct SemanticUsageState {
+        std::vector<std::vector<SemanticUsageBindingPtr>> frames;
+    };
+
+    static std::unordered_map<const SemanticA *, SemanticFlowState> gNamespaceFlowStates;
+    static std::unordered_map<const SemanticA *, SemanticUsageState> gNamespaceUsageStates;
+
+    static void pushSemanticFlowFrame(SemanticFlowState &state,const std::vector<SemanticFlowBinding> &bindings = {}){
+        state.frames.push_back(bindings);
+    }
+
+    static void popSemanticFlowFrame(SemanticFlowState &state){
+        if(!state.frames.empty()){
+            state.frames.pop_back();
+        }
+    }
+
+    static SemanticFlowBinding *findSemanticBindingInFrame(std::vector<SemanticFlowBinding> &frame,const std::string &name){
+        for(auto it = frame.rbegin();it != frame.rend();++it){
+            if(it->name == name){
+                return &*it;
+            }
+        }
+        return nullptr;
+    }
+
+    static const SemanticFlowBinding *findSemanticBindingInFrame(const std::vector<SemanticFlowBinding> &frame,const std::string &name){
+        for(auto it = frame.rbegin();it != frame.rend();++it){
+            if(it->name == name){
+                return &*it;
+            }
+        }
+        return nullptr;
+    }
+
+    static SemanticFlowBinding *findNearestSemanticBinding(SemanticFlowState &state,const std::string &name){
+        for(auto it = state.frames.rbegin();it != state.frames.rend();++it){
+            if(auto *binding = findSemanticBindingInFrame(*it,name)){
+                return binding;
+            }
+        }
+        return nullptr;
+    }
+
+    static void emitUseBeforeInitializationDiagnostic(DiagnosticHandler &errStream,
+                                                      ASTIdentifier *id,
+                                                      const SemanticFlowBinding &binding){
+        std::ostringstream ss;
+        ss << "Binding `" << binding.name << "` may be read before it is definitely initialized.";
+        errStream.push(SemanticADiagnostic::create(ss.str(),id ? static_cast<ASTStmt *>(id) : nullptr,Diagnostic::Error));
+    }
+
+    static std::vector<SemanticFlowBinding> makeSemanticFlowParamBindings(const std::map<ASTIdentifier *,ASTType *> &params){
+        std::vector<SemanticFlowBinding> bindings;
+        bindings.reserve(params.size());
+        for(const auto &entry : params){
+            if(entry.first){
+                bindings.push_back({entry.first->val,entry.first,SemanticFlowBindingKind::Parameter,true});
+            }
+        }
+        return bindings;
+    }
+
+    static bool shouldSuppressUnusedBindingWarning(const std::string &name){
+        return name.empty() || name == "self" || name.front() == '_';
+    }
+
+    static void pushSemanticUsageFrame(SemanticUsageState &state,
+                                       const std::vector<SemanticUsageBindingPtr> &bindings = {}){
+        state.frames.push_back(bindings);
+    }
+
+    static void popSemanticUsageFrame(SemanticUsageState &state){
+        if(!state.frames.empty()){
+            state.frames.pop_back();
+        }
+    }
+
+    static SemanticUsageBindingPtr findSemanticUsageBindingInFrame(const std::vector<SemanticUsageBindingPtr> &frame,
+                                                                  const std::string &name){
+        for(auto it = frame.rbegin();it != frame.rend();++it){
+            if(*it && (*it)->name == name){
+                return *it;
+            }
+        }
+        return nullptr;
+    }
+
+    static SemanticUsageBindingPtr findNearestSemanticUsageBinding(SemanticUsageState &state,const std::string &name){
+        for(auto it = state.frames.rbegin();it != state.frames.rend();++it){
+            auto binding = findSemanticUsageBindingInFrame(*it,name);
+            if(binding){
+                return binding;
+            }
+        }
+        return nullptr;
+    }
+
+    static std::vector<SemanticUsageBindingPtr> makeSemanticUsageParamBindings(const std::map<ASTIdentifier *,ASTType *> &params){
+        std::vector<SemanticUsageBindingPtr> bindings;
+        bindings.reserve(params.size());
+        for(const auto &entry : params){
+            if(!entry.first){
+                continue;
+            }
+            auto binding = std::make_shared<SemanticUsageBinding>();
+            binding->name = entry.first->val;
+            binding->displayName = entry.first->sourceName.empty() ? entry.first->val : entry.first->sourceName;
+            binding->id = entry.first;
+            binding->kind = SemanticUsageBindingKind::Parameter;
+            bindings.push_back(binding);
+        }
+        return bindings;
+    }
+
+    static std::vector<SemanticUsageBindingPtr> makeSemanticUsagePrivateFieldBindings(ASTClassDecl *classDecl){
+        std::vector<SemanticUsageBindingPtr> bindings;
+        if(!classDecl){
+            return bindings;
+        }
+        for(auto *fieldDecl : classDecl->fields){
+            if(!fieldDecl || !hasAttributeNamed(fieldDecl->attributes,"private")){
+                continue;
+            }
+            for(const auto &spec : fieldDecl->specs){
+                if(!spec.id){
+                    continue;
+                }
+                auto binding = std::make_shared<SemanticUsageBinding>();
+                binding->name = spec.id->val;
+                binding->displayName = spec.id->sourceName.empty() ? spec.id->val : spec.id->sourceName;
+                binding->id = spec.id;
+                binding->kind = SemanticUsageBindingKind::PrivateField;
+                bindings.push_back(binding);
+            }
+        }
+        return bindings;
+    }
+
+    static SemanticUsageBindingPtr findNearestSemanticUsageBindingOfKind(SemanticUsageState &state,
+                                                                         const std::string &name,
+                                                                         SemanticUsageBindingKind kind){
+        for(auto it = state.frames.rbegin();it != state.frames.rend();++it){
+            for(auto bindingIt = it->rbegin();bindingIt != it->rend();++bindingIt){
+                if(*bindingIt && (*bindingIt)->kind == kind && (*bindingIt)->name == name){
+                    return *bindingIt;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    static void emitUnusedUsageBindingDiagnostic(DiagnosticHandler &errStream,
+                                                 const SemanticUsageBindingPtr &binding){
+        auto displayName = binding && !binding->displayName.empty() ? binding->displayName
+                                                                    : (binding ? binding->name : std::string());
+        if(!binding || binding->warned || binding->used || shouldSuppressUnusedBindingWarning(displayName)){
+            return;
+        }
+        std::ostringstream ss;
+        switch(binding->kind){
+            case SemanticUsageBindingKind::Import:
+                ss << "Imported module `" << displayName << "` is unused.";
+                break;
+            case SemanticUsageBindingKind::Local:
+                ss << "Local binding `" << displayName << "` is unused.";
+                break;
+            case SemanticUsageBindingKind::Parameter:
+                ss << "Parameter `" << displayName << "` is unused.";
+                break;
+            case SemanticUsageBindingKind::PrivateField:
+                ss << "Private field `" << displayName << "` is unused.";
+                break;
+        }
+        errStream.push(SemanticADiagnostic::create(ss.str(),
+                                                   binding->id ? static_cast<ASTStmt *>(binding->id) : nullptr,
+                                                   Diagnostic::Warning));
+        binding->warned = true;
+    }
+
+    static void emitUnusedUsageWarningsForFrame(DiagnosticHandler &errStream,
+                                                const std::vector<SemanticUsageBindingPtr> &frame){
+        for(const auto &binding : frame){
+            emitUnusedUsageBindingDiagnostic(errStream,binding);
+        }
+    }
+
+    static SemanticFlowState mergeContinuingSemanticFlowStates(const std::vector<SemanticFlowState> &states){
+        if(states.empty()){
+            return {};
+        }
+        auto merged = states.front();
+        for(size_t frameIndex = 0;frameIndex < merged.frames.size();++frameIndex){
+            for(auto &binding : merged.frames[frameIndex]){
+                bool initialized = true;
+                for(const auto &state : states){
+                    if(frameIndex >= state.frames.size()){
+                        initialized = false;
+                        break;
+                    }
+                    const auto *other = findSemanticBindingInFrame(state.frames[frameIndex],binding.name);
+                    if(!other || !other->initialized){
+                        initialized = false;
+                        break;
+                    }
+                }
+                binding.initialized = initialized;
+            }
+        }
+        return merged;
+    }
+
+    static bool isNonVoidSemanticReturnType(ASTType *returnType){
+        return returnType != nullptr && !returnType->nameMatches(VOID_TYPE);
+    }
+
+    static SemanticFlowResult analyzeSemanticFlowSequence(const std::vector<ASTStmt *> &statements,
+                                                          SemanticFlowState state,
+                                                          DiagnosticHandler &errStream);
+    static SemanticFlowResult analyzeSemanticFlowBlock(ASTBlockStmt *block,
+                                                       SemanticFlowState state,
+                                                       DiagnosticHandler &errStream,
+                                                       const std::vector<SemanticFlowBinding> &bindings = {});
+    static bool validateCallableSemanticFlow(ASTBlockStmt *block,
+                                             const std::map<ASTIdentifier *,ASTType *> &params,
+                                             ASTType *returnType,
+                                             DiagnosticHandler &errStream,
+                                             ASTStmt *owner,
+                                             const std::string &displayName);
+
+    static void analyzeInlineFunctionSemanticFlow(ASTExpr *expr,
+                                                  DiagnosticHandler &errStream,
+                                                  bool &errored){
+        if(!expr || expr->type != INLINE_FUNC_EXPR || !expr->inlineFuncBlock){
+            return;
+        }
+        if(!validateCallableSemanticFlow(expr->inlineFuncBlock,
+                                         expr->inlineFuncParams,
+                                         expr->inlineFuncReturnType,
+                                         errStream,
+                                         expr,
+                                         "inline function")){
+            errored = true;
+        }
+    }
+
+    static void analyzeSemanticFlowExpr(ASTExpr *expr,
+                                        SemanticFlowState &state,
+                                        DiagnosticHandler &errStream,
+                                        bool &errored,
+                                        bool allowAbsentReads = false){
+        if(!expr || errored){
+            return;
+        }
+
+        if(expr->type == INLINE_FUNC_EXPR){
+            analyzeInlineFunctionSemanticFlow(expr,errStream,errored);
+            return;
+        }
+
+        if(expr->type == ID_EXPR){
+            if(expr->id){
+                if(auto *binding = findNearestSemanticBinding(state,expr->id->val)){
+                    if(!binding->initialized && !(allowAbsentReads && binding->allowsAbsentRead)){
+                        emitUseBeforeInitializationDiagnostic(errStream,expr->id,*binding);
+                        errored = true;
+                    }
+                }
+            }
+            return;
+        }
+
+        if(expr->type == MEMBER_EXPR){
+            analyzeSemanticFlowExpr(expr->leftExpr,state,errStream,errored,allowAbsentReads);
+            return;
+        }
+
+        if(expr->type == ASSIGN_EXPR && expr->oprtr_str.has_value() && *expr->oprtr_str == "="
+           && expr->leftExpr != nullptr && expr->leftExpr->type == ID_EXPR && expr->leftExpr->id != nullptr){
+            analyzeSemanticFlowExpr(expr->rightExpr,state,errStream,errored,allowAbsentReads);
+            if(errored){
+                return;
+            }
+            if(auto *binding = findNearestSemanticBinding(state,expr->leftExpr->id->val)){
+                binding->initialized = true;
+            }
+            return;
+        }
+
+        analyzeSemanticFlowExpr(expr->callee,state,errStream,errored,allowAbsentReads);
+        analyzeSemanticFlowExpr(expr->leftExpr,state,errStream,errored,allowAbsentReads);
+        analyzeSemanticFlowExpr(expr->middleExpr,state,errStream,errored,allowAbsentReads);
+        analyzeSemanticFlowExpr(expr->rightExpr,state,errStream,errored,allowAbsentReads);
+        if(errored){
+            return;
+        }
+        for(auto *child : expr->exprArrayData){
+            analyzeSemanticFlowExpr(child,state,errStream,errored,allowAbsentReads);
+            if(errored){
+                return;
+            }
+        }
+        for(const auto &entry : expr->dictExpr){
+            analyzeSemanticFlowExpr(entry.first,state,errStream,errored,allowAbsentReads);
+            if(errored){
+                return;
+            }
+            analyzeSemanticFlowExpr(entry.second,state,errStream,errored,allowAbsentReads);
+            if(errored){
+                return;
+            }
+        }
+    }
+
+    static SemanticFlowResult analyzeSemanticFlowStmt(ASTStmt *stmt,
+                                                      SemanticFlowState state,
+                                                      DiagnosticHandler &errStream){
+        SemanticFlowResult result {std::move(state),true,false};
+        if(!stmt){
+            return result;
+        }
+
+        if(!(stmt->type & DECL)){
+            analyzeSemanticFlowExpr((ASTExpr *)stmt,result.state,errStream,result.errored);
+            return result;
+        }
+
+        auto *decl = (ASTDecl *)stmt;
+        switch(decl->type){
+            case VAR_DECL: {
+                auto *varDecl = (ASTVarDecl *)decl;
+                for(const auto &spec : varDecl->specs){
+                    bool allowsAbsentRead = spec.type != nullptr && (spec.type->isOptional || spec.type->isThrowable);
+                    if(spec.expr){
+                        analyzeSemanticFlowExpr(spec.expr,result.state,errStream,result.errored);
+                        if(result.errored){
+                            return result;
+                        }
+                    }
+                    if(result.state.frames.empty()){
+                        pushSemanticFlowFrame(result.state);
+                    }
+                    result.state.frames.back().push_back({
+                        spec.id ? spec.id->val : std::string(),
+                        spec.id,
+                        SemanticFlowBindingKind::Local,
+                        spec.expr != nullptr || allowsAbsentRead,
+                        allowsAbsentRead
+                    });
+                }
+                return result;
+            }
+            case RETURN_DECL: {
+                auto *returnDecl = (ASTReturnDecl *)decl;
+                analyzeSemanticFlowExpr(returnDecl->expr,result.state,errStream,result.errored);
+                result.continues = false;
+                return result;
+            }
+            case COND_DECL: {
+                auto *condDecl = (ASTConditionalDecl *)decl;
+                std::vector<SemanticFlowState> continuingStates;
+                bool hasElse = false;
+                for(const auto &spec : condDecl->specs){
+                    auto branchState = result.state;
+                    if(spec.expr){
+                        analyzeSemanticFlowExpr(spec.expr,branchState,errStream,result.errored);
+                        if(result.errored){
+                            return result;
+                        }
+                    }
+                    auto branchResult = analyzeSemanticFlowBlock(spec.blockStmt,std::move(branchState),errStream);
+                    if(branchResult.errored){
+                        return branchResult;
+                    }
+                    if(spec.expr == nullptr){
+                        hasElse = true;
+                    }
+                    if(branchResult.continues){
+                        continuingStates.push_back(std::move(branchResult.state));
+                    }
+                }
+                if(!hasElse){
+                    continuingStates.push_back(result.state);
+                }
+                if(continuingStates.empty()){
+                    result.continues = false;
+                    return result;
+                }
+                result.state = mergeContinuingSemanticFlowStates(continuingStates);
+                return result;
+            }
+            case FOR_DECL: {
+                auto *forDecl = (ASTForDecl *)decl;
+                analyzeSemanticFlowExpr(forDecl->expr,result.state,errStream,result.errored);
+                if(result.errored){
+                    return result;
+                }
+                auto loopResult = analyzeSemanticFlowBlock(forDecl->blockStmt,result.state,errStream);
+                if(loopResult.errored){
+                    return loopResult;
+                }
+                result.continues = true;
+                return result;
+            }
+            case WHILE_DECL: {
+                auto *whileDecl = (ASTWhileDecl *)decl;
+                analyzeSemanticFlowExpr(whileDecl->expr,result.state,errStream,result.errored);
+                if(result.errored){
+                    return result;
+                }
+                auto loopResult = analyzeSemanticFlowBlock(whileDecl->blockStmt,result.state,errStream);
+                if(loopResult.errored){
+                    return loopResult;
+                }
+                result.continues = true;
+                return result;
+            }
+            case SECURE_DECL: {
+                auto *secureDecl = (ASTSecureDecl *)decl;
+                if(!secureDecl->guardedDecl || secureDecl->guardedDecl->specs.empty()){
+                    return result;
+                }
+                const auto &spec = secureDecl->guardedDecl->specs.front();
+                if(spec.expr){
+                    analyzeSemanticFlowExpr(spec.expr,result.state,errStream,result.errored,true);
+                    if(result.errored){
+                        return result;
+                    }
+                }
+                if(result.state.frames.empty()){
+                    pushSemanticFlowFrame(result.state);
+                }
+                result.state.frames.back().push_back({
+                    spec.id ? spec.id->val : std::string(),
+                    spec.id,
+                    SemanticFlowBindingKind::Local,
+                    true,
+                    false
+                });
+
+                auto catchState = result.state;
+                if(secureDecl->catchErrorId){
+                    pushSemanticFlowFrame(catchState,{{secureDecl->catchErrorId->val,
+                                                      secureDecl->catchErrorId,
+                                                      SemanticFlowBindingKind::Catch,
+                                                      true,
+                                                      false}});
+                }
+                auto catchResult = analyzeSemanticFlowBlock(secureDecl->catchBlock,std::move(catchState),errStream);
+                if(catchResult.errored){
+                    return catchResult;
+                }
+                return result;
+            }
+            default:
+                return result;
+        }
+    }
+
+    static SemanticFlowResult analyzeSemanticFlowSequence(const std::vector<ASTStmt *> &statements,
+                                                          SemanticFlowState state,
+                                                          DiagnosticHandler &errStream){
+        SemanticFlowResult result {std::move(state),true,false};
+        for(auto *stmt : statements){
+            if(result.errored || !result.continues){
+                break;
+            }
+            result = analyzeSemanticFlowStmt(stmt,std::move(result.state),errStream);
+        }
+        return result;
+    }
+
+    static SemanticFlowResult analyzeSemanticFlowBlock(ASTBlockStmt *block,
+                                                       SemanticFlowState state,
+                                                       DiagnosticHandler &errStream,
+                                                       const std::vector<SemanticFlowBinding> &bindings){
+        if(!block){
+            return {std::move(state),true,false};
+        }
+        pushSemanticFlowFrame(state,bindings);
+        auto result = analyzeSemanticFlowSequence(block->body,std::move(state),errStream);
+        popSemanticFlowFrame(result.state);
+        return result;
+    }
+
+    static bool validateCallableSemanticFlow(ASTBlockStmt *block,
+                                             const std::map<ASTIdentifier *,ASTType *> &params,
+                                             ASTType *returnType,
+                                             DiagnosticHandler &errStream,
+                                             ASTStmt *owner,
+                                             const std::string &displayName){
+        SemanticFlowState state;
+        pushSemanticFlowFrame(state,makeSemanticFlowParamBindings(params));
+        auto result = analyzeSemanticFlowBlock(block,std::move(state),errStream);
+        if(result.errored){
+            return false;
+        }
+        if(isNonVoidSemanticReturnType(returnType) && result.continues){
+            std::ostringstream ss;
+            ss << "Callable `" << displayName << "` has declared non-Void return type `"
+               << returnType->getName() << "` but may fall through without returning a value.";
+            errStream.push(SemanticADiagnostic::create(ss.str(),owner,Diagnostic::Error));
+            return false;
+        }
+        return true;
+    }
+
+    static void analyzeSemanticUsageStmt(ASTStmt *stmt,
+                                         SemanticUsageState &state,
+                                         DiagnosticHandler &errStream,
+                                         bool trackLocalBindings);
+    static void analyzeSemanticUsageBlock(ASTBlockStmt *block,
+                                          SemanticUsageState &state,
+                                          DiagnosticHandler &errStream,
+                                          bool trackLocalBindings);
+    static void validateCallableSemanticUsage(ASTBlockStmt *block,
+                                              const std::map<ASTIdentifier *,ASTType *> &params,
+                                              DiagnosticHandler &errStream,
+                                              const SemanticUsageState *outerState);
+
+    static void analyzeSemanticUsageExpr(ASTExpr *expr,
+                                         SemanticUsageState &state,
+                                         DiagnosticHandler &errStream,
+                                         bool readContext = true){
+        if(!expr){
+            return;
+        }
+
+        if(expr->type == INLINE_FUNC_EXPR){
+            validateCallableSemanticUsage(expr->inlineFuncBlock,expr->inlineFuncParams,errStream,&state);
+            return;
+        }
+
+        if(expr->type == ID_EXPR){
+            if(readContext && expr->id){
+                auto binding = findNearestSemanticUsageBinding(state,expr->id->val);
+                if(binding){
+                    binding->used = true;
+                }
+            }
+            return;
+        }
+
+        if(expr->type == MEMBER_EXPR){
+            analyzeSemanticUsageExpr(expr->leftExpr,state,errStream,true);
+            if(readContext && expr->leftExpr && expr->leftExpr->type == ID_EXPR &&
+               expr->leftExpr->id && expr->leftExpr->id->val == "self" &&
+               expr->rightExpr && expr->rightExpr->id){
+                auto binding = findNearestSemanticUsageBindingOfKind(state,
+                                                                     expr->rightExpr->id->val,
+                                                                     SemanticUsageBindingKind::PrivateField);
+                if(binding){
+                    binding->used = true;
+                }
+            }
+            return;
+        }
+
+        if(expr->type == ASSIGN_EXPR){
+            auto op = expr->oprtr_str.value_or("=");
+            if(op == "=" && expr->leftExpr && expr->leftExpr->type == ID_EXPR){
+                analyzeSemanticUsageExpr(expr->rightExpr,state,errStream,true);
+                return;
+            }
+            if(op == "=" && expr->leftExpr && expr->leftExpr->type == MEMBER_EXPR){
+                analyzeSemanticUsageExpr(expr->leftExpr->leftExpr,state,errStream,true);
+                analyzeSemanticUsageExpr(expr->rightExpr,state,errStream,true);
+                return;
+            }
+            analyzeSemanticUsageExpr(expr->leftExpr,state,errStream,true);
+            analyzeSemanticUsageExpr(expr->rightExpr,state,errStream,true);
+            return;
+        }
+
+        analyzeSemanticUsageExpr(expr->callee,state,errStream,true);
+        analyzeSemanticUsageExpr(expr->leftExpr,state,errStream,true);
+        analyzeSemanticUsageExpr(expr->middleExpr,state,errStream,true);
+        analyzeSemanticUsageExpr(expr->rightExpr,state,errStream,true);
+        for(auto *child : expr->exprArrayData){
+            analyzeSemanticUsageExpr(child,state,errStream,true);
+        }
+        for(const auto &entry : expr->dictExpr){
+            analyzeSemanticUsageExpr(entry.first,state,errStream,true);
+            analyzeSemanticUsageExpr(entry.second,state,errStream,true);
+        }
+    }
+
+    static void analyzeSemanticUsageStmt(ASTStmt *stmt,
+                                         SemanticUsageState &state,
+                                         DiagnosticHandler &errStream,
+                                         bool trackLocalBindings){
+        if(!stmt){
+            return;
+        }
+
+        if(!(stmt->type & DECL)){
+            analyzeSemanticUsageExpr((ASTExpr *)stmt,state,errStream,true);
+            return;
+        }
+
+        auto *decl = (ASTDecl *)stmt;
+        switch(decl->type){
+            case IMPORT_DECL: {
+                auto *importDecl = (ASTImportDecl *)decl;
+                if(!importDecl->moduleName){
+                    return;
+                }
+                if(state.frames.empty()){
+                    pushSemanticUsageFrame(state);
+                }
+                auto binding = std::make_shared<SemanticUsageBinding>();
+                binding->name = importDecl->moduleName->val;
+                binding->displayName = importDecl->moduleName->sourceName.empty()
+                    ? importDecl->moduleName->val
+                    : importDecl->moduleName->sourceName;
+                binding->id = importDecl->moduleName;
+                binding->kind = SemanticUsageBindingKind::Import;
+                state.frames.back().push_back(std::move(binding));
+                return;
+            }
+            case VAR_DECL: {
+                auto *varDecl = (ASTVarDecl *)decl;
+                for(const auto &spec : varDecl->specs){
+                    analyzeSemanticUsageExpr(spec.expr,state,errStream,true);
+                    if(!trackLocalBindings || !spec.id){
+                        continue;
+                    }
+                    if(state.frames.empty()){
+                        pushSemanticUsageFrame(state);
+                    }
+                    auto binding = std::make_shared<SemanticUsageBinding>();
+                    binding->name = spec.id->val;
+                    binding->displayName = spec.id->sourceName.empty() ? spec.id->val : spec.id->sourceName;
+                    binding->id = spec.id;
+                    binding->kind = SemanticUsageBindingKind::Local;
+                    state.frames.back().push_back(std::move(binding));
+                }
+                return;
+            }
+            case RETURN_DECL: {
+                auto *returnDecl = (ASTReturnDecl *)decl;
+                analyzeSemanticUsageExpr(returnDecl->expr,state,errStream,true);
+                return;
+            }
+            case COND_DECL: {
+                auto *condDecl = (ASTConditionalDecl *)decl;
+                for(const auto &spec : condDecl->specs){
+                    analyzeSemanticUsageExpr(spec.expr,state,errStream,true);
+                    analyzeSemanticUsageBlock(spec.blockStmt,state,errStream,trackLocalBindings);
+                }
+                return;
+            }
+            case FOR_DECL: {
+                auto *forDecl = (ASTForDecl *)decl;
+                analyzeSemanticUsageExpr(forDecl->expr,state,errStream,true);
+                analyzeSemanticUsageBlock(forDecl->blockStmt,state,errStream,trackLocalBindings);
+                return;
+            }
+            case WHILE_DECL: {
+                auto *whileDecl = (ASTWhileDecl *)decl;
+                analyzeSemanticUsageExpr(whileDecl->expr,state,errStream,true);
+                analyzeSemanticUsageBlock(whileDecl->blockStmt,state,errStream,trackLocalBindings);
+                return;
+            }
+            case SECURE_DECL: {
+                auto *secureDecl = (ASTSecureDecl *)decl;
+                if(!secureDecl->guardedDecl || secureDecl->guardedDecl->specs.empty()){
+                    return;
+                }
+                const auto &spec = secureDecl->guardedDecl->specs.front();
+                analyzeSemanticUsageExpr(spec.expr,state,errStream,true);
+                if(trackLocalBindings && spec.id){
+                    if(state.frames.empty()){
+                        pushSemanticUsageFrame(state);
+                    }
+                    auto binding = std::make_shared<SemanticUsageBinding>();
+                    binding->name = spec.id->val;
+                    binding->displayName = spec.id->sourceName.empty() ? spec.id->val : spec.id->sourceName;
+                    binding->id = spec.id;
+                    binding->kind = SemanticUsageBindingKind::Local;
+                    state.frames.back().push_back(std::move(binding));
+                }
+                analyzeSemanticUsageBlock(secureDecl->catchBlock,state,errStream,trackLocalBindings);
+                return;
+            }
+            case FUNC_DECL: {
+                auto *funcDecl = (ASTFuncDecl *)decl;
+                if(!funcDecl->declarationOnly && funcDecl->blockStmt){
+                    validateCallableSemanticUsage(funcDecl->blockStmt,funcDecl->params,errStream,&state);
+                }
+                return;
+            }
+            case CLASS_DECL: {
+                auto *classDecl = (ASTClassDecl *)decl;
+                pushSemanticUsageFrame(state,makeSemanticUsagePrivateFieldBindings(classDecl));
+                for(auto *fieldDecl : classDecl->fields){
+                    analyzeSemanticUsageStmt(fieldDecl,state,errStream,false);
+                }
+                for(auto *methodDecl : classDecl->methods){
+                    if(methodDecl && !methodDecl->declarationOnly && methodDecl->blockStmt){
+                        auto methodParams = methodDecl->params;
+                        validateCallableSemanticUsage(methodDecl->blockStmt,methodParams,errStream,&state);
+                    }
+                }
+                for(auto *ctorDecl : classDecl->constructors){
+                    if(ctorDecl && ctorDecl->blockStmt){
+                        validateCallableSemanticUsage(ctorDecl->blockStmt,ctorDecl->params,errStream,&state);
+                    }
+                }
+                emitUnusedUsageWarningsForFrame(errStream,state.frames.back());
+                popSemanticUsageFrame(state);
+                return;
+            }
+            case INTERFACE_DECL: {
+                auto *interfaceDecl = (ASTInterfaceDecl *)decl;
+                for(auto *fieldDecl : interfaceDecl->fields){
+                    analyzeSemanticUsageStmt(fieldDecl,state,errStream,false);
+                }
+                for(auto *methodDecl : interfaceDecl->methods){
+                    if(methodDecl && !methodDecl->declarationOnly && methodDecl->blockStmt){
+                        auto methodParams = methodDecl->params;
+                        validateCallableSemanticUsage(methodDecl->blockStmt,methodParams,errStream,&state);
+                    }
+                }
+                return;
+            }
+            case SCOPE_DECL: {
+                auto *scopeDecl = (ASTScopeDecl *)decl;
+                analyzeSemanticUsageBlock(scopeDecl->blockStmt,state,errStream,false);
+                return;
+            }
+            default:
+                return;
+        }
+    }
+
+    static void analyzeSemanticUsageBlock(ASTBlockStmt *block,
+                                          SemanticUsageState &state,
+                                          DiagnosticHandler &errStream,
+                                          bool trackLocalBindings){
+        if(!block){
+            return;
+        }
+        pushSemanticUsageFrame(state);
+        for(auto *stmt : block->body){
+            analyzeSemanticUsageStmt(stmt,state,errStream,trackLocalBindings);
+        }
+        emitUnusedUsageWarningsForFrame(errStream,state.frames.back());
+        popSemanticUsageFrame(state);
+    }
+
+    static void validateCallableSemanticUsage(ASTBlockStmt *block,
+                                              const std::map<ASTIdentifier *,ASTType *> &params,
+                                              DiagnosticHandler &errStream,
+                                              const SemanticUsageState *outerState){
+        if(!block){
+            return;
+        }
+        SemanticUsageState state;
+        if(outerState){
+            state = *outerState;
+        }
+        pushSemanticUsageFrame(state,makeSemanticUsageParamBindings(params));
+        analyzeSemanticUsageBlock(block,state,errStream,true);
+        emitUnusedUsageWarningsForFrame(errStream,state.frames.back());
+        popSemanticUsageFrame(state);
     }
 
     static bool paramComesBefore(ASTIdentifier *lhs,ASTIdentifier *rhs){
@@ -206,10 +1051,21 @@ namespace starbytes {
         return region.startLine > 0 || region.endLine > 0 || region.startCol > 0 || region.endCol > 0;
     }
 
+    static Region deriveRegionFromStmt(ASTStmt *stmt);
     static Region deriveRegionFromExpr(ASTExpr *expr);
     static Semantics::SymbolTable::Entry *findTypeEntryNoDiag(Semantics::STableContext &symbolTableContext,
                                                                string_ref typeName,
                                                                std::shared_ptr<ASTScope> scope);
+
+    static std::string deprecationKeyForNode(ASTStmt *diagNode,const std::string &symbolKey){
+        auto region = deriveRegionFromStmt(diagNode);
+        std::ostringstream out;
+        out << symbolKey << "|"
+            << (diagNode ? diagNode->parentFile : std::string()) << "|"
+            << region.startLine << ":" << region.startCol << ":"
+            << region.endLine << ":" << region.endCol;
+        return out.str();
+    }
 
     static Region deriveRegionFromDecl(ASTDecl *decl){
         if(!decl){
@@ -636,6 +1492,61 @@ namespace starbytes {
         }
     }
 
+    static void applyDeprecationMetadata(Semantics::SymbolTable::Var *data,
+                                         const std::vector<ASTAttribute> &attrs){
+        if(!data){
+            return;
+        }
+        data->isDeprecated = hasAttributeNamed(attrs,"deprecated");
+        data->deprecationMessage = data->isDeprecated
+            ? deprecatedMessageFromAttributes(attrs).value_or("")
+            : "";
+    }
+
+    static void applyDeprecationMetadata(Semantics::SymbolTable::Function *data,
+                                         const std::vector<ASTAttribute> &attrs){
+        if(!data){
+            return;
+        }
+        data->isDeprecated = hasAttributeNamed(attrs,"deprecated");
+        data->deprecationMessage = data->isDeprecated
+            ? deprecatedMessageFromAttributes(attrs).value_or("")
+            : "";
+    }
+
+    static void applyDeprecationMetadata(Semantics::SymbolTable::Class *data,
+                                         const std::vector<ASTAttribute> &attrs){
+        if(!data){
+            return;
+        }
+        data->isDeprecated = hasAttributeNamed(attrs,"deprecated");
+        data->deprecationMessage = data->isDeprecated
+            ? deprecatedMessageFromAttributes(attrs).value_or("")
+            : "";
+    }
+
+    static void applyDeprecationMetadata(Semantics::SymbolTable::Interface *data,
+                                         const std::vector<ASTAttribute> &attrs){
+        if(!data){
+            return;
+        }
+        data->isDeprecated = hasAttributeNamed(attrs,"deprecated");
+        data->deprecationMessage = data->isDeprecated
+            ? deprecatedMessageFromAttributes(attrs).value_or("")
+            : "";
+    }
+
+    static void applyDeprecationMetadata(Semantics::SymbolTable::TypeAlias *data,
+                                         const std::vector<ASTAttribute> &attrs){
+        if(!data){
+            return;
+        }
+        data->isDeprecated = hasAttributeNamed(attrs,"deprecated");
+        data->deprecationMessage = data->isDeprecated
+            ? deprecatedMessageFromAttributes(attrs).value_or("")
+            : "";
+    }
+
     struct ScopedAdditionalSymbolTable {
         Semantics::STableContext &context;
         bool active = false;
@@ -674,6 +1585,7 @@ namespace starbytes {
                 data->returnType = funcDecl->returnType ? funcDecl->returnType : VOID_TYPE;
                 data->funcType = funcDecl->funcType;
                 data->isLazy = funcDecl->isLazy;
+                applyDeprecationMetadata(data,funcDecl->attributes);
                 appendGenericParams(data->genericParams,funcDecl->genericParams);
                 fillFunctionParamsFromDecl(data,funcDecl->params);
                 data->funcType = buildFunctionTypeFromFunctionData(data,funcDecl);
@@ -700,6 +1612,7 @@ namespace starbytes {
                 data->classType = classDecl->classType ? classDecl->classType : ASTType::Create(sourceName,classDecl,false,false);
                 data->superClassType = classDecl->superClass;
                 data->interfaces = classDecl->interfaces;
+                applyDeprecationMetadata(data,classDecl->attributes);
                 appendGenericParams(data->genericParams,classDecl->genericParams);
                 for(auto *fieldDecl : classDecl->fields){
                     if(!fieldDecl){
@@ -720,6 +1633,7 @@ namespace starbytes {
                         field->name = spec.id->val;
                         field->type = spec.type;
                         field->isReadonly = readonlyField;
+                        applyDeprecationMetadata(field,fieldDecl->attributes);
                         data->fields.push_back(field);
                     }
                 }
@@ -732,6 +1646,7 @@ namespace starbytes {
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
+                    applyDeprecationMetadata(method,methodDecl->attributes);
                     appendGenericParams(method->genericParams,methodDecl->genericParams);
                     fillFunctionParamsFromDecl(method,methodDecl->params);
                     method->funcType = buildFunctionTypeFromFunctionData(method,methodDecl);
@@ -767,6 +1682,7 @@ namespace starbytes {
                 entry->data = data;
                 data->interfaceType = interfaceDecl->interfaceType ? interfaceDecl->interfaceType
                                                                     : ASTType::Create(sourceName,interfaceDecl,false,false);
+                applyDeprecationMetadata(data,interfaceDecl->attributes);
                 appendGenericParams(data->genericParams,interfaceDecl->genericParams);
                 for(auto *fieldDecl : interfaceDecl->fields){
                     if(!fieldDecl){
@@ -780,6 +1696,7 @@ namespace starbytes {
                         field->name = spec.id->val;
                         field->type = spec.type;
                         field->isReadonly = fieldDecl->isConst;
+                        applyDeprecationMetadata(field,fieldDecl->attributes);
                         data->fields.push_back(field);
                     }
                 }
@@ -792,6 +1709,7 @@ namespace starbytes {
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
+                    applyDeprecationMetadata(method,methodDecl->attributes);
                     appendGenericParams(method->genericParams,methodDecl->genericParams);
                     fillFunctionParamsFromDecl(method,methodDecl->params);
                     method->funcType = buildFunctionTypeFromFunctionData(method,methodDecl);
@@ -814,6 +1732,7 @@ namespace starbytes {
                 entry->type = Semantics::SymbolTable::Entry::TypeAlias;
                 entry->data = data;
                 data->aliasType = aliasDecl->aliasedType;
+                applyDeprecationMetadata(data,aliasDecl->attributes);
                 appendGenericParams(data->genericParams,aliasDecl->genericParams);
                 tablePtr->addSymbolInScope(entry,decl->scope);
                 return;
@@ -1028,11 +1947,44 @@ static ASTType *substituteTypeParams(ASTType *type,
         return prefer64BitNumberInference;
     }
 
+    void SemanticA::warnDeprecatedUse(const std::string &symbolKind,
+                                      const std::string &symbolName,
+                                      const std::string &symbolKey,
+                                      const std::string &message,
+                                      ASTStmt *diagNode){
+        if(symbolName.empty() || !diagNode){
+            return;
+        }
+        auto key = deprecationKeyForNode(diagNode,symbolKey.empty() ? symbolName : symbolKey);
+        if(!emittedDeprecationWarningKeys.insert(key).second){
+            return;
+        }
+        std::ostringstream ss;
+        ss << "Use of deprecated " << symbolKind << " `" << symbolName << "`.";
+        if(!message.empty()){
+            ss << " " << message;
+        }
+        errStream.push(SemanticADiagnostic::create(ss.str(),diagNode,Diagnostic::Warning));
+    }
+
     void SemanticA::start(){
+        gNamespaceFlowStates[this] = {};
+        pushSemanticFlowFrame(gNamespaceFlowStates[this]);
+        gNamespaceUsageStates[this] = {};
+        pushSemanticUsageFrame(gNamespaceUsageStates[this]);
+        emittedDeprecationWarningKeys.clear();
     }
 
     void SemanticA::finish(){
-        
+        auto usageIt = gNamespaceUsageStates.find(this);
+        if(usageIt != gNamespaceUsageStates.end()){
+            for(const auto &frame : usageIt->second.frames){
+                emitUnusedUsageWarningsForFrame(errStream,frame);
+            }
+            gNamespaceUsageStates.erase(usageIt);
+        }
+        gNamespaceFlowStates.erase(this);
+        emittedDeprecationWarningKeys.clear();
     }
      /// Only registers new symbols associated with top level decls!
     void SemanticA::addSTableEntryForDecl(ASTDecl *decl,Semantics::SymbolTable *tablePtr){
@@ -1045,6 +1997,7 @@ static ASTType *substituteTypeParams(ASTType *type,
             data->name = sourceName;
             data->type = spec.type;
             data->isReadonly = isReadonly;
+            applyDeprecationMetadata(data,decl->attributes);
             e->name = sourceName;
             e->emittedName = emittedName;
             e->data = data;
@@ -1062,6 +2015,7 @@ static ASTType *substituteTypeParams(ASTType *type,
             data->returnType = func->returnType;
             data->funcType = func->funcType;
             data->isLazy = func->isLazy;
+            applyDeprecationMetadata(data,func->attributes);
             appendGenericParams(data->genericParams,func->genericParams);
             fillFunctionParamsFromDecl(data,func->params);
             data->funcType = buildFunctionTypeFromFunctionData(data,func);
@@ -1098,6 +2052,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                  auto *data = tablePtr->allocate<Semantics::SymbolTable::Class>();
                  e->data = data;
                  data->classType = ASTType::Create(emittedName.c_str(),classDecl,false,false);
+                 applyDeprecationMetadata(data,classDecl->attributes);
                  for(auto *genericParam : classDecl->genericParams){
                      if(!genericParam || !genericParam->id){
                          continue;
@@ -1129,6 +2084,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                          field->name = v_spec.id->val;
                          field->type = v_spec.type;
                          field->isReadonly = readonlyField;
+                         applyDeprecationMetadata(field,f->attributes);
                          data->fields.push_back(field);
                      }
                  }
@@ -1138,6 +2094,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                      method->returnType = m->returnType;
                      method->funcType = m->funcType;
                      method->isLazy = m->isLazy;
+                     applyDeprecationMetadata(method,m->attributes);
                      appendGenericParams(method->genericParams,m->genericParams);
                      fillFunctionParamsFromDecl(method,m->params);
                      method->funcType = buildFunctionTypeFromFunctionData(method,m);
@@ -1166,6 +2123,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                 auto *data = tablePtr->allocate<Semantics::SymbolTable::Interface>();
                 e->data = data;
                 data->interfaceType = ASTType::Create(emittedName.c_str(),interfaceDecl,false,false);
+                applyDeprecationMetadata(data,interfaceDecl->attributes);
                 for(auto *genericParam : interfaceDecl->genericParams){
                     if(!genericParam || !genericParam->id){
                         continue;
@@ -1189,6 +2147,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                         field->name = spec.id->val;
                         field->type = spec.type;
                         field->isReadonly = fieldDecl->isConst;
+                        applyDeprecationMetadata(field,fieldDecl->attributes);
                         data->fields.push_back(field);
                     }
                 }
@@ -1199,6 +2158,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
+                    applyDeprecationMetadata(method,methodDecl->attributes);
                     appendGenericParams(method->genericParams,methodDecl->genericParams);
                     fillFunctionParamsFromDecl(method,methodDecl->params);
                     method->funcType = buildFunctionTypeFromFunctionData(method,methodDecl);
@@ -1218,6 +2178,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                 entry->type = Semantics::SymbolTable::Entry::TypeAlias;
                 entry->data = data;
                 data->aliasType = aliasDecl->aliasedType;
+                applyDeprecationMetadata(data,aliasDecl->attributes);
                 appendGenericParams(data->genericParams,aliasDecl->genericParams);
                 aliasDecl->id->val = emittedName;
                 tablePtr->addSymbolInScope(entry,decl->scope);
@@ -1346,6 +2307,36 @@ static ASTType *substituteTypeParams(ASTType *type,
             ss << "Unknown type `" << type->getName() << "`.";
             errStream.push(SemanticADiagnostic::create(ss.str(),diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
             return false;
+        }
+        if(entry->type == Semantics::SymbolTable::Entry::Class){
+            auto *classData = (Semantics::SymbolTable::Class *)entry->data;
+            if(classData && classData->isDeprecated){
+                warnDeprecatedUse("class",
+                                  entry->name,
+                                  !entry->emittedName.empty() ? entry->emittedName : entry->name,
+                                  classData->deprecationMessage,
+                                  diagNode ? diagNode : (ASTStmt *)type->getParentNode());
+            }
+        }
+        else if(entry->type == Semantics::SymbolTable::Entry::Interface){
+            auto *interfaceData = (Semantics::SymbolTable::Interface *)entry->data;
+            if(interfaceData && interfaceData->isDeprecated){
+                warnDeprecatedUse("interface",
+                                  entry->name,
+                                  !entry->emittedName.empty() ? entry->emittedName : entry->name,
+                                  interfaceData->deprecationMessage,
+                                  diagNode ? diagNode : (ASTStmt *)type->getParentNode());
+            }
+        }
+        else if(entry->type == Semantics::SymbolTable::Entry::TypeAlias){
+            auto *aliasData = (Semantics::SymbolTable::TypeAlias *)entry->data;
+            if(aliasData && aliasData->isDeprecated){
+                warnDeprecatedUse("type alias",
+                                  entry->name,
+                                  !entry->emittedName.empty() ? entry->emittedName : entry->name,
+                                  aliasData->deprecationMessage,
+                                  diagNode ? diagNode : (ASTStmt *)type->getParentNode());
+            }
         }
 
         size_t expectedArity = 0;
@@ -1755,6 +2746,14 @@ static ASTType *substituteTypeParams(ASTType *type,
                             else {
                                 funcNode->returnType = return_type_implied;
                             };
+                            if(!validateCallableSemanticFlow(funcNode->blockStmt,
+                                                             funcNode->params,
+                                                             funcNode->returnType,
+                                                             errStream,
+                                                             funcNode,
+                                                             func_id ? func_id->val : "<anonymous>")){
+                                return false;
+                            }
                         }
 
                         break;
@@ -1941,6 +2940,14 @@ static ASTType *substituteTypeParams(ASTType *type,
                             else {
                                 m->returnType = returnTypeImplied;
                             }
+                            if(!validateCallableSemanticFlow(m->blockStmt,
+                                                             methodParams,
+                                                             m->returnType,
+                                                             errStream,
+                                                             m,
+                                                             m->funcId ? m->funcId->val : "<method>")){
+                                return false;
+                            }
                         }
 
                         std::set<size_t> ctorArities;
@@ -1979,6 +2986,14 @@ static ASTType *substituteTypeParams(ASTType *type,
                             }
                             if(ctorReturnType != VOID_TYPE){
                                 errStream.push(SemanticADiagnostic::create("Constructor cannot return a value.",c,Diagnostic::Error));
+                                return false;
+                            }
+                            if(!validateCallableSemanticFlow(c->blockStmt,
+                                                             ctorParams,
+                                                             VOID_TYPE,
+                                                             errStream,
+                                                             c,
+                                                             "__ctor__")){
                                 return false;
                             }
                         }
@@ -2206,6 +3221,14 @@ static ASTType *substituteTypeParams(ASTType *type,
                             else {
                                 methodDecl->returnType = returnTypeImplied;
                             }
+                            if(!validateCallableSemanticFlow(methodDecl->blockStmt,
+                                                             methodParams,
+                                                             methodDecl->returnType,
+                                                             errStream,
+                                                             methodDecl,
+                                                             methodDecl->funcId ? methodDecl->funcId->val : "<method>")){
+                                return false;
+                            }
                         }
                         return true;
                         break;
@@ -2256,9 +3279,16 @@ static ASTType *substituteTypeParams(ASTType *type,
                             errStream.push(SemanticADiagnostic::create("Duplicate scope name in current scope.",decl,Diagnostic::Error));
                             return false;
                         }
+                        SemanticFlowState scopeFlowState;
+                        pushSemanticFlowFrame(scopeFlowState);
                         for(auto *innerStmt : scopeDecl->blockStmt->body){
                             auto ok = checkSymbolsForStmtInScope(innerStmt,symbolTableContext,scopeDecl->blockStmt->parentScope);
                             if(!ok){
+                                return false;
+                            }
+                            auto flowResult = analyzeSemanticFlowStmt(innerStmt,std::move(scopeFlowState),errStream);
+                            scopeFlowState = std::move(flowResult.state);
+                            if(flowResult.errored){
                                 return false;
                             }
                             if(innerStmt->type & DECL){
@@ -2332,7 +3362,29 @@ static ASTType *substituteTypeParams(ASTType *type,
     }
 
     bool SemanticA::checkSymbolsForStmt(ASTStmt *stmt, Semantics::STableContext &symbolTableContext){
-        return checkSymbolsForStmtInScope(stmt,symbolTableContext,ASTScopeGlobal);
+        auto ok = checkSymbolsForStmtInScope(stmt,symbolTableContext,ASTScopeGlobal);
+        if(!ok){
+            return false;
+        }
+        auto stateIt = gNamespaceFlowStates.find(this);
+        if(stateIt == gNamespaceFlowStates.end()){
+            gNamespaceFlowStates[this] = {};
+            pushSemanticFlowFrame(gNamespaceFlowStates[this]);
+            stateIt = gNamespaceFlowStates.find(this);
+        }
+        auto flowResult = analyzeSemanticFlowStmt(stmt,std::move(stateIt->second),errStream);
+        stateIt->second = std::move(flowResult.state);
+        if(flowResult.errored){
+            return false;
+        }
+        auto usageIt = gNamespaceUsageStates.find(this);
+        if(usageIt == gNamespaceUsageStates.end()){
+            gNamespaceUsageStates[this] = {};
+            pushSemanticUsageFrame(gNamespaceUsageStates[this]);
+            usageIt = gNamespaceUsageStates.find(this);
+        }
+        analyzeSemanticUsageStmt(stmt,usageIt->second,errStream,false);
+        return true;
     }
 
     

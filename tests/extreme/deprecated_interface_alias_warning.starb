@@ -1,0 +1,21 @@
+@deprecated("Use ModernReadable.")
+interface LegacyReadable {
+    func read() String
+}
+
+@deprecated("Use ModernWord.")
+def LegacyWord = String
+
+class Reader : LegacyReadable {
+    func read() String {
+        return "DEPRECATED-TYPE-DECLS-OK"
+    }
+}
+
+func consume(value:LegacyReadable) String {
+    return value.read()
+}
+
+decl text:LegacyWord = "alias-ok"
+print(text)
+print("DEPRECATED-TYPE-DECLS-OK")

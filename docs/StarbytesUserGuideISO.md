@@ -311,6 +311,7 @@ Constructors are class-only and use `new(...) { ... }`.
 System attributes:
 
 - `@readonly`
+- `@private`
 - `@deprecated(...)`
 - `@native(...)`
 

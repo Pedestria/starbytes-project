@@ -1,0 +1,2 @@
+@private
+decl hidden:Int = 1

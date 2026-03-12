@@ -1,3 +1,4 @@
+#include "starbytes/linguistics/Analysis.h"
 #include "starbytes/linguistics/Config.h"
 #include "starbytes/linguistics/LintEngine.h"
 #include "starbytes/linguistics/Session.h"
@@ -52,13 +53,25 @@ int main() {
 
     auto config = starbytes::linguistics::LinguisticsConfig::defaults();
     starbytes::linguistics::LintEngine lint;
+    auto analysis = starbytes::linguistics::buildCompilerLintAnalysis(session);
+
+    if(!expect(analysis.view().readyForSemanticLint(), "compiler-backed lint analysis should be available")) {
+        return fail("analysis-ready");
+    }
+    if(!expect(analysis.syntaxDiagnostics.empty(), "baseline lint fixture should parse without syntax diagnostics")) {
+        return fail("analysis-syntax-clean");
+    }
+    if(!expect(analysis.semanticHadError,
+               "baseline lint fixture should still preserve raw AST even when semantic diagnostics exist")) {
+        return fail("analysis-semantic-errors");
+    }
 
     auto descriptors = lint.ruleDescriptors();
     if(!expect(descriptors.size() >= 5, "expected baseline rule registry descriptors")) {
         return fail("rule-descriptors");
     }
 
-    auto lintResult = lint.run(session, config);
+    auto lintResult = lint.run(analysis.view(), config);
     if(!expect(lintResult.findings.size() >= 5, "expected at least one finding per phase 3 baseline category")) {
         return fail("baseline-findings-count");
     }

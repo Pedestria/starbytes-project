@@ -276,9 +276,10 @@ void sortSuggestions(std::vector<Suggestion> &suggestions) {
 
 } // namespace
 
-SuggestionResult SuggestionEngine::run(const LinguisticsSession &session,
-                                       const LinguisticsConfig &config,
-                                       const SuggestionRequest &request) const {
+SuggestionResult buildSuggestionsFromLint(const LinguisticsSession &session,
+                                          const LintResult &lintResult,
+                                          const LinguisticsConfig &config,
+                                          const SuggestionRequest &request) {
     SuggestionResult result;
     if(!config.suggestions.enabled || config.suggestions.maxSuggestions == 0) {
         return result;
@@ -286,10 +287,6 @@ SuggestionResult SuggestionEngine::run(const LinguisticsSession &session,
 
     auto lines = splitLines(session.getSourceText());
 
-    LintEngine lintEngine;
-    LintRequest lintRequest;
-    lintRequest.includeSuggestions = false;
-    auto lintResult = lintEngine.run(session, config, lintRequest);
     for(const auto &finding : lintResult.findings) {
         appendFindingSuggestion(finding, lines, result.suggestions);
     }
@@ -309,6 +306,29 @@ SuggestionResult SuggestionEngine::run(const LinguisticsSession &session,
     }
 
     return result;
+}
+
+SuggestionResult SuggestionEngine::run(const CompilerLintAnalysis &analysis,
+                                       const LinguisticsConfig &config,
+                                       const SuggestionRequest &request) const {
+    if(analysis.session == nullptr) {
+        return {};
+    }
+    LintEngine lintEngine;
+    LintRequest lintRequest;
+    lintRequest.includeSuggestions = false;
+    auto lintResult = lintEngine.run(analysis, config, lintRequest);
+    return buildSuggestionsFromLint(*analysis.session, lintResult, config, request);
+}
+
+SuggestionResult SuggestionEngine::run(const LinguisticsSession &session,
+                                       const LinguisticsConfig &config,
+                                       const SuggestionRequest &request) const {
+    LintEngine lintEngine;
+    LintRequest lintRequest;
+    lintRequest.includeSuggestions = false;
+    auto lintResult = lintEngine.run(session, config, lintRequest);
+    return buildSuggestionsFromLint(session, lintResult, config, request);
 }
 
 } // namespace starbytes::linguistics

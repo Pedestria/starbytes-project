@@ -115,8 +115,16 @@ if(NOT WIN32)
         "LinguistWorkspacePhase6Test.cpp"
         DEPENDENCIES
         ${STARBYTES_ALL_LIBS})
+    add_starbytes_test(
+        NAME
+        "linguist-lint-mode-test"
+        INCLUDE_LIB
+        FILES
+        "LinguistLintModeTest.cpp"
+        DEPENDENCIES
+        ${STARBYTES_ALL_LIBS})
 else()
-    message(STATUS "Skipping linguist-workspace-phase6-test on Windows targets (requires sys/wait.h).")
+    message(STATUS "Skipping linguist-workspace-phase6-test and linguist-lint-mode-test on Windows targets (require sys/wait.h).")
 endif()
 
 add_starbytes_test(
@@ -143,6 +151,24 @@ add_starbytes_test(
     INCLUDE_LIB
     FILES
     "LinguisticsPhase7PerformanceTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "linguistics-phase8-semantic-lint-test"
+    INCLUDE_LIB
+    FILES
+    "LinguisticsPhase8SemanticLintTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "semantic-unused-bindings-test"
+    INCLUDE_LIB
+    FILES
+    "SemanticUnusedBindingsTest.cpp"
     DEPENDENCIES
     ${STARBYTES_ALL_LIBS})
 
@@ -275,6 +301,15 @@ add_starbytes_test(
     INCLUDE_LIB
     FILES
     "SpecializedNumericBytecodePhase4Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "adaptive-quickening-phase5-test"
+    INCLUDE_LIB
+    FILES
+    "AdaptiveQuickeningPhase5Test.cpp"
     DEPENDENCIES
     ${STARBYTES_ALL_LIBS})
 

@@ -32,6 +32,8 @@ namespace starbytes {
                 std::string name;
                 ASTType *type;
                 bool isReadonly = false;
+                bool isDeprecated = false;
+                std::string deprecationMessage;
             };
             
             struct Function {
@@ -42,6 +44,8 @@ namespace starbytes {
                 string_map<ASTType *> paramMap;
                 std::vector<std::pair<std::string,ASTType *>> orderedParams;
                 bool isLazy = false;
+                bool isDeprecated = false;
+                std::string deprecationMessage;
             };
             
             struct Class {
@@ -52,6 +56,8 @@ namespace starbytes {
                 std::vector<Function *> instMethods;
                 std::vector<Function *> constructors;
                 std::vector<Var *> fields;
+                bool isDeprecated = false;
+                std::string deprecationMessage;
             };
 
             struct Interface {
@@ -59,11 +65,15 @@ namespace starbytes {
                 std::vector<GenericParam> genericParams;
                 std::vector<Function *> methods;
                 std::vector<Var *> fields;
+                bool isDeprecated = false;
+                std::string deprecationMessage;
             };
 
             struct TypeAlias {
                 ASTType *aliasType = nullptr;
                 std::vector<GenericParam> genericParams;
+                bool isDeprecated = false;
+                std::string deprecationMessage;
             };
             
             struct Entry {

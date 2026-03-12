@@ -73,6 +73,7 @@ Attributes use `@` before declarations.
 Examples:
 
 - `@readonly`
+- `@private`
 - `@deprecated("message")`
 - `@native(name="symbol")`
 

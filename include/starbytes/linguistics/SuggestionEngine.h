@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "Analysis.h"
 #include "Config.h"
 #include "Session.h"
 #include "Types.h"
@@ -19,6 +20,10 @@ struct SuggestionResult {
 
 class SuggestionEngine {
 public:
+    SuggestionResult run(const CompilerLintAnalysis &analysis,
+                         const LinguisticsConfig &config,
+                         const SuggestionRequest &request = SuggestionRequest()) const;
+
     SuggestionResult run(const LinguisticsSession &session,
                          const LinguisticsConfig &config,
                          const SuggestionRequest &request = SuggestionRequest()) const;

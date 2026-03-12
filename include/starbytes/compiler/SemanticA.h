@@ -39,6 +39,12 @@ namespace starbytes {
         Syntax::SyntaxA & syntaxARef;
         DiagnosticHandler & errStream;
         bool prefer64BitNumberInference = false;
+        std::set<std::string> emittedDeprecationWarningKeys;
+        void warnDeprecatedUse(const std::string &symbolKind,
+                               const std::string &symbolName,
+                               const std::string &symbolKey,
+                               const std::string &message,
+                               ASTStmt *diagNode);
         bool typeExists(ASTType *type,
                         Semantics::STableContext & symbolTableContext,
                         std::shared_ptr<ASTScope> scope,
@@ -73,7 +79,7 @@ namespace starbytes {
                                         std::shared_ptr<ASTScope> scope,
                                         optional<Semantics::SymbolTable> tempSTable = {});
     public:
-        static void start();
+        void start();
         void finish();
         void addSTableEntryForDecl(ASTDecl *decl,
                                    Semantics::SymbolTable *tablePtr);

@@ -1,0 +1,20 @@
+class Vault {
+    @private
+    decl token:String = "alpha"
+
+    @private
+    decl scratch:Int = 0
+
+    new() {
+        self.scratch = 1
+    }
+
+    func tokenValue() String {
+        return self.token
+    }
+}
+
+decl vault = new Vault()
+if(vault.tokenValue() == "alpha"){
+    print("PRIVATE-FIELD-WARNING-OK")
+}

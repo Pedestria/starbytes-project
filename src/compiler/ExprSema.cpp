@@ -375,6 +375,8 @@ static ASTType *findClassFieldTypeFromDeclRecursive(ASTClassDecl *classDecl,
                                                     std::shared_ptr<ASTScope> scope,
                                                     string_ref fieldName,
                                                     bool *isReadonly,
+                                                    bool *isDeprecated,
+                                                    std::string *deprecationMessage,
                                                     string_set &visited){
     if(!classDecl){
         return nullptr;
@@ -388,13 +390,63 @@ static ASTType *findClassFieldTypeFromDeclRecursive(ASTClassDecl *classDecl,
     }
     auto *ownField = findClassFieldTypeFromDecl(classDecl,fieldName,isReadonly);
     if(ownField){
+        if(isDeprecated || deprecationMessage){
+            for(auto *fieldDecl : classDecl->fields){
+                if(!fieldDecl){
+                    continue;
+                }
+                bool readonlyField = fieldDecl->isConst;
+                bool deprecatedField = false;
+                std::string deprecatedMessageValue;
+                for(auto &attr : fieldDecl->attributes){
+                    if(attr.name == "readonly"){
+                        readonlyField = true;
+                    }
+                    else if(attr.name == "deprecated"){
+                        deprecatedField = true;
+                        for(const auto &arg : attr.args){
+                            if(arg.key.has_value() && arg.key.value() != "message"){
+                                continue;
+                            }
+                            if(arg.value && arg.value->type == STR_LITERAL){
+                                auto *literal = static_cast<ASTLiteralExpr *>(arg.value);
+                                if(literal->strValue.has_value()){
+                                    deprecatedMessageValue = literal->strValue.value();
+                                }
+                            }
+                        }
+                    }
+                }
+                for(auto &spec : fieldDecl->specs){
+                    if(spec.id && spec.id->val == fieldName){
+                        if(isReadonly){
+                            *isReadonly = readonlyField;
+                        }
+                        if(isDeprecated){
+                            *isDeprecated = deprecatedField;
+                        }
+                        if(deprecationMessage){
+                            *deprecationMessage = deprecatedMessageValue;
+                        }
+                        return ownField;
+                    }
+                }
+            }
+        }
         return ownField;
     }
     if(!classDecl->superClass){
         return nullptr;
     }
     auto *superDecl = resolveClassDeclFromType(classDecl->superClass,symbolTableContext,scope);
-    return findClassFieldTypeFromDeclRecursive(superDecl,symbolTableContext,scope,fieldName,isReadonly,visited);
+    return findClassFieldTypeFromDeclRecursive(superDecl,
+                                               symbolTableContext,
+                                               scope,
+                                               fieldName,
+                                               isReadonly,
+                                               isDeprecated,
+                                               deprecationMessage,
+                                               visited);
 }
 
 static ASTFuncDecl *findClassMethodFromDeclRecursive(ASTClassDecl *classDecl,
@@ -1263,6 +1315,109 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
             }
             return params;
         };
+        auto deprecationMessageFromAttrs = [&](const std::vector<ASTAttribute> &attrs) -> std::string {
+            for(const auto &attr : attrs){
+                if(attr.name != "deprecated"){
+                    continue;
+                }
+                for(const auto &arg : attr.args){
+                    if(arg.key.has_value() && arg.key.value() != "message"){
+                        continue;
+                    }
+                    if(arg.value && arg.value->type == STR_LITERAL){
+                        auto *literal = static_cast<ASTLiteralExpr *>(arg.value);
+                        if(literal->strValue.has_value()){
+                            return literal->strValue.value();
+                        }
+                    }
+                }
+            }
+            return "";
+        };
+        auto warnDeprecatedEntry = [&](Semantics::SymbolTable::Entry *entry,
+                                       ASTStmt *diagNode,
+                                       const char *overrideKind = nullptr) {
+            if(!entry || !diagNode){
+                return;
+            }
+            const char *kind = overrideKind;
+            std::string message;
+            switch(entry->type){
+                case Semantics::SymbolTable::Entry::Var: {
+                    auto *varData = (Semantics::SymbolTable::Var *)entry->data;
+                    if(!varData || !varData->isDeprecated){
+                        return;
+                    }
+                    kind = kind ? kind : "variable";
+                    message = varData->deprecationMessage;
+                    break;
+                }
+                case Semantics::SymbolTable::Entry::Function: {
+                    auto *funcData = (Semantics::SymbolTable::Function *)entry->data;
+                    if(!funcData || !funcData->isDeprecated){
+                        return;
+                    }
+                    kind = kind ? kind : "function";
+                    message = funcData->deprecationMessage;
+                    break;
+                }
+                case Semantics::SymbolTable::Entry::Class: {
+                    auto *classData = (Semantics::SymbolTable::Class *)entry->data;
+                    if(!classData || !classData->isDeprecated){
+                        return;
+                    }
+                    kind = kind ? kind : "class";
+                    message = classData->deprecationMessage;
+                    break;
+                }
+                case Semantics::SymbolTable::Entry::Interface: {
+                    auto *interfaceData = (Semantics::SymbolTable::Interface *)entry->data;
+                    if(!interfaceData || !interfaceData->isDeprecated){
+                        return;
+                    }
+                    kind = kind ? kind : "interface";
+                    message = interfaceData->deprecationMessage;
+                    break;
+                }
+                case Semantics::SymbolTable::Entry::TypeAlias: {
+                    auto *aliasData = (Semantics::SymbolTable::TypeAlias *)entry->data;
+                    if(!aliasData || !aliasData->isDeprecated){
+                        return;
+                    }
+                    kind = kind ? kind : "type alias";
+                    message = aliasData->deprecationMessage;
+                    break;
+                }
+                default:
+                    return;
+            }
+            warnDeprecatedUse(kind ? kind : "symbol",
+                              entry->name,
+                              !entry->emittedName.empty() ? entry->emittedName : entry->name,
+                              message,
+                              diagNode);
+        };
+        auto warnDeprecatedDeclAttrs = [&](const char *kind,
+                                           ASTIdentifier *id,
+                                           const std::vector<ASTAttribute> &attrs,
+                                           ASTStmt *diagNode) {
+            bool isDeprecated = false;
+            for(const auto &attr : attrs){
+                if(attr.name == "deprecated"){
+                    isDeprecated = true;
+                    break;
+                }
+            }
+            if(!isDeprecated || !id || !diagNode){
+                return;
+            }
+            auto displayName = id->sourceName.empty() ? id->val : id->sourceName;
+            warnDeprecatedUse(kind ? kind : "symbol",
+                              displayName,
+                              std::string("decl:") + (kind ? kind : "symbol") + ":" + displayName,
+                              deprecationMessageFromAttrs(attrs),
+                              diagNode);
+        };
         switch (expr_to_eval->type) {
             case ID_EXPR : {
                 ASTIdentifier *id_ = expr_to_eval->id;
@@ -1341,6 +1496,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 if(symbol_->type == Semantics::SymbolTable::Entry::Var){
                     auto varData = (Semantics::SymbolTable::Var *)symbol_->data;
                     id_->type = ASTIdentifier::Var;
+                    warnDeprecatedEntry(symbol_,expr_to_eval,"variable");
                     if(!symbol_->emittedName.empty()){
                         id_->val = symbol_->emittedName;
                     }
@@ -1349,6 +1505,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 else if(symbol_->type == Semantics::SymbolTable::Entry::Function){
                     auto funcData = (Semantics::SymbolTable::Function *)symbol_->data;
                     id_->type = ASTIdentifier::Function;
+                    warnDeprecatedEntry(symbol_,expr_to_eval,"function");
                     if(!symbol_->emittedName.empty()){
                         id_->val = symbol_->emittedName;
                     }
@@ -1360,6 +1517,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 else if(symbol_->type == Semantics::SymbolTable::Entry::Class){
                     auto classData = (Semantics::SymbolTable::Class *)symbol_->data;
                     id_->type = ASTIdentifier::Class;
+                    warnDeprecatedEntry(symbol_,expr_to_eval,"class");
                     if(!symbol_->emittedName.empty()){
                         id_->val = symbol_->emittedName;
                     }
@@ -1372,6 +1530,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         return nullptr;
                     }
                     id_->type = ASTIdentifier::Class;
+                    warnDeprecatedEntry(symbol_,expr_to_eval,"type alias");
                     type = aliasData->aliasType;
                 }
                 else if(symbol_->type == Semantics::SymbolTable::Entry::Scope){
@@ -1820,12 +1979,14 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     if(scopeMemberEntry->type == Semantics::SymbolTable::Entry::Var){
                         auto *varData = (Semantics::SymbolTable::Var *)scopeMemberEntry->data;
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
+                        warnDeprecatedEntry(scopeMemberEntry,expr_to_eval,"variable");
                         type = normalizeType(varData->type);
                         break;
                     }
                     if(scopeMemberEntry->type == Semantics::SymbolTable::Entry::Function){
                         auto *funcData = (Semantics::SymbolTable::Function *)scopeMemberEntry->data;
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
+                        warnDeprecatedEntry(scopeMemberEntry,expr_to_eval,"function");
                         auto *memberFuncType = buildFunctionTypeFromFunctionData(funcData,expr_to_eval);
                         type = normalizeType(memberFuncType ? memberFuncType : funcData->funcType);
                         break;
@@ -1833,6 +1994,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     if(scopeMemberEntry->type == Semantics::SymbolTable::Entry::Class){
                         auto *classData = (Semantics::SymbolTable::Class *)scopeMemberEntry->data;
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Class;
+                        warnDeprecatedEntry(scopeMemberEntry,expr_to_eval,"class");
                         type = normalizeType(classData->classType);
                         break;
                     }
@@ -1925,6 +2087,13 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     string_set visited;
                     if(auto *field = findClassFieldRecursive(symbolTableContext,classData,memberName,scopeContext.scope,visited)){
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
+                        if(field->isDeprecated){
+                            warnDeprecatedUse("field",
+                                              memberName,
+                                              std::string("field:") + leftType->getName().str() + "::" + memberName,
+                                              field->deprecationMessage,
+                                              expr_to_eval);
+                        }
                         auto *boundFieldType = substituteTypeParams(field->type,classBindings,expr_to_eval);
                         type = normalizeType(boundFieldType);
                         break;
@@ -1933,6 +2102,13 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     auto methodLookup = findClassMethodRecursive(symbolTableContext,classData,memberName,scopeContext.scope,visited);
                     if(methodLookup.method){
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
+                        if(methodLookup.method->isDeprecated){
+                            warnDeprecatedUse("method",
+                                              memberName,
+                                              std::string("method:") + leftType->getName().str() + "::" + memberName,
+                                              methodLookup.method->deprecationMessage,
+                                              expr_to_eval);
+                        }
                         auto *methodType = buildFunctionTypeFromFunctionData(methodLookup.method,expr_to_eval);
                         if(!methodType){
                             methodType = methodLookup.method->funcType;
@@ -1951,6 +2127,13 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     for(auto *field : interfaceData->fields){
                         if(field && field->name == memberName){
                             expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
+                            if(field->isDeprecated){
+                                warnDeprecatedUse("field",
+                                                  memberName,
+                                                  std::string("field:") + leftType->getName().str() + "::" + memberName,
+                                                  field->deprecationMessage,
+                                                  expr_to_eval);
+                            }
                             auto *boundFieldType = substituteTypeParams(field->type,interfaceBindings,expr_to_eval);
                             type = normalizeType(boundFieldType);
                             resolvedMember = true;
@@ -1963,6 +2146,13 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     for(auto *method : interfaceData->methods){
                         if(method && method->name == memberName){
                             expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
+                            if(method->isDeprecated){
+                                warnDeprecatedUse("method",
+                                                  memberName,
+                                                  std::string("method:") + leftType->getName().str() + "::" + memberName,
+                                                  method->deprecationMessage,
+                                                  expr_to_eval);
+                            }
                             auto *methodType = buildFunctionTypeFromFunctionData(method,expr_to_eval);
                             if(!methodType){
                                 methodType = method->funcType;
@@ -1982,16 +2172,33 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 if(classNode && classNode->type == CLASS_DECL){
                     auto *classDecl = (ASTClassDecl *)classNode;
                     bool readonly = false;
+                    bool deprecated = false;
+                    std::string deprecationMessage;
                     string_set visited;
-                    if(auto *fieldType = findClassFieldTypeFromDeclRecursive(classDecl,symbolTableContext,scopeContext.scope,memberName,&readonly,visited)){
+                    if(auto *fieldType = findClassFieldTypeFromDeclRecursive(classDecl,
+                                                                            symbolTableContext,
+                                                                            scopeContext.scope,
+                                                                            memberName,
+                                                                            &readonly,
+                                                                            &deprecated,
+                                                                            &deprecationMessage,
+                                                                            visited)){
                         (void)readonly;
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
+                        if(deprecated){
+                            warnDeprecatedUse("field",
+                                              memberName,
+                                              std::string("field-decl:") + memberName,
+                                              deprecationMessage,
+                                              expr_to_eval);
+                        }
                         type = normalizeType(fieldType);
                         break;
                     }
                     visited.clear();
                     if(auto *methodDecl = findClassMethodFromDeclRecursive(classDecl,symbolTableContext,scopeContext.scope,memberName,visited)){
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
+                        warnDeprecatedDeclAttrs("method",methodDecl->funcId,methodDecl->attributes,expr_to_eval);
                         auto *methodType = buildFunctionTypeFromDecl(methodDecl,expr_to_eval);
                         type = normalizeType(methodType ? methodType : methodDecl->funcType);
                         break;
@@ -2105,7 +2312,14 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         if(classNode && classNode->type == CLASS_DECL){
                             bool readonly = false;
                             string_set visited;
-                            auto *fieldType = findClassFieldTypeFromDeclRecursive((ASTClassDecl *)classNode,symbolTableContext,scopeContext.scope,memberExpr->rightExpr->id->val,&readonly,visited);
+                            auto *fieldType = findClassFieldTypeFromDeclRecursive((ASTClassDecl *)classNode,
+                                                                                  symbolTableContext,
+                                                                                  scopeContext.scope,
+                                                                                  memberExpr->rightExpr->id->val,
+                                                                                  &readonly,
+                                                                                  nullptr,
+                                                                                  nullptr,
+                                                                                  visited);
                             (void)fieldType;
                             if(readonly){
                                 errStream.push(SemanticADiagnostic::create("Cannot assign to readonly/const field.",expr_to_eval,Diagnostic::Error));

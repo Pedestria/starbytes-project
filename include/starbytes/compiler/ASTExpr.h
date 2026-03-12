@@ -12,6 +12,7 @@ namespace starbytes {
     class ASTIdentifier : public ASTStmt  {
     public:
         std::string val;
+        std::string sourceName;
         /// NOTE: Gets set by SemanticA
         typedef enum : int {
             Class,

@@ -238,6 +238,7 @@ void annotateStmtParentFile(ASTStmt *stmt,const std::string &parentFile){
 
     void Parser::parseFromStream(std::istream &in,ModuleParseContext &moduleParseContext){
         auto parseStart = std::chrono::steady_clock::now();
+        semanticA->start();
         std::ostringstream sourceBuffer;
         sourceBuffer << in.rdbuf();
         auto sourceText = sourceBuffer.str();
@@ -301,6 +302,14 @@ void annotateStmtParentFile(ASTStmt *stmt,const std::string &parentFile){
                 auto semanticEnd = std::chrono::steady_clock::now();
                 profileData.semanticNs += std::chrono::duration_cast<std::chrono::nanoseconds>(semanticEnd - semanticStart).count();
             }
+            if(astConsumer.acceptsRawStatements()){
+                auto consumerStart = std::chrono::steady_clock::now();
+                astConsumer.consumeRawStmt(stmt,check);
+                if(profilingEnabled){
+                    auto consumerEnd = std::chrono::steady_clock::now();
+                    profileData.consumerNs += std::chrono::duration_cast<std::chrono::nanoseconds>(consumerEnd - consumerStart).count();
+                }
+            }
             if(check){
                 if(stmt->type & DECL){
                     auto semanticAddStart = std::chrono::steady_clock::now();
@@ -339,6 +348,9 @@ void annotateStmtParentFile(ASTStmt *stmt,const std::string &parentFile){
     }
 
     bool Parser::finish(){
+        if(semanticA){
+            semanticA->finish();
+        }
         auto rc = !diagnosticHandler->hasErrored();
         if(!diagnosticHandler->empty()){
             diagnosticHandler->logAll();

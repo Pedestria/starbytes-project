@@ -104,6 +104,7 @@ const string_set *SyntaxA::currentGenericTypeParams(){
             if(first_token.type == Tok::Identifier){
                 ASTIdentifier *id = new ASTIdentifier();
                 id->val = first_token.content;
+                id->sourceName = first_token.content;
                 id->codeRegion.startLine = id->codeRegion.endLine = first_token.srcPos.line;
                 id->codeRegion.startCol = first_token.srcPos.startCol;
                 id->codeRegion.endCol = first_token.srcPos.endCol;
@@ -115,6 +116,7 @@ const string_set *SyntaxA::currentGenericTypeParams(){
             if(first_token.type == Tok::Identifier){
                 ASTIdentifier *id = new ASTIdentifier();
                 id->val = first_token.content;
+                id->sourceName = first_token.content;
                 id->codeRegion.startLine = id->codeRegion.endLine = first_token.srcPos.line;
                 id->codeRegion.startCol = first_token.srcPos.startCol;
                 id->codeRegion.endCol = first_token.srcPos.endCol;

@@ -83,6 +83,20 @@ assert_log_contains() {
   fi
 }
 
+assert_log_not_contains() {
+  local name="$1"
+  local pattern="$2"
+  local log="$LOG_DIR/${name}.log"
+  if contains_pattern "$pattern" "$log"; then
+    echo "[FAIL] $name unexpectedly contains '$pattern'"
+    echo "  log: $log"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+  else
+    echo "[PASS] $name does not contain '$pattern'"
+    PASS_COUNT=$((PASS_COUNT + 1))
+  fi
+}
+
 assert_file_contains() {
   local name="$1"
   local file="$2"
@@ -110,6 +124,58 @@ assert_log_contains "core-run" "OPS-SHORTCIRCUIT-OK"
 run_expect_success "recursive-typed-locals-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/recursive_typed_locals_edge.starb"
 run_expect_success "recursive-typed-locals-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/recursive_typed_locals_edge.starb"
 assert_log_contains "recursive-typed-locals-run" "RECURSIVE-TYPED-LOCALS-OK"
+run_expect_success "semantic-flow-success-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/semantic_flow_success.starb"
+run_expect_success "semantic-flow-success-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/semantic_flow_success.starb"
+assert_log_contains "semantic-flow-success-run" "SEMANTIC-FLOW-OK"
+run_expect_success "semantic-unused-bindings-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/semantic_unused_bindings.starb"
+assert_log_contains "semantic-unused-bindings-check" 'Imported module `Math` is unused'
+assert_log_contains "semantic-unused-bindings-check" 'Imported module `Unicode` is unused'
+assert_log_contains "semantic-unused-bindings-check" 'Parameter `unusedParam` is unused'
+assert_log_contains "semantic-unused-bindings-check" 'Local binding `unusedLocal` is unused'
+assert_log_not_contains "semantic-unused-bindings-check" '_args'
+run_expect_success "semantic-unused-bindings-compile" "$STARBYTES_BIN" compile "$ROOT_DIR/tests/extreme/semantic_unused_bindings.starb" --out-dir "$ROOT_DIR/.starbytes/semantic-unused-bindings-compile"
+assert_log_contains "semantic-unused-bindings-compile" 'Imported module `Math` is unused'
+assert_log_contains "semantic-unused-bindings-compile" 'Imported module `Unicode` is unused'
+assert_log_contains "semantic-unused-bindings-compile" 'Parameter `unusedParam` is unused'
+assert_log_contains "semantic-unused-bindings-compile" 'Local binding `unusedLocal` is unused'
+run_expect_success "semantic-unused-bindings-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/semantic_unused_bindings.starb"
+assert_log_contains "semantic-unused-bindings-run" 'Imported module `Math` is unused'
+assert_log_contains "semantic-unused-bindings-run" 'Imported module `Unicode` is unused'
+assert_log_contains "semantic-unused-bindings-run" 'Parameter `unusedParam` is unused'
+assert_log_contains "semantic-unused-bindings-run" 'Local binding `unusedLocal` is unused'
+run_expect_success "deprecated-usage-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/deprecated_usage_warning.starb"
+assert_log_contains "deprecated-usage-warning-check" 'Use of deprecated variable `legacyValue`. Use freshValue.'
+assert_log_contains "deprecated-usage-warning-check" 'Use of deprecated function `legacyFunc`. Use freshFunc.'
+assert_log_contains "deprecated-usage-warning-check" 'Use of deprecated class `OldBox`. Use NewBox.'
+assert_log_contains "deprecated-usage-warning-check" 'Use of deprecated field `legacyField`. Use currentField.'
+run_expect_success "deprecated-usage-warning-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/deprecated_usage_warning.starb"
+assert_log_contains "deprecated-usage-warning-run" 'Use of deprecated variable `legacyValue`. Use freshValue.'
+assert_log_contains "deprecated-usage-warning-run" 'Use of deprecated function `legacyFunc`. Use freshFunc.'
+assert_log_contains "deprecated-usage-warning-run" 'Use of deprecated class `OldBox`. Use NewBox.'
+assert_log_contains "deprecated-usage-warning-run" 'Use of deprecated field `legacyField`. Use currentField.'
+assert_log_contains "deprecated-usage-warning-run" 'DEPRECATED-USAGE-OK'
+run_expect_success "deprecated-interface-alias-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/deprecated_interface_alias_warning.starb"
+assert_log_contains "deprecated-interface-alias-warning-check" 'Use of deprecated interface `LegacyReadable`. Use ModernReadable.'
+assert_log_contains "deprecated-interface-alias-warning-check" 'Use of deprecated type alias `LegacyWord`. Use ModernWord.'
+run_expect_success "deprecated-interface-alias-warning-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/deprecated_interface_alias_warning.starb"
+assert_log_contains "deprecated-interface-alias-warning-run" 'Use of deprecated interface `LegacyReadable`. Use ModernReadable.'
+assert_log_contains "deprecated-interface-alias-warning-run" 'Use of deprecated type alias `LegacyWord`. Use ModernWord.'
+assert_log_contains "deprecated-interface-alias-warning-run" 'DEPRECATED-TYPE-DECLS-OK'
+run_expect_success "private-field-unused-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/private_field_unused_warning.starb"
+assert_log_contains "private-field-unused-warning-check" 'Private field `scratch` is unused'
+assert_log_not_contains "private-field-unused-warning-check" 'Private field `token` is unused'
+run_expect_success "private-field-unused-warning-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/private_field_unused_warning.starb"
+assert_log_contains "private-field-unused-warning-run" 'Private field `scratch` is unused'
+assert_log_not_contains "private-field-unused-warning-run" 'Private field `token` is unused'
+assert_log_contains "private-field-unused-warning-run" 'PRIVATE-FIELD-WARNING-OK'
+run_expect_failure "private-field-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/private_field_invalid.starb"
+assert_log_contains "private-field-invalid-check" '@private is only valid on class fields'
+run_expect_failure "semantic-must-return-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/semantic_must_return_invalid.starb"
+assert_log_contains "semantic-must-return-invalid-check" 'Callable `missing` has declared non-Void return type `Int` but may fall through without returning a value'
+run_expect_failure "semantic-definite-assignment-local-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/semantic_definite_assignment_local_invalid.starb"
+assert_log_contains "semantic-definite-assignment-local-invalid-check" 'Binding `value` may be read before it is definitely initialized'
+run_expect_failure "semantic-definite-assignment-top-level-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/semantic_definite_assignment_top_level_invalid.starb"
+assert_log_contains "semantic-definite-assignment-top-level-invalid-check" 'Binding `top` may be read before it is definitely initialized'
 run_expect_success "self-referential-class-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/self_referential_class_edge.starb"
 run_expect_success "self-referential-class-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/self_referential_class_edge.starb"
 assert_log_contains "self-referential-class-run" "SELF-REFERENTIAL-CLASS-OK"
@@ -215,6 +281,9 @@ assert_log_contains "numeric-arrays-phase3-run" "NUMERIC-ARRAYS-PHASE3-OK"
 run_expect_success "specialized-numeric-bytecode-phase4-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/specialized_numeric_bytecode_phase4.starb"
 run_expect_success "specialized-numeric-bytecode-phase4-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/specialized_numeric_bytecode_phase4.starb"
 assert_log_contains "specialized-numeric-bytecode-phase4-run" "NUMERIC-BYTECODE-PHASE4-OK"
+run_expect_success "adaptive-quickening-phase5-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/adaptive_quickening_phase5.starb"
+run_expect_success "adaptive-quickening-phase5-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/adaptive_quickening_phase5.starb"
+assert_log_contains "adaptive-quickening-phase5-run" "NUMERIC-QUICKEN-PHASE5-OK"
 run_expect_failure "math-intrinsics-invalid-runtime-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/math_intrinsics_invalid_runtime.starb"
 assert_log_contains "math-intrinsics-invalid-runtime-run" "sqrt requires non-negative numeric input"
 run_expect_success "inferred-var-types-custom-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/inferred_var_types_custom.starb"

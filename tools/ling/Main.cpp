@@ -1,5 +1,7 @@
 #include "starbytes/base/CmdLine.h"
 #include "starbytes/base/FileExt.def"
+#include "starbytes/base/Diagnostic.h"
+#include "starbytes/linguistics/Analysis.h"
 #include "starbytes/linguistics/CodeActionEngine.h"
 #include "starbytes/linguistics/FormatterEngine.h"
 #include "starbytes/linguistics/LintEngine.h"
@@ -31,6 +33,12 @@ struct ParseResult {
     std::string error;
 };
 
+enum class LintMode : uint8_t {
+    Both,
+    SyntaxOnly,
+    SemanticOnly
+};
+
 struct LingOptions {
     bool showHelp = false;
     bool showVersion = false;
@@ -41,6 +49,7 @@ struct LingOptions {
     bool applySafeFixes = false;
     bool dryRun = false;
     bool modpathAware = false;
+    LintMode lintMode = LintMode::Both;
     size_t maxFiles = 0;
     std::vector<std::string> includeGlobs;
     std::vector<std::string> excludeGlobs;
@@ -65,6 +74,9 @@ struct FileAnalysisCache {
     std::string sourceText;
     starbytes::linguistics::LinguisticsSession session;
     bool loaded = false;
+
+    bool compilerAnalysisReady = false;
+    starbytes::linguistics::OwnedCompilerLintAnalysis compilerAnalysis;
 
     bool lintReady = false;
     starbytes::linguistics::LintResult lintResult;
@@ -101,6 +113,8 @@ void printHelp(std::ostream &out) {
     out << "  -V, --version           Show tool version.\n";
     out << "      --pretty-write      Emit formatted source for file(s) to stdout.\n";
     out << "      --lint              Run lint engine and print findings.\n";
+    out << "      --syntax-only       With --lint, print compiler syntax diagnostics only.\n";
+    out << "      --semantic-only     With --lint, print semantic lint findings only.\n";
     out << "      --suggest           Run suggestion engine and print suggestions.\n";
     out << "      --code-actions      Build code actions from lint + suggestions.\n";
     out << "      --apply-safe-fixes  Apply safe actions in-place.\n";
@@ -127,6 +141,8 @@ ParseResult parseArgs(int argc, const char *argv[], LingOptions &opts) {
     parser.addFlagOption("version", {"V"});
     parser.addFlagOption("pretty-write");
     parser.addFlagOption("lint");
+    parser.addFlagOption("syntax-only");
+    parser.addFlagOption("semantic-only");
     parser.addFlagOption("suggest");
     parser.addFlagOption("code-actions");
     parser.addFlagOption("apply-safe-fixes");
@@ -145,6 +161,20 @@ ParseResult parseArgs(int argc, const char *argv[], LingOptions &opts) {
     opts.showVersion = parsed.hasFlag("version");
     opts.prettyWrite = parsed.hasFlag("pretty-write");
     opts.lint = parsed.hasFlag("lint");
+    const bool syntaxOnly = parsed.hasFlag("syntax-only");
+    const bool semanticOnly = parsed.hasFlag("semantic-only");
+    if(syntaxOnly && semanticOnly) {
+        return {false, 1, "--syntax-only and --semantic-only are mutually exclusive."};
+    }
+    if((syntaxOnly || semanticOnly) && !opts.lint) {
+        return {false, 1, "--syntax-only/--semantic-only require --lint."};
+    }
+    if(syntaxOnly) {
+        opts.lintMode = LintMode::SyntaxOnly;
+    }
+    else if(semanticOnly) {
+        opts.lintMode = LintMode::SemanticOnly;
+    }
     opts.suggest = parsed.hasFlag("suggest");
     opts.codeActions = parsed.hasFlag("code-actions");
     opts.applySafeFixes = parsed.hasFlag("apply-safe-fixes");
@@ -488,11 +518,23 @@ bool loadFileAnalysis(FileAnalysisCache &cache, std::string &errorOut) {
     return true;
 }
 
+const starbytes::linguistics::OwnedCompilerLintAnalysis &ensureCompilerAnalysis(FileAnalysisCache &cache) {
+    if(!cache.compilerAnalysisReady) {
+        cache.compilerAnalysis = starbytes::linguistics::buildCompilerLintAnalysis(cache.session);
+        cache.compilerAnalysisReady = true;
+    }
+    return cache.compilerAnalysis;
+}
+
+const std::vector<starbytes::DiagnosticRecord> &ensureSyntaxDiagnostics(FileAnalysisCache &cache) {
+    return ensureCompilerAnalysis(cache).syntaxDiagnostics;
+}
+
 const starbytes::linguistics::LintResult &ensureLintResult(FileAnalysisCache &cache,
                                                            const starbytes::linguistics::LinguisticsConfig &config,
                                                            starbytes::linguistics::LintEngine &engine) {
     if(!cache.lintReady) {
-        cache.lintResult = engine.run(cache.session, config);
+        cache.lintResult = engine.run(ensureCompilerAnalysis(cache).view(), config);
         cache.lintReady = true;
     }
     return cache.lintResult;
@@ -505,7 +547,7 @@ const starbytes::linguistics::SuggestionResult &ensureSuggestionResult(
     if(!cache.suggestionsReady) {
         starbytes::linguistics::SuggestionRequest request;
         request.includeLowConfidence = false;
-        cache.suggestionResult = engine.run(cache.session, config, request);
+        cache.suggestionResult = engine.run(ensureCompilerAnalysis(cache).view(), config, request);
         cache.suggestionsReady = true;
     }
     return cache.suggestionResult;
@@ -667,6 +709,17 @@ void printActions(const starbytes::linguistics::CodeActionResult &result, std::o
     }
 }
 
+void printSyntaxDiagnostics(const std::vector<starbytes::DiagnosticRecord> &records, std::ostream &out) {
+    out << "syntax-diagnostics: " << records.size() << "\n";
+    for(const auto &record : records) {
+        out << "[" << (record.code.empty() ? "SB-PARSE" : record.code) << "] ";
+        if(record.location.has_value()) {
+            out << "L" << record.location->startLine << ":" << record.location->startCol << " ";
+        }
+        out << record.message << "\n";
+    }
+}
+
 bool hasOperationOutput(const LingOptions &opts) {
     return opts.prettyWrite || opts.lint || opts.suggest || opts.codeActions || opts.applySafeFixes;
 }
@@ -745,11 +798,20 @@ int main(int argc, const char *argv[]) {
             std::cout << "== [" << operationLabel << "] " << file.filePath.generic_string() << " ==\n";
         };
 
-        if(opts.lint) {
-            printHeader("lint");
-            std::cout << starbytes::linguistics::LinguisticsSerializer::toText(
-                             ensureLintResult(file, config, lintEngine))
-                      << '\n';
+            if(opts.lint) {
+                printHeader("lint");
+                if(opts.lintMode != LintMode::SemanticOnly) {
+                    const auto &syntaxDiagnostics = ensureSyntaxDiagnostics(file);
+                    printSyntaxDiagnostics(syntaxDiagnostics, std::cout);
+                    if(ensureCompilerAnalysis(file).syntaxHadError) {
+                        hadError = true;
+                    }
+                }
+            if(opts.lintMode != LintMode::SyntaxOnly) {
+                std::cout << starbytes::linguistics::LinguisticsSerializer::toText(
+                                 ensureLintResult(file, config, lintEngine))
+                          << '\n';
+            }
         }
 
         if(opts.suggest) {

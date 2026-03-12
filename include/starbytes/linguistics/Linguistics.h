@@ -1,6 +1,7 @@
 #ifndef STARBYTES_LINGUISTICS_LINGUISTICS_H
 #define STARBYTES_LINGUISTICS_LINGUISTICS_H
 
+#include "Analysis.h"
 #include "CodeActionEngine.h"
 #include "Config.h"
 #include "FormatterEngine.h"

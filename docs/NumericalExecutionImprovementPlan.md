@@ -359,7 +359,7 @@ Starbytes already has strong static type information for the Track A kernels. It
 - current specialized execution covers typed locals, arithmetic, comparisons, typed array indexing, and `sqrt`
 - this is still a typed interpreter phase, not quickening or JIT compilation
 
-## Phase 5: Superinstructions and Quickening
+## Phase 5: Superinstructions and Quickening [Implemented]
 
 After compile-time specialization, add adaptive specialization for dynamic cases.
 
@@ -379,6 +379,22 @@ After compile-time specialization, add adaptive specialization for dynamic cases
 ### CPython parallel
 
 This is the Starbytes analogue of the strategy described in PEP 659 and visible in CPython's specialized bytecode set.
+
+### Status
+
+- implemented as runtime quickening overlays keyed by function-local bytecode offsets
+- current quickened slice covers:
+  - local-local numeric binary execution
+  - local-local numeric compare execution
+  - local `sqrt(...)` intrinsic execution
+  - typed numeric array local-local index get/set execution
+- adaptive specialization now records operand kinds at runtime for generic local-local numeric binary/compare and `sqrt(local)` sites
+- quickening is activation-threshold based and leaves the serialized bytecode format unchanged
+- runtime profile output now reports:
+  - `runtime_quickened_sites`
+  - `runtime_quickened_executions`
+  - `runtime_quickened_specializations`
+  - `runtime_quickened_fallbacks`
 
 ## Phase 6: Workload-Specific Kernel Cleanup
 

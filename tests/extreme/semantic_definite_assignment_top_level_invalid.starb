@@ -1,0 +1,2 @@
+decl top:Int
+print(top)

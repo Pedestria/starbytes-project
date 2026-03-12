@@ -33,7 +33,11 @@ void printCompileProfile(std::ostream &out,const CompileProfileData &profile,boo
     out << "    \"parser_statements\": " << profile.parserStatementCount << ",\n";
     out << "    \"parser_source_bytes\": " << profile.parserSourceBytes << ",\n";
     out << "    \"module_cache_hits\": " << profile.moduleCacheHits << ",\n";
-    out << "    \"module_cache_misses\": " << profile.moduleCacheMisses << "\n";
+    out << "    \"module_cache_misses\": " << profile.moduleCacheMisses << ",\n";
+    out << "    \"runtime_quickened_sites\": " << profile.runtimeQuickenedSites << ",\n";
+    out << "    \"runtime_quickened_executions\": " << profile.runtimeQuickenedExecutions << ",\n";
+    out << "    \"runtime_quickened_specializations\": " << profile.runtimeQuickenedSpecializations << ",\n";
+    out << "    \"runtime_quickened_fallbacks\": " << profile.runtimeQuickenedFallbacks << "\n";
     out << "  },\n";
     out << "  \"timings_ms\": {\n";
     out << "    \"total\": " << nsToMs(profile.totalNs) << ",\n";

@@ -270,6 +270,8 @@ static bool extractTypedNumericValue(StarbytesObject object,RTTypedNumericKind k
     return false;
 }
 
+static constexpr unsigned kQuickeningInvocationThreshold = 4;
+
 static std::string objectToString(StarbytesObject object){
     if(!object){
         return "null";
@@ -523,6 +525,7 @@ class InterpImpl final : public Interp {
     };
 
     struct LocalFrame {
+        const RTFuncTemplate *funcTemplate = nullptr;
         std::vector<LocalSlot> slots;
     };
 
@@ -543,6 +546,7 @@ class InterpImpl final : public Interp {
     string_map<StarbytesClassType> classTypeByName;
     map<StarbytesClassType,size_t> classIndexByType;
     std::string lastRuntimeError;
+    RuntimeProfileData runtimeProfile;
 
     void execNorm(RTCode &code,std::istream &in,bool * willReturn,StarbytesObject *return_val);
     
@@ -558,8 +562,14 @@ class InterpImpl final : public Interp {
     void popLocalFrame();
     StarbytesObject referenceLocalSlot(uint32_t slot);
     bool localSlotToNumber(uint32_t slot,RTTypedNumericKind kind,long double &valueOut);
+    bool localSlotToIndex(uint32_t slot,int &indexOut);
+    bool observedLocalSlotNumericType(uint32_t slot,StarbytesNumT &typeOut) const;
     void storeLocalSlotOwned(uint32_t slot,StarbytesObject value);
     void storeLocalSlotBorrowed(uint32_t slot,StarbytesObject value);
+    bool inspectLocalRefExpr(std::istream &in,uint32_t &slotOut,RTTypedNumericKind &kindOut);
+    bool inspectQuickeningCandidate(std::istream &in,std::istream::pos_type exprStart,RTCode code,RTQuickenedExpr &out);
+    RTQuickenedExpr *getOrInstallQuickenedExpr(std::istream &in,std::istream::pos_type exprStart,RTCode code);
+    bool tryExecuteQuickenedExpr(std::istream &in,std::istream::pos_type exprStart,RTQuickenedExpr &expr,StarbytesObject &result);
     void discardExprArgs(std::istream &in,unsigned argCount);
     void skipExpr(std::istream &in);
     void skipExprFromCode(std::istream &in,RTCode code);
@@ -600,6 +610,9 @@ public:
         auto out = lastRuntimeError;
         lastRuntimeError.clear();
         return out;
+    }
+    RuntimeProfileData getProfileData() const override {
+        return runtimeProfile;
     }
 };
 
@@ -695,6 +708,7 @@ const InterpImpl::LocalFrame *InterpImpl::currentLocalFrame() const{
 
 void InterpImpl::pushLocalFrame(const RTFuncTemplate *funcTemp){
     LocalFrame frame;
+    frame.funcTemplate = funcTemp;
     size_t slotCount = 0;
     if(funcTemp){
         slotCount = funcTemp->argsTemplate.size() + funcTemp->localSlotNames.size();
@@ -769,10 +783,32 @@ bool InterpImpl::localSlotToNumber(uint32_t slot,RTTypedNumericKind kind,long do
     }
     switch(kind){
         case RTTYPED_NUM_INT:
-            valueOut = (long double)slotValue.intValue;
+            if(slotValue.kind == RTTYPED_NUM_DOUBLE){
+                valueOut = (long double)((int)slotValue.doubleValue);
+            }
+            else if(slotValue.kind == RTTYPED_NUM_FLOAT){
+                valueOut = (long double)((int)slotValue.floatValue);
+            }
+            else if(slotValue.kind == RTTYPED_NUM_LONG){
+                valueOut = (long double)((int)slotValue.longValue);
+            }
+            else {
+                valueOut = (long double)slotValue.intValue;
+            }
             return true;
         case RTTYPED_NUM_LONG:
-            valueOut = (long double)slotValue.longValue;
+            if(slotValue.kind == RTTYPED_NUM_DOUBLE){
+                valueOut = (long double)((int64_t)slotValue.doubleValue);
+            }
+            else if(slotValue.kind == RTTYPED_NUM_FLOAT){
+                valueOut = (long double)((int64_t)slotValue.floatValue);
+            }
+            else if(slotValue.kind == RTTYPED_NUM_LONG){
+                valueOut = (long double)slotValue.longValue;
+            }
+            else {
+                valueOut = (long double)((int64_t)slotValue.intValue);
+            }
             return true;
         case RTTYPED_NUM_FLOAT:
             if(slotValue.kind == RTTYPED_NUM_DOUBLE){
@@ -803,6 +839,62 @@ bool InterpImpl::localSlotToNumber(uint32_t slot,RTTypedNumericKind kind,long do
             break;
     }
     return false;
+}
+
+bool InterpImpl::localSlotToIndex(uint32_t slot,int &indexOut){
+    indexOut = -1;
+    auto *frame = currentLocalFrame();
+    if(!frame || slot >= frame->slots.size()){
+        return false;
+    }
+    auto &slotValue = frame->slots[slot];
+    if(slotValue.object){
+        if(!StarbytesObjectTypecheck(slotValue.object,StarbytesNumType())){
+            return false;
+        }
+        auto indexType = StarbytesNumGetType(slotValue.object);
+        if(indexType == NumTypeInt){
+            indexOut = StarbytesNumGetIntValue(slotValue.object);
+            return true;
+        }
+        if(indexType == NumTypeLong){
+            indexOut = (int)StarbytesNumGetLongValue(slotValue.object);
+            return true;
+        }
+        return false;
+    }
+    if(!slotValue.hasNumericValue){
+        return false;
+    }
+    if(slotValue.kind == RTTYPED_NUM_INT){
+        indexOut = slotValue.intValue;
+        return true;
+    }
+    if(slotValue.kind == RTTYPED_NUM_LONG){
+        indexOut = (int)slotValue.longValue;
+        return true;
+    }
+    return false;
+}
+
+bool InterpImpl::observedLocalSlotNumericType(uint32_t slot,StarbytesNumT &typeOut) const{
+    auto *frame = currentLocalFrame();
+    if(!frame || slot >= frame->slots.size()){
+        return false;
+    }
+    const auto &slotValue = frame->slots[slot];
+    if(slotValue.object){
+        if(!StarbytesObjectTypecheck(slotValue.object,StarbytesNumType())){
+            return false;
+        }
+        typeOut = StarbytesNumGetType(slotValue.object);
+        return true;
+    }
+    if(!slotValue.hasNumericValue){
+        return false;
+    }
+    typeOut = numTypeFromTypedKind(slotValue.kind);
+    return typeOut == NumTypeInt || typeOut == NumTypeLong || typeOut == NumTypeFloat || typeOut == NumTypeDouble;
 }
 
 void InterpImpl::storeLocalSlotOwned(uint32_t slot,StarbytesObject value){
@@ -880,6 +972,462 @@ void InterpImpl::storeLocalSlotBorrowed(uint32_t slot,StarbytesObject value){
     }
     StarbytesObjectReference(value);
     target.object = value;
+}
+
+bool InterpImpl::inspectLocalRefExpr(std::istream &in,uint32_t &slotOut,RTTypedNumericKind &kindOut){
+    RTCode exprCode = CODE_MODULE_END;
+    if(!in.read((char *)&exprCode,sizeof(exprCode))){
+        return false;
+    }
+    if(exprCode == CODE_RTLOCAL_REF){
+        kindOut = RTTYPED_NUM_OBJECT;
+        in.read((char *)&slotOut,sizeof(slotOut));
+        return true;
+    }
+    if(exprCode == CODE_RTTYPED_LOCAL_REF){
+        in.read((char *)&kindOut,sizeof(kindOut));
+        in.read((char *)&slotOut,sizeof(slotOut));
+        return true;
+    }
+    return false;
+}
+
+bool InterpImpl::inspectQuickeningCandidate(std::istream &in,
+                                            std::istream::pos_type exprStart,
+                                            RTCode code,
+                                            RTQuickenedExpr &out){
+    auto payloadStart = in.tellg();
+    auto restore = [&]() {
+        in.clear();
+        in.seekg(payloadStart);
+    };
+
+    auto finalize = [&]() -> bool {
+        auto endPos = in.tellg();
+        out.byteSize = (endPos == std::istream::pos_type(-1) || exprStart == std::istream::pos_type(-1))
+            ? 0
+            : static_cast<std::streamoff>(endPos - exprStart);
+        restore();
+        return out.byteSize > 0;
+    };
+
+    auto loadLocalLocalOperands = [&](uint32_t &slotA,RTTypedNumericKind &kindA,
+                                      uint32_t &slotB,RTTypedNumericKind &kindB) -> bool {
+        return inspectLocalRefExpr(in,slotA,kindA) && inspectLocalRefExpr(in,slotB,kindB);
+    };
+
+    if(code == CODE_BINARY_OPERATOR){
+        RTCode binaryCode = BINARY_OP_PLUS;
+        in.read((char *)&binaryCode,sizeof(binaryCode));
+        uint32_t slotA = 0;
+        uint32_t slotB = 0;
+        RTTypedNumericKind kindA = RTTYPED_NUM_OBJECT;
+        RTTypedNumericKind kindB = RTTYPED_NUM_OBJECT;
+        if(!loadLocalLocalOperands(slotA,kindA,slotB,kindB)){
+            restore();
+            return false;
+        }
+        if(binaryCode == BINARY_OP_PLUS || binaryCode == BINARY_OP_MINUS
+           || binaryCode == BINARY_OP_MUL || binaryCode == BINARY_OP_DIV
+           || binaryCode == BINARY_OP_MOD){
+            out.kind = RTQUICKEN_EXPR_LOCAL_LOCAL_BINARY;
+            out.op = static_cast<uint8_t>(binaryCode);
+        }
+        else if(binaryCode == BINARY_EQUAL_EQUAL || binaryCode == BINARY_NOT_EQUAL
+                || binaryCode == BINARY_LESS || binaryCode == BINARY_LESS_EQUAL
+                || binaryCode == BINARY_GREATER || binaryCode == BINARY_GREATER_EQUAL){
+            out.kind = RTQUICKEN_EXPR_LOCAL_LOCAL_COMPARE;
+            switch(binaryCode){
+                case BINARY_EQUAL_EQUAL:
+                    out.op = RTTYPED_COMPARE_EQ;
+                    break;
+                case BINARY_NOT_EQUAL:
+                    out.op = RTTYPED_COMPARE_NE;
+                    break;
+                case BINARY_LESS:
+                    out.op = RTTYPED_COMPARE_LT;
+                    break;
+                case BINARY_LESS_EQUAL:
+                    out.op = RTTYPED_COMPARE_LE;
+                    break;
+                case BINARY_GREATER:
+                    out.op = RTTYPED_COMPARE_GT;
+                    break;
+                case BINARY_GREATER_EQUAL:
+                    out.op = RTTYPED_COMPARE_GE;
+                    break;
+                default:
+                    restore();
+                    return false;
+            }
+        }
+        else {
+            restore();
+            return false;
+        }
+        out.numericKind = RTTYPED_NUM_OBJECT;
+        out.slotA = slotA;
+        out.slotB = slotB;
+        return finalize();
+    }
+
+    if(code == CODE_RTTYPED_BINARY){
+        RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+        RTTypedBinaryOp op = RTTYPED_BINARY_ADD;
+        in.read((char *)&kind,sizeof(kind));
+        in.read((char *)&op,sizeof(op));
+        uint32_t slotA = 0;
+        uint32_t slotB = 0;
+        RTTypedNumericKind kindA = RTTYPED_NUM_OBJECT;
+        RTTypedNumericKind kindB = RTTYPED_NUM_OBJECT;
+        if(!loadLocalLocalOperands(slotA,kindA,slotB,kindB)){
+            restore();
+            return false;
+        }
+        out.kind = RTQUICKEN_EXPR_LOCAL_LOCAL_BINARY;
+        out.numericKind = kind;
+        out.op = op;
+        out.slotA = slotA;
+        out.slotB = slotB;
+        return finalize();
+    }
+
+    if(code == CODE_RTTYPED_COMPARE){
+        RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+        RTTypedCompareOp op = RTTYPED_COMPARE_EQ;
+        in.read((char *)&kind,sizeof(kind));
+        in.read((char *)&op,sizeof(op));
+        uint32_t slotA = 0;
+        uint32_t slotB = 0;
+        RTTypedNumericKind kindA = RTTYPED_NUM_OBJECT;
+        RTTypedNumericKind kindB = RTTYPED_NUM_OBJECT;
+        if(!loadLocalLocalOperands(slotA,kindA,slotB,kindB)){
+            restore();
+            return false;
+        }
+        out.kind = RTQUICKEN_EXPR_LOCAL_LOCAL_COMPARE;
+        out.numericKind = kind;
+        out.op = op;
+        out.slotA = slotA;
+        out.slotB = slotB;
+        return finalize();
+    }
+
+    if(code == CODE_RTTYPED_INTRINSIC){
+        RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+        RTTypedIntrinsicOp op = RTTYPED_INTRINSIC_SQRT;
+        in.read((char *)&kind,sizeof(kind));
+        in.read((char *)&op,sizeof(op));
+        uint32_t slot = 0;
+        RTTypedNumericKind operandKind = RTTYPED_NUM_OBJECT;
+        if(op != RTTYPED_INTRINSIC_SQRT || !inspectLocalRefExpr(in,slot,operandKind)){
+            restore();
+            return false;
+        }
+        out.kind = RTQUICKEN_EXPR_LOCAL_INTRINSIC;
+        out.numericKind = kind;
+        out.op = op;
+        out.slotA = slot;
+        return finalize();
+    }
+
+    if(code == CODE_RTIVKFUNC){
+        RTCode calleeCode = CODE_MODULE_END;
+        if(!in.read((char *)&calleeCode,sizeof(calleeCode))){
+            restore();
+            return false;
+        }
+        std::string calleeName;
+        if(calleeCode == CODE_RTFUNC_REF || calleeCode == CODE_RTVAR_REF){
+            RTID id;
+            in >> &id;
+            calleeName = rtidToString(id);
+        }
+        else {
+            restore();
+            return false;
+        }
+        unsigned argCount = 0;
+        in.read((char *)&argCount,sizeof(argCount));
+        if(calleeName != "sqrt" || argCount != 1){
+            restore();
+            return false;
+        }
+        uint32_t slot = 0;
+        RTTypedNumericKind operandKind = RTTYPED_NUM_OBJECT;
+        if(!inspectLocalRefExpr(in,slot,operandKind)){
+            restore();
+            return false;
+        }
+        out.kind = RTQUICKEN_EXPR_LOCAL_INTRINSIC;
+        out.numericKind = RTTYPED_NUM_OBJECT;
+        out.op = RTTYPED_INTRINSIC_SQRT;
+        out.slotA = slot;
+        return finalize();
+    }
+
+    if(code == CODE_RTTYPED_INDEX_GET){
+        RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+        in.read((char *)&kind,sizeof(kind));
+        uint32_t collectionSlot = 0;
+        uint32_t indexSlot = 0;
+        RTTypedNumericKind collectionKind = RTTYPED_NUM_OBJECT;
+        RTTypedNumericKind indexKind = RTTYPED_NUM_OBJECT;
+        if(!loadLocalLocalOperands(collectionSlot,collectionKind,indexSlot,indexKind)){
+            restore();
+            return false;
+        }
+        out.kind = RTQUICKEN_EXPR_LOCAL_LOCAL_INDEX_GET;
+        out.numericKind = kind;
+        out.slotA = collectionSlot;
+        out.slotB = indexSlot;
+        return finalize();
+    }
+
+    if(code == CODE_RTTYPED_INDEX_SET){
+        RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+        in.read((char *)&kind,sizeof(kind));
+        uint32_t collectionSlot = 0;
+        uint32_t indexSlot = 0;
+        uint32_t valueSlot = 0;
+        RTTypedNumericKind collectionKind = RTTYPED_NUM_OBJECT;
+        RTTypedNumericKind indexKind = RTTYPED_NUM_OBJECT;
+        RTTypedNumericKind valueKind = RTTYPED_NUM_OBJECT;
+        if(!inspectLocalRefExpr(in,collectionSlot,collectionKind)
+           || !inspectLocalRefExpr(in,indexSlot,indexKind)
+           || !inspectLocalRefExpr(in,valueSlot,valueKind)){
+            restore();
+            return false;
+        }
+        out.kind = RTQUICKEN_EXPR_LOCAL_LOCAL_LOCAL_INDEX_SET;
+        out.numericKind = kind;
+        out.slotA = collectionSlot;
+        out.slotB = indexSlot;
+        out.slotC = valueSlot;
+        return finalize();
+    }
+
+    restore();
+    return false;
+}
+
+RTQuickenedExpr *InterpImpl::getOrInstallQuickenedExpr(std::istream &in,
+                                                       std::istream::pos_type exprStart,
+                                                       RTCode code){
+    auto *frame = currentLocalFrame();
+    if(!frame || !frame->funcTemplate || frame->funcTemplate->invocations < kQuickeningInvocationThreshold){
+        return nullptr;
+    }
+    auto *funcTemplate = const_cast<RTFuncTemplate *>(frame->funcTemplate);
+    if(funcTemplate->block_start_pos == std::istream::pos_type(-1)
+       || exprStart == std::istream::pos_type(-1)
+       || exprStart < funcTemplate->block_start_pos){
+        return nullptr;
+    }
+    auto offset = static_cast<std::streamoff>(exprStart - funcTemplate->block_start_pos);
+    auto found = funcTemplate->quickenedExprs.find(offset);
+    if(found != funcTemplate->quickenedExprs.end()){
+        return &found->second;
+    }
+    RTQuickenedExpr candidate;
+    if(!inspectQuickeningCandidate(in,exprStart,code,candidate)){
+        return nullptr;
+    }
+    auto inserted = funcTemplate->quickenedExprs.insert(std::make_pair(offset,candidate));
+    if(inserted.second){
+        runtimeProfile.quickenedSitesInstalled += 1;
+    }
+    return &inserted.first->second;
+}
+
+bool InterpImpl::tryExecuteQuickenedExpr(std::istream &in,
+                                         std::istream::pos_type exprStart,
+                                         RTQuickenedExpr &expr,
+                                         StarbytesObject &result){
+    result = nullptr;
+
+    auto finish = [&](StarbytesObject value) -> bool {
+        auto endPos = exprStart + expr.byteSize;
+        in.clear();
+        in.seekg(endPos);
+        result = value;
+        expr.executions += 1;
+        runtimeProfile.quickenedExecutions += 1;
+        return true;
+    };
+
+    auto fail = [&]() -> bool {
+        expr.fallbackCount += 1;
+        runtimeProfile.quickenedFallbacks += 1;
+        return false;
+    };
+
+    auto resolveKind = [&](uint32_t slotA,uint32_t slotB = 0,bool hasRhs = false) -> RTTypedNumericKind {
+        if(expr.numericKind != RTTYPED_NUM_OBJECT){
+            return expr.numericKind;
+        }
+        StarbytesNumT lhsType = NumTypeInt;
+        if(!observedLocalSlotNumericType(slotA,lhsType)){
+            return RTTYPED_NUM_OBJECT;
+        }
+        if(!hasRhs){
+            expr.numericKind = typedKindFromNumType(lhsType);
+            runtimeProfile.quickenedSpecializations += 1;
+            return expr.numericKind;
+        }
+        StarbytesNumT rhsType = NumTypeInt;
+        if(!observedLocalSlotNumericType(slotB,rhsType)){
+            return RTTYPED_NUM_OBJECT;
+        }
+        expr.numericKind = typedKindFromNumType(promoteNumericType(lhsType,rhsType));
+        runtimeProfile.quickenedSpecializations += 1;
+        return expr.numericKind;
+    };
+
+    if(expr.kind == RTQUICKEN_EXPR_LOCAL_LOCAL_BINARY){
+        auto kind = resolveKind(expr.slotA,expr.slotB,true);
+        if(kind == RTTYPED_NUM_OBJECT){
+            return fail();
+        }
+        long double lhsVal = 0.0;
+        long double rhsVal = 0.0;
+        if(!localSlotToNumber(expr.slotA,kind,lhsVal) || !localSlotToNumber(expr.slotB,kind,rhsVal)){
+            return fail();
+        }
+        if((expr.op == RTTYPED_BINARY_DIV || expr.op == RTTYPED_BINARY_MOD) && rhsVal == 0.0){
+            return finish(nullptr);
+        }
+        switch(expr.op){
+            case RTTYPED_BINARY_ADD:
+                return finish(makeNumber(lhsVal + rhsVal,numTypeFromTypedKind(kind)));
+            case RTTYPED_BINARY_SUB:
+                return finish(makeNumber(lhsVal - rhsVal,numTypeFromTypedKind(kind)));
+            case RTTYPED_BINARY_MUL:
+                return finish(makeNumber(lhsVal * rhsVal,numTypeFromTypedKind(kind)));
+            case RTTYPED_BINARY_DIV:
+                if(kind == RTTYPED_NUM_INT){
+                    return finish(makeNumber((long double)((int)lhsVal / (int)rhsVal),NumTypeInt));
+                }
+                if(kind == RTTYPED_NUM_LONG){
+                    return finish(makeNumber((long double)((int64_t)lhsVal / (int64_t)rhsVal),NumTypeLong));
+                }
+                return finish(makeNumber(lhsVal / rhsVal,numTypeFromTypedKind(kind)));
+            case RTTYPED_BINARY_MOD:
+                if(kind == RTTYPED_NUM_INT){
+                    return finish(makeNumber((long double)((int)lhsVal % (int)rhsVal),NumTypeInt));
+                }
+                if(kind == RTTYPED_NUM_LONG){
+                    return finish(makeNumber((long double)((int64_t)lhsVal % (int64_t)rhsVal),NumTypeLong));
+                }
+                return finish(makeNumber(std::fmod((double)lhsVal,(double)rhsVal),numTypeFromTypedKind(kind)));
+            default:
+                return fail();
+        }
+    }
+
+    if(expr.kind == RTQUICKEN_EXPR_LOCAL_LOCAL_COMPARE){
+        auto kind = resolveKind(expr.slotA,expr.slotB,true);
+        if(kind == RTTYPED_NUM_OBJECT){
+            return fail();
+        }
+        long double lhsVal = 0.0;
+        long double rhsVal = 0.0;
+        if(!localSlotToNumber(expr.slotA,kind,lhsVal) || !localSlotToNumber(expr.slotB,kind,rhsVal)){
+            return fail();
+        }
+        bool comparison = false;
+        switch(expr.op){
+            case RTTYPED_COMPARE_EQ:
+                comparison = (lhsVal == rhsVal);
+                break;
+            case RTTYPED_COMPARE_NE:
+                comparison = (lhsVal != rhsVal);
+                break;
+            case RTTYPED_COMPARE_LT:
+                comparison = (lhsVal < rhsVal);
+                break;
+            case RTTYPED_COMPARE_LE:
+                comparison = (lhsVal <= rhsVal);
+                break;
+            case RTTYPED_COMPARE_GT:
+                comparison = (lhsVal > rhsVal);
+                break;
+            case RTTYPED_COMPARE_GE:
+                comparison = (lhsVal >= rhsVal);
+                break;
+            default:
+                return fail();
+        }
+        return finish(StarbytesBoolNew((StarbytesBoolVal)comparison));
+    }
+
+    if(expr.kind == RTQUICKEN_EXPR_LOCAL_INTRINSIC){
+        auto kind = resolveKind(expr.slotA);
+        if(kind == RTTYPED_NUM_OBJECT){
+            return fail();
+        }
+        long double value = 0.0;
+        if(!localSlotToNumber(expr.slotA,kind,value)){
+            return fail();
+        }
+        if(expr.op == RTTYPED_INTRINSIC_SQRT){
+            if(value < 0.0){
+                lastRuntimeError = "sqrt requires non-negative numeric input";
+                return finish(nullptr);
+            }
+            return finish(makeNumber(std::sqrt((double)value),NumTypeDouble));
+        }
+        return fail();
+    }
+
+    if(expr.kind == RTQUICKEN_EXPR_LOCAL_LOCAL_INDEX_GET){
+        auto collection = referenceLocalSlot(expr.slotA);
+        int index = -1;
+        if(!collection || !localSlotToIndex(expr.slotB,index)){
+            if(collection){
+                StarbytesObjectRelease(collection);
+            }
+            return fail();
+        }
+        StarbytesObject value = nullptr;
+        if(index >= 0 && StarbytesObjectTypecheck(collection,StarbytesArrayType())
+           && (unsigned)index < StarbytesArrayGetLength(collection)){
+            long double numericValue = 0.0;
+            if(StarbytesArrayTryGetNumeric(collection,(unsigned)index,numTypeFromTypedKind(expr.numericKind),&numericValue)){
+                value = makeNumber(numericValue,numTypeFromTypedKind(expr.numericKind));
+            }
+        }
+        StarbytesObjectRelease(collection);
+        if(!value){
+            return fail();
+        }
+        return finish(value);
+    }
+
+    if(expr.kind == RTQUICKEN_EXPR_LOCAL_LOCAL_LOCAL_INDEX_SET){
+        auto collection = referenceLocalSlot(expr.slotA);
+        int index = -1;
+        long double numericValue = 0.0;
+        if(!collection || !localSlotToIndex(expr.slotB,index)
+           || !localSlotToNumber(expr.slotC,expr.numericKind,numericValue)){
+            if(collection){
+                StarbytesObjectRelease(collection);
+            }
+            return fail();
+        }
+        bool success = false;
+        if(index >= 0 && StarbytesObjectTypecheck(collection,StarbytesArrayType())
+           && (unsigned)index < StarbytesArrayGetLength(collection)){
+            success = StarbytesArrayTrySetNumeric(collection,(unsigned)index,numTypeFromTypedKind(expr.numericKind),numericValue) != 0;
+        }
+        StarbytesObjectRelease(collection);
+        if(!success){
+            return fail();
+        }
+        return finish(referenceLocalSlot(expr.slotC));
+    }
+
+    return fail();
 }
 
 void InterpImpl::discardExprArgs(std::istream &in,unsigned argCount){
@@ -1334,8 +1882,23 @@ StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_te
 }
 
 StarbytesObject InterpImpl::evalExpr(std::istream & in){
+    auto exprStart = in.tellg();
     RTCode code;
     in.read((char *)&code,sizeof(RTCode));
+    if(code != CODE_MODULE_END){
+        if(auto *quickened = getOrInstallQuickenedExpr(in,exprStart,code)){
+            StarbytesObject quickenedResult = nullptr;
+            if(tryExecuteQuickenedExpr(in,exprStart,*quickened,quickenedResult)){
+                return quickenedResult;
+            }
+            auto fallbackPos = exprStart;
+            if(fallbackPos != std::istream::pos_type(-1)){
+                fallbackPos += static_cast<std::streamoff>(sizeof(RTCode));
+                in.clear();
+                in.seekg(fallbackPos);
+            }
+        }
+    }
     switch (code) {
         case CODE_RTOBJCREATE:
         {

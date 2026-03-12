@@ -1,0 +1,15 @@
+func safe(flag: Bool) Int {
+    decl value:Int
+    if (flag) {
+        value = 1
+    } else {
+        value = 2
+    }
+    return value
+}
+
+decl top:Int = safe(true)
+
+if(top == 1 && safe(false) == 2){
+    print("SEMANTIC-FLOW-OK")
+}

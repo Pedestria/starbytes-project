@@ -1,8 +1,12 @@
 #include "starbytes/linguistics/LintEngine.h"
 
+#include "starbytes/compiler/ASTDecl.h"
+#include "starbytes/compiler/ASTExpr.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -86,6 +90,24 @@ TextSpan makeSpan(unsigned line, unsigned start, unsigned end) {
     span.end.line = line == 0 ? 0 : line - 1;
     span.start.character = start;
     span.end.character = end;
+    if(span.end.character < span.start.character) {
+        span.end.character = span.start.character;
+    }
+    return span;
+}
+
+TextSpan spanFromRegion(const Region &region) {
+    TextSpan span;
+    span.start.line = region.startLine > 0 ? region.startLine - 1 : 0;
+    span.end.line = region.endLine > 0 ? region.endLine - 1 : span.start.line;
+    span.start.character = region.startCol;
+    span.end.character = region.endCol;
+    if(span.end.line < span.start.line) {
+        span.end.line = span.start.line;
+    }
+    if(span.end.line == span.start.line && span.end.character <= span.start.character) {
+        span.end.character = span.start.character + 1;
+    }
     return span;
 }
 
@@ -158,6 +180,15 @@ std::vector<LintRuleDescriptor> allRuleDescriptors() {
             true,
             "Top-level declaration is missing a leading documentation comment.",
             {"docs", "comments"}
+        },
+        {
+            "correctness.shadowing",
+            "SB-LINT-CORR-C0004",
+            LintCategory::Correctness,
+            FindingSeverity::Information,
+            true,
+            "Declaration shadows an outer binding.",
+            {"correctness", "scope", "shadowing"}
         }
     };
 }
@@ -231,6 +262,16 @@ LintFinding makeFinding(const LintRuleDescriptor &rule,
     return finding;
 }
 
+void appendFinding(std::vector<LintFinding> &outFindings,
+                   LintFinding finding,
+                   const LintConfig &config,
+                   bool &hitLimit) {
+    outFindings.push_back(std::move(finding));
+    if(outFindings.size() >= config.maxFindings) {
+        hitLimit = true;
+    }
+}
+
 void addTrailingWhitespaceRule(const LintRuleDescriptor &rule,
                                const std::vector<SourceLine> &lines,
                                const LintConfig &config,
@@ -257,113 +298,98 @@ void addTrailingWhitespaceRule(const LintRuleDescriptor &rule,
         fix.edits.push_back(TextEdit{span, ""});
         finding.fixes.push_back(std::move(fix));
 
-        outFindings.push_back(std::move(finding));
-        if(outFindings.size() >= config.maxFindings) {
-            hitLimit = true;
+        appendFinding(outFindings, std::move(finding), config, hitLimit);
+        if(hitLimit) {
             return;
         }
     }
 }
 
-bool containsSingleAssignment(const std::string &conditionText, size_t &positionOut) {
-    for(size_t i = 0; i < conditionText.size(); ++i) {
-        if(conditionText[i] != '=') {
-            continue;
-        }
-        char prev = i > 0 ? conditionText[i - 1] : '\0';
-        char next = (i + 1) < conditionText.size() ? conditionText[i + 1] : '\0';
-        if(next == '=') {
-            continue;
-        }
-        if(prev == '=' || prev == '!' || prev == '<' || prev == '>' || prev == '+' || prev == '-'
-           || prev == '*' || prev == '/' || prev == '%' || prev == '&' || prev == '|' || prev == '^') {
-            continue;
-        }
-        positionOut = i;
-        return true;
+ASTExpr *findFirstSimpleAssignmentExpr(ASTExpr *expr) {
+    if(!expr) {
+        return nullptr;
     }
-    return false;
+    if(expr->type == ASSIGN_EXPR && expr->oprtr_str.has_value() && *expr->oprtr_str == "=") {
+        return expr;
+    }
+    if(auto *nested = findFirstSimpleAssignmentExpr(expr->callee)) {
+        return nested;
+    }
+    if(auto *nested = findFirstSimpleAssignmentExpr(expr->leftExpr)) {
+        return nested;
+    }
+    if(auto *nested = findFirstSimpleAssignmentExpr(expr->middleExpr)) {
+        return nested;
+    }
+    if(auto *nested = findFirstSimpleAssignmentExpr(expr->rightExpr)) {
+        return nested;
+    }
+    for(auto *arg : expr->exprArrayData) {
+        if(auto *nested = findFirstSimpleAssignmentExpr(arg)) {
+            return nested;
+        }
+    }
+    for(const auto &entry : expr->dictExpr) {
+        if(auto *nested = findFirstSimpleAssignmentExpr(entry.first)) {
+            return nested;
+        }
+        if(auto *nested = findFirstSimpleAssignmentExpr(entry.second)) {
+            return nested;
+        }
+    }
+    return nullptr;
 }
 
-bool startsWithControlKeyword(const std::string &trimmed, const std::string &keyword) {
-    if(!startsWith(trimmed, keyword)) {
-        return false;
-    }
-    if(trimmed.size() == keyword.size()) {
-        return true;
-    }
-    char next = trimmed[keyword.size()];
-    return std::isspace(static_cast<unsigned char>(next)) != 0 || next == '(';
-}
+const SourceLine *lineForNumber(const std::vector<SourceLine> &lines, unsigned oneBasedLine);
 
-void addAssignmentInConditionRule(const LintRuleDescriptor &rule,
-                                  const std::vector<SourceLine> &lines,
-                                  const LintConfig &config,
-                                  std::vector<LintFinding> &outFindings,
-                                  bool &hitLimit) {
-    const std::vector<std::string> keywords = {"if", "elif", "while", "for"};
-    for(const auto &line : lines) {
-        auto trimmed = trimLeftCopy(line.text);
-        size_t leading = line.text.size() - trimmed.size();
+std::optional<TextSpan> findAssignmentSpanFromAst(const std::vector<SourceLine> &lines, ASTExpr *assignExpr) {
+    if(!assignExpr) {
+        return std::nullopt;
+    }
 
-        bool matchedKeyword = false;
-        size_t keywordOffset = 0;
-        for(const auto &keyword : keywords) {
-            if(startsWithControlKeyword(trimmed, keyword)) {
-                matchedKeyword = true;
-                keywordOffset = keyword.size();
-                break;
+    unsigned startLine = assignExpr->leftExpr ? assignExpr->leftExpr->codeRegion.startLine : assignExpr->codeRegion.startLine;
+    unsigned endLine = assignExpr->rightExpr ? assignExpr->rightExpr->codeRegion.startLine : startLine;
+    if(startLine == 0) {
+        startLine = assignExpr->codeRegion.startLine;
+    }
+    if(startLine == 0) {
+        return std::nullopt;
+    }
+    if(endLine < startLine) {
+        endLine = startLine;
+    }
+
+    for(unsigned lineNo = startLine; lineNo <= endLine; ++lineNo) {
+        auto *line = lineForNumber(lines, lineNo);
+        if(!line) {
+            continue;
+        }
+        size_t startColumn = 0;
+        if(lineNo == startLine) {
+            if(assignExpr->leftExpr) {
+                startColumn = assignExpr->leftExpr->codeRegion.startCol;
+            }
+            else {
+                startColumn = assignExpr->codeRegion.startCol;
             }
         }
-        if(!matchedKeyword) {
-            continue;
-        }
-
-        auto open = trimmed.find('(', keywordOffset);
-        if(open == std::string::npos) {
-            continue;
-        }
-
-        int depth = 0;
-        size_t close = std::string::npos;
-        for(size_t i = open; i < trimmed.size(); ++i) {
-            if(trimmed[i] == '(') {
-                ++depth;
+        for(size_t i = startColumn; i < line->text.size(); ++i) {
+            if(line->text[i] != '=') {
+                continue;
             }
-            else if(trimmed[i] == ')') {
-                --depth;
-                if(depth == 0) {
-                    close = i;
-                    break;
-                }
+            char prev = i > 0 ? line->text[i - 1] : '\0';
+            char next = (i + 1) < line->text.size() ? line->text[i + 1] : '\0';
+            if(next == '=') {
+                continue;
             }
-        }
-        if(close == std::string::npos || close <= (open + 1)) {
-            continue;
-        }
-
-        auto conditionText = trimmed.substr(open + 1, close - open - 1);
-        size_t assignmentPos = 0;
-        if(!containsSingleAssignment(conditionText, assignmentPos)) {
-            continue;
-        }
-
-        unsigned start = static_cast<unsigned>(leading + open + 1 + assignmentPos);
-        unsigned end = start + 1;
-        auto finding = makeFinding(rule,
-                                   config,
-                                   "Suspicious assignment in condition; did you mean `==`?",
-                                   makeSpan(line.line, start, end));
-        outFindings.push_back(std::move(finding));
-        if(outFindings.size() >= config.maxFindings) {
-            hitLimit = true;
-            return;
+            if(prev == '=' || prev == '!' || prev == '<' || prev == '>' || prev == '+' || prev == '-'
+               || prev == '*' || prev == '/' || prev == '%' || prev == '&' || prev == '|' || prev == '^') {
+                continue;
+            }
+            return makeSpan(lineNo, static_cast<unsigned>(i), static_cast<unsigned>(i + 1));
         }
     }
-}
-
-size_t countChar(const std::string &line, char ch) {
-    return static_cast<size_t>(std::count(line.begin(), line.end(), ch));
+    return std::nullopt;
 }
 
 std::vector<size_t> findWordOccurrences(const std::string &line, const std::string &word) {
@@ -385,103 +411,696 @@ std::vector<size_t> findWordOccurrences(const std::string &line, const std::stri
     return offsets;
 }
 
+const SourceLine *lineForNumber(const std::vector<SourceLine> &lines, unsigned oneBasedLine);
+
+void scanStmtForAssignmentInCondition(const LintRuleDescriptor &rule,
+                                      ASTStmt *stmt,
+                                      const std::vector<SourceLine> &lines,
+                                      const LintConfig &config,
+                                      std::vector<LintFinding> &outFindings,
+                                      bool &hitLimit);
+
+void scanBlockForAssignmentInCondition(const LintRuleDescriptor &rule,
+                                       ASTBlockStmt *block,
+                                       const std::vector<SourceLine> &lines,
+                                       const LintConfig &config,
+                                       std::vector<LintFinding> &outFindings,
+                                       bool &hitLimit) {
+    if(!block) {
+        return;
+    }
+    for(auto *stmt : block->body) {
+        scanStmtForAssignmentInCondition(rule, stmt, lines, config, outFindings, hitLimit);
+        if(hitLimit) {
+            return;
+        }
+    }
+}
+
+void emitAssignmentInConditionFinding(const LintRuleDescriptor &rule,
+                                      ASTExpr *conditionExpr,
+                                      ASTExpr *assignExpr,
+                                      const std::vector<SourceLine> &lines,
+                                      const LintConfig &config,
+                                      std::vector<LintFinding> &outFindings,
+                                      bool &hitLimit) {
+    TextSpan span = conditionExpr ? spanFromRegion(conditionExpr->codeRegion) : makeSpan(1, 0, 1);
+    if(auto assignmentSpan = findAssignmentSpanFromAst(lines, assignExpr)) {
+        span = *assignmentSpan;
+    }
+    auto finding = makeFinding(rule,
+                               config,
+                               "Suspicious assignment in condition; did you mean `==`?",
+                               span);
+    appendFinding(outFindings, std::move(finding), config, hitLimit);
+}
+
+void scanStmtForAssignmentInCondition(const LintRuleDescriptor &rule,
+                                      ASTStmt *stmt,
+                                      const std::vector<SourceLine> &lines,
+                                      const LintConfig &config,
+                                      std::vector<LintFinding> &outFindings,
+                                      bool &hitLimit) {
+    if(!stmt || hitLimit) {
+        return;
+    }
+
+    if(!(stmt->type & DECL)) {
+        return;
+    }
+
+    auto *decl = static_cast<ASTDecl *>(stmt);
+    switch(decl->type) {
+        case COND_DECL: {
+            auto *condDecl = static_cast<ASTConditionalDecl *>(decl);
+            for(const auto &spec : condDecl->specs) {
+                if(auto *assignmentExpr = findFirstSimpleAssignmentExpr(spec.expr)) {
+                    emitAssignmentInConditionFinding(rule,
+                                                     spec.expr,
+                                                     assignmentExpr,
+                                                     lines,
+                                                     config,
+                                                     outFindings,
+                                                     hitLimit);
+                    if(hitLimit) {
+                        return;
+                    }
+                }
+                scanBlockForAssignmentInCondition(rule, spec.blockStmt, lines, config, outFindings, hitLimit);
+                if(hitLimit) {
+                    return;
+                }
+            }
+            return;
+        }
+        case FOR_DECL: {
+            auto *forDecl = static_cast<ASTForDecl *>(decl);
+            if(auto *assignmentExpr = findFirstSimpleAssignmentExpr(forDecl->expr)) {
+                emitAssignmentInConditionFinding(rule,
+                                                 forDecl->expr,
+                                                 assignmentExpr,
+                                                 lines,
+                                                 config,
+                                                 outFindings,
+                                                 hitLimit);
+                if(hitLimit) {
+                    return;
+                }
+            }
+            scanBlockForAssignmentInCondition(rule, forDecl->blockStmt, lines, config, outFindings, hitLimit);
+            return;
+        }
+        case WHILE_DECL: {
+            auto *whileDecl = static_cast<ASTWhileDecl *>(decl);
+            if(auto *assignmentExpr = findFirstSimpleAssignmentExpr(whileDecl->expr)) {
+                emitAssignmentInConditionFinding(rule,
+                                                 whileDecl->expr,
+                                                 assignmentExpr,
+                                                 lines,
+                                                 config,
+                                                 outFindings,
+                                                 hitLimit);
+                if(hitLimit) {
+                    return;
+                }
+            }
+            scanBlockForAssignmentInCondition(rule, whileDecl->blockStmt, lines, config, outFindings, hitLimit);
+            return;
+        }
+        case SECURE_DECL: {
+            auto *secureDecl = static_cast<ASTSecureDecl *>(decl);
+            scanBlockForAssignmentInCondition(rule, secureDecl->catchBlock, lines, config, outFindings, hitLimit);
+            return;
+        }
+        case FUNC_DECL:
+        case CLASS_FUNC_DECL:
+            scanBlockForAssignmentInCondition(rule,
+                                              static_cast<ASTFuncDecl *>(decl)->blockStmt,
+                                              lines,
+                                              config,
+                                              outFindings,
+                                              hitLimit);
+            return;
+        case CLASS_CTOR_DECL:
+            scanBlockForAssignmentInCondition(rule,
+                                              static_cast<ASTConstructorDecl *>(decl)->blockStmt,
+                                              lines,
+                                              config,
+                                              outFindings,
+                                              hitLimit);
+            return;
+        case CLASS_DECL: {
+            auto *classDecl = static_cast<ASTClassDecl *>(decl);
+            for(auto *method : classDecl->methods) {
+                scanBlockForAssignmentInCondition(rule, method->blockStmt, lines, config, outFindings, hitLimit);
+                if(hitLimit) {
+                    return;
+                }
+            }
+            for(auto *ctor : classDecl->constructors) {
+                scanBlockForAssignmentInCondition(rule, ctor->blockStmt, lines, config, outFindings, hitLimit);
+                if(hitLimit) {
+                    return;
+                }
+            }
+            return;
+        }
+        case INTERFACE_DECL: {
+            auto *interfaceDecl = static_cast<ASTInterfaceDecl *>(decl);
+            for(auto *method : interfaceDecl->methods) {
+                scanBlockForAssignmentInCondition(rule, method->blockStmt, lines, config, outFindings, hitLimit);
+                if(hitLimit) {
+                    return;
+                }
+            }
+            return;
+        }
+        case SCOPE_DECL:
+            scanBlockForAssignmentInCondition(rule,
+                                              static_cast<ASTScopeDecl *>(decl)->blockStmt,
+                                              lines,
+                                              config,
+                                              outFindings,
+                                              hitLimit);
+            return;
+        default:
+            return;
+    }
+}
+
+void addAssignmentInConditionRule(const LintRuleDescriptor &rule,
+                                  const CompilerLintAnalysis &analysis,
+                                  const std::vector<SourceLine> &lines,
+                                  const LintConfig &config,
+                                  std::vector<LintFinding> &outFindings,
+                                  bool &hitLimit) {
+    if(analysis.statements) {
+        for(auto *stmt : *analysis.statements) {
+            scanStmtForAssignmentInCondition(rule, stmt, lines, config, outFindings, hitLimit);
+            if(hitLimit) {
+                return;
+            }
+        }
+    }
+}
+
+const SourceLine *lineForNumber(const std::vector<SourceLine> &lines, unsigned oneBasedLine) {
+    if(oneBasedLine == 0 || oneBasedLine > lines.size()) {
+        return nullptr;
+    }
+    return &lines[oneBasedLine - 1];
+}
+
+std::optional<TextSpan> findWordOnLineBeforeColumn(const std::vector<SourceLine> &lines,
+                                                   unsigned oneBasedLine,
+                                                   unsigned beforeColumn,
+                                                   const std::string &word) {
+    auto *line = lineForNumber(lines, oneBasedLine);
+    if(!line) {
+        return std::nullopt;
+    }
+
+    size_t best = std::string::npos;
+    for(size_t pos : findWordOccurrences(line->text, word)) {
+        if(pos <= beforeColumn) {
+            best = pos;
+        }
+    }
+    if(best == std::string::npos) {
+        return std::nullopt;
+    }
+    return makeSpan(oneBasedLine,
+                    static_cast<unsigned>(best),
+                    static_cast<unsigned>(best + word.size()));
+}
+
+std::optional<TextSpan> findWordInLineRange(const std::vector<SourceLine> &lines,
+                                            unsigned startLine,
+                                            unsigned endLine,
+                                            const std::string &word) {
+    if(lines.empty()) {
+        return std::nullopt;
+    }
+    if(startLine == 0) {
+        startLine = 1;
+    }
+    if(endLine < startLine) {
+        endLine = startLine;
+    }
+    endLine = std::min<unsigned>(endLine, static_cast<unsigned>(lines.size()));
+    for(unsigned lineNo = startLine; lineNo <= endLine; ++lineNo) {
+        auto *line = lineForNumber(lines, lineNo);
+        if(!line) {
+            continue;
+        }
+        auto matches = findWordOccurrences(line->text, word);
+        if(!matches.empty()) {
+            auto pos = static_cast<unsigned>(matches.front());
+            return makeSpan(lineNo, pos, pos + static_cast<unsigned>(word.size()));
+        }
+    }
+    return std::nullopt;
+}
+
+void scanExprForLoopAllocations(const LintRuleDescriptor &rule,
+                                ASTExpr *expr,
+                                bool inLoop,
+                                const std::vector<SourceLine> &lines,
+                                const LintConfig &config,
+                                std::vector<LintFinding> &outFindings,
+                                bool &hitLimit);
+
+void scanStmtForLoopAllocations(const LintRuleDescriptor &rule,
+                                ASTStmt *stmt,
+                                bool inLoop,
+                                const std::vector<SourceLine> &lines,
+                                const LintConfig &config,
+                                std::vector<LintFinding> &outFindings,
+                                bool &hitLimit);
+
+void scanBlockForLoopAllocations(const LintRuleDescriptor &rule,
+                                 ASTBlockStmt *block,
+                                 bool inLoop,
+                                 const std::vector<SourceLine> &lines,
+                                 const LintConfig &config,
+                                 std::vector<LintFinding> &outFindings,
+                                 bool &hitLimit) {
+    if(!block) {
+        return;
+    }
+    for(auto *stmt : block->body) {
+        scanStmtForLoopAllocations(rule, stmt, inLoop, lines, config, outFindings, hitLimit);
+        if(hitLimit) {
+            return;
+        }
+    }
+}
+
+void emitLoopAllocationFinding(const LintRuleDescriptor &rule,
+                               ASTExpr *expr,
+                               const std::vector<SourceLine> &lines,
+                               const LintConfig &config,
+                               std::vector<LintFinding> &outFindings,
+                               bool &hitLimit) {
+    TextSpan span = spanFromRegion(expr->codeRegion);
+    if(auto newSpan = findWordOnLineBeforeColumn(lines,
+                                                 expr->codeRegion.startLine,
+                                                 expr->codeRegion.startCol,
+                                                 "new")) {
+        span = *newSpan;
+    }
+    auto finding = makeFinding(rule,
+                               config,
+                               "Object allocation inside a loop can increase runtime and GC pressure.",
+                               span);
+    appendFinding(outFindings, std::move(finding), config, hitLimit);
+}
+
+void scanExprForLoopAllocations(const LintRuleDescriptor &rule,
+                                ASTExpr *expr,
+                                bool inLoop,
+                                const std::vector<SourceLine> &lines,
+                                const LintConfig &config,
+                                std::vector<LintFinding> &outFindings,
+                                bool &hitLimit) {
+    if(!expr || hitLimit) {
+        return;
+    }
+
+    if(inLoop && expr->type == IVKE_EXPR && expr->isConstructorCall) {
+        emitLoopAllocationFinding(rule, expr, lines, config, outFindings, hitLimit);
+        if(hitLimit) {
+            return;
+        }
+    }
+
+    scanExprForLoopAllocations(rule, expr->callee, inLoop, lines, config, outFindings, hitLimit);
+    scanExprForLoopAllocations(rule, expr->leftExpr, inLoop, lines, config, outFindings, hitLimit);
+    scanExprForLoopAllocations(rule, expr->middleExpr, inLoop, lines, config, outFindings, hitLimit);
+    scanExprForLoopAllocations(rule, expr->rightExpr, inLoop, lines, config, outFindings, hitLimit);
+    for(auto *arg : expr->exprArrayData) {
+        scanExprForLoopAllocations(rule, arg, inLoop, lines, config, outFindings, hitLimit);
+        if(hitLimit) {
+            return;
+        }
+    }
+    for(const auto &entry : expr->dictExpr) {
+        scanExprForLoopAllocations(rule, entry.first, inLoop, lines, config, outFindings, hitLimit);
+        scanExprForLoopAllocations(rule, entry.second, inLoop, lines, config, outFindings, hitLimit);
+        if(hitLimit) {
+            return;
+        }
+    }
+}
+
+void scanVarDeclForLoopAllocations(const LintRuleDescriptor &rule,
+                                   ASTVarDecl *decl,
+                                   bool inLoop,
+                                   const std::vector<SourceLine> &lines,
+                                   const LintConfig &config,
+                                   std::vector<LintFinding> &outFindings,
+                                   bool &hitLimit) {
+    if(!decl) {
+        return;
+    }
+    for(const auto &spec : decl->specs) {
+        scanExprForLoopAllocations(rule, spec.expr, inLoop, lines, config, outFindings, hitLimit);
+        if(hitLimit) {
+            return;
+        }
+    }
+}
+
+void scanStmtForLoopAllocations(const LintRuleDescriptor &rule,
+                                ASTStmt *stmt,
+                                bool inLoop,
+                                const std::vector<SourceLine> &lines,
+                                const LintConfig &config,
+                                std::vector<LintFinding> &outFindings,
+                                bool &hitLimit) {
+    if(!stmt || hitLimit) {
+        return;
+    }
+
+    if(stmt->type & DECL) {
+        auto *decl = static_cast<ASTDecl *>(stmt);
+        switch(decl->type) {
+            case VAR_DECL:
+                scanVarDeclForLoopAllocations(rule,
+                                              static_cast<ASTVarDecl *>(decl),
+                                              inLoop,
+                                              lines,
+                                              config,
+                                              outFindings,
+                                              hitLimit);
+                return;
+            case COND_DECL: {
+                auto *condDecl = static_cast<ASTConditionalDecl *>(decl);
+                for(const auto &spec : condDecl->specs) {
+                    scanExprForLoopAllocations(rule, spec.expr, inLoop, lines, config, outFindings, hitLimit);
+                    scanBlockForLoopAllocations(rule, spec.blockStmt, inLoop, lines, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return;
+                    }
+                }
+                return;
+            }
+            case FOR_DECL: {
+                auto *forDecl = static_cast<ASTForDecl *>(decl);
+                scanExprForLoopAllocations(rule, forDecl->expr, true, lines, config, outFindings, hitLimit);
+                scanBlockForLoopAllocations(rule, forDecl->blockStmt, true, lines, config, outFindings, hitLimit);
+                return;
+            }
+            case WHILE_DECL: {
+                auto *whileDecl = static_cast<ASTWhileDecl *>(decl);
+                scanExprForLoopAllocations(rule, whileDecl->expr, true, lines, config, outFindings, hitLimit);
+                scanBlockForLoopAllocations(rule, whileDecl->blockStmt, true, lines, config, outFindings, hitLimit);
+                return;
+            }
+            case SECURE_DECL: {
+                auto *secureDecl = static_cast<ASTSecureDecl *>(decl);
+                scanVarDeclForLoopAllocations(rule,
+                                              secureDecl->guardedDecl,
+                                              inLoop,
+                                              lines,
+                                              config,
+                                              outFindings,
+                                              hitLimit);
+                scanBlockForLoopAllocations(rule,
+                                            secureDecl->catchBlock,
+                                            inLoop,
+                                            lines,
+                                            config,
+                                            outFindings,
+                                            hitLimit);
+                return;
+            }
+            case FUNC_DECL:
+            case CLASS_FUNC_DECL: {
+                auto *funcDecl = static_cast<ASTFuncDecl *>(decl);
+                scanBlockForLoopAllocations(rule, funcDecl->blockStmt, false, lines, config, outFindings, hitLimit);
+                return;
+            }
+            case CLASS_CTOR_DECL: {
+                auto *ctorDecl = static_cast<ASTConstructorDecl *>(decl);
+                scanBlockForLoopAllocations(rule, ctorDecl->blockStmt, false, lines, config, outFindings, hitLimit);
+                return;
+            }
+            case CLASS_DECL: {
+                auto *classDecl = static_cast<ASTClassDecl *>(decl);
+                for(auto *field : classDecl->fields) {
+                    scanVarDeclForLoopAllocations(rule, field, false, lines, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return;
+                    }
+                }
+                for(auto *method : classDecl->methods) {
+                    scanBlockForLoopAllocations(rule, method->blockStmt, false, lines, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return;
+                    }
+                }
+                for(auto *ctor : classDecl->constructors) {
+                    scanBlockForLoopAllocations(rule, ctor->blockStmt, false, lines, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return;
+                    }
+                }
+                return;
+            }
+            case INTERFACE_DECL: {
+                auto *interfaceDecl = static_cast<ASTInterfaceDecl *>(decl);
+                for(auto *field : interfaceDecl->fields) {
+                    scanVarDeclForLoopAllocations(rule, field, false, lines, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return;
+                    }
+                }
+                for(auto *method : interfaceDecl->methods) {
+                    scanBlockForLoopAllocations(rule, method->blockStmt, false, lines, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return;
+                    }
+                }
+                return;
+            }
+            case SCOPE_DECL: {
+                auto *scopeDecl = static_cast<ASTScopeDecl *>(decl);
+                scanBlockForLoopAllocations(rule, scopeDecl->blockStmt, false, lines, config, outFindings, hitLimit);
+                return;
+            }
+            case RETURN_DECL: {
+                auto *returnDecl = static_cast<ASTReturnDecl *>(decl);
+                scanExprForLoopAllocations(rule, returnDecl->expr, inLoop, lines, config, outFindings, hitLimit);
+                return;
+            }
+            default:
+                return;
+        }
+    }
+
+    scanExprForLoopAllocations(rule,
+                               static_cast<ASTExpr *>(stmt),
+                               inLoop,
+                               lines,
+                               config,
+                               outFindings,
+                               hitLimit);
+}
+
 void addNewInLoopRule(const LintRuleDescriptor &rule,
+                      const CompilerLintAnalysis &analysis,
                       const std::vector<SourceLine> &lines,
                       const LintConfig &config,
                       std::vector<LintFinding> &outFindings,
                       bool &hitLimit) {
-    int braceDepth = 0;
-    std::vector<int> loopDepthStack;
-    bool awaitingLoopBrace = false;
+    if(!analysis.statements) {
+        return;
+    }
+    for(auto *stmt : *analysis.statements) {
+        scanStmtForLoopAllocations(rule, stmt, false, lines, config, outFindings, hitLimit);
+        if(hitLimit) {
+            return;
+        }
+    }
+}
 
-    for(const auto &line : lines) {
-        auto trimmed = trimLeftCopy(line.text);
-        bool startsLoop = startsWithControlKeyword(trimmed, "for") || startsWithControlKeyword(trimmed, "while");
+void scanStmtForUntypedCatch(const LintRuleDescriptor &rule,
+                             ASTStmt *stmt,
+                             const std::vector<SourceLine> &lines,
+                             const LintConfig &config,
+                             std::vector<LintFinding> &outFindings,
+                             bool &hitLimit);
 
-        bool inLoopContext = startsLoop || !loopDepthStack.empty() || awaitingLoopBrace;
-        if(inLoopContext) {
-            auto news = findWordOccurrences(line.text, "new");
-            for(size_t pos : news) {
-                auto finding = makeFinding(rule,
-                                           config,
-                                           "Object allocation inside a loop can increase runtime and GC pressure.",
-                                           makeSpan(line.line,
-                                                    static_cast<unsigned>(pos),
-                                                    static_cast<unsigned>(pos + 3)));
-                outFindings.push_back(std::move(finding));
-                if(outFindings.size() >= config.maxFindings) {
-                    hitLimit = true;
-                    return;
+void scanBlockForUntypedCatch(const LintRuleDescriptor &rule,
+                              ASTBlockStmt *block,
+                              const std::vector<SourceLine> &lines,
+                              const LintConfig &config,
+                              std::vector<LintFinding> &outFindings,
+                              bool &hitLimit) {
+    if(!block) {
+        return;
+    }
+    for(auto *stmt : block->body) {
+        scanStmtForUntypedCatch(rule, stmt, lines, config, outFindings, hitLimit);
+        if(hitLimit) {
+            return;
+        }
+    }
+}
+
+void emitUntypedCatchFinding(const LintRuleDescriptor &rule,
+                             ASTSecureDecl *secureDecl,
+                             const std::vector<SourceLine> &lines,
+                             const LintConfig &config,
+                             std::vector<LintFinding> &outFindings,
+                             bool &hitLimit) {
+    unsigned startLine = 1;
+    if(secureDecl->guardedDecl && !secureDecl->guardedDecl->specs.empty()) {
+        startLine = secureDecl->guardedDecl->specs.front().id
+            ? secureDecl->guardedDecl->specs.front().id->codeRegion.startLine
+            : secureDecl->guardedDecl->codeRegion.startLine;
+    }
+    if(startLine == 0) {
+        startLine = 1;
+    }
+    unsigned endLine = startLine + 2;
+    if(secureDecl->catchBlock && !secureDecl->catchBlock->body.empty() && secureDecl->catchBlock->body.front()) {
+        endLine = std::max(endLine, secureDecl->catchBlock->body.front()->codeRegion.startLine + 1);
+    }
+
+    TextSpan span = secureDecl->guardedDecl ? spanFromRegion(secureDecl->guardedDecl->codeRegion)
+                                            : makeSpan(startLine, 0, 5);
+    if(auto catchSpan = findWordInLineRange(lines, startLine, endLine, "catch")) {
+        span = *catchSpan;
+    }
+    auto finding = makeFinding(rule,
+                               config,
+                               "Catch clause should declare a typed error binding, e.g. `catch (err:String)`.",
+                               span);
+    appendFinding(outFindings, std::move(finding), config, hitLimit);
+}
+
+void scanStmtForUntypedCatch(const LintRuleDescriptor &rule,
+                             ASTStmt *stmt,
+                             const std::vector<SourceLine> &lines,
+                             const LintConfig &config,
+                             std::vector<LintFinding> &outFindings,
+                             bool &hitLimit) {
+    if(!stmt || hitLimit) {
+        return;
+    }
+
+    if(stmt->type & DECL) {
+        auto *decl = static_cast<ASTDecl *>(stmt);
+        switch(decl->type) {
+            case SECURE_DECL: {
+                auto *secureDecl = static_cast<ASTSecureDecl *>(decl);
+                if(secureDecl->catchErrorType == nullptr || secureDecl->catchErrorId == nullptr) {
+                    emitUntypedCatchFinding(rule, secureDecl, lines, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return;
+                    }
                 }
+                scanBlockForUntypedCatch(rule, secureDecl->catchBlock, lines, config, outFindings, hitLimit);
+                return;
             }
-        }
-
-        size_t opens = countChar(line.text, '{');
-        size_t closes = countChar(line.text, '}');
-
-        if(startsLoop) {
-            if(opens > 0) {
-                loopDepthStack.push_back(braceDepth + static_cast<int>(opens));
-                awaitingLoopBrace = false;
+            case COND_DECL: {
+                auto *condDecl = static_cast<ASTConditionalDecl *>(decl);
+                for(const auto &spec : condDecl->specs) {
+                    scanBlockForUntypedCatch(rule, spec.blockStmt, lines, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return;
+                    }
+                }
+                return;
             }
-            else {
-                awaitingLoopBrace = true;
+            case FOR_DECL:
+                scanBlockForUntypedCatch(rule,
+                                         static_cast<ASTForDecl *>(decl)->blockStmt,
+                                         lines,
+                                         config,
+                                         outFindings,
+                                         hitLimit);
+                return;
+            case WHILE_DECL:
+                scanBlockForUntypedCatch(rule,
+                                         static_cast<ASTWhileDecl *>(decl)->blockStmt,
+                                         lines,
+                                         config,
+                                         outFindings,
+                                         hitLimit);
+                return;
+            case FUNC_DECL:
+            case CLASS_FUNC_DECL:
+                scanBlockForUntypedCatch(rule,
+                                         static_cast<ASTFuncDecl *>(decl)->blockStmt,
+                                         lines,
+                                         config,
+                                         outFindings,
+                                         hitLimit);
+                return;
+            case CLASS_CTOR_DECL:
+                scanBlockForUntypedCatch(rule,
+                                         static_cast<ASTConstructorDecl *>(decl)->blockStmt,
+                                         lines,
+                                         config,
+                                         outFindings,
+                                         hitLimit);
+                return;
+            case CLASS_DECL: {
+                auto *classDecl = static_cast<ASTClassDecl *>(decl);
+                for(auto *method : classDecl->methods) {
+                    scanBlockForUntypedCatch(rule, method->blockStmt, lines, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return;
+                    }
+                }
+                for(auto *ctor : classDecl->constructors) {
+                    scanBlockForUntypedCatch(rule, ctor->blockStmt, lines, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return;
+                    }
+                }
+                return;
             }
-        }
-        else if(awaitingLoopBrace && opens > 0) {
-            loopDepthStack.push_back(braceDepth + static_cast<int>(opens));
-            awaitingLoopBrace = false;
-        }
-
-        braceDepth += static_cast<int>(opens);
-        braceDepth -= static_cast<int>(closes);
-        if(braceDepth < 0) {
-            braceDepth = 0;
-        }
-
-        while(!loopDepthStack.empty() && braceDepth < loopDepthStack.back()) {
-            loopDepthStack.pop_back();
+            case INTERFACE_DECL: {
+                auto *interfaceDecl = static_cast<ASTInterfaceDecl *>(decl);
+                for(auto *method : interfaceDecl->methods) {
+                    scanBlockForUntypedCatch(rule, method->blockStmt, lines, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return;
+                    }
+                }
+                return;
+            }
+            case SCOPE_DECL:
+                scanBlockForUntypedCatch(rule,
+                                         static_cast<ASTScopeDecl *>(decl)->blockStmt,
+                                         lines,
+                                         config,
+                                         outFindings,
+                                         hitLimit);
+                return;
+            default:
+                return;
         }
     }
 }
 
 void addUntypedCatchRule(const LintRuleDescriptor &rule,
+                         const CompilerLintAnalysis &analysis,
                          const std::vector<SourceLine> &lines,
                          const LintConfig &config,
                          std::vector<LintFinding> &outFindings,
                          bool &hitLimit) {
-    for(const auto &line : lines) {
-        auto catches = findWordOccurrences(line.text, "catch");
-        for(size_t pos : catches) {
-            size_t cursor = pos + 5;
-            while(cursor < line.text.size() && std::isspace(static_cast<unsigned char>(line.text[cursor])) != 0) {
-                ++cursor;
-            }
-
-            bool typed = false;
-            if(cursor < line.text.size() && line.text[cursor] == '(') {
-                auto close = line.text.find(')', cursor + 1);
-                if(close != std::string::npos) {
-                    auto signature = line.text.substr(cursor + 1, close - cursor - 1);
-                    typed = signature.find(':') != std::string::npos;
-                }
-            }
-
-            if(typed) {
-                continue;
-            }
-
-            auto finding = makeFinding(rule,
-                                       config,
-                                       "Catch clause should declare a typed error binding, e.g. `catch (err:String)`.",
-                                       makeSpan(line.line,
-                                                static_cast<unsigned>(pos),
-                                                static_cast<unsigned>(pos + 5)));
-            outFindings.push_back(std::move(finding));
-            if(outFindings.size() >= config.maxFindings) {
-                hitLimit = true;
-                return;
-            }
+    if(!analysis.statements) {
+        return;
+    }
+    for(auto *stmt : *analysis.statements) {
+        scanStmtForUntypedCatch(rule, stmt, lines, config, outFindings, hitLimit);
+        if(hitLimit) {
+            return;
         }
     }
 }
@@ -493,11 +1112,12 @@ bool endsWith(const std::string &value, const std::string &suffix) {
     return std::equal(suffix.rbegin(), suffix.rend(), value.rbegin());
 }
 
-bool hasDocCommentAbove(const std::vector<SourceLine> &lines, size_t index) {
-    if(index == 0) {
+bool hasDocCommentAbove(const std::vector<SourceLine> &lines, unsigned oneBasedLine) {
+    if(oneBasedLine < 2 || oneBasedLine > lines.size() + 1) {
         return false;
     }
 
+    size_t index = static_cast<size_t>(oneBasedLine - 1);
     auto prev = trimCopy(lines[index - 1].text);
     if(startsWith(prev, "///")) {
         return true;
@@ -519,49 +1139,757 @@ bool hasDocCommentAbove(const std::vector<SourceLine> &lines, size_t index) {
     return false;
 }
 
-bool isDocRequiredDeclaration(const std::string &trimmed, size_t leadingIndent) {
-    if(leadingIndent != 0) {
+bool isDocRequiredDeclaration(const ASTDecl *decl) {
+    if(!decl || !decl->scope || decl->scope->parentScope != nullptr) {
         return false;
     }
-    return startsWith(trimmed, "func ") || startsWith(trimmed, "lazy func ")
-        || startsWith(trimmed, "class ") || startsWith(trimmed, "struct ")
-        || startsWith(trimmed, "interface ") || startsWith(trimmed, "enum ")
-        || startsWith(trimmed, "scope ") || startsWith(trimmed, "def ");
+    return decl->type == FUNC_DECL || decl->type == CLASS_DECL || decl->type == INTERFACE_DECL
+        || decl->type == SCOPE_DECL || decl->type == TYPE_ALIAS_DECL;
+}
+
+unsigned docKeywordLength(const ASTDecl *decl) {
+    switch(decl->type) {
+        case FUNC_DECL:
+            return 4;
+        case CLASS_DECL:
+            return 5;
+        case INTERFACE_DECL:
+            return 9;
+        case SCOPE_DECL:
+            return 5;
+        case TYPE_ALIAS_DECL:
+            return 3;
+        default:
+            return 1;
+    }
 }
 
 void addMissingDocRule(const LintRuleDescriptor &rule,
+                       const CompilerLintAnalysis &analysis,
                        const std::vector<SourceLine> &lines,
                        const LintConfig &config,
                        std::vector<LintFinding> &outFindings,
                        bool &hitLimit) {
-    for(size_t i = 0; i < lines.size(); ++i) {
-        const auto &line = lines[i];
-        auto trimmed = trimLeftCopy(line.text);
-        size_t leading = line.text.size() - trimmed.size();
-        if(!isDocRequiredDeclaration(trimmed, leading)) {
+    if(!analysis.statements) {
+        return;
+    }
+    for(auto *stmt : *analysis.statements) {
+        if(!stmt || !(stmt->type & DECL)) {
             continue;
         }
-
-        if(hasDocCommentAbove(lines, i)) {
+        auto *decl = static_cast<ASTDecl *>(stmt);
+        if(!isDocRequiredDeclaration(decl) || decl->codeRegion.startLine == 0) {
             continue;
         }
-
-        size_t keywordLen = trimmed.find(' ');
-        if(keywordLen == std::string::npos) {
-            keywordLen = trimmed.size();
+        if(hasDocCommentAbove(lines, decl->codeRegion.startLine)) {
+            continue;
         }
+        auto startCol = decl->codeRegion.startCol;
         auto finding = makeFinding(rule,
                                    config,
                                    "Top-level declaration should include a leading documentation comment.",
-                                   makeSpan(line.line,
-                                            static_cast<unsigned>(leading),
-                                            static_cast<unsigned>(leading + keywordLen)));
-        outFindings.push_back(std::move(finding));
-        if(outFindings.size() >= config.maxFindings) {
-            hitLimit = true;
+                                   makeSpan(decl->codeRegion.startLine,
+                                            startCol,
+                                            startCol + docKeywordLength(decl)));
+        appendFinding(outFindings, std::move(finding), config, hitLimit);
+        if(hitLimit) {
             return;
         }
     }
+}
+
+enum class FlowBindingKind : uint8_t {
+    Local,
+    Parameter,
+    Catch
+};
+
+struct FlowBinding {
+    std::string name;
+    ASTIdentifier *declId = nullptr;
+    FlowBindingKind kind = FlowBindingKind::Local;
+    bool initialized = false;
+};
+
+struct FlowState {
+    std::vector<std::vector<FlowBinding>> frames;
+};
+
+struct FlowResult {
+    FlowState state;
+    bool continues = true;
+};
+
+const char *flowBindingKindName(FlowBindingKind kind) {
+    switch(kind) {
+        case FlowBindingKind::Parameter:
+            return "parameter";
+        case FlowBindingKind::Catch:
+            return "catch binding";
+        case FlowBindingKind::Local:
+        default:
+            return "local binding";
+    }
+}
+
+TextSpan spanForIdentifier(ASTIdentifier *id) {
+    if(!id) {
+        return makeSpan(1, 0, 1);
+    }
+    unsigned line = id->codeRegion.startLine == 0 ? 1 : id->codeRegion.startLine;
+    unsigned start = id->codeRegion.startCol;
+    unsigned end = id->codeRegion.endCol > start ? id->codeRegion.endCol : start + static_cast<unsigned>(id->val.size());
+    return makeSpan(line, start, end);
+}
+
+FlowBinding *findBindingInFrame(std::vector<FlowBinding> &frame, const std::string &name) {
+    for(auto it = frame.rbegin(); it != frame.rend(); ++it) {
+        if(it->name == name) {
+            return &*it;
+        }
+    }
+    return nullptr;
+}
+
+const FlowBinding *findBindingInFrame(const std::vector<FlowBinding> &frame, const std::string &name) {
+    for(auto it = frame.rbegin(); it != frame.rend(); ++it) {
+        if(it->name == name) {
+            return &*it;
+        }
+    }
+    return nullptr;
+}
+
+FlowBinding *findNearestBinding(FlowState &state, const std::string &name) {
+    for(auto it = state.frames.rbegin(); it != state.frames.rend(); ++it) {
+        if(auto *binding = findBindingInFrame(*it, name)) {
+            return binding;
+        }
+    }
+    return nullptr;
+}
+
+const FlowBinding *findNearestBinding(const FlowState &state, const std::string &name) {
+    for(auto it = state.frames.rbegin(); it != state.frames.rend(); ++it) {
+        if(auto *binding = findBindingInFrame(*it, name)) {
+            return binding;
+        }
+    }
+    return nullptr;
+}
+
+const FlowBinding *findOuterBinding(const FlowState &state, const std::string &name) {
+    if(state.frames.empty()) {
+        return nullptr;
+    }
+    bool skippedCurrent = false;
+    for(auto it = state.frames.rbegin(); it != state.frames.rend(); ++it) {
+        if(!skippedCurrent) {
+            skippedCurrent = true;
+            continue;
+        }
+        if(auto *binding = findBindingInFrame(*it, name)) {
+            return binding;
+        }
+    }
+    return nullptr;
+}
+
+void pushFlowFrame(FlowState &state, const std::vector<FlowBinding> &bindings = {}) {
+    state.frames.push_back(bindings);
+}
+
+void popFlowFrame(FlowState &state) {
+    if(!state.frames.empty()) {
+        state.frames.pop_back();
+    }
+}
+
+void emitUseBeforeInitializationFinding(const LintRuleDescriptor &rule,
+                                        ASTIdentifier *id,
+                                        const FlowBinding &binding,
+                                        const LintConfig &config,
+                                        std::vector<LintFinding> &outFindings,
+                                        bool &hitLimit) {
+    auto finding = makeFinding(rule,
+                               config,
+                               "Binding `" + binding.name + "` may be read before it is definitely initialized.",
+                               spanForIdentifier(id));
+    finding.notes.push_back(std::string("The referenced symbol is a ") + flowBindingKindName(binding.kind) + ".");
+    if(binding.declId) {
+        finding.related.push_back(spanForIdentifier(binding.declId));
+    }
+    appendFinding(outFindings, std::move(finding), config, hitLimit);
+}
+
+void emitShadowingFinding(const LintRuleDescriptor &rule,
+                          ASTIdentifier *id,
+                          const FlowBinding &shadowed,
+                          const LintConfig &config,
+                          std::vector<LintFinding> &outFindings,
+                          bool &hitLimit) {
+    auto finding = makeFinding(rule,
+                               config,
+                               "Declaration `" + id->val + "` shadows an outer "
+                                   + flowBindingKindName(shadowed.kind) + ".",
+                               spanForIdentifier(id));
+    if(shadowed.declId) {
+        finding.related.push_back(spanForIdentifier(shadowed.declId));
+    }
+    appendFinding(outFindings, std::move(finding), config, hitLimit);
+}
+
+void declareFlowBinding(FlowState &state,
+                        ASTIdentifier *id,
+                        FlowBindingKind kind,
+                        bool initialized,
+                        const LintRuleDescriptor *shadowRule,
+                        const LintConfig &config,
+                        std::vector<LintFinding> &outFindings,
+                        bool &hitLimit) {
+    if(!id) {
+        return;
+    }
+    if(state.frames.empty()) {
+        pushFlowFrame(state);
+    }
+    if(shadowRule != nullptr) {
+        if(const auto *shadowed = findOuterBinding(state, id->val)) {
+            emitShadowingFinding(*shadowRule, id, *shadowed, config, outFindings, hitLimit);
+            if(hitLimit) {
+                return;
+            }
+        }
+    }
+    state.frames.back().push_back(FlowBinding{id->val, id, kind, initialized});
+}
+
+FlowState mergeContinuingFlowStates(const std::vector<FlowState> &states) {
+    if(states.empty()) {
+        return FlowState{};
+    }
+    FlowState merged = states.front();
+    for(size_t frameIndex = 0; frameIndex < merged.frames.size(); ++frameIndex) {
+        for(auto &binding : merged.frames[frameIndex]) {
+            bool initialized = true;
+            for(const auto &state : states) {
+                if(frameIndex >= state.frames.size()) {
+                    initialized = false;
+                    break;
+                }
+                const auto *other = findBindingInFrame(state.frames[frameIndex], binding.name);
+                if(other == nullptr || !other->initialized) {
+                    initialized = false;
+                    break;
+                }
+            }
+            binding.initialized = initialized;
+        }
+    }
+    return merged;
+}
+
+std::vector<FlowBinding> makeParamBindings(const std::map<ASTIdentifier *, ASTType *> &params) {
+    std::vector<FlowBinding> bindings;
+    bindings.reserve(params.size());
+    for(const auto &entry : params) {
+        if(entry.first) {
+            bindings.push_back(FlowBinding{entry.first->val, entry.first, FlowBindingKind::Parameter, true});
+        }
+    }
+    return bindings;
+}
+
+void analyzeStmtForMustReturn(const LintRuleDescriptor &rule,
+                              ASTStmt *stmt,
+                              const LintConfig &config,
+                              std::vector<LintFinding> &outFindings,
+                              bool &hitLimit);
+
+void scanExprForFlowIssues(const LintRuleDescriptor *useBeforeRule,
+                           const LintRuleDescriptor *shadowRule,
+                           ASTExpr *expr,
+                           FlowState &state,
+                           const LintConfig &config,
+                           std::vector<LintFinding> &outFindings,
+                           bool &hitLimit);
+
+FlowResult analyzeStatementSequenceForFlow(const LintRuleDescriptor *useBeforeRule,
+                                           const LintRuleDescriptor *shadowRule,
+                                           const std::vector<ASTStmt *> &statements,
+                                           FlowState state,
+                                           const LintConfig &config,
+                                           std::vector<LintFinding> &outFindings,
+                                           bool &hitLimit);
+
+FlowResult analyzeBlockWithBindingsForFlow(const LintRuleDescriptor *useBeforeRule,
+                                           const LintRuleDescriptor *shadowRule,
+                                           ASTBlockStmt *block,
+                                           FlowState state,
+                                           const std::vector<FlowBinding> &bindings,
+                                           const LintConfig &config,
+                                           std::vector<LintFinding> &outFindings,
+                                           bool &hitLimit) {
+    if(!block) {
+        return FlowResult{std::move(state), true};
+    }
+    pushFlowFrame(state, bindings);
+    auto result = analyzeStatementSequenceForFlow(useBeforeRule,
+                                                  shadowRule,
+                                                  block->body,
+                                                  std::move(state),
+                                                  config,
+                                                  outFindings,
+                                                  hitLimit);
+    popFlowFrame(result.state);
+    return result;
+}
+
+FlowResult analyzeBlockForFlow(const LintRuleDescriptor *useBeforeRule,
+                               const LintRuleDescriptor *shadowRule,
+                               ASTBlockStmt *block,
+                               FlowState state,
+                               const LintConfig &config,
+                               std::vector<LintFinding> &outFindings,
+                               bool &hitLimit) {
+    return analyzeBlockWithBindingsForFlow(useBeforeRule,
+                                           shadowRule,
+                                           block,
+                                           std::move(state),
+                                           {},
+                                           config,
+                                           outFindings,
+                                           hitLimit);
+}
+
+void analyzeInlineFunctionForFlow(const LintRuleDescriptor *useBeforeRule,
+                                  const LintRuleDescriptor *shadowRule,
+                                  ASTExpr *expr,
+                                  const LintConfig &config,
+                                  std::vector<LintFinding> &outFindings,
+                                  bool &hitLimit) {
+    if(!expr || expr->type != INLINE_FUNC_EXPR || !expr->inlineFuncBlock) {
+        return;
+    }
+    FlowState state;
+    pushFlowFrame(state, makeParamBindings(expr->inlineFuncParams));
+    analyzeBlockForFlow(useBeforeRule,
+                        shadowRule,
+                        expr->inlineFuncBlock,
+                        std::move(state),
+                        config,
+                        outFindings,
+                        hitLimit);
+}
+
+void scanExprForFlowIssues(const LintRuleDescriptor *useBeforeRule,
+                           const LintRuleDescriptor *shadowRule,
+                           ASTExpr *expr,
+                           FlowState &state,
+                           const LintConfig &config,
+                           std::vector<LintFinding> &outFindings,
+                           bool &hitLimit) {
+    if(!expr || hitLimit) {
+        return;
+    }
+
+    if(expr->type == INLINE_FUNC_EXPR) {
+        analyzeInlineFunctionForFlow(useBeforeRule, shadowRule, expr, config, outFindings, hitLimit);
+        return;
+    }
+
+    if(expr->type == ID_EXPR) {
+        if(useBeforeRule != nullptr && expr->id) {
+            if(const auto *binding = findNearestBinding(state, expr->id->val)) {
+                if(!binding->initialized) {
+                    emitUseBeforeInitializationFinding(*useBeforeRule,
+                                                       expr->id,
+                                                       *binding,
+                                                       config,
+                                                       outFindings,
+                                                       hitLimit);
+                }
+            }
+        }
+        return;
+    }
+
+    if(expr->type == MEMBER_EXPR) {
+        scanExprForFlowIssues(useBeforeRule, shadowRule, expr->leftExpr, state, config, outFindings, hitLimit);
+        return;
+    }
+
+    if(expr->type == ASSIGN_EXPR) {
+        bool simpleIdentifierAssignment = expr->oprtr_str.has_value() && *expr->oprtr_str == "="
+            && expr->leftExpr != nullptr && expr->leftExpr->type == ID_EXPR && expr->leftExpr->id != nullptr;
+        if(simpleIdentifierAssignment) {
+            scanExprForFlowIssues(useBeforeRule, shadowRule, expr->rightExpr, state, config, outFindings, hitLimit);
+            if(hitLimit) {
+                return;
+            }
+            if(auto *binding = findNearestBinding(state, expr->leftExpr->id->val)) {
+                binding->initialized = true;
+            }
+            return;
+        }
+    }
+
+    scanExprForFlowIssues(useBeforeRule, shadowRule, expr->callee, state, config, outFindings, hitLimit);
+    scanExprForFlowIssues(useBeforeRule, shadowRule, expr->leftExpr, state, config, outFindings, hitLimit);
+    scanExprForFlowIssues(useBeforeRule, shadowRule, expr->middleExpr, state, config, outFindings, hitLimit);
+    scanExprForFlowIssues(useBeforeRule, shadowRule, expr->rightExpr, state, config, outFindings, hitLimit);
+    for(auto *item : expr->exprArrayData) {
+        scanExprForFlowIssues(useBeforeRule, shadowRule, item, state, config, outFindings, hitLimit);
+        if(hitLimit) {
+            return;
+        }
+    }
+    for(const auto &entry : expr->dictExpr) {
+        scanExprForFlowIssues(useBeforeRule, shadowRule, entry.first, state, config, outFindings, hitLimit);
+        if(hitLimit) {
+            return;
+        }
+        scanExprForFlowIssues(useBeforeRule, shadowRule, entry.second, state, config, outFindings, hitLimit);
+        if(hitLimit) {
+            return;
+        }
+    }
+}
+
+void analyzeFunctionDeclForFlow(const LintRuleDescriptor *useBeforeRule,
+                                const LintRuleDescriptor *shadowRule,
+                                ASTFuncDecl *funcDecl,
+                                const LintConfig &config,
+                                std::vector<LintFinding> &outFindings,
+                                bool &hitLimit) {
+    if(!funcDecl || funcDecl->declarationOnly || !funcDecl->blockStmt) {
+        return;
+    }
+    FlowState state;
+    pushFlowFrame(state, makeParamBindings(funcDecl->params));
+    analyzeBlockForFlow(useBeforeRule,
+                        shadowRule,
+                        funcDecl->blockStmt,
+                        std::move(state),
+                        config,
+                        outFindings,
+                        hitLimit);
+}
+
+void analyzeConstructorDeclForFlow(const LintRuleDescriptor *useBeforeRule,
+                                   const LintRuleDescriptor *shadowRule,
+                                   ASTConstructorDecl *ctorDecl,
+                                   const LintConfig &config,
+                                   std::vector<LintFinding> &outFindings,
+                                   bool &hitLimit) {
+    if(!ctorDecl || !ctorDecl->blockStmt) {
+        return;
+    }
+    FlowState state;
+    pushFlowFrame(state, makeParamBindings(ctorDecl->params));
+    analyzeBlockForFlow(useBeforeRule,
+                        shadowRule,
+                        ctorDecl->blockStmt,
+                        std::move(state),
+                        config,
+                        outFindings,
+                        hitLimit);
+}
+
+FlowResult analyzeStatementForFlow(const LintRuleDescriptor *useBeforeRule,
+                                   const LintRuleDescriptor *shadowRule,
+                                   ASTStmt *stmt,
+                                   FlowState state,
+                                   const LintConfig &config,
+                                   std::vector<LintFinding> &outFindings,
+                                   bool &hitLimit) {
+    if(!stmt || hitLimit) {
+        return FlowResult{std::move(state), true};
+    }
+
+    if(!(stmt->type & DECL)) {
+        scanExprForFlowIssues(useBeforeRule, shadowRule, static_cast<ASTExpr *>(stmt), state, config, outFindings, hitLimit);
+        return FlowResult{std::move(state), true};
+    }
+
+    auto *decl = static_cast<ASTDecl *>(stmt);
+    switch(decl->type) {
+        case VAR_DECL: {
+            auto *varDecl = static_cast<ASTVarDecl *>(decl);
+            for(const auto &spec : varDecl->specs) {
+                if(spec.expr) {
+                    scanExprForFlowIssues(useBeforeRule, shadowRule, spec.expr, state, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return FlowResult{std::move(state), true};
+                    }
+                }
+                declareFlowBinding(state,
+                                   spec.id,
+                                   FlowBindingKind::Local,
+                                   spec.expr != nullptr,
+                                   shadowRule,
+                                   config,
+                                   outFindings,
+                                   hitLimit);
+                if(hitLimit) {
+                    return FlowResult{std::move(state), true};
+                }
+            }
+            return FlowResult{std::move(state), true};
+        }
+        case RETURN_DECL: {
+            auto *returnDecl = static_cast<ASTReturnDecl *>(decl);
+            scanExprForFlowIssues(useBeforeRule, shadowRule, returnDecl->expr, state, config, outFindings, hitLimit);
+            return FlowResult{std::move(state), false};
+        }
+        case COND_DECL: {
+            auto *condDecl = static_cast<ASTConditionalDecl *>(decl);
+            std::vector<FlowState> continuingStates;
+            bool hasElse = false;
+            for(const auto &spec : condDecl->specs) {
+                FlowState branchStart = state;
+                if(spec.expr) {
+                    scanExprForFlowIssues(useBeforeRule, shadowRule, spec.expr, branchStart, config, outFindings, hitLimit);
+                    if(hitLimit) {
+                        return FlowResult{std::move(state), true};
+                    }
+                }
+                auto branchResult = analyzeBlockForFlow(useBeforeRule,
+                                                        shadowRule,
+                                                        spec.blockStmt,
+                                                        std::move(branchStart),
+                                                        config,
+                                                        outFindings,
+                                                        hitLimit);
+                if(hitLimit) {
+                    return FlowResult{std::move(state), true};
+                }
+                if(spec.expr == nullptr) {
+                    hasElse = true;
+                }
+                if(branchResult.continues) {
+                    continuingStates.push_back(std::move(branchResult.state));
+                }
+            }
+            if(!hasElse) {
+                continuingStates.push_back(std::move(state));
+            }
+            if(continuingStates.empty()) {
+                return FlowResult{FlowState{}, false};
+            }
+            return FlowResult{mergeContinuingFlowStates(continuingStates), true};
+        }
+        case FOR_DECL: {
+            auto *forDecl = static_cast<ASTForDecl *>(decl);
+            scanExprForFlowIssues(useBeforeRule, shadowRule, forDecl->expr, state, config, outFindings, hitLimit);
+            if(hitLimit) {
+                return FlowResult{std::move(state), true};
+            }
+            auto loopState = state;
+            (void)analyzeBlockForFlow(useBeforeRule,
+                                      shadowRule,
+                                      forDecl->blockStmt,
+                                      std::move(loopState),
+                                      config,
+                                      outFindings,
+                                      hitLimit);
+            return FlowResult{std::move(state), true};
+        }
+        case WHILE_DECL: {
+            auto *whileDecl = static_cast<ASTWhileDecl *>(decl);
+            scanExprForFlowIssues(useBeforeRule, shadowRule, whileDecl->expr, state, config, outFindings, hitLimit);
+            if(hitLimit) {
+                return FlowResult{std::move(state), true};
+            }
+            auto loopState = state;
+            (void)analyzeBlockForFlow(useBeforeRule,
+                                      shadowRule,
+                                      whileDecl->blockStmt,
+                                      std::move(loopState),
+                                      config,
+                                      outFindings,
+                                      hitLimit);
+            return FlowResult{std::move(state), true};
+        }
+        case SECURE_DECL: {
+            auto *secureDecl = static_cast<ASTSecureDecl *>(decl);
+            if(!secureDecl->guardedDecl || secureDecl->guardedDecl->specs.empty()) {
+                return FlowResult{std::move(state), true};
+            }
+
+            const auto &guardedSpec = secureDecl->guardedDecl->specs.front();
+            if(guardedSpec.expr) {
+                scanExprForFlowIssues(useBeforeRule, shadowRule, guardedSpec.expr, state, config, outFindings, hitLimit);
+                if(hitLimit) {
+                    return FlowResult{std::move(state), true};
+                }
+            }
+
+            declareFlowBinding(state,
+                               guardedSpec.id,
+                               FlowBindingKind::Local,
+                               true,
+                               shadowRule,
+                               config,
+                               outFindings,
+                               hitLimit);
+            if(hitLimit) {
+                return FlowResult{std::move(state), true};
+            }
+
+            FlowState catchState = state;
+            if(secureDecl->catchErrorId) {
+                pushFlowFrame(catchState);
+                declareFlowBinding(catchState,
+                                   secureDecl->catchErrorId,
+                                   FlowBindingKind::Catch,
+                                   true,
+                                   shadowRule,
+                                   config,
+                                   outFindings,
+                                   hitLimit);
+                if(hitLimit) {
+                    return FlowResult{std::move(state), true};
+                }
+            }
+            auto catchResult = analyzeBlockForFlow(useBeforeRule,
+                                                   shadowRule,
+                                                   secureDecl->catchBlock,
+                                                   std::move(catchState),
+                                                   config,
+                                                   outFindings,
+                                                   hitLimit);
+            if(hitLimit) {
+                return FlowResult{std::move(state), true};
+            }
+            if(secureDecl->catchErrorId) {
+                popFlowFrame(catchResult.state);
+            }
+            return FlowResult{std::move(state), true};
+        }
+        case FUNC_DECL:
+        case CLASS_FUNC_DECL:
+            analyzeFunctionDeclForFlow(useBeforeRule,
+                                       shadowRule,
+                                       static_cast<ASTFuncDecl *>(decl),
+                                       config,
+                                       outFindings,
+                                       hitLimit);
+            return FlowResult{std::move(state), true};
+        case CLASS_CTOR_DECL:
+            analyzeConstructorDeclForFlow(useBeforeRule,
+                                          shadowRule,
+                                          static_cast<ASTConstructorDecl *>(decl),
+                                          config,
+                                          outFindings,
+                                          hitLimit);
+            return FlowResult{std::move(state), true};
+        case CLASS_DECL: {
+            auto *classDecl = static_cast<ASTClassDecl *>(decl);
+            for(auto *field : classDecl->fields) {
+                analyzeStatementForFlow(useBeforeRule,
+                                        shadowRule,
+                                        field,
+                                        FlowState{},
+                                        config,
+                                        outFindings,
+                                        hitLimit);
+                if(hitLimit) {
+                    return FlowResult{std::move(state), true};
+                }
+            }
+            for(auto *method : classDecl->methods) {
+                analyzeFunctionDeclForFlow(useBeforeRule, shadowRule, method, config, outFindings, hitLimit);
+                if(hitLimit) {
+                    return FlowResult{std::move(state), true};
+                }
+            }
+            for(auto *ctor : classDecl->constructors) {
+                analyzeConstructorDeclForFlow(useBeforeRule, shadowRule, ctor, config, outFindings, hitLimit);
+                if(hitLimit) {
+                    return FlowResult{std::move(state), true};
+                }
+            }
+            return FlowResult{std::move(state), true};
+        }
+        case INTERFACE_DECL: {
+            auto *interfaceDecl = static_cast<ASTInterfaceDecl *>(decl);
+            for(auto *field : interfaceDecl->fields) {
+                analyzeStatementForFlow(useBeforeRule,
+                                        shadowRule,
+                                        field,
+                                        FlowState{},
+                                        config,
+                                        outFindings,
+                                        hitLimit);
+                if(hitLimit) {
+                    return FlowResult{std::move(state), true};
+                }
+            }
+            for(auto *method : interfaceDecl->methods) {
+                analyzeFunctionDeclForFlow(useBeforeRule, shadowRule, method, config, outFindings, hitLimit);
+                if(hitLimit) {
+                    return FlowResult{std::move(state), true};
+                }
+            }
+            return FlowResult{std::move(state), true};
+        }
+        case SCOPE_DECL: {
+            auto *scopeDecl = static_cast<ASTScopeDecl *>(decl);
+            (void)analyzeBlockForFlow(useBeforeRule,
+                                      shadowRule,
+                                      scopeDecl->blockStmt,
+                                      FlowState{},
+                                      config,
+                                      outFindings,
+                                      hitLimit);
+            return FlowResult{std::move(state), true};
+        }
+        default:
+            return FlowResult{std::move(state), true};
+    }
+}
+
+FlowResult analyzeStatementSequenceForFlow(const LintRuleDescriptor *useBeforeRule,
+                                           const LintRuleDescriptor *shadowRule,
+                                           const std::vector<ASTStmt *> &statements,
+                                           FlowState state,
+                                           const LintConfig &config,
+                                           std::vector<LintFinding> &outFindings,
+                                           bool &hitLimit) {
+    FlowResult result{std::move(state), true};
+    for(auto *stmt : statements) {
+        if(hitLimit || !result.continues) {
+            break;
+        }
+        result = analyzeStatementForFlow(useBeforeRule,
+                                         shadowRule,
+                                         stmt,
+                                         std::move(result.state),
+                                         config,
+                                         outFindings,
+                                         hitLimit);
+    }
+    return result;
+}
+
+void addShadowingRule(const LintRuleDescriptor &rule,
+                      const CompilerLintAnalysis &analysis,
+                      const LintConfig &config,
+                      std::vector<LintFinding> &outFindings,
+                      bool &hitLimit) {
+    if(!analysis.statements) {
+        return;
+    }
+    FlowState root;
+    pushFlowFrame(root);
+    (void)analyzeStatementSequenceForFlow(nullptr,
+                                          &rule,
+                                          *analysis.statements,
+                                          std::move(root),
+                                          config,
+                                          outFindings,
+                                          hitLimit);
 }
 
 void sortFindingsDeterministically(std::vector<LintFinding> &findings) {
@@ -588,13 +1916,13 @@ std::vector<LintRuleDescriptor> LintEngine::ruleDescriptors() const {
     return allRuleDescriptors();
 }
 
-LintResult LintEngine::run(const LinguisticsSession &session,
+LintResult LintEngine::run(const CompilerLintAnalysis &analysis,
                            const LinguisticsConfig &config,
                            const LintRequest &request) const {
     (void)request;
 
     LintResult result;
-    if(!config.lint.enabled || config.lint.maxFindings == 0) {
+    if(!config.lint.enabled || config.lint.maxFindings == 0 || analysis.session == nullptr) {
         return result;
     }
 
@@ -610,7 +1938,7 @@ LintResult LintEngine::run(const LinguisticsSession &session,
         disabledSelectors.push_back(toLower(selector));
     }
 
-    auto lines = splitLines(session.getSourceText());
+    auto lines = splitLines(analysis.session->getSourceText());
     bool hitLimit = false;
 
     for(const auto &rule : allRuleDescriptors()) {
@@ -622,16 +1950,19 @@ LintResult LintEngine::run(const LinguisticsSession &session,
             addTrailingWhitespaceRule(rule, lines, config.lint, result.findings, hitLimit);
         }
         else if(rule.id == "correctness.assignment_in_condition") {
-            addAssignmentInConditionRule(rule, lines, config.lint, result.findings, hitLimit);
+            addAssignmentInConditionRule(rule, analysis, lines, config.lint, result.findings, hitLimit);
         }
         else if(rule.id == "performance.new_in_loop") {
-            addNewInLoopRule(rule, lines, config.lint, result.findings, hitLimit);
+            addNewInLoopRule(rule, analysis, lines, config.lint, result.findings, hitLimit);
         }
         else if(rule.id == "safety.untyped_catch") {
-            addUntypedCatchRule(rule, lines, config.lint, result.findings, hitLimit);
+            addUntypedCatchRule(rule, analysis, lines, config.lint, result.findings, hitLimit);
         }
         else if(rule.id == "docs.missing_decl_comment") {
-            addMissingDocRule(rule, lines, config.lint, result.findings, hitLimit);
+            addMissingDocRule(rule, analysis, lines, config.lint, result.findings, hitLimit);
+        }
+        else if(rule.id == "correctness.shadowing") {
+            addShadowingRule(rule, analysis, config.lint, result.findings, hitLimit);
         }
 
         if(hitLimit) {
@@ -644,6 +1975,13 @@ LintResult LintEngine::run(const LinguisticsSession &session,
         result.findings.resize(config.lint.maxFindings);
     }
     return result;
+}
+
+LintResult LintEngine::run(const LinguisticsSession &session,
+                           const LinguisticsConfig &config,
+                           const LintRequest &request) const {
+    auto analysis = buildCompilerLintAnalysis(session);
+    return run(analysis.view(), config, request);
 }
 
 } // namespace starbytes::linguistics

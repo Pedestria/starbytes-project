@@ -145,8 +145,12 @@ Validated system attributes:
 - `@readonly`
   - valid only on class fields
   - no arguments
+- `@private`
+  - valid only on class fields
+  - no arguments
+  - fields remain public by default; `@private` currently acts as a semantic signal for unused-field warnings rather than enforced access control
 - `@deprecated`
-  - valid on class/function/field declarations
+  - valid on class/interface/type alias/function/field declarations
   - optional single string argument
   - named key, if present, must be `message`
 - `@native`

@@ -1303,6 +1303,17 @@ bool emitFailedModuleResults(const std::vector<std::string> &buildOrder,
     return moduleBuildFailed;
 }
 
+void emitSuccessfulModuleDiagnostics(const std::vector<std::string> &buildOrder,
+                                     const std::unordered_map<std::string,ModuleCompileTaskResult> &moduleResults) {
+    for(const auto &moduleKey : buildOrder) {
+        auto it = moduleResults.find(moduleKey);
+        if(it == moduleResults.end() || !it->second.success || it->second.diagnostics.empty()) {
+            continue;
+        }
+        std::cerr << it->second.diagnostics;
+    }
+}
+
 bool checkModuleGraphSymbolsOnly(const ModuleGraph &graph,
                                  CompileProfileData &profile,
                                  bool infer64BitNumbers) {
@@ -1358,7 +1369,11 @@ bool checkModuleGraphSymbolsOnly(const ModuleGraph &graph,
         profile.moduleBuildNs = std::chrono::duration_cast<std::chrono::nanoseconds>(moduleBuildEnd - moduleBuildStart).count();
     }
 
-    return !emitFailedModuleResults(graph.buildOrder,moduleResults);
+    if(emitFailedModuleResults(graph.buildOrder,moduleResults)) {
+        return false;
+    }
+    emitSuccessfulModuleDiagnostics(graph.buildOrder,moduleResults);
+    return true;
 }
 
 ModuleCompileTaskResult compileModuleToSegment(const std::string &moduleKey,
@@ -2117,6 +2132,8 @@ int main(int argc, const char *argv[]) {
         return finishWith(1);
     }
 
+    emitSuccessfulModuleDiagnostics(graph.buildOrder,moduleResults);
+
     if(moduleBuildCache.dirty){
         std::string saveError;
         if(!saveModuleBuildCache(moduleBuildCachePath,moduleBuildCache,saveError)){
@@ -2237,6 +2254,11 @@ int main(int argc, const char *argv[]) {
         if(profile.enabled) {
             auto runtimeEnd = std::chrono::steady_clock::now();
             profile.runtimeExecNs = std::chrono::duration_cast<std::chrono::nanoseconds>(runtimeEnd - runtimeStart).count();
+            auto runtimeProfile = interp->getProfileData();
+            profile.runtimeQuickenedSites = runtimeProfile.quickenedSitesInstalled;
+            profile.runtimeQuickenedExecutions = runtimeProfile.quickenedExecutions;
+            profile.runtimeQuickenedSpecializations = runtimeProfile.quickenedSpecializations;
+            profile.runtimeQuickenedFallbacks = runtimeProfile.quickenedFallbacks;
         }
     }
 

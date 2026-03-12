@@ -1,0 +1,19 @@
+import Time
+import Math
+
+func measure(input:Int, unusedParam:Int) Int {
+    decl usedLocal:Int = input
+    decl unusedLocal:Int = 1
+    decl _tick = Time.durationZero()
+    return usedLocal
+}
+
+scope Tools {
+    import Unicode
+    import CmdLine
+
+    func inner(value:Int, _ignored:Int) Int {
+        decl _args = CmdLine.positionals()
+        return value
+    }
+}

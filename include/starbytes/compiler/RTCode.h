@@ -128,6 +128,14 @@ typedef uint8_t RTTypedCompareOp;
 typedef uint8_t RTTypedIntrinsicOp;
 #define RTTYPED_INTRINSIC_SQRT 0x00
 
+typedef uint8_t RTQuickenedExprKind;
+#define RTQUICKEN_EXPR_NONE 0x00
+#define RTQUICKEN_EXPR_LOCAL_LOCAL_BINARY 0x01
+#define RTQUICKEN_EXPR_LOCAL_LOCAL_COMPARE 0x02
+#define RTQUICKEN_EXPR_LOCAL_INTRINSIC 0x03
+#define RTQUICKEN_EXPR_LOCAL_LOCAL_INDEX_GET 0x04
+#define RTQUICKEN_EXPR_LOCAL_LOCAL_LOCAL_INDEX_SET 0x05
+
 #define RTCODE_STREAM_OBJECT(object) \
 std::ostream & operator <<(std::ostream & os,object * obj); \
 std::istream & operator >>(std::istream & is,object * obj);
@@ -173,6 +181,17 @@ struct RTVar {
 
 RTCODE_STREAM_OBJECT(RTVar)
 
+struct RTQuickenedExpr {
+    RTQuickenedExprKind kind = RTQUICKEN_EXPR_NONE;
+    RTTypedNumericKind numericKind = RTTYPED_NUM_OBJECT;
+    uint8_t op = 0;
+    uint32_t slotA = 0;
+    uint32_t slotB = 0;
+    uint32_t slotC = 0;
+    std::streamoff byteSize = 0;
+    uint64_t executions = 0;
+    uint64_t fallbackCount = 0;
+};
 
 struct RTFuncTemplate {
     RTID name;
@@ -185,6 +204,7 @@ struct RTFuncTemplate {
     size_t blockByteSize = 0;
     /// Position of CODE_RTBLOCK_BEGIN
     std::istream::pos_type block_start_pos;
+    std::map<std::streamoff, RTQuickenedExpr> quickenedExprs;
 };
 
 RTCODE_STREAM_OBJECT(RTFuncTemplate)

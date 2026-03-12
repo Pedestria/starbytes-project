@@ -18,13 +18,19 @@ namespace starbytes {
     class ASTStreamConsumer {
     public:
         virtual bool acceptsSymbolTableContext() = 0;
+        virtual bool acceptsRawStatements(){
+            return false;
+        }
         virtual void consumeSTableContext(Semantics::STableContext *table){
             std::cout << "NOT IMPLEMENTED" << std::endl;
         };
+        virtual void consumeRawStmt(ASTStmt *stmt,bool semanticAccepted){
+            (void)stmt;
+            (void)semanticAccepted;
+        }
         virtual void consumeStmt(ASTStmt *stmt) = 0;
         virtual void consumeDecl(ASTDecl *stmt) = 0;
     };
 };
 
 #endif
-

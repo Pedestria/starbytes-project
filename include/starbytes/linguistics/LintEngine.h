@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "Analysis.h"
 #include "Config.h"
 #include "Session.h"
 #include "Types.h"
@@ -38,6 +39,10 @@ struct LintResult {
 class LintEngine {
 public:
     std::vector<LintRuleDescriptor> ruleDescriptors() const;
+
+    LintResult run(const CompilerLintAnalysis &analysis,
+                   const LinguisticsConfig &config,
+                   const LintRequest &request = LintRequest()) const;
 
     LintResult run(const LinguisticsSession &session,
                    const LinguisticsConfig &config,

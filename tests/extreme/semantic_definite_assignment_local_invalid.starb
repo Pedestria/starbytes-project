@@ -1,0 +1,7 @@
+func maybe(flag: Bool) Int {
+    decl value:Int
+    if (flag) {
+        value = 1
+    }
+    return value
+}

@@ -1,0 +1,23 @@
+@deprecated("Use freshValue.")
+decl imut legacyValue:Int = 7
+
+@deprecated(message="Use freshFunc.")
+func legacyFunc() Int {
+    return 9
+}
+
+@deprecated(message="Use NewBox.")
+class OldBox {
+    @deprecated("Use currentField.")
+    decl legacyField:Int = 4
+}
+
+decl value:Int = legacyValue
+decl computed:Int = legacyFunc()
+decl box = new OldBox()
+decl typed:OldBox = box
+decl fieldValue:Int = box.legacyField
+
+if(value == 7 && computed == 9 && fieldValue == 4 && typed.legacyField == 4){
+    print("DEPRECATED-USAGE-OK")
+}
