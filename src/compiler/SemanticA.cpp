@@ -250,6 +250,7 @@ namespace starbytes {
 
     struct SemanticUsageState {
         std::vector<std::vector<SemanticUsageBindingPtr>> frames;
+        std::unordered_map<const ASTIdentifier *,SemanticUsageBindingPtr> bindingsByDeclId;
     };
 
     static std::unordered_map<const SemanticA *, SemanticFlowState> gNamespaceFlowStates;
@@ -292,6 +293,80 @@ namespace starbytes {
         return nullptr;
     }
 
+    static const SemanticFlowBinding *findOuterSemanticBinding(const SemanticFlowState &state,const std::string &name){
+        if(state.frames.empty()){
+            return nullptr;
+        }
+        bool skippedCurrentFrame = false;
+        for(auto it = state.frames.rbegin();it != state.frames.rend();++it){
+            if(!skippedCurrentFrame){
+                skippedCurrentFrame = true;
+                continue;
+            }
+            if(auto *binding = findSemanticBindingInFrame(*it,name)){
+                return binding;
+            }
+        }
+        return nullptr;
+    }
+
+    static const char *semanticFlowBindingKindName(SemanticFlowBindingKind kind){
+        switch(kind){
+            case SemanticFlowBindingKind::Local:
+                return "local binding";
+            case SemanticFlowBindingKind::Parameter:
+                return "parameter";
+            case SemanticFlowBindingKind::Catch:
+                return "catch binding";
+        }
+        return "binding";
+    }
+
+    static bool shouldSuppressShadowingWarning(const ASTIdentifier *id){
+        if(!id){
+            return true;
+        }
+        auto displayName = id->sourceName.empty() ? id->val : id->sourceName;
+        return displayName.empty() || displayName == "self" || displayName.front() == '_';
+    }
+
+    static void emitShadowingDiagnostic(DiagnosticHandler &errStream,
+                                        ASTIdentifier *id,
+                                        const SemanticFlowBinding &shadowed){
+        if(!id || shouldSuppressShadowingWarning(id)){
+            return;
+        }
+        auto displayName = id->sourceName.empty() ? id->val : id->sourceName;
+        std::ostringstream ss;
+        ss << "Declaration `" << displayName << "` shadows an outer "
+           << semanticFlowBindingKindName(shadowed.kind) << ".";
+        errStream.push(SemanticADiagnostic::create(ss.str(),static_cast<ASTStmt *>(id),Diagnostic::Warning));
+    }
+
+    static void declareSemanticFlowBinding(SemanticFlowState &state,
+                                           ASTIdentifier *id,
+                                           SemanticFlowBindingKind kind,
+                                           bool initialized,
+                                           bool allowsAbsentRead,
+                                           DiagnosticHandler &errStream){
+        if(!id){
+            return;
+        }
+        if(state.frames.empty()){
+            pushSemanticFlowFrame(state);
+        }
+        if(const auto *shadowed = findOuterSemanticBinding(state,id->val)){
+            emitShadowingDiagnostic(errStream,id,*shadowed);
+        }
+        state.frames.back().push_back({
+            id->val,
+            id,
+            kind,
+            initialized,
+            allowsAbsentRead
+        });
+    }
+
     static void emitUseBeforeInitializationDiagnostic(DiagnosticHandler &errStream,
                                                       ASTIdentifier *id,
                                                       const SemanticFlowBinding &binding){
@@ -318,11 +393,23 @@ namespace starbytes {
     static void pushSemanticUsageFrame(SemanticUsageState &state,
                                        const std::vector<SemanticUsageBindingPtr> &bindings = {}){
         state.frames.push_back(bindings);
+        for(const auto &binding : bindings){
+            if(binding && binding->id){
+                state.bindingsByDeclId[binding->id] = binding;
+            }
+        }
     }
 
     static void popSemanticUsageFrame(SemanticUsageState &state){
         if(!state.frames.empty()){
             state.frames.pop_back();
+        }
+    }
+
+    static void registerSemanticUsageBinding(SemanticUsageState &state,
+                                             const SemanticUsageBindingPtr &binding){
+        if(binding && binding->id){
+            state.bindingsByDeclId[binding->id] = binding;
         }
     }
 
@@ -432,6 +519,140 @@ namespace starbytes {
                                                 const std::vector<SemanticUsageBindingPtr> &frame){
         for(const auto &binding : frame){
             emitUnusedUsageBindingDiagnostic(errStream,binding);
+        }
+    }
+
+    static bool shouldTrackDeadStore(const SemanticUsageBindingPtr &binding){
+        if(!binding){
+            return false;
+        }
+        if(binding->kind != SemanticUsageBindingKind::Local
+           && binding->kind != SemanticUsageBindingKind::Parameter){
+            return false;
+        }
+        return !shouldSuppressUnusedBindingWarning(binding->displayName.empty() ? binding->name : binding->displayName);
+    }
+
+    static std::string semanticUsageBindingKindLabel(const SemanticUsageBindingPtr &binding){
+        if(!binding){
+            return "binding";
+        }
+        switch(binding->kind){
+            case SemanticUsageBindingKind::Local:
+                return "local binding";
+            case SemanticUsageBindingKind::Parameter:
+                return "parameter";
+            case SemanticUsageBindingKind::Import:
+                return "import";
+            case SemanticUsageBindingKind::PrivateField:
+                return "private field";
+        }
+        return "binding";
+    }
+
+    static void emitDeadStoreOverwriteDiagnostic(DiagnosticHandler &errStream,
+                                                 const SemanticUsageBindingPtr &binding,
+                                                 ASTStmt *site){
+        if(!binding || !binding->used || !site || !shouldTrackDeadStore(binding)){
+            return;
+        }
+        auto displayName = binding->displayName.empty() ? binding->name : binding->displayName;
+        std::ostringstream ss;
+        ss << "Value assigned to " << semanticUsageBindingKindLabel(binding)
+           << " `" << displayName << "` is never read before being overwritten.";
+        errStream.push(SemanticADiagnostic::create(ss.str(),site,Diagnostic::Warning));
+    }
+
+    static void emitDeadStoreScopeExitDiagnostic(DiagnosticHandler &errStream,
+                                                 const SemanticUsageBindingPtr &binding,
+                                                 ASTStmt *site){
+        if(!binding || !binding->used || !site || !shouldTrackDeadStore(binding)){
+            return;
+        }
+        auto displayName = binding->displayName.empty() ? binding->name : binding->displayName;
+        std::ostringstream ss;
+        ss << "Value assigned to " << semanticUsageBindingKindLabel(binding)
+           << " `" << displayName << "` is never read before scope exit.";
+        errStream.push(SemanticADiagnostic::create(ss.str(),site,Diagnostic::Warning));
+    }
+
+    struct SemanticDeadStoreState {
+        std::vector<std::vector<SemanticUsageBindingPtr>> frames;
+        std::unordered_map<const SemanticUsageBinding *,ASTStmt *> pendingWrites;
+        const std::unordered_map<const ASTIdentifier *,SemanticUsageBindingPtr> *bindingsByDeclId = nullptr;
+    };
+
+    static void pushSemanticDeadStoreFrame(SemanticDeadStoreState &state,
+                                           const std::vector<SemanticUsageBindingPtr> &bindings = {}){
+        state.frames.push_back(bindings);
+    }
+
+    static void popSemanticDeadStoreFrame(SemanticDeadStoreState &state){
+        if(!state.frames.empty()){
+            state.frames.pop_back();
+        }
+    }
+
+    static SemanticUsageBindingPtr findSemanticDeadStoreBindingInFrame(const std::vector<SemanticUsageBindingPtr> &frame,
+                                                                       const std::string &name){
+        for(auto it = frame.rbegin();it != frame.rend();++it){
+            if(*it && (*it)->name == name){
+                return *it;
+            }
+        }
+        return nullptr;
+    }
+
+    static SemanticUsageBindingPtr findNearestSemanticDeadStoreBinding(SemanticDeadStoreState &state,
+                                                                       const std::string &name){
+        for(auto it = state.frames.rbegin();it != state.frames.rend();++it){
+            auto binding = findSemanticDeadStoreBindingInFrame(*it,name);
+            if(binding){
+                return binding;
+            }
+        }
+        return nullptr;
+    }
+
+    static void markSemanticDeadStoreRead(SemanticDeadStoreState &state,
+                                          const SemanticUsageBindingPtr &binding){
+        if(!binding){
+            return;
+        }
+        state.pendingWrites.erase(binding.get());
+    }
+
+    static void markSemanticDeadStoreWrite(SemanticDeadStoreState &state,
+                                           DiagnosticHandler &errStream,
+                                           const SemanticUsageBindingPtr &binding,
+                                           ASTStmt *site){
+        if(!binding || !site || !shouldTrackDeadStore(binding)){
+            return;
+        }
+        auto it = state.pendingWrites.find(binding.get());
+        if(it != state.pendingWrites.end()){
+            emitDeadStoreOverwriteDiagnostic(errStream,binding,it->second);
+        }
+        state.pendingWrites[binding.get()] = site;
+    }
+
+    static void clearSemanticDeadStorePendingWrites(SemanticDeadStoreState &state){
+        state.pendingWrites.clear();
+    }
+
+    static void emitDeadStoreScopeExitWarningsForFrame(DiagnosticHandler &errStream,
+                                                       SemanticDeadStoreState &state,
+                                                       const std::vector<SemanticUsageBindingPtr> &frame){
+        for(const auto &binding : frame){
+            if(!binding || !shouldTrackDeadStore(binding)){
+                continue;
+            }
+            auto it = state.pendingWrites.find(binding.get());
+            if(it == state.pendingWrites.end()){
+                continue;
+            }
+            emitDeadStoreScopeExitDiagnostic(errStream,binding,it->second);
+            state.pendingWrites.erase(it);
         }
     }
 
@@ -587,16 +808,12 @@ namespace starbytes {
                             return result;
                         }
                     }
-                    if(result.state.frames.empty()){
-                        pushSemanticFlowFrame(result.state);
-                    }
-                    result.state.frames.back().push_back({
-                        spec.id ? spec.id->val : std::string(),
-                        spec.id,
-                        SemanticFlowBindingKind::Local,
-                        spec.expr != nullptr || allowsAbsentRead,
-                        allowsAbsentRead
-                    });
+                    declareSemanticFlowBinding(result.state,
+                                               spec.id,
+                                               SemanticFlowBindingKind::Local,
+                                               spec.expr != nullptr || allowsAbsentRead,
+                                               allowsAbsentRead,
+                                               errStream);
                 }
                 return result;
             }
@@ -677,24 +894,22 @@ namespace starbytes {
                         return result;
                     }
                 }
-                if(result.state.frames.empty()){
-                    pushSemanticFlowFrame(result.state);
-                }
-                result.state.frames.back().push_back({
-                    spec.id ? spec.id->val : std::string(),
-                    spec.id,
-                    SemanticFlowBindingKind::Local,
-                    true,
-                    false
-                });
+                declareSemanticFlowBinding(result.state,
+                                           spec.id,
+                                           SemanticFlowBindingKind::Local,
+                                           true,
+                                           false,
+                                           errStream);
 
                 auto catchState = result.state;
                 if(secureDecl->catchErrorId){
-                    pushSemanticFlowFrame(catchState,{{secureDecl->catchErrorId->val,
-                                                      secureDecl->catchErrorId,
-                                                      SemanticFlowBindingKind::Catch,
-                                                      true,
-                                                      false}});
+                    pushSemanticFlowFrame(catchState);
+                    declareSemanticFlowBinding(catchState,
+                                               secureDecl->catchErrorId,
+                                               SemanticFlowBindingKind::Catch,
+                                               true,
+                                               false,
+                                               errStream);
                 }
                 auto catchResult = analyzeSemanticFlowBlock(secureDecl->catchBlock,std::move(catchState),errStream);
                 if(catchResult.errored){
@@ -755,6 +970,517 @@ namespace starbytes {
         return true;
     }
 
+    struct ConstructorFieldInitState {
+        string_set initializedFields;
+        string_set duplicateFields;
+        bool operator==(const ConstructorFieldInitState &other) const {
+            return initializedFields == other.initializedFields
+                && duplicateFields == other.duplicateFields;
+        }
+    };
+
+    struct ConstructorFieldInitDiagnostic {
+        ASTStmt *site = nullptr;
+        std::string message;
+        bool operator==(const ConstructorFieldInitDiagnostic &other) const {
+            return site == other.site && message == other.message;
+        }
+    };
+
+    struct ConstructorFieldInitResult {
+        std::vector<ConstructorFieldInitState> continuingStates;
+        std::vector<ConstructorFieldInitState> exitStates;
+        std::vector<ConstructorFieldInitDiagnostic> diagnostics;
+    };
+
+    static void appendUniqueFieldInitState(std::vector<ConstructorFieldInitState> &states,
+                                           const ConstructorFieldInitState &state){
+        if(std::find(states.begin(),states.end(),state) == states.end()){
+            states.push_back(state);
+        }
+    }
+
+    static void appendUniqueFieldInitDiagnostic(std::vector<ConstructorFieldInitDiagnostic> &diagnostics,
+                                                const ConstructorFieldInitDiagnostic &diagnostic){
+        if(std::find(diagnostics.begin(),diagnostics.end(),diagnostic) == diagnostics.end()){
+            diagnostics.push_back(diagnostic);
+        }
+    }
+
+    static bool isTrackedSelfFieldTarget(ASTExpr *expr,const string_set &trackedFields,std::string *fieldName = nullptr){
+        if(!expr || expr->type != MEMBER_EXPR || !expr->leftExpr || !expr->rightExpr || !expr->rightExpr->id){
+            return false;
+        }
+        if(expr->leftExpr->type != ID_EXPR || !expr->leftExpr->id || expr->leftExpr->id->val != "self"){
+            return false;
+        }
+        auto name = expr->rightExpr->id->val;
+        if(trackedFields.find(name) == trackedFields.end()){
+            return false;
+        }
+        if(fieldName){
+            *fieldName = name;
+        }
+        return true;
+    }
+
+    static bool isSelfExpr(ASTExpr *expr){
+        return expr && expr->type == ID_EXPR && expr->id && expr->id->val == "self";
+    }
+
+    static std::string renderFieldNameList(const std::vector<std::string> &fieldNames);
+
+    static std::vector<std::string> missingRequiredFieldsFromState(const std::vector<std::pair<std::string,std::string>> &requiredFields,
+                                                                   const ConstructorFieldInitState &state){
+        std::vector<std::string> missing;
+        for(const auto &field : requiredFields){
+            if(state.initializedFields.find(field.first) == state.initializedFields.end()){
+                missing.push_back(field.second);
+            }
+        }
+        return missing;
+    }
+
+    static void analyzeConstructorFieldInitExpr(ASTExpr *expr,
+                                                ConstructorFieldInitState &state,
+                                                const string_set &trackedFields,
+                                                const std::vector<std::pair<std::string,std::string>> &requiredFields,
+                                                std::vector<ConstructorFieldInitDiagnostic> &diagnostics);
+
+    static ConstructorFieldInitResult analyzeConstructorFieldInitBlock(ASTBlockStmt *block,
+                                                                       const ConstructorFieldInitState &initialState,
+                                                                       const string_set &trackedFields,
+                                                                       const std::vector<std::pair<std::string,std::string>> &requiredFields);
+
+    static ConstructorFieldInitResult analyzeConstructorFieldInitStmt(ASTStmt *stmt,
+                                                                      const ConstructorFieldInitState &incomingState,
+                                                                      const string_set &trackedFields,
+                                                                      const std::vector<std::pair<std::string,std::string>> &requiredFields){
+        ConstructorFieldInitResult result;
+        if(!stmt){
+            appendUniqueFieldInitState(result.continuingStates,incomingState);
+            return result;
+        }
+
+        if(!(stmt->type & DECL)){
+            auto state = incomingState;
+            analyzeConstructorFieldInitExpr((ASTExpr *)stmt,state,trackedFields,requiredFields,result.diagnostics);
+            appendUniqueFieldInitState(result.continuingStates,state);
+            return result;
+        }
+
+        auto *decl = (ASTDecl *)stmt;
+        switch(decl->type){
+            case VAR_DECL: {
+                auto state = incomingState;
+                auto *varDecl = (ASTVarDecl *)decl;
+                for(const auto &spec : varDecl->specs){
+                    analyzeConstructorFieldInitExpr(spec.expr,state,trackedFields,requiredFields,result.diagnostics);
+                }
+                appendUniqueFieldInitState(result.continuingStates,state);
+                return result;
+            }
+            case RETURN_DECL: {
+                auto state = incomingState;
+                auto *returnDecl = (ASTReturnDecl *)decl;
+                analyzeConstructorFieldInitExpr(returnDecl->expr,state,trackedFields,requiredFields,result.diagnostics);
+                appendUniqueFieldInitState(result.exitStates,state);
+                return result;
+            }
+            case COND_DECL: {
+                auto *condDecl = (ASTConditionalDecl *)decl;
+                bool hasElse = false;
+                for(const auto &spec : condDecl->specs){
+                    auto branchState = incomingState;
+                    if(spec.expr){
+                        analyzeConstructorFieldInitExpr(spec.expr,branchState,trackedFields,requiredFields,result.diagnostics);
+                    }
+                    else {
+                        hasElse = true;
+                    }
+                    auto branchResult = analyzeConstructorFieldInitBlock(spec.blockStmt,branchState,trackedFields,requiredFields);
+                    for(const auto &state : branchResult.exitStates){
+                        appendUniqueFieldInitState(result.exitStates,state);
+                    }
+                    for(const auto &state : branchResult.continuingStates){
+                        appendUniqueFieldInitState(result.continuingStates,state);
+                    }
+                    for(const auto &diagnostic : branchResult.diagnostics){
+                        appendUniqueFieldInitDiagnostic(result.diagnostics,diagnostic);
+                    }
+                }
+                if(!hasElse){
+                    appendUniqueFieldInitState(result.continuingStates,incomingState);
+                }
+                return result;
+            }
+            case FOR_DECL: {
+                auto state = incomingState;
+                auto *forDecl = (ASTForDecl *)decl;
+                analyzeConstructorFieldInitExpr(forDecl->expr,state,trackedFields,requiredFields,result.diagnostics);
+                auto loopResult = analyzeConstructorFieldInitBlock(forDecl->blockStmt,state,trackedFields,requiredFields);
+                for(const auto &exitState : loopResult.exitStates){
+                    appendUniqueFieldInitState(result.exitStates,exitState);
+                }
+                for(const auto &diagnostic : loopResult.diagnostics){
+                    appendUniqueFieldInitDiagnostic(result.diagnostics,diagnostic);
+                }
+                appendUniqueFieldInitState(result.continuingStates,state);
+                return result;
+            }
+            case WHILE_DECL: {
+                auto state = incomingState;
+                auto *whileDecl = (ASTWhileDecl *)decl;
+                analyzeConstructorFieldInitExpr(whileDecl->expr,state,trackedFields,requiredFields,result.diagnostics);
+                auto loopResult = analyzeConstructorFieldInitBlock(whileDecl->blockStmt,state,trackedFields,requiredFields);
+                for(const auto &exitState : loopResult.exitStates){
+                    appendUniqueFieldInitState(result.exitStates,exitState);
+                }
+                for(const auto &diagnostic : loopResult.diagnostics){
+                    appendUniqueFieldInitDiagnostic(result.diagnostics,diagnostic);
+                }
+                appendUniqueFieldInitState(result.continuingStates,state);
+                return result;
+            }
+            case SECURE_DECL: {
+                auto *secureDecl = (ASTSecureDecl *)decl;
+                if(secureDecl->guardedDecl && !secureDecl->guardedDecl->specs.empty()){
+                    auto successState = incomingState;
+                    const auto &spec = secureDecl->guardedDecl->specs.front();
+                    analyzeConstructorFieldInitExpr(spec.expr,successState,trackedFields,requiredFields,result.diagnostics);
+                    appendUniqueFieldInitState(result.continuingStates,successState);
+                }
+                else {
+                    appendUniqueFieldInitState(result.continuingStates,incomingState);
+                }
+                auto catchResult = analyzeConstructorFieldInitBlock(secureDecl->catchBlock,incomingState,trackedFields,requiredFields);
+                for(const auto &exitState : catchResult.exitStates){
+                    appendUniqueFieldInitState(result.exitStates,exitState);
+                }
+                for(const auto &state : catchResult.continuingStates){
+                    appendUniqueFieldInitState(result.continuingStates,state);
+                }
+                for(const auto &diagnostic : catchResult.diagnostics){
+                    appendUniqueFieldInitDiagnostic(result.diagnostics,diagnostic);
+                }
+                return result;
+            }
+            default: {
+                appendUniqueFieldInitState(result.continuingStates,incomingState);
+                return result;
+            }
+        }
+    }
+
+    static ConstructorFieldInitResult analyzeConstructorFieldInitBlock(ASTBlockStmt *block,
+                                                                       const ConstructorFieldInitState &initialState,
+                                                                       const string_set &trackedFields,
+                                                                       const std::vector<std::pair<std::string,std::string>> &requiredFields){
+        ConstructorFieldInitResult aggregate;
+        if(!block){
+            appendUniqueFieldInitState(aggregate.continuingStates,initialState);
+            return aggregate;
+        }
+
+        std::vector<ConstructorFieldInitState> continuingStates {initialState};
+        for(auto *stmt : block->body){
+            if(continuingStates.empty()){
+                break;
+            }
+            std::vector<ConstructorFieldInitState> nextStates;
+            for(const auto &state : continuingStates){
+                auto stmtResult = analyzeConstructorFieldInitStmt(stmt,state,trackedFields,requiredFields);
+                for(const auto &exitState : stmtResult.exitStates){
+                    appendUniqueFieldInitState(aggregate.exitStates,exitState);
+                }
+                for(const auto &nextState : stmtResult.continuingStates){
+                    appendUniqueFieldInitState(nextStates,nextState);
+                }
+                for(const auto &diagnostic : stmtResult.diagnostics){
+                    appendUniqueFieldInitDiagnostic(aggregate.diagnostics,diagnostic);
+                }
+            }
+            continuingStates = std::move(nextStates);
+        }
+
+        for(const auto &state : continuingStates){
+            appendUniqueFieldInitState(aggregate.continuingStates,state);
+        }
+        return aggregate;
+    }
+
+    static void analyzeConstructorFieldInitExpr(ASTExpr *expr,
+                                                ConstructorFieldInitState &state,
+                                                const string_set &trackedFields,
+                                                const std::vector<std::pair<std::string,std::string>> &requiredFields,
+                                                std::vector<ConstructorFieldInitDiagnostic> &diagnostics){
+        if(!expr){
+            return;
+        }
+        if(isSelfExpr(expr)){
+            auto missingFields = missingRequiredFieldsFromState(requiredFields,state);
+            if(!missingFields.empty()){
+                std::ostringstream ss;
+                ss << "Partially initialized `self` escapes before required field";
+                if(missingFields.size() > 1){
+                    ss << "s are";
+                }
+                else {
+                    ss << " is";
+                }
+                ss << " initialized: " << renderFieldNameList(missingFields) << ".";
+                appendUniqueFieldInitDiagnostic(diagnostics,{expr,ss.str()});
+            }
+            return;
+        }
+        if(expr->type == IVKE_EXPR && expr->callee){
+            if(expr->callee->type == MEMBER_EXPR
+               && expr->callee->leftExpr
+               && isSelfExpr(expr->callee->leftExpr)
+               && expr->callee->rightExpr
+               && expr->callee->rightExpr->id){
+                auto missingFields = missingRequiredFieldsFromState(requiredFields,state);
+                if(!missingFields.empty()){
+                    auto methodName = expr->callee->rightExpr->id->sourceName.empty()
+                                      ? expr->callee->rightExpr->id->val
+                                      : expr->callee->rightExpr->id->sourceName;
+                    std::ostringstream ss;
+                    ss << "Method `" << methodName
+                       << "` is called on partially initialized object; required field";
+                    if(missingFields.size() > 1){
+                        ss << "s are";
+                    }
+                    else {
+                        ss << " is";
+                    }
+                    ss << " not yet initialized: " << renderFieldNameList(missingFields) << ".";
+                    appendUniqueFieldInitDiagnostic(diagnostics,{expr,ss.str()});
+                }
+            }
+            analyzeConstructorFieldInitExpr(expr->callee,state,trackedFields,requiredFields,diagnostics);
+            for(auto *child : expr->exprArrayData){
+                analyzeConstructorFieldInitExpr(child,state,trackedFields,requiredFields,diagnostics);
+            }
+            return;
+        }
+        if(expr->type == ASSIGN_EXPR){
+            auto op = expr->oprtr_str.value_or("=");
+            if(op == "="){
+                if(expr->leftExpr && expr->leftExpr->type == MEMBER_EXPR){
+                    if(expr->leftExpr->leftExpr && !isSelfExpr(expr->leftExpr->leftExpr)){
+                        analyzeConstructorFieldInitExpr(expr->leftExpr->leftExpr,state,trackedFields,requiredFields,diagnostics);
+                    }
+                    analyzeConstructorFieldInitExpr(expr->rightExpr,state,trackedFields,requiredFields,diagnostics);
+                    std::string fieldName;
+                    if(isTrackedSelfFieldTarget(expr->leftExpr,trackedFields,&fieldName)){
+                        if(state.initializedFields.find(fieldName) != state.initializedFields.end()){
+                            state.duplicateFields.insert(fieldName);
+                        }
+                        state.initializedFields.insert(fieldName);
+                    }
+                    return;
+                }
+                analyzeConstructorFieldInitExpr(expr->rightExpr,state,trackedFields,requiredFields,diagnostics);
+                return;
+            }
+        }
+
+        if(expr->type == MEMBER_EXPR){
+            if(isSelfExpr(expr->leftExpr)){
+                std::string fieldName;
+                if(isTrackedSelfFieldTarget(expr,trackedFields,&fieldName)
+                   && state.initializedFields.find(fieldName) == state.initializedFields.end()){
+                    auto displayName = expr->rightExpr && expr->rightExpr->id
+                                       ? (expr->rightExpr->id->sourceName.empty()
+                                              ? expr->rightExpr->id->val
+                                              : expr->rightExpr->id->sourceName)
+                                       : fieldName;
+                    std::ostringstream ss;
+                    ss << "Field `" << displayName
+                       << "` may be read before it is initialized during object construction.";
+                    appendUniqueFieldInitDiagnostic(diagnostics,{expr,ss.str()});
+                }
+                return;
+            }
+            analyzeConstructorFieldInitExpr(expr->leftExpr,state,trackedFields,requiredFields,diagnostics);
+            return;
+        }
+
+        if(expr->type == INLINE_FUNC_EXPR){
+            return;
+        }
+
+        analyzeConstructorFieldInitExpr(expr->callee,state,trackedFields,requiredFields,diagnostics);
+        analyzeConstructorFieldInitExpr(expr->leftExpr,state,trackedFields,requiredFields,diagnostics);
+        analyzeConstructorFieldInitExpr(expr->middleExpr,state,trackedFields,requiredFields,diagnostics);
+        analyzeConstructorFieldInitExpr(expr->rightExpr,state,trackedFields,requiredFields,diagnostics);
+        for(auto *child : expr->exprArrayData){
+            analyzeConstructorFieldInitExpr(child,state,trackedFields,requiredFields,diagnostics);
+        }
+        for(const auto &entry : expr->dictExpr){
+            analyzeConstructorFieldInitExpr(entry.first,state,trackedFields,requiredFields,diagnostics);
+            analyzeConstructorFieldInitExpr(entry.second,state,trackedFields,requiredFields,diagnostics);
+        }
+    }
+
+    static bool fieldRequiresDefiniteInitialization(const ASTVarDecl::VarSpec &spec){
+        if(spec.expr){
+            return false;
+        }
+        if(spec.type && (spec.type->isOptional || spec.type->isThrowable)){
+            return false;
+        }
+        return true;
+    }
+
+    static std::vector<std::pair<std::string,std::string>> collectRequiredOwnFields(ASTClassDecl *classDecl){
+        std::vector<std::pair<std::string,std::string>> fields;
+        if(!classDecl){
+            return fields;
+        }
+        for(auto *fieldDecl : classDecl->fields){
+            if(!fieldDecl){
+                continue;
+            }
+            for(const auto &spec : fieldDecl->specs){
+                if(!spec.id || !fieldRequiresDefiniteInitialization(spec)){
+                    continue;
+                }
+                auto displayName = spec.id->sourceName.empty() ? spec.id->val : spec.id->sourceName;
+                fields.push_back({spec.id->val,displayName});
+            }
+        }
+        return fields;
+    }
+
+    static std::vector<std::string> missingRequiredFieldsFromStates(const std::vector<std::pair<std::string,std::string>> &requiredFields,
+                                                                    const std::vector<ConstructorFieldInitState> &states){
+        std::vector<std::string> missing;
+        if(states.empty()){
+            return missing;
+        }
+        for(const auto &field : requiredFields){
+            bool missingOnAnyPath = false;
+            for(const auto &state : states){
+                if(state.initializedFields.find(field.first) == state.initializedFields.end()){
+                    missingOnAnyPath = true;
+                    break;
+                }
+            }
+            if(missingOnAnyPath){
+                missing.push_back(field.second);
+            }
+        }
+        return missing;
+    }
+
+    static std::string renderFieldNameList(const std::vector<std::string> &fieldNames){
+        std::ostringstream ss;
+        for(size_t i = 0;i < fieldNames.size();++i){
+            if(i > 0){
+                ss << ", ";
+            }
+            ss << "`" << fieldNames[i] << "`";
+        }
+        return ss.str();
+    }
+
+    static std::vector<std::string> duplicateFieldsFromStates(const std::vector<std::pair<std::string,std::string>> &trackedFields,
+                                                              const std::vector<ConstructorFieldInitState> &states){
+        std::vector<std::string> duplicated;
+        for(const auto &field : trackedFields){
+            bool duplicatedOnAnyPath = false;
+            for(const auto &state : states){
+                if(state.duplicateFields.find(field.first) != state.duplicateFields.end()){
+                    duplicatedOnAnyPath = true;
+                    break;
+                }
+            }
+            if(duplicatedOnAnyPath){
+                duplicated.push_back(field.second);
+            }
+        }
+        return duplicated;
+    }
+
+    static bool validateClassFieldInitializationPolicy(ASTClassDecl *classDecl,
+                                                       DiagnosticHandler &errStream){
+        if(!classDecl || hasAttributeNamed(classDecl->attributes,"native")){
+            return true;
+        }
+
+        auto requiredFields = collectRequiredOwnFields(classDecl);
+        if(requiredFields.empty()){
+            return true;
+        }
+
+        string_set trackedFields;
+        std::vector<std::pair<std::string,std::string>> ownFields;
+        for(auto *fieldDecl : classDecl->fields){
+            if(!fieldDecl){
+                continue;
+            }
+            for(const auto &spec : fieldDecl->specs){
+                if(!spec.id){
+                    continue;
+                }
+                auto displayName = spec.id->sourceName.empty() ? spec.id->val : spec.id->sourceName;
+                ownFields.push_back({spec.id->val,displayName});
+            }
+        }
+        for(const auto &field : ownFields){
+            trackedFields.insert(field.first);
+        }
+        ConstructorFieldInitState initialState;
+
+        if(classDecl->constructors.empty()){
+            std::ostringstream ss;
+            ss << "Class `" << (classDecl->id ? classDecl->id->val : "<class>")
+               << "` has required field(s) without declaration initializers but declares no constructors: "
+               << renderFieldNameList(missingRequiredFieldsFromStates(requiredFields,{initialState})) << ".";
+            errStream.push(SemanticADiagnostic::create(ss.str(),classDecl,Diagnostic::Error));
+            return false;
+        }
+
+        for(auto *ctorDecl : classDecl->constructors){
+            if(!ctorDecl || !ctorDecl->blockStmt){
+                continue;
+            }
+            auto analysis = analyzeConstructorFieldInitBlock(ctorDecl->blockStmt,initialState,trackedFields,requiredFields);
+            for(const auto &diagnostic : analysis.diagnostics){
+                errStream.push(SemanticADiagnostic::create(diagnostic.message,diagnostic.site,Diagnostic::Warning));
+            }
+            std::vector<ConstructorFieldInitState> exitStates = analysis.exitStates;
+            for(const auto &state : analysis.continuingStates){
+                appendUniqueFieldInitState(exitStates,state);
+            }
+            auto missingFields = missingRequiredFieldsFromStates(requiredFields,exitStates);
+            if(missingFields.empty()){
+                auto duplicatedFields = duplicateFieldsFromStates(ownFields,exitStates);
+                if(!duplicatedFields.empty()){
+                    std::ostringstream warning;
+                    warning << "Field";
+                    if(duplicatedFields.size() > 1){
+                        warning << "s";
+                    }
+                    warning << " initialized more than once along the same constructor path: "
+                            << renderFieldNameList(duplicatedFields) << ".";
+                    errStream.push(SemanticADiagnostic::create(warning.str(),ctorDecl,Diagnostic::Warning));
+                }
+                continue;
+            }
+            std::ostringstream ss;
+            ss << "Constructor does not definitely initialize required field";
+            if(missingFields.size() > 1){
+                ss << "s";
+            }
+            ss << ": " << renderFieldNameList(missingFields) << ".";
+            errStream.push(SemanticADiagnostic::create(ss.str(),ctorDecl,Diagnostic::Error));
+            return false;
+        }
+        return true;
+    }
+
     static void analyzeSemanticUsageStmt(ASTStmt *stmt,
                                          SemanticUsageState &state,
                                          DiagnosticHandler &errStream,
@@ -767,6 +1493,22 @@ namespace starbytes {
                                               const std::map<ASTIdentifier *,ASTType *> &params,
                                               DiagnosticHandler &errStream,
                                               const SemanticUsageState *outerState);
+    static void analyzeSemanticDeadStoreExpr(ASTExpr *expr,
+                                             SemanticDeadStoreState &state,
+                                             DiagnosticHandler &errStream,
+                                             bool readContext = true);
+    static void analyzeSemanticDeadStoreStmt(ASTStmt *stmt,
+                                             SemanticDeadStoreState &state,
+                                             DiagnosticHandler &errStream,
+                                             bool trackLocalBindings);
+    static void analyzeSemanticDeadStoreBlock(ASTBlockStmt *block,
+                                              SemanticDeadStoreState &state,
+                                              DiagnosticHandler &errStream,
+                                              bool trackLocalBindings);
+    static void validateCallableSemanticDeadStore(ASTBlockStmt *block,
+                                                  const std::map<ASTIdentifier *,ASTType *> &params,
+                                                  DiagnosticHandler &errStream,
+                                                  const SemanticUsageState *outerState);
 
     static void analyzeSemanticUsageExpr(ASTExpr *expr,
                                          SemanticUsageState &state,
@@ -865,6 +1607,7 @@ namespace starbytes {
                     : importDecl->moduleName->sourceName;
                 binding->id = importDecl->moduleName;
                 binding->kind = SemanticUsageBindingKind::Import;
+                registerSemanticUsageBinding(state,binding);
                 state.frames.back().push_back(std::move(binding));
                 return;
             }
@@ -883,6 +1626,7 @@ namespace starbytes {
                     binding->displayName = spec.id->sourceName.empty() ? spec.id->val : spec.id->sourceName;
                     binding->id = spec.id;
                     binding->kind = SemanticUsageBindingKind::Local;
+                    registerSemanticUsageBinding(state,binding);
                     state.frames.back().push_back(std::move(binding));
                 }
                 return;
@@ -928,6 +1672,7 @@ namespace starbytes {
                     binding->displayName = spec.id->sourceName.empty() ? spec.id->val : spec.id->sourceName;
                     binding->id = spec.id;
                     binding->kind = SemanticUsageBindingKind::Local;
+                    registerSemanticUsageBinding(state,binding);
                     state.frames.back().push_back(std::move(binding));
                 }
                 analyzeSemanticUsageBlock(secureDecl->catchBlock,state,errStream,trackLocalBindings);
@@ -1014,6 +1759,288 @@ namespace starbytes {
         analyzeSemanticUsageBlock(block,state,errStream,true);
         emitUnusedUsageWarningsForFrame(errStream,state.frames.back());
         popSemanticUsageFrame(state);
+
+        validateCallableSemanticDeadStore(block,params,errStream,&state);
+    }
+
+    static void analyzeSemanticDeadStoreExpr(ASTExpr *expr,
+                                             SemanticDeadStoreState &state,
+                                             DiagnosticHandler &errStream,
+                                             bool readContext){
+        if(!expr){
+            return;
+        }
+        if(expr->type == INLINE_FUNC_EXPR){
+            return;
+        }
+        if(expr->type == ID_EXPR){
+            if(readContext && expr->id){
+                if(auto binding = findNearestSemanticDeadStoreBinding(state,expr->id->val)){
+                    markSemanticDeadStoreRead(state,binding);
+                }
+            }
+            return;
+        }
+        if(expr->type == MEMBER_EXPR){
+            analyzeSemanticDeadStoreExpr(expr->leftExpr,state,errStream,true);
+            return;
+        }
+        if(expr->type == ASSIGN_EXPR){
+            auto op = expr->oprtr_str.value_or("=");
+            if(expr->leftExpr && expr->leftExpr->type == ID_EXPR && expr->leftExpr->id){
+                if(op != "="){
+                    analyzeSemanticDeadStoreExpr(expr->leftExpr,state,errStream,true);
+                }
+                analyzeSemanticDeadStoreExpr(expr->rightExpr,state,errStream,true);
+                if(auto binding = findNearestSemanticDeadStoreBinding(state,expr->leftExpr->id->val)){
+                    markSemanticDeadStoreWrite(state,errStream,binding,expr->leftExpr);
+                }
+                return;
+            }
+            if(expr->leftExpr && expr->leftExpr->type == MEMBER_EXPR){
+                analyzeSemanticDeadStoreExpr(expr->leftExpr,state,errStream,op != "=");
+                analyzeSemanticDeadStoreExpr(expr->rightExpr,state,errStream,true);
+                return;
+            }
+            analyzeSemanticDeadStoreExpr(expr->leftExpr,state,errStream,true);
+            analyzeSemanticDeadStoreExpr(expr->rightExpr,state,errStream,true);
+            return;
+        }
+
+        analyzeSemanticDeadStoreExpr(expr->callee,state,errStream,true);
+        analyzeSemanticDeadStoreExpr(expr->leftExpr,state,errStream,true);
+        analyzeSemanticDeadStoreExpr(expr->middleExpr,state,errStream,true);
+        analyzeSemanticDeadStoreExpr(expr->rightExpr,state,errStream,true);
+        for(auto *child : expr->exprArrayData){
+            analyzeSemanticDeadStoreExpr(child,state,errStream,true);
+        }
+        for(const auto &entry : expr->dictExpr){
+            analyzeSemanticDeadStoreExpr(entry.first,state,errStream,true);
+            analyzeSemanticDeadStoreExpr(entry.second,state,errStream,true);
+        }
+    }
+
+    static void analyzeSemanticDeadStoreStmt(ASTStmt *stmt,
+                                             SemanticDeadStoreState &state,
+                                             DiagnosticHandler &errStream,
+                                             bool trackLocalBindings){
+        if(!stmt){
+            return;
+        }
+        if(!(stmt->type & DECL)){
+            analyzeSemanticDeadStoreExpr((ASTExpr *)stmt,state,errStream,true);
+            return;
+        }
+
+        auto *decl = (ASTDecl *)stmt;
+        switch(decl->type){
+            case IMPORT_DECL:
+                return;
+            case VAR_DECL: {
+                auto *varDecl = (ASTVarDecl *)decl;
+                for(const auto &spec : varDecl->specs){
+                    analyzeSemanticDeadStoreExpr(spec.expr,state,errStream,true);
+                    if(!trackLocalBindings || !spec.id){
+                        continue;
+                    }
+                    if(state.frames.empty()){
+                        pushSemanticDeadStoreFrame(state);
+                    }
+                    SemanticUsageBindingPtr binding;
+                    for(auto it = state.frames.rbegin();it != state.frames.rend() && !binding;++it){
+                        binding = findSemanticDeadStoreBindingInFrame(*it,spec.id->val);
+                    }
+                    if(!binding){
+                        continue;
+                    }
+                    if(spec.expr){
+                        markSemanticDeadStoreWrite(state,errStream,binding,spec.id);
+                    }
+                }
+                return;
+            }
+            case RETURN_DECL: {
+                auto *returnDecl = (ASTReturnDecl *)decl;
+                analyzeSemanticDeadStoreExpr(returnDecl->expr,state,errStream,true);
+                return;
+            }
+            case COND_DECL: {
+                auto *condDecl = (ASTConditionalDecl *)decl;
+                for(const auto &spec : condDecl->specs){
+                    analyzeSemanticDeadStoreExpr(spec.expr,state,errStream,true);
+                    auto branchState = state;
+                    clearSemanticDeadStorePendingWrites(branchState);
+                    analyzeSemanticDeadStoreBlock(spec.blockStmt,branchState,errStream,trackLocalBindings);
+                }
+                clearSemanticDeadStorePendingWrites(state);
+                return;
+            }
+            case FOR_DECL: {
+                auto *forDecl = (ASTForDecl *)decl;
+                analyzeSemanticDeadStoreExpr(forDecl->expr,state,errStream,true);
+                auto loopState = state;
+                clearSemanticDeadStorePendingWrites(loopState);
+                analyzeSemanticDeadStoreBlock(forDecl->blockStmt,loopState,errStream,trackLocalBindings);
+                clearSemanticDeadStorePendingWrites(state);
+                return;
+            }
+            case WHILE_DECL: {
+                auto *whileDecl = (ASTWhileDecl *)decl;
+                analyzeSemanticDeadStoreExpr(whileDecl->expr,state,errStream,true);
+                auto loopState = state;
+                clearSemanticDeadStorePendingWrites(loopState);
+                analyzeSemanticDeadStoreBlock(whileDecl->blockStmt,loopState,errStream,trackLocalBindings);
+                clearSemanticDeadStorePendingWrites(state);
+                return;
+            }
+            case SECURE_DECL: {
+                auto *secureDecl = (ASTSecureDecl *)decl;
+                if(secureDecl->guardedDecl && !secureDecl->guardedDecl->specs.empty()){
+                    const auto &spec = secureDecl->guardedDecl->specs.front();
+                    analyzeSemanticDeadStoreExpr(spec.expr,state,errStream,true);
+                    if(trackLocalBindings && spec.id){
+                        SemanticUsageBindingPtr binding;
+                        for(auto it = state.frames.rbegin();it != state.frames.rend() && !binding;++it){
+                            binding = findSemanticDeadStoreBindingInFrame(*it,spec.id->val);
+                        }
+                        if(binding && spec.expr){
+                            markSemanticDeadStoreWrite(state,errStream,binding,spec.id);
+                        }
+                    }
+                }
+                auto catchState = state;
+                clearSemanticDeadStorePendingWrites(catchState);
+                analyzeSemanticDeadStoreBlock(secureDecl->catchBlock,catchState,errStream,trackLocalBindings);
+                clearSemanticDeadStorePendingWrites(state);
+                return;
+            }
+            case FUNC_DECL: {
+                auto *funcDecl = (ASTFuncDecl *)decl;
+                if(!funcDecl->declarationOnly && funcDecl->blockStmt){
+                    validateCallableSemanticDeadStore(funcDecl->blockStmt,funcDecl->params,errStream,nullptr);
+                }
+                return;
+            }
+            case CLASS_DECL: {
+                auto *classDecl = (ASTClassDecl *)decl;
+                for(auto *methodDecl : classDecl->methods){
+                    if(methodDecl && !methodDecl->declarationOnly && methodDecl->blockStmt){
+                        validateCallableSemanticDeadStore(methodDecl->blockStmt,methodDecl->params,errStream,nullptr);
+                    }
+                }
+                for(auto *ctorDecl : classDecl->constructors){
+                    if(ctorDecl && ctorDecl->blockStmt){
+                        validateCallableSemanticDeadStore(ctorDecl->blockStmt,ctorDecl->params,errStream,nullptr);
+                    }
+                }
+                return;
+            }
+            case INTERFACE_DECL: {
+                auto *interfaceDecl = (ASTInterfaceDecl *)decl;
+                for(auto *methodDecl : interfaceDecl->methods){
+                    if(methodDecl && !methodDecl->declarationOnly && methodDecl->blockStmt){
+                        validateCallableSemanticDeadStore(methodDecl->blockStmt,methodDecl->params,errStream,nullptr);
+                    }
+                }
+                return;
+            }
+            case SCOPE_DECL: {
+                auto *scopeDecl = (ASTScopeDecl *)decl;
+                analyzeSemanticDeadStoreBlock(scopeDecl->blockStmt,state,errStream,false);
+                clearSemanticDeadStorePendingWrites(state);
+                return;
+            }
+            default:
+                return;
+        }
+    }
+
+    static void analyzeSemanticDeadStoreBlock(ASTBlockStmt *block,
+                                              SemanticDeadStoreState &state,
+                                              DiagnosticHandler &errStream,
+                                              bool trackLocalBindings){
+        if(!block){
+            return;
+        }
+        std::vector<SemanticUsageBindingPtr> frameBindings;
+        if(trackLocalBindings){
+            for(auto *stmt : block->body){
+                if(!stmt || !(stmt->type & DECL)){
+                    continue;
+                }
+                auto *decl = (ASTDecl *)stmt;
+                if(decl->type == VAR_DECL){
+                    auto *varDecl = (ASTVarDecl *)decl;
+                    for(const auto &spec : varDecl->specs){
+                        if(!spec.id){
+                            continue;
+                        }
+                        if(state.bindingsByDeclId){
+                            auto it = state.bindingsByDeclId->find(spec.id);
+                            if(it != state.bindingsByDeclId->end()){
+                                frameBindings.push_back(it->second);
+                            }
+                        }
+                    }
+                }
+                else if(decl->type == SECURE_DECL){
+                    auto *secureDecl = (ASTSecureDecl *)decl;
+                    if(!secureDecl->guardedDecl || secureDecl->guardedDecl->specs.empty()){
+                        continue;
+                    }
+                    const auto &spec = secureDecl->guardedDecl->specs.front();
+                    if(!spec.id){
+                        continue;
+                    }
+                    if(state.bindingsByDeclId){
+                        auto it = state.bindingsByDeclId->find(spec.id);
+                        if(it != state.bindingsByDeclId->end()){
+                            frameBindings.push_back(it->second);
+                        }
+                    }
+                }
+            }
+        }
+        pushSemanticDeadStoreFrame(state,frameBindings);
+        for(auto *stmt : block->body){
+            analyzeSemanticDeadStoreStmt(stmt,state,errStream,trackLocalBindings);
+        }
+        emitDeadStoreScopeExitWarningsForFrame(errStream,state,state.frames.back());
+        popSemanticDeadStoreFrame(state);
+    }
+
+    static void validateCallableSemanticDeadStore(ASTBlockStmt *block,
+                                                  const std::map<ASTIdentifier *,ASTType *> &params,
+                                                  DiagnosticHandler &errStream,
+                                                  const SemanticUsageState *outerState){
+        if(!block){
+            return;
+        }
+        SemanticDeadStoreState state;
+        if(outerState){
+            state.bindingsByDeclId = &outerState->bindingsByDeclId;
+        }
+        std::vector<SemanticUsageBindingPtr> paramBindings;
+        if(outerState){
+            for(const auto &entry : params){
+                if(!entry.first){
+                    continue;
+                }
+                auto it = outerState->bindingsByDeclId.find(entry.first);
+                if(it != outerState->bindingsByDeclId.end()){
+                    paramBindings.push_back(it->second);
+                }
+            }
+        }
+        pushSemanticDeadStoreFrame(state,paramBindings);
+        for(const auto &binding : paramBindings){
+            if(binding){
+                markSemanticDeadStoreWrite(state,errStream,binding,binding->id);
+            }
+        }
+        analyzeSemanticDeadStoreBlock(block,state,errStream,true);
+        emitDeadStoreScopeExitWarningsForFrame(errStream,state,state.frames.back());
+        popSemanticDeadStoreFrame(state);
     }
 
     static bool paramComesBefore(ASTIdentifier *lhs,ASTIdentifier *rhs){
@@ -1051,11 +2078,49 @@ namespace starbytes {
         return region.startLine > 0 || region.endLine > 0 || region.startCol > 0 || region.endCol > 0;
     }
 
+    static bool isModuleOrNamespaceScope(const std::shared_ptr<ASTScope> &scope){
+        return !scope || scope == ASTScopeGlobal || scope->type == ASTScope::Namespace;
+    }
+
+    static std::string describeScopeForPlacement(const std::shared_ptr<ASTScope> &scope){
+        if(!scope || scope == ASTScopeGlobal){
+            return "module scope";
+        }
+        switch(scope->type){
+            case ASTScope::Namespace:
+                return "namespace scope";
+            case ASTScope::Function:
+                return "function scope";
+            case ASTScope::Class:
+                return "class scope";
+            case ASTScope::Neutral:
+                return "block scope";
+        }
+        return "scope";
+    }
+
+    static bool requireModuleOrNamespacePlacement(ASTDecl *decl,
+                                                  const std::shared_ptr<ASTScope> &scope,
+                                                  DiagnosticHandler &errStream,
+                                                  const char *declKind){
+        if(isModuleOrNamespaceScope(scope)){
+            return true;
+        }
+        std::ostringstream ss;
+        ss << (declKind ? declKind : "Declaration")
+           << " is only allowed at module or namespace scope, not "
+           << describeScopeForPlacement(scope) << ".";
+        errStream.push(SemanticADiagnostic::create(ss.str(),decl,Diagnostic::Error));
+        return false;
+    }
+
     static Region deriveRegionFromStmt(ASTStmt *stmt);
     static Region deriveRegionFromExpr(ASTExpr *expr);
     static Semantics::SymbolTable::Entry *findTypeEntryNoDiag(Semantics::STableContext &symbolTableContext,
                                                                string_ref typeName,
-                                                               std::shared_ptr<ASTScope> scope);
+                                                               std::shared_ptr<ASTScope> scope,
+                                                               DiagnosticHandler *errStream = nullptr,
+                                                               ASTStmt *diagNode = nullptr);
 
     static std::string deprecationKeyForNode(ASTStmt *diagNode,const std::string &symbolKey){
         auto region = deriveRegionFromStmt(diagNode);
@@ -1236,7 +2301,9 @@ namespace starbytes {
 
     static Semantics::SymbolTable::Entry *findTypeEntryNoDiag(Semantics::STableContext &symbolTableContext,
                                                                string_ref typeName,
-                                                               std::shared_ptr<ASTScope> scope);
+                                                               std::shared_ptr<ASTScope> scope,
+                                                               DiagnosticHandler *errStream,
+                                                               ASTStmt *diagNode);
 
     static ASTClassDecl *resolveClassDeclFromType(ASTType *type,
                                                   Semantics::STableContext &symbolTableContext,
@@ -1771,22 +2838,64 @@ static ASTType *substituteTypeParams(ASTType *type,
         return result;
     }
 
+    static bool isTypeSymbolEntry(const Semantics::SymbolTable::Entry *entry){
+        return entry && (entry->type == Semantics::SymbolTable::Entry::Class
+                         || entry->type == Semantics::SymbolTable::Entry::Interface
+                         || entry->type == Semantics::SymbolTable::Entry::TypeAlias);
+    }
+
+    static std::vector<Semantics::SymbolTable::Entry *> filterTypeEntries(const std::vector<Semantics::SymbolTable::Entry *> &entries){
+        std::vector<Semantics::SymbolTable::Entry *> filtered;
+        filtered.reserve(entries.size());
+        for(auto *entry : entries){
+            if(isTypeSymbolEntry(entry)){
+                filtered.push_back(entry);
+            }
+        }
+        return filtered;
+    }
+
+    static void emitAmbiguousTypeLookupDiagnostic(DiagnosticHandler &errStream,
+                                                  ASTStmt *diagNode,
+                                                  string_ref typeName){
+        std::ostringstream ss;
+        ss << "Ambiguous type lookup for `" << typeName
+           << "`; multiple visible declarations match this name. Qualify the type with its module or scope name.";
+        errStream.push(SemanticADiagnostic::create(ss.str(),diagNode,Diagnostic::Error));
+    }
+
+    static bool hasAmbiguousTypeLookup(Semantics::STableContext &symbolTableContext,
+                                       string_ref typeName,
+                                       std::shared_ptr<ASTScope> scope){
+        if(filterTypeEntries(symbolTableContext.collectVisibleEntriesNoDiag(typeName,scope)).size() > 1){
+            return true;
+        }
+        return filterTypeEntries(symbolTableContext.collectEntriesByEmittedNoDiag(typeName)).size() > 1;
+    }
+
     static Semantics::SymbolTable::Entry *findTypeEntryNoDiag(Semantics::STableContext &symbolTableContext,
                                                                string_ref typeName,
-                                                               std::shared_ptr<ASTScope> scope){
-        auto *entry = symbolTableContext.findEntryNoDiag(typeName,scope);
-        if(entry && (entry->type == Semantics::SymbolTable::Entry::Class
-                     || entry->type == Semantics::SymbolTable::Entry::Interface
-                     || entry->type == Semantics::SymbolTable::Entry::TypeAlias)){
-            return entry;
+                                                               std::shared_ptr<ASTScope> scope,
+                                                               DiagnosticHandler *errStream,
+                                                               ASTStmt *diagNode){
+        auto visibleMatches = filterTypeEntries(symbolTableContext.collectVisibleEntriesNoDiag(typeName,scope));
+        if(visibleMatches.size() > 1){
+            if(errStream && diagNode){
+                emitAmbiguousTypeLookupDiagnostic(*errStream,diagNode,typeName);
+            }
+            return nullptr;
         }
-        entry = symbolTableContext.findEntryByEmittedNoDiag(typeName);
-        if(entry && (entry->type == Semantics::SymbolTable::Entry::Class
-                     || entry->type == Semantics::SymbolTable::Entry::Interface
-                     || entry->type == Semantics::SymbolTable::Entry::TypeAlias)){
-            return entry;
+        if(visibleMatches.size() == 1){
+            return visibleMatches.front();
         }
-        return nullptr;
+        auto emittedMatches = filterTypeEntries(symbolTableContext.collectEntriesByEmittedNoDiag(typeName));
+        if(emittedMatches.size() > 1){
+            if(errStream && diagNode){
+                emitAmbiguousTypeLookupDiagnostic(*errStream,diagNode,typeName);
+            }
+            return nullptr;
+        }
+        return emittedMatches.empty() ? nullptr : emittedMatches.front();
     }
 
     static ASTType *canonicalizeBuiltinAliasType(ASTType *type){
@@ -2301,8 +3410,15 @@ static ASTType *substituteTypeParams(ASTType *type,
             return true;
         }
 
-        auto *entry = findTypeEntryNoDiag(contextTableContext,type->getName(),scope);
+        auto *entry = findTypeEntryNoDiag(contextTableContext,
+                                          type->getName(),
+                                          scope,
+                                          &errStream,
+                                          diagNode ? diagNode : (ASTStmt *)type->getParentNode());
         if(!entry){
+            if(hasAmbiguousTypeLookup(contextTableContext,type->getName(),scope)){
+                return false;
+            }
             std::ostringstream ss;
             ss << "Unknown type `" << type->getName() << "`.";
             errStream.push(SemanticADiagnostic::create(ss.str(),diagNode ? diagNode : (ASTStmt *)type->getParentNode(),Diagnostic::Error));
@@ -2669,6 +3785,9 @@ static ASTType *substituteTypeParams(ASTType *type,
                     case FUNC_DECL : {
     //                    std::cout << "FuncDecl" << std::endl;
                         auto funcNode = (ASTFuncDecl *)decl;
+                        if(!requireModuleOrNamespacePlacement(funcNode,scope,errStream,"Function declaration")){
+                            return false;
+                        }
                         
 
                         ASTIdentifier *func_id = funcNode->funcId;
@@ -2759,8 +3878,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                         break;
                     }
                     case CLASS_DECL : {
-                        if(scope->type != ASTScope::Namespace && scope->type != ASTScope::Neutral){
-                            errStream.push(SemanticADiagnostic::create("Class decl not allowed in class scope",decl,Diagnostic::Error));
+                        if(!requireModuleOrNamespacePlacement(decl,scope,errStream,"Class declaration")){
                             return false;
                         }
                         auto classDecl = (ASTClassDecl *)decl;
@@ -2998,6 +4116,10 @@ static ASTType *substituteTypeParams(ASTType *type,
                             }
                         }
 
+                        if(!validateClassFieldInitializationPolicy(classDecl,errStream)){
+                            return false;
+                        }
+
                         for(auto *implementedInterfaceType : classDecl->interfaces){
                             if(!implementedInterfaceType){
                                 errStream.push(SemanticADiagnostic::create("Invalid interface in class implements list.",classDecl,Diagnostic::Error));
@@ -3120,8 +4242,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                         break;
                     }
                     case INTERFACE_DECL : {
-                        if(scope->type != ASTScope::Namespace && scope->type != ASTScope::Neutral){
-                            errStream.push(SemanticADiagnostic::create("Interface declaration is not allowed in class/function scope.",decl,Diagnostic::Error));
+                        if(!requireModuleOrNamespacePlacement(decl,scope,errStream,"Interface declaration")){
                             return false;
                         }
                         auto *interfaceDecl = (ASTInterfaceDecl *)decl;
@@ -3235,8 +4356,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                     }
                     case TYPE_ALIAS_DECL : {
                         auto *aliasDecl = (ASTTypeAliasDecl *)decl;
-                        if(scope->type != ASTScope::Namespace && scope->type != ASTScope::Neutral){
-                            errStream.push(SemanticADiagnostic::create("Type alias declaration is not allowed in class/function scope.",decl,Diagnostic::Error));
+                        if(!requireModuleOrNamespacePlacement(decl,scope,errStream,"Type alias declaration")){
                             return false;
                         }
                         if(symbolTableContext.main->symbolExists(aliasDecl->id->val,scope)){
@@ -3258,8 +4378,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                         return true;
                     }
                     case IMPORT_DECL : {
-                        if(scope->type == ASTScope::Class || scope->type == ASTScope::Function){
-                            errStream.push(SemanticADiagnostic::create("Import declaration is not allowed in class/function scope.",decl,Diagnostic::Error));
+                        if(!requireModuleOrNamespacePlacement(decl,scope,errStream,"Import declaration")){
                             return false;
                         }
                         auto *importDecl = (ASTImportDecl *)decl;
@@ -3270,8 +4389,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                         return true;
                     }
                     case SCOPE_DECL : {
-                        if(scope->type == ASTScope::Class || scope->type == ASTScope::Function){
-                            errStream.push(SemanticADiagnostic::create("Scope declaration is not allowed in class/function scope.",decl,Diagnostic::Error));
+                        if(!requireModuleOrNamespacePlacement(decl,scope,errStream,"Scope declaration")){
                             return false;
                         }
                         auto *scopeDecl = (ASTScopeDecl *)decl;

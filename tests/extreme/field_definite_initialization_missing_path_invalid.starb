@@ -1,0 +1,9 @@
+class MissingPath {
+    decl value:Int
+
+    new(flag:Bool) {
+        if(flag) {
+            self.value = 1
+        }
+    }
+}

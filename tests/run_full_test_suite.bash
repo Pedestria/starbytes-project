@@ -127,12 +127,40 @@ assert_log_contains "recursive-typed-locals-run" "RECURSIVE-TYPED-LOCALS-OK"
 run_expect_success "semantic-flow-success-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/semantic_flow_success.starb"
 run_expect_success "semantic-flow-success-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/semantic_flow_success.starb"
 assert_log_contains "semantic-flow-success-run" "SEMANTIC-FLOW-OK"
+run_expect_success "constant-condition-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/constant_condition_warning.starb"
+assert_log_contains "constant-condition-warning-check" 'Conditional condition is always true; subsequent branches are unreachable'
+assert_log_contains "constant-condition-warning-check" 'Conditional condition is always false; branch body is unreachable'
+assert_log_contains "constant-condition-warning-check" 'Loop condition is always false; loop body is unreachable'
+assert_log_contains "constant-condition-warning-check" 'Ternary condition is always true; false branch is unreachable'
+assert_log_contains "constant-condition-warning-check" 'Ternary condition is always false; true branch is unreachable'
+assert_log_contains "constant-condition-warning-check" 'runtime type test `is` cannot succeed for static type `Int` against `String`'
+assert_log_contains "constant-condition-warning-check" 'runtime type test `is` always succeeds for static type `Int` against `Int`'
+run_expect_success "constant-condition-warning-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/constant_condition_warning.starb"
+assert_log_contains "constant-condition-warning-run" 'Conditional condition is always true; subsequent branches are unreachable'
+assert_log_contains "constant-condition-warning-run" 'Conditional condition is always false; branch body is unreachable'
+assert_log_contains "constant-condition-warning-run" 'Loop condition is always false; loop body is unreachable'
+assert_log_contains "constant-condition-warning-run" 'Ternary condition is always true; false branch is unreachable'
+assert_log_contains "constant-condition-warning-run" 'Ternary condition is always false; true branch is unreachable'
+assert_log_contains "constant-condition-warning-run" 'CONST-COND-OK'
+run_expect_success "constant-condition-no-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/constant_condition_no_warning.starb"
+assert_log_not_contains "constant-condition-no-warning-check" 'always true'
+assert_log_not_contains "constant-condition-no-warning-check" 'always false'
+assert_log_not_contains "constant-condition-no-warning-check" 'unreachable'
+run_expect_success "constant-condition-no-warning-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/constant_condition_no_warning.starb"
+assert_log_not_contains "constant-condition-no-warning-run" 'always true'
+assert_log_not_contains "constant-condition-no-warning-run" 'always false'
+assert_log_not_contains "constant-condition-no-warning-run" 'unreachable'
+assert_log_contains "constant-condition-no-warning-run" 'CONST-COND-NO-WARN-OK'
 run_expect_success "semantic-unused-bindings-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/semantic_unused_bindings.starb"
 assert_log_contains "semantic-unused-bindings-check" 'Imported module `Math` is unused'
 assert_log_contains "semantic-unused-bindings-check" 'Imported module `Unicode` is unused'
 assert_log_contains "semantic-unused-bindings-check" 'Parameter `unusedParam` is unused'
 assert_log_contains "semantic-unused-bindings-check" 'Local binding `unusedLocal` is unused'
 assert_log_not_contains "semantic-unused-bindings-check" '_args'
+run_expect_success "semantic-shadowing-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/semantic_shadowing_warning.starb"
+assert_log_contains "semantic-shadowing-warning-check" 'Declaration `x` shadows an outer parameter.'
+assert_log_contains "semantic-shadowing-warning-check" 'Declaration `x` shadows an outer local binding.'
+assert_log_not_contains "semantic-shadowing-warning-check" 'Declaration `_x` shadows'
 run_expect_success "semantic-unused-bindings-compile" "$STARBYTES_BIN" compile "$ROOT_DIR/tests/extreme/semantic_unused_bindings.starb" --out-dir "$ROOT_DIR/.starbytes/semantic-unused-bindings-compile"
 assert_log_contains "semantic-unused-bindings-compile" 'Imported module `Math` is unused'
 assert_log_contains "semantic-unused-bindings-compile" 'Imported module `Unicode` is unused'
@@ -143,6 +171,11 @@ assert_log_contains "semantic-unused-bindings-run" 'Imported module `Math` is un
 assert_log_contains "semantic-unused-bindings-run" 'Imported module `Unicode` is unused'
 assert_log_contains "semantic-unused-bindings-run" 'Parameter `unusedParam` is unused'
 assert_log_contains "semantic-unused-bindings-run" 'Local binding `unusedLocal` is unused'
+run_expect_success "semantic-shadowing-warning-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/semantic_shadowing_warning.starb"
+assert_log_contains "semantic-shadowing-warning-run" 'Declaration `x` shadows an outer parameter.'
+assert_log_contains "semantic-shadowing-warning-run" 'Declaration `x` shadows an outer local binding.'
+assert_log_not_contains "semantic-shadowing-warning-run" 'Declaration `_x` shadows'
+assert_log_contains "semantic-shadowing-warning-run" 'SEMANTIC-SHADOWING-OK'
 run_expect_success "deprecated-usage-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/deprecated_usage_warning.starb"
 assert_log_contains "deprecated-usage-warning-check" 'Use of deprecated variable `legacyValue`. Use freshValue.'
 assert_log_contains "deprecated-usage-warning-check" 'Use of deprecated function `legacyFunc`. Use freshFunc.'
@@ -176,6 +209,50 @@ run_expect_failure "semantic-definite-assignment-local-invalid-check" "$STARBYTE
 assert_log_contains "semantic-definite-assignment-local-invalid-check" 'Binding `value` may be read before it is definitely initialized'
 run_expect_failure "semantic-definite-assignment-top-level-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/semantic_definite_assignment_top_level_invalid.starb"
 assert_log_contains "semantic-definite-assignment-top-level-invalid-check" 'Binding `top` may be read before it is definitely initialized'
+run_expect_success "field-definite-initialization-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/field_definite_initialization.starb"
+assert_log_not_contains "field-definite-initialization-check" 'initialized more than once along the same constructor path'
+assert_log_not_contains "field-definite-initialization-check" 'partially initialized'
+run_expect_success "field-definite-initialization-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/field_definite_initialization.starb"
+assert_log_contains "field-definite-initialization-run" "FIELD-DEFINITE-INIT-OK"
+assert_log_not_contains "field-definite-initialization-run" 'initialized more than once along the same constructor path'
+assert_log_not_contains "field-definite-initialization-run" 'partially initialized'
+run_expect_success "partial-object-diagnostics-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/partial_object_diagnostics_warning.starb"
+assert_log_contains "partial-object-diagnostics-warning-check" 'Partially initialized `self` escapes before required field is initialized: `other`'
+assert_log_contains "partial-object-diagnostics-warning-check" 'Method `ping` is called on partially initialized object; required field is not yet initialized: `other`'
+run_expect_success "partial-object-diagnostics-warning-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/partial_object_diagnostics_warning.starb"
+assert_log_contains "partial-object-diagnostics-warning-run" 'Partially initialized `self` escapes before required field is initialized: `other`'
+assert_log_contains "partial-object-diagnostics-warning-run" 'Method `ping` is called on partially initialized object; required field is not yet initialized: `other`'
+assert_log_contains "partial-object-diagnostics-warning-run" 'PARTIAL-OBJECT-WARN-OK'
+run_expect_success "partial-object-field-read-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/partial_object_field_read_warning.starb"
+assert_log_contains "partial-object-field-read-warning-check" 'Field `value` may be read before it is initialized during object construction'
+run_expect_success "dead-store-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/dead_store_warning.starb"
+assert_log_contains "dead-store-warning-check" 'Value assigned to parameter `input` is never read before being overwritten'
+assert_log_contains "dead-store-warning-check" 'Value assigned to local binding `value` is never read before being overwritten'
+assert_log_contains "dead-store-warning-check" 'Value assigned to local binding `final` is never read before scope exit'
+run_expect_success "dead-store-warning-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/dead_store_warning.starb"
+assert_log_contains "dead-store-warning-run" 'Value assigned to parameter `input` is never read before being overwritten'
+assert_log_contains "dead-store-warning-run" 'Value assigned to local binding `value` is never read before being overwritten'
+assert_log_contains "dead-store-warning-run" 'Value assigned to local binding `final` is never read before scope exit'
+assert_log_contains "dead-store-warning-run" 'DEAD-STORE-OK'
+run_expect_success "dead-store-no-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/dead_store_no_warning.starb"
+assert_log_not_contains "dead-store-no-warning-check" 'never read before'
+run_expect_success "dead-store-no-warning-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/dead_store_no_warning.starb"
+assert_log_not_contains "dead-store-no-warning-run" 'never read before'
+assert_log_contains "dead-store-no-warning-run" 'DEAD-STORE-NO-WARNING-OK'
+run_expect_success "field-double-initialize-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/field_double_initialize_warning.starb"
+assert_log_contains "field-double-initialize-warning-check" 'Field initialized more than once along the same constructor path: `value`'
+run_expect_success "field-double-initialize-warning-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/field_double_initialize_warning.starb"
+assert_log_contains "field-double-initialize-warning-run" 'Field initialized more than once along the same constructor path: `value`'
+assert_log_contains "field-double-initialize-warning-run" "FIELD-DOUBLE-INIT-OK"
+run_expect_failure "field-definite-initialization-missing-ctor-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/field_definite_initialization_missing_ctor_invalid.starb"
+assert_log_contains "field-definite-initialization-missing-ctor-invalid-check" 'has required field\(s\) without declaration initializers but declares no constructors'
+assert_log_contains "field-definite-initialization-missing-ctor-invalid-check" '`value`'
+run_expect_failure "field-definite-initialization-struct-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/field_definite_initialization_struct_invalid.starb"
+assert_log_contains "field-definite-initialization-struct-invalid-check" 'has required field\(s\) without declaration initializers but declares no constructors'
+assert_log_contains "field-definite-initialization-struct-invalid-check" '`value`'
+run_expect_failure "field-definite-initialization-missing-path-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/field_definite_initialization_missing_path_invalid.starb"
+assert_log_contains "field-definite-initialization-missing-path-invalid-check" 'Constructor does not definitely initialize required field'
+assert_log_contains "field-definite-initialization-missing-path-invalid-check" '`value`'
 run_expect_success "self-referential-class-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/self_referential_class_edge.starb"
 run_expect_success "self-referential-class-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/self_referential_class_edge.starb"
 assert_log_contains "self-referential-class-run" "SELF-REFERENTIAL-CLASS-OK"
@@ -390,6 +467,8 @@ assert_log_contains "cmdline-module-run" "CMDLINE-MODULE-OK"
 run_expect_success "module-app-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/modules/App"
 run_expect_success "module-app-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/modules/App"
 assert_log_contains "module-app-run" "APP-MODULE-OK"
+run_expect_failure "ambiguous-imported-symbol-app-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/ambiguous_imported_symbol/App"
+assert_log_contains "ambiguous-imported-symbol-app-check" 'Ambiguous imported symbol `ping`'
 
 run_expect_success "modpath-app-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/modpath/App"
 run_expect_success "modpath-app-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/modpath/App"
@@ -398,6 +477,17 @@ assert_log_contains "modpath-app-run" "EXT-LIB-VALUE"
 
 run_expect_failure "module-cycle-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/cycle/A"
 assert_log_contains "module-cycle-check" "Cyclic module import detected"
+assert_log_contains "module-cycle-check" "Cycle: A -> B -> A"
+assert_log_contains "module-cycle-check" "A imports B at $ROOT_DIR/tests/extreme/cycle/A/main.starb:1"
+assert_log_contains "module-cycle-check" "B imports A at $ROOT_DIR/tests/extreme/cycle/B/main.starb:1"
+run_expect_failure "wrong-scope-function-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/wrong_scope_function_invalid.starb"
+assert_log_contains "wrong-scope-function-invalid-check" "Import declaration is only allowed at module or namespace scope, not function scope."
+run_expect_failure "wrong-scope-block-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/wrong_scope_block_invalid.starb"
+assert_log_contains "wrong-scope-block-invalid-check" "Class declaration is only allowed at module or namespace scope, not block scope."
+assert_log_contains "wrong-scope-block-invalid-check" "Interface declaration is only allowed at module or namespace scope, not block scope."
+assert_log_contains "wrong-scope-block-invalid-check" "Type alias declaration is only allowed at module or namespace scope, not block scope."
+assert_log_contains "wrong-scope-block-invalid-check" "Scope declaration is only allowed at module or namespace scope, not block scope."
+assert_log_contains "wrong-scope-block-invalid-check" "Function declaration is only allowed at module or namespace scope, not block scope."
 
 run_expect_success "driver-help" "$STARBYTES_BIN" --help
 run_expect_success "driver-version" "$STARBYTES_BIN" --version

@@ -1,0 +1,22 @@
+class Ready {
+    decl value:Int
+    decl name:String = "ready"
+    decl maybe:String?
+
+    new(seed:Int, flag:Bool) {
+        if(flag) {
+            self.value = seed
+        }
+        else {
+            self.value = seed + 1
+        }
+    }
+
+    func read() Int {
+        return self.value
+    }
+}
+
+decl ready = new Ready(4,true)
+print(ready.read())
+print("FIELD-DEFINITE-INIT-OK")

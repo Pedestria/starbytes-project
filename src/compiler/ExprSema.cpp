@@ -31,36 +31,215 @@ ASTType *isBuiltinType(ASTIdentifier *id){
     return nullptr;
 }
 
+static bool isTypeSymbolEntry(const Semantics::SymbolTable::Entry *entry){
+    return entry && (entry->type == Semantics::SymbolTable::Entry::Class
+                     || entry->type == Semantics::SymbolTable::Entry::Interface
+                     || entry->type == Semantics::SymbolTable::Entry::TypeAlias);
+}
+
+static std::vector<Semantics::SymbolTable::Entry *> filterTypeEntries(const std::vector<Semantics::SymbolTable::Entry *> &entries){
+    std::vector<Semantics::SymbolTable::Entry *> filtered;
+    filtered.reserve(entries.size());
+    for(auto *entry : entries){
+        if(isTypeSymbolEntry(entry)){
+            filtered.push_back(entry);
+        }
+    }
+    return filtered;
+}
+
+static void emitAmbiguousLookupDiagnostic(DiagnosticHandler &errStream,
+                                          ASTStmt *diagNode,
+                                          string_ref symbolName,
+                                          const char *kindMessage){
+    std::ostringstream out;
+    out << "Ambiguous " << (kindMessage ? kindMessage : "symbol") << " lookup for `"
+        << symbolName << "`; multiple visible declarations match this name. Qualify it with its module or scope name.";
+    errStream.push(SemanticADiagnostic::create(out.str(),diagNode,Diagnostic::Error));
+}
+
+static Semantics::SymbolTable::Entry *findVisibleEntryOrDiag(Semantics::STableContext &symbolTableContext,
+                                                             string_ref symbolName,
+                                                             std::shared_ptr<ASTScope> scope,
+                                                             DiagnosticHandler &errStream,
+                                                             ASTStmt *diagNode){
+    auto matches = symbolTableContext.collectVisibleEntriesNoDiag(symbolName,scope);
+    if(matches.size() > 1){
+        emitAmbiguousLookupDiagnostic(errStream,diagNode,symbolName,"symbol");
+        return nullptr;
+    }
+    return matches.empty() ? nullptr : matches.front();
+}
+
+static Semantics::SymbolTable::Entry *findExactScopeEntryOrDiag(Semantics::STableContext &symbolTableContext,
+                                                                string_ref symbolName,
+                                                                std::shared_ptr<ASTScope> scope,
+                                                                DiagnosticHandler &errStream,
+                                                                ASTStmt *diagNode){
+    auto matches = symbolTableContext.collectEntriesInExactScopeNoDiag(symbolName,scope);
+    if(matches.size() > 1){
+        emitAmbiguousLookupDiagnostic(errStream,diagNode,symbolName,"symbol");
+        return nullptr;
+    }
+    return matches.empty() ? nullptr : matches.front();
+}
+
 static Semantics::SymbolTable::Entry *findClassEntry(Semantics::STableContext &symbolTableContext,
                                                      string_ref className,
-                                                     std::shared_ptr<ASTScope> scope){
-    auto *entry = symbolTableContext.findEntryNoDiag(className,scope);
+                                                     std::shared_ptr<ASTScope> scope,
+                                                     DiagnosticHandler *errStream = nullptr,
+                                                     ASTStmt *diagNode = nullptr){
+    auto *entry = errStream && diagNode
+                      ? findVisibleEntryOrDiag(symbolTableContext,className,scope,*errStream,diagNode)
+                      : symbolTableContext.findEntryNoDiag(className,scope);
     if(entry && entry->type == Semantics::SymbolTable::Entry::Class){
         return entry;
     }
-    entry = symbolTableContext.findEntryByEmittedNoDiag(className);
-    if(entry && entry->type == Semantics::SymbolTable::Entry::Class){
-        return entry;
+    auto emittedMatches = filterTypeEntries(symbolTableContext.collectEntriesByEmittedNoDiag(className));
+    std::vector<Semantics::SymbolTable::Entry *> classMatches;
+    classMatches.reserve(emittedMatches.size());
+    for(auto *candidate : emittedMatches){
+        if(candidate->type == Semantics::SymbolTable::Entry::Class){
+            classMatches.push_back(candidate);
+        }
     }
-    return nullptr;
+    if(classMatches.size() > 1){
+        if(errStream && diagNode){
+            emitAmbiguousLookupDiagnostic(*errStream,diagNode,className,"type");
+        }
+        return nullptr;
+    }
+    return classMatches.empty() ? nullptr : classMatches.front();
 }
 
 static Semantics::SymbolTable::Entry *findTypeEntryNoDiag(Semantics::STableContext &symbolTableContext,
                                                            string_ref typeName,
-                                                           std::shared_ptr<ASTScope> scope){
-    auto *entry = symbolTableContext.findEntryNoDiag(typeName,scope);
-    if(entry && (entry->type == Semantics::SymbolTable::Entry::Class
-                 || entry->type == Semantics::SymbolTable::Entry::Interface
-                 || entry->type == Semantics::SymbolTable::Entry::TypeAlias)){
+                                                           std::shared_ptr<ASTScope> scope,
+                                                           DiagnosticHandler *errStream = nullptr,
+                                                           ASTStmt *diagNode = nullptr){
+    auto *entry = errStream && diagNode
+                      ? findVisibleEntryOrDiag(symbolTableContext,typeName,scope,*errStream,diagNode)
+                      : symbolTableContext.findEntryNoDiag(typeName,scope);
+    if(isTypeSymbolEntry(entry)){
         return entry;
     }
-    entry = symbolTableContext.findEntryByEmittedNoDiag(typeName);
-    if(entry && (entry->type == Semantics::SymbolTable::Entry::Class
-                 || entry->type == Semantics::SymbolTable::Entry::Interface
-                 || entry->type == Semantics::SymbolTable::Entry::TypeAlias)){
-        return entry;
+    auto emittedMatches = filterTypeEntries(symbolTableContext.collectEntriesByEmittedNoDiag(typeName));
+    if(emittedMatches.size() > 1){
+        if(errStream && diagNode){
+            emitAmbiguousLookupDiagnostic(*errStream,diagNode,typeName,"type");
+        }
+        return nullptr;
     }
-    return nullptr;
+    return emittedMatches.empty() ? nullptr : emittedMatches.front();
+}
+
+struct CompileTimeScalarValue {
+    enum class Kind : uint8_t {
+        Bool,
+        Number,
+        String
+    };
+    Kind kind = Kind::Bool;
+    bool boolValue = false;
+    long double numberValue = 0.0;
+    std::string stringValue;
+};
+
+static bool isExactRuntimeTypeForConstantIs(ASTType *type){
+    if(!type){
+        return false;
+    }
+    return type->nameMatches(STRING_TYPE)
+        || type->nameMatches(BOOL_TYPE)
+        || type->nameMatches(ARRAY_TYPE)
+        || type->nameMatches(DICTIONARY_TYPE)
+        || type->nameMatches(MAP_TYPE)
+        || type->nameMatches(REGEX_TYPE)
+        || type->nameMatches(TASK_TYPE)
+        || type->nameMatches(INT_TYPE)
+        || type->nameMatches(FLOAT_TYPE)
+        || type->nameMatches(LONG_TYPE)
+        || type->nameMatches(DOUBLE_TYPE)
+        || type->nameMatches(FUNCTION_TYPE);
+}
+
+static bool runtimeTypeCheckAlwaysMatches(ASTType *lhsType,const std::string &targetRuntimeName){
+    if(!lhsType){
+        return false;
+    }
+    if(lhsType->nameMatches(FUNCTION_TYPE)){
+        return targetRuntimeName == "__func__";
+    }
+    if(lhsType->nameMatches(DICTIONARY_TYPE) || lhsType->nameMatches(MAP_TYPE)){
+        return targetRuntimeName == "Dict" || targetRuntimeName == "Map";
+    }
+    return lhsType->getName().str() == targetRuntimeName;
+}
+
+static bool runtimeTypeCheckAlwaysFails(ASTType *lhsType,const std::string &targetRuntimeName){
+    if(!lhsType || !isExactRuntimeTypeForConstantIs(lhsType)){
+        return false;
+    }
+    return !runtimeTypeCheckAlwaysMatches(lhsType,targetRuntimeName);
+}
+
+static std::string displayTypeNameForConstantIs(ASTType *type){
+    if(!type){
+        return "<type>";
+    }
+    if(type->nameMatches(FUNCTION_TYPE)){
+        return "Function";
+    }
+    return type->getName().str();
+}
+
+static std::optional<CompileTimeScalarValue> evaluateCompileTimeScalarLiteral(ASTExpr *expr){
+    if(!expr){
+        return std::nullopt;
+    }
+    if(expr->type == BOOL_LITERAL){
+        auto *literal = static_cast<ASTLiteralExpr *>(expr);
+        if(!literal->boolValue.has_value()){
+            return std::nullopt;
+        }
+        CompileTimeScalarValue value;
+        value.kind = CompileTimeScalarValue::Kind::Bool;
+        value.boolValue = literal->boolValue.value();
+        return value;
+    }
+    if(expr->type == NUM_LITERAL){
+        auto *literal = static_cast<ASTLiteralExpr *>(expr);
+        CompileTimeScalarValue value;
+        value.kind = CompileTimeScalarValue::Kind::Number;
+        if(literal->floatValue.has_value()){
+            value.numberValue = literal->floatValue.value();
+            return value;
+        }
+        if(literal->intValue.has_value()){
+            value.numberValue = static_cast<long double>(literal->intValue.value());
+            return value;
+        }
+        return std::nullopt;
+    }
+    if(expr->type == STR_LITERAL){
+        auto *literal = static_cast<ASTLiteralExpr *>(expr);
+        if(!literal->strValue.has_value()){
+            return std::nullopt;
+        }
+        CompileTimeScalarValue value;
+        value.kind = CompileTimeScalarValue::Kind::String;
+        value.stringValue = literal->strValue.value();
+        return value;
+    }
+    if(expr->type == UNARY_EXPR && expr->oprtr_str.has_value() && expr->oprtr_str.value() == "-"){
+        auto nested = evaluateCompileTimeScalarLiteral(expr->leftExpr);
+        if(!nested || nested->kind != CompileTimeScalarValue::Kind::Number){
+            return std::nullopt;
+        }
+        nested->numberValue = -nested->numberValue;
+        return nested;
+    }
+    return std::nullopt;
 }
 
 static ASTType *canonicalizeBuiltinAliasType(ASTType *type){
@@ -1435,7 +1614,10 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 auto *symbol_ = static_cast<Semantics::SymbolTable::Entry *>(nullptr);
                 std::shared_ptr<ASTScope> outerScopeStart = nullptr;
                 for(auto currentScope = scopeContext.scope; currentScope != nullptr; currentScope = currentScope->parentScope){
-                    symbol_ = symbolTableContext.findEntryInExactScopeNoDiag(id_->val,currentScope);
+                    symbol_ = findExactScopeEntryOrDiag(symbolTableContext,id_->val,currentScope,errStream,expr_to_eval);
+                    if(!symbol_ && !symbolTableContext.collectEntriesInExactScopeNoDiag(id_->val,currentScope).empty()){
+                        return nullptr;
+                    }
                     if(symbol_){
                         break;
                     }
@@ -1469,19 +1651,34 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
 
                 /// 4. Finally, continue lookup outside the current function boundary.
                 if(!symbol_ && outerScopeStart){
-                    symbol_ = symbolTableContext.findEntryNoDiag(id_->val,outerScopeStart);
+                    symbol_ = findVisibleEntryOrDiag(symbolTableContext,id_->val,outerScopeStart,errStream,expr_to_eval);
+                    if(!symbol_ && !symbolTableContext.collectVisibleEntriesNoDiag(id_->val,outerScopeStart).empty()){
+                        return nullptr;
+                    }
                 }
 
                 if(!symbol_ && !outerScopeStart){
-                    symbol_ = symbolTableContext.findEntryNoDiag(id_->val,scopeContext.scope);
+                    symbol_ = findVisibleEntryOrDiag(symbolTableContext,id_->val,scopeContext.scope,errStream,expr_to_eval);
+                    if(!symbol_ && !symbolTableContext.collectVisibleEntriesNoDiag(id_->val,scopeContext.scope).empty()){
+                        return nullptr;
+                    }
                 }
 
                 // std::cout << "SYMBOL_PTR:" << symbol_ << std::endl;
                 if(!symbol_){
-                    auto *importedEntry = symbolTableContext.findImportedGlobalEntryNoDiag(id_->val);
-                    if(importedEntry &&
-                       (importedEntry->type == Semantics::SymbolTable::Entry::Var
-                        || importedEntry->type == Semantics::SymbolTable::Entry::Function)){
+                    auto importedEntries = symbolTableContext.collectImportedGlobalEntriesNoDiag(id_->val);
+                    bool importedValueVisible = std::any_of(importedEntries.begin(),importedEntries.end(),[](auto *entry){
+                        return entry && (entry->type == Semantics::SymbolTable::Entry::Var
+                                         || entry->type == Semantics::SymbolTable::Entry::Function);
+                    });
+                    if(importedEntries.size() > 1 && importedValueVisible){
+                        std::ostringstream out;
+                        out << "Ambiguous imported symbol `" << id_->val
+                            << "`; multiple imported modules export this name. Reference it with its module name.";
+                        errStream.push(SemanticADiagnostic::create(out.str(),expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    if(importedValueVisible){
                         std::ostringstream out;
                         out << "Imported symbol `" << id_->val << "` must be referenced with its module name.";
                         errStream.push(SemanticADiagnostic::create(out.str(),expr_to_eval,Diagnostic::Error));
@@ -1818,7 +2015,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             runtimeTypeName = rawName.str();
                         }
                         else {
-                            auto *entry = findTypeEntryNoDiag(symbolTableContext,rawName,scopeContext.scope);
+                            auto *entry = findTypeEntryNoDiag(symbolTableContext,rawName,scopeContext.scope,&errStream,rhsExpr);
                             if(!entry){
                                 std::ostringstream ss;
                                 ss << "Unknown type `" << rawName.str() << "` in runtime type check.";
@@ -1916,6 +2113,19 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     errStream.push(SemanticADiagnostic::create("Ternary condition must be Bool.",expr_to_eval->leftExpr,Diagnostic::Error));
                     return nullptr;
                 }
+                if(auto constantInfo = evaluateCompileTimeBoolExpr(expr_to_eval->leftExpr,symbolTableContext,scopeContext)){
+                    std::ostringstream warning;
+                    if(constantInfo->value){
+                        warning << "Ternary condition is always true; false branch is unreachable.";
+                    }
+                    else {
+                        warning << "Ternary condition is always false; true branch is unreachable.";
+                    }
+                    if(!constantInfo->reason.empty()){
+                        warning << " Reason: " << constantInfo->reason << ".";
+                    }
+                    errStream.push(SemanticADiagnostic::create(warning.str(),expr_to_eval->leftExpr,Diagnostic::Warning));
+                }
 
                 auto *trueType = evalExprForTypeId(expr_to_eval->middleExpr,symbolTableContext,scopeContext);
                 auto *falseType = evalExprForTypeId(expr_to_eval->rightExpr,symbolTableContext,scopeContext);
@@ -1951,7 +2161,15 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 std::shared_ptr<ASTScope> accessScope = nullptr;
                 if(expr_to_eval->leftExpr->type == ID_EXPR && expr_to_eval->leftExpr->id &&
                    expr_to_eval->leftExpr->id->type == ASTIdentifier::Scope){
-                    auto *leftScopeEntry = symbolTableContext.findEntryNoDiag(expr_to_eval->leftExpr->id->val,scopeContext.scope);
+                    auto *leftScopeEntry = findVisibleEntryOrDiag(symbolTableContext,
+                                                                  expr_to_eval->leftExpr->id->val,
+                                                                  scopeContext.scope,
+                                                                  errStream,
+                                                                  expr_to_eval->leftExpr);
+                    if(!leftScopeEntry &&
+                       !symbolTableContext.collectVisibleEntriesNoDiag(expr_to_eval->leftExpr->id->val,scopeContext.scope).empty()){
+                        return nullptr;
+                    }
                     accessScope = scopeFromEntry(leftScopeEntry);
                 }
                 else if(expr_to_eval->leftExpr->type == MEMBER_EXPR){
@@ -1963,7 +2181,12 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
 
                 auto memberName = expr_to_eval->rightExpr->id->val;
                 if(accessScope){
-                    auto *scopeMemberEntry = symbolTableContext.findEntryInExactScopeNoDiag(memberName,accessScope);
+                    auto scopeMemberMatches = symbolTableContext.collectEntriesInExactScopeNoDiag(memberName,accessScope);
+                    if(scopeMemberMatches.size() > 1){
+                        emitAmbiguousLookupDiagnostic(errStream,expr_to_eval,memberName,"scope member");
+                        return nullptr;
+                    }
+                    auto *scopeMemberEntry = scopeMemberMatches.empty() ? nullptr : scopeMemberMatches.front();
                     if(!scopeMemberEntry){
                         errStream.push(SemanticADiagnostic::create("Unknown symbol in scope member access.",expr_to_eval,Diagnostic::Error));
                         return nullptr;
@@ -2080,7 +2303,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     return nullptr;
                 }
 
-                auto classEntry = findClassEntry(symbolTableContext,leftType->getName(),scopeContext.scope);
+                auto classEntry = findClassEntry(symbolTableContext,leftType->getName(),scopeContext.scope,&errStream,expr_to_eval);
                 if(classEntry){
                     auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
                     auto classBindings = classBindingsFromInstanceType(classData,leftType);
@@ -2119,7 +2342,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     }
                 }
 
-                auto *typeEntry = findTypeEntryNoDiag(symbolTableContext,leftType->getName(),scopeContext.scope);
+                auto *typeEntry = findTypeEntryNoDiag(symbolTableContext,leftType->getName(),scopeContext.scope,&errStream,expr_to_eval);
                 if(typeEntry && typeEntry->type == Semantics::SymbolTable::Entry::Interface){
                     auto *interfaceData = (Semantics::SymbolTable::Interface *)typeEntry->data;
                     auto interfaceBindings = interfaceBindingsFromInstanceType(interfaceData,leftType);
@@ -2297,7 +2520,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         return nullptr;
                     }
                     baseType = normalizeType(baseType);
-                    auto classEntry = findClassEntry(symbolTableContext,baseType->getName(),scopeContext.scope);
+                    auto classEntry = findClassEntry(symbolTableContext,baseType->getName(),scopeContext.scope,&errStream,expr_to_eval);
                     if(classEntry){
                         auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
                         string_set visited;
@@ -2436,7 +2659,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         }
                     }
                     else {
-                        auto *targetEntry = findTypeEntryNoDiag(symbolTableContext,resolvedTargetType->getName(),scopeContext.scope);
+                        auto *targetEntry = findTypeEntryNoDiag(symbolTableContext,resolvedTargetType->getName(),scopeContext.scope,&errStream,expr_to_eval);
                         if(!targetEntry){
                             std::ostringstream ss;
                             ss << "Unknown cast target type `" << resolvedTargetType->getName() << "`.";
@@ -2455,7 +2678,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             castIsThrowable = true;
                         }
                         else {
-                            auto *sourceEntry = findTypeEntryNoDiag(symbolTableContext,sourceType->getName(),scopeContext.scope);
+                            auto *sourceEntry = findTypeEntryNoDiag(symbolTableContext,sourceType->getName(),scopeContext.scope,&errStream,expr_to_eval);
                             if(!sourceEntry || sourceEntry->type != Semantics::SymbolTable::Entry::Class){
                                 errStream.push(SemanticADiagnostic::create("Class casts require a class-typed source value.",expr_to_eval->exprArrayData.front(),Diagnostic::Error));
                                 return nullptr;
@@ -2516,11 +2739,20 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                    && expr_to_eval->callee->type == ID_EXPR
                    && expr_to_eval->callee->id){
                     auto calleeName = expr_to_eval->callee->id->val;
-                    auto *visibleEntry = symbolTableContext.findEntryNoDiag(calleeName,scopeContext.scope);
-                    auto *importedEntry = symbolTableContext.findImportedGlobalEntryNoDiag(calleeName);
-                    if(!visibleEntry && importedEntry &&
-                       (importedEntry->type == Semantics::SymbolTable::Entry::Var
-                        || importedEntry->type == Semantics::SymbolTable::Entry::Function)){
+                    auto visibleMatches = symbolTableContext.collectVisibleEntriesNoDiag(calleeName,scopeContext.scope);
+                    auto importedEntries = symbolTableContext.collectImportedGlobalEntriesNoDiag(calleeName);
+                    bool importedValueVisible = std::any_of(importedEntries.begin(),importedEntries.end(),[](auto *entry){
+                        return entry && (entry->type == Semantics::SymbolTable::Entry::Var
+                                         || entry->type == Semantics::SymbolTable::Entry::Function);
+                    });
+                    if(visibleMatches.empty() && importedEntries.size() > 1 && importedValueVisible){
+                        std::ostringstream out;
+                        out << "Ambiguous imported symbol `" << calleeName
+                            << "`; multiple imported modules export this name. Reference it with its module name.";
+                        errStream.push(SemanticADiagnostic::create(out.str(),expr_to_eval->callee,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    if(visibleMatches.empty() && importedValueVisible){
                         std::ostringstream out;
                         out << "Imported symbol `" << calleeName << "` must be referenced with its module name.";
                         errStream.push(SemanticADiagnostic::create(out.str(),expr_to_eval->callee,Diagnostic::Error));
@@ -2570,7 +2802,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     baseType = normalizeType(baseType);
                     auto memberName = memberExpr->rightExpr->id->val;
 
-                    auto *classEntry = findClassEntry(symbolTableContext,baseType->getName(),scopeContext.scope);
+                    auto *classEntry = findClassEntry(symbolTableContext,baseType->getName(),scopeContext.scope,&errStream,expr_to_eval);
                     if(classEntry){
                         auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
                         auto classBindings = classBindingsFromInstanceType(classData,baseType);
@@ -2630,7 +2862,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         }
                     }
                     else {
-                        auto *typeEntry = findTypeEntryNoDiag(symbolTableContext,baseType->getName(),scopeContext.scope);
+                        auto *typeEntry = findTypeEntryNoDiag(symbolTableContext,baseType->getName(),scopeContext.scope,&errStream,expr_to_eval);
                         if(typeEntry && typeEntry->type == Semantics::SymbolTable::Entry::Interface){
                             auto *interfaceData = (Semantics::SymbolTable::Interface *)typeEntry->data;
                             auto interfaceBindings = interfaceBindingsFromInstanceType(interfaceData,baseType);
@@ -3186,7 +3418,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         return nullptr;
                     }
 
-                    auto classEntry = findClassEntry(symbolTableContext,baseType->getName(),scopeContext.scope);
+                    auto classEntry = findClassEntry(symbolTableContext,baseType->getName(),scopeContext.scope,&errStream,expr_to_eval);
                     if(classEntry){
                         auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
                         auto classBindings = classBindingsFromInstanceType(classData,baseType);
@@ -3219,7 +3451,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         type = lookup.method->isLazy ? normalizeType(makeTaskType(resolvedReturnType,expr_to_eval)) : resolvedReturnType;
                         break;
                     }
-                    auto *typeEntry = findTypeEntryNoDiag(symbolTableContext,baseType->getName(),scopeContext.scope);
+                    auto *typeEntry = findTypeEntryNoDiag(symbolTableContext,baseType->getName(),scopeContext.scope,&errStream,expr_to_eval);
                     if(typeEntry && typeEntry->type == Semantics::SymbolTable::Entry::Interface){
                         auto *interfaceData = (Semantics::SymbolTable::Interface *)typeEntry->data;
                         auto interfaceBindings = interfaceBindingsFromInstanceType(interfaceData,baseType);
@@ -3285,7 +3517,7 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
 
                 if(expr_to_eval->isConstructorCall){
                     Semantics::SymbolTable::Class *classData = nullptr;
-                    auto *classEntry = findClassEntry(symbolTableContext,funcType->getName(),scopeContext.scope);
+                    auto *classEntry = findClassEntry(symbolTableContext,funcType->getName(),scopeContext.scope,&errStream,expr_to_eval);
                     if(classEntry){
                         classData = (Semantics::SymbolTable::Class *)classEntry->data;
                     }
@@ -3603,6 +3835,156 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 break;
         }
         return normalizeType(type);
+    }
+
+    std::optional<SemanticAConstantBoolInfo> SemanticA::evaluateCompileTimeBoolExpr(ASTExpr *expr_to_eval,
+                                                                                     Semantics::STableContext &symbolTableContext,
+                                                                                     ASTScopeSemanticsContext &scopeContext){
+        if(!expr_to_eval){
+            return std::nullopt;
+        }
+
+        if(expr_to_eval->type == BOOL_LITERAL){
+            auto *literal = static_cast<ASTLiteralExpr *>(expr_to_eval);
+            if(!literal->boolValue.has_value()){
+                return std::nullopt;
+            }
+            return SemanticAConstantBoolInfo {literal->boolValue.value(),""};
+        }
+
+        if(expr_to_eval->type == UNARY_EXPR){
+            auto op = expr_to_eval->oprtr_str.value_or("");
+            if(op == "!"){
+                auto nested = evaluateCompileTimeBoolExpr(expr_to_eval->leftExpr,symbolTableContext,scopeContext);
+                if(!nested){
+                    return std::nullopt;
+                }
+                nested->value = !nested->value;
+                return nested;
+            }
+            return std::nullopt;
+        }
+
+        if(expr_to_eval->type == LOGIC_EXPR || expr_to_eval->type == BINARY_EXPR){
+            auto op = expr_to_eval->oprtr_str.value_or("");
+            if(op == "&&" || op == "||"){
+                auto lhs = evaluateCompileTimeBoolExpr(expr_to_eval->leftExpr,symbolTableContext,scopeContext);
+                auto rhs = evaluateCompileTimeBoolExpr(expr_to_eval->rightExpr,symbolTableContext,scopeContext);
+                if(lhs && rhs){
+                    return SemanticAConstantBoolInfo {
+                        op == "&&" ? (lhs->value && rhs->value) : (lhs->value || rhs->value),
+                        lhs->reason.empty() ? rhs->reason : lhs->reason
+                    };
+                }
+                if(op == "&&"){
+                    if(lhs && !lhs->value){
+                        return SemanticAConstantBoolInfo {false,lhs->reason};
+                    }
+                    if(rhs && !rhs->value){
+                        return SemanticAConstantBoolInfo {false,rhs->reason};
+                    }
+                }
+                else {
+                    if(lhs && lhs->value){
+                        return SemanticAConstantBoolInfo {true,lhs->reason};
+                    }
+                    if(rhs && rhs->value){
+                        return SemanticAConstantBoolInfo {true,rhs->reason};
+                    }
+                }
+                return std::nullopt;
+            }
+
+            if(op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">="){
+                auto lhs = evaluateCompileTimeScalarLiteral(expr_to_eval->leftExpr);
+                auto rhs = evaluateCompileTimeScalarLiteral(expr_to_eval->rightExpr);
+                if(!lhs || !rhs || lhs->kind != rhs->kind){
+                    return std::nullopt;
+                }
+                bool value = false;
+                if(lhs->kind == CompileTimeScalarValue::Kind::Bool){
+                    if(op == "==" || op == "!="){
+                        value = lhs->boolValue == rhs->boolValue;
+                    }
+                    else {
+                        return std::nullopt;
+                    }
+                }
+                else if(lhs->kind == CompileTimeScalarValue::Kind::Number){
+                    if(op == "=="){
+                        value = lhs->numberValue == rhs->numberValue;
+                    }
+                    else if(op == "!="){
+                        value = lhs->numberValue != rhs->numberValue;
+                    }
+                    else if(op == "<"){
+                        value = lhs->numberValue < rhs->numberValue;
+                    }
+                    else if(op == "<="){
+                        value = lhs->numberValue <= rhs->numberValue;
+                    }
+                    else if(op == ">"){
+                        value = lhs->numberValue > rhs->numberValue;
+                    }
+                    else if(op == ">="){
+                        value = lhs->numberValue >= rhs->numberValue;
+                    }
+                }
+                else if(lhs->kind == CompileTimeScalarValue::Kind::String){
+                    if(op == "=="){
+                        value = lhs->stringValue == rhs->stringValue;
+                    }
+                    else if(op == "!="){
+                        value = lhs->stringValue != rhs->stringValue;
+                    }
+                    else if(op == "<"){
+                        value = lhs->stringValue < rhs->stringValue;
+                    }
+                    else if(op == "<="){
+                        value = lhs->stringValue <= rhs->stringValue;
+                    }
+                    else if(op == ">"){
+                        value = lhs->stringValue > rhs->stringValue;
+                    }
+                    else if(op == ">="){
+                        value = lhs->stringValue >= rhs->stringValue;
+                    }
+                }
+                return SemanticAConstantBoolInfo {value,""};
+            }
+
+            if(op == "is"){
+                if(!expr_to_eval->runtimeTypeCheckName.has_value() || !expr_to_eval->leftExpr){
+                    return std::nullopt;
+                }
+                auto *lhsType = evalExprForTypeId(expr_to_eval->leftExpr,symbolTableContext,scopeContext);
+                if(!lhsType){
+                    return std::nullopt;
+                }
+                lhsType = resolveAliasType(lhsType,symbolTableContext,scopeContext.scope,scopeContext.genericTypeParams);
+                if(!lhsType || lhsType->isOptional || lhsType->isThrowable || lhsType->isGenericParam){
+                    return std::nullopt;
+                }
+
+                const auto &targetRuntimeName = expr_to_eval->runtimeTypeCheckName.value();
+                if(runtimeTypeCheckAlwaysMatches(lhsType,targetRuntimeName)){
+                    std::ostringstream reason;
+                    reason << "runtime type test `is` always succeeds for static type `"
+                           << displayTypeNameForConstantIs(lhsType)
+                           << "` against `" << targetRuntimeName << "`";
+                    return SemanticAConstantBoolInfo {true,reason.str()};
+                }
+                if(runtimeTypeCheckAlwaysFails(lhsType,targetRuntimeName)){
+                    std::ostringstream reason;
+                    reason << "runtime type test `is` cannot succeed for static type `"
+                           << displayTypeNameForConstantIs(lhsType)
+                           << "` against `" << targetRuntimeName << "`";
+                    return SemanticAConstantBoolInfo {false,reason.str()};
+                }
+            }
+        }
+
+        return std::nullopt;
     }
 
 }

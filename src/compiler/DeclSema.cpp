@@ -21,6 +21,18 @@ static bool shouldSuppressUnusedInvocationWarning(ASTStmt *stmt){
     return false;
 }
 
+static void emitConstantConditionDiagnostic(DiagnosticHandler &errStream,
+                                            ASTStmt *diagNode,
+                                            const std::string &message,
+                                            const std::string &reason = ""){
+    std::ostringstream ss;
+    ss << message;
+    if(!reason.empty()){
+        ss << " Reason: " << reason << ".";
+    }
+    errStream.push(SemanticADiagnostic::create(ss.str(),diagNode,Diagnostic::Warning));
+}
+
 ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
                                      Semantics::STableContext & symbolTableContext,
                                      ASTScopeSemanticsContext & scopeContext,
@@ -128,7 +140,8 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
         case COND_DECL:
         {
             auto *condDecl = (ASTConditionalDecl *)stmt;
-            for(auto & condSpec : condDecl->specs){
+            for(size_t specIndex = 0;specIndex < condDecl->specs.size();++specIndex){
+                auto &condSpec = condDecl->specs[specIndex];
                 if(!condSpec.isElse()){
                     ASTExpr *conditionExpr = condSpec.expr;
                     ASTType *condResType = evalExprForTypeId(conditionExpr,symbolTableContext,scopeContext);
@@ -146,6 +159,28 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
                         *hasErrored = true;
                         return nullptr;
                     };
+                    if(auto constantInfo = evaluateCompileTimeBoolExpr(conditionExpr,symbolTableContext,scopeContext)){
+                        if(constantInfo->value){
+                            if(specIndex + 1 < condDecl->specs.size()){
+                                emitConstantConditionDiagnostic(errStream,
+                                                                conditionExpr,
+                                                                "Conditional condition is always true; subsequent branches are unreachable.",
+                                                                constantInfo->reason);
+                            }
+                            else {
+                                emitConstantConditionDiagnostic(errStream,
+                                                                conditionExpr,
+                                                                "Conditional condition is always true; branch body always executes.",
+                                                                constantInfo->reason);
+                            }
+                        }
+                        else {
+                            emitConstantConditionDiagnostic(errStream,
+                                                            conditionExpr,
+                                                            "Conditional condition is always false; branch body is unreachable.",
+                                                            constantInfo->reason);
+                        }
+                    }
                     
                 }
                /// 3. Eval Block
@@ -202,6 +237,20 @@ ASTType * SemanticA::evalGenericDecl(ASTDecl *stmt,
             })){
                 *hasErrored = true;
                 return nullptr;
+            }
+            if(auto constantInfo = evaluateCompileTimeBoolExpr(conditionExpr,symbolTableContext,scopeContext)){
+                if(constantInfo->value){
+                    emitConstantConditionDiagnostic(errStream,
+                                                    conditionExpr,
+                                                    "Loop condition is always true; loop may be infinite unless exited internally.",
+                                                    constantInfo->reason);
+                }
+                else {
+                    emitConstantConditionDiagnostic(errStream,
+                                                    conditionExpr,
+                                                    "Loop condition is always false; loop body is unreachable.",
+                                                    constantInfo->reason);
+                }
             }
 
             bool hasFailed = false;
@@ -379,18 +428,40 @@ ASTType *SemanticA::evalBlockStmtForASTType(ASTBlockStmt *stmt,
                     
                 }
                 else {;
-                    
-                    bool _hasErrored = false;
                     auto declNode = (ASTDecl *)node;
-                    auto declReturn = evalGenericDecl(declNode,
-                                                      symbolTableContext,
-                                                      blockScopeContext,
-                                                      &_hasErrored,
-                                                      expectedReturnType);
-                    if(_hasErrored)
-                    {
-                        *hasErrored = _hasErrored;
-                        return nullptr;
+                    ASTType *declReturn = nullptr;
+                    bool requiresStatementLevelValidation = false;
+                    switch(declNode->type){
+                        case FUNC_DECL:
+                        case CLASS_DECL:
+                        case INTERFACE_DECL:
+                        case TYPE_ALIAS_DECL:
+                        case IMPORT_DECL:
+                        case SCOPE_DECL:
+                            requiresStatementLevelValidation = true;
+                            break;
+                        default:
+                            break;
+                    }
+
+                    if(requiresStatementLevelValidation){
+                        if(!checkSymbolsForStmtInScope(declNode,symbolTableContext,blockScopeContext.scope)){
+                            *hasErrored = true;
+                            return nullptr;
+                        }
+                    }
+                    else {
+                        bool _hasErrored = false;
+                        declReturn = evalGenericDecl(declNode,
+                                                     symbolTableContext,
+                                                     blockScopeContext,
+                                                     &_hasErrored,
+                                                     expectedReturnType);
+                        if(_hasErrored)
+                        {
+                            *hasErrored = _hasErrored;
+                            return nullptr;
+                        }
                     }
                     addSTableEntryForDecl(declNode,blockSymbols.get());
                     if(inFuncContext){

@@ -1,0 +1,19 @@
+class PartialObjectWarn {
+    decl value:Int
+    decl other:Int
+
+    func ping() Int {
+        return 1
+    }
+
+    new() {
+        self.value = 1
+        decl _snapshot = self
+        decl _ping = self.ping()
+        self.other = 2
+    }
+}
+
+decl item = new PartialObjectWarn()
+print(item.ping())
+print("PARTIAL-OBJECT-WARN-OK")

@@ -1,0 +1,28 @@
+func choose() Int {
+    if(true) {
+        print("COND-TRUE")
+    }
+    else {
+        print("COND-ELSE")
+    }
+
+    if(1 is String) {
+        print("IS-IMPOSSIBLE")
+    }
+    else {
+        print("IS-ELSE")
+    }
+
+    while(false) {
+        print("WHILE-UNREACHABLE")
+    }
+
+    decl branch:Int = true ? 1 : 2
+    decl exact:Int = (1 is Int) ? 3 : 4
+    decl fallback:Int = false ? 5 : 6
+    return branch + exact + fallback
+}
+
+decl result:Int = choose()
+print(result)
+print("CONST-COND-OK")

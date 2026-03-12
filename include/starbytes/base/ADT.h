@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <ostream>
 #include <set>
@@ -375,8 +376,13 @@ using string_set = std::set<std::string, std::less<>>;
 
 class StringInterner {
     string_set pool;
+    mutable std::mutex mutex;
 public:
     StringInterner() = default;
+    StringInterner(const StringInterner &other);
+    StringInterner &operator=(const StringInterner &other);
+    StringInterner(StringInterner &&other) noexcept;
+    StringInterner &operator=(StringInterner &&other) noexcept;
     StringRef intern(const StringRef &value);
     StringRef intern(const std::string &value);
     StringRef intern(const char *value);

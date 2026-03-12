@@ -1,0 +1,4 @@
+import Alpha
+import Beta
+
+decl result = ping()

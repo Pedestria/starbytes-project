@@ -71,12 +71,42 @@ void Twine::clear() noexcept {
     buffer.clear();
 }
 
+StringInterner::StringInterner(const StringInterner &other) {
+    std::lock_guard<std::mutex> lock(other.mutex);
+    pool = other.pool;
+}
+
+StringInterner &StringInterner::operator=(const StringInterner &other) {
+    if(this == &other) {
+        return *this;
+    }
+    std::scoped_lock lock(mutex, other.mutex);
+    pool = other.pool;
+    return *this;
+}
+
+StringInterner::StringInterner(StringInterner &&other) noexcept {
+    std::lock_guard<std::mutex> lock(other.mutex);
+    pool = std::move(other.pool);
+}
+
+StringInterner &StringInterner::operator=(StringInterner &&other) noexcept {
+    if(this == &other) {
+        return *this;
+    }
+    std::scoped_lock lock(mutex, other.mutex);
+    pool = std::move(other.pool);
+    return *this;
+}
+
 StringRef StringInterner::intern(const StringRef &value) {
+    std::lock_guard<std::mutex> lock(mutex);
     auto inserted = pool.emplace(value.str());
     return StringRef(inserted.first->data(), static_cast<uint32_t>(inserted.first->size()));
 }
 
 StringRef StringInterner::intern(const std::string &value) {
+    std::lock_guard<std::mutex> lock(mutex);
     auto inserted = pool.emplace(value);
     return StringRef(inserted.first->data(), static_cast<uint32_t>(inserted.first->size()));
 }
@@ -85,15 +115,18 @@ StringRef StringInterner::intern(const char *value) {
     if(!value) {
         return StringRef();
     }
+    std::lock_guard<std::mutex> lock(mutex);
     auto inserted = pool.emplace(value);
     return StringRef(inserted.first->data(), static_cast<uint32_t>(inserted.first->size()));
 }
 
 size_t StringInterner::size() const noexcept {
+    std::lock_guard<std::mutex> lock(mutex);
     return pool.size();
 }
 
 void StringInterner::clear() noexcept {
+    std::lock_guard<std::mutex> lock(mutex);
     pool.clear();
 }
 

@@ -1,0 +1,16 @@
+func choose(flag:Bool, value:Int) Int {
+    if(flag) {
+        decl branch:Int = flag ? value : (value + 1)
+        return branch
+    }
+
+    while(flag) {
+        return value + 1
+    }
+
+    return value + 2
+}
+
+decl result:Int = choose(true, 3)
+print(result)
+print("CONST-COND-NO-WARN-OK")

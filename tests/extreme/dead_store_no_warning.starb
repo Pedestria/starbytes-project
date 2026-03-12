@@ -1,0 +1,11 @@
+func stable(flag:Bool, input:Int) Int {
+    decl value:Int = input
+    if(flag) {
+        value = 4
+    }
+    return value
+}
+
+decl result = stable(true, 1)
+print(result)
+print("DEAD-STORE-NO-WARNING-OK")

@@ -134,6 +134,10 @@ namespace starbytes {
             std::vector<std::shared_ptr<SymbolTable>> otherTables;
             std::vector<std::shared_ptr<SymbolTable>> importTables;
             bool hasTable(SymbolTable *ptr);
+            std::vector<SymbolTable::Entry *> collectVisibleEntriesNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope);
+            std::vector<SymbolTable::Entry *> collectImportedGlobalEntriesNoDiag(string_ref symbolName);
+            std::vector<SymbolTable::Entry *> collectEntriesInExactScopeNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope);
+            std::vector<SymbolTable::Entry *> collectEntriesByEmittedNoDiag(string_ref emittedName);
             SymbolTable::Entry * findImportedGlobalEntryNoDiag(string_ref symbolName);
             SymbolTable::Entry * findEntryNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope);
             SymbolTable::Entry * findEntryInExactScopeNoDiag(string_ref symbolName,std::shared_ptr<ASTScope> scope);

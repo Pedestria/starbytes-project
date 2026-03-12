@@ -255,6 +255,11 @@ std::string trimLeftCopy(std::string value) {
   return value.substr(i);
 }
 
+constexpr int LSP_COMPLETION_ITEM_TAG_DEPRECATED = 1;
+constexpr int LSP_SYMBOL_TAG_DEPRECATED = 1;
+constexpr int LSP_DIAGNOSTIC_TAG_UNNECESSARY = 1;
+constexpr int LSP_DIAGNOSTIC_TAG_DEPRECATED = 2;
+
 std::string hoverDocCommentForLine(const std::vector<std::string> &lines, unsigned declarationLineZeroBased) {
   if (declarationLineZeroBased == 0 || declarationLineZeroBased - 1 >= lines.size()) {
     return {};
@@ -845,6 +850,18 @@ bool hasRegionLocation(const Region &region) {
   return region.startLine > 0 || region.endLine > 0 || region.startCol > 0 || region.endCol > 0;
 }
 
+bool compilerDiagnosticIsDeprecated(const CompilerDiagnosticEntry &entry) {
+  return entry.severity == 2 && entry.message.rfind("Use of deprecated ", 0) == 0;
+}
+
+void appendDeprecatedTagArray(rapidjson::Value &object,
+                              int tagValue,
+                              rapidjson::Document::AllocatorType &alloc) {
+  rapidjson::Value tags(rapidjson::kArrayType);
+  tags.PushBack(tagValue, alloc);
+  object.AddMember("tags", tags, alloc);
+}
+
 rapidjson::Value buildRangeFromRegion(const Region &region, rapidjson::Document::AllocatorType &alloc) {
   rapidjson::Value range(rapidjson::kObjectType);
   rapidjson::Value start(rapidjson::kObjectType);
@@ -870,6 +887,9 @@ void appendCompilerDiagnosticJson(rapidjson::Value &diag,
   diag.AddMember("severity", entry.severity, alloc);
   diag.AddMember("source", rapidjson::Value(entry.source.c_str(), alloc), alloc);
   diag.AddMember("message", rapidjson::Value(entry.message.c_str(), alloc), alloc);
+  if (compilerDiagnosticIsDeprecated(entry)) {
+    appendDeprecatedTagArray(diag, LSP_DIAGNOSTIC_TAG_DEPRECATED, alloc);
+  }
 
   if(!entry.code.empty()) {
     diag.AddMember("code", rapidjson::Value(entry.code.c_str(), alloc), alloc);
@@ -1872,6 +1892,27 @@ std::vector<SemanticTokenEntry> Server::buildSemanticTokensFromSemanticCache(con
     }
 
     if (!resolved) {
+      std::string memberReceiver;
+      if (extractReceiverBeforeOffset(state.text, tokenOffset, memberReceiver) &&
+          std::find(parsedDocument->imports.begin(), parsedDocument->imports.end(), memberReceiver) !=
+              parsedDocument->imports.end()) {
+        std::string moduleUri;
+        std::string moduleText;
+        if (findModuleDocumentByName(memberReceiver, uri, moduleUri, moduleText)) {
+          auto moduleSymbols = collectSymbolsForUri(moduleUri, moduleText);
+          for (const auto &moduleSymbol : moduleSymbols) {
+            if (moduleSymbol.name != token.content || moduleSymbol.isMember) {
+              continue;
+            }
+            semanticType = semanticTokenTypeFromSymbolKindForLsp(moduleSymbol.kind);
+            resolved = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!resolved) {
       SymbolEntry resolvedSymbol;
       std::string resolvedUri;
       unsigned lookupCharacter = start;
@@ -2426,6 +2467,32 @@ bool Server::resolveHoverSymbol(const std::string &uri,
       }
       if (var) {
         symbol.signature = hoverVarSignature(isConst, symbol.name, var->type);
+        symbol.isDeprecated = var->isDeprecated;
+        symbol.deprecationMessage = var->deprecationMessage;
+      }
+    } else if (entry->type == Semantics::SymbolTable::Entry::Function) {
+      auto *func = static_cast<Semantics::SymbolTable::Function *>(entry->data);
+      if (func) {
+        symbol.isDeprecated = func->isDeprecated;
+        symbol.deprecationMessage = func->deprecationMessage;
+      }
+    } else if (entry->type == Semantics::SymbolTable::Entry::Class) {
+      auto *klass = static_cast<Semantics::SymbolTable::Class *>(entry->data);
+      if (klass) {
+        symbol.isDeprecated = klass->isDeprecated;
+        symbol.deprecationMessage = klass->deprecationMessage;
+      }
+    } else if (entry->type == Semantics::SymbolTable::Entry::Interface) {
+      auto *interfaceData = static_cast<Semantics::SymbolTable::Interface *>(entry->data);
+      if (interfaceData) {
+        symbol.isDeprecated = interfaceData->isDeprecated;
+        symbol.deprecationMessage = interfaceData->deprecationMessage;
+      }
+    } else if (entry->type == Semantics::SymbolTable::Entry::TypeAlias) {
+      auto *aliasData = static_cast<Semantics::SymbolTable::TypeAlias *>(entry->data);
+      if (aliasData) {
+        symbol.isDeprecated = aliasData->isDeprecated;
+        symbol.deprecationMessage = aliasData->deprecationMessage;
       }
     }
   };
@@ -4655,6 +4722,9 @@ void Server::handleCompletion(rapidjson::Document &request) {
     item.AddMember("kind", entry.kind, alloc);
     item.AddMember("detail", rapidjson::Value(entry.detail.c_str(), alloc), alloc);
     item.AddMember("insertText", rapidjson::Value(entry.label.c_str(), alloc), alloc);
+    if (entry.hasResolvedSymbol && entry.resolvedSymbol.isDeprecated) {
+      appendDeprecatedTagArray(item, LSP_COMPLETION_ITEM_TAG_DEPRECATED, alloc);
+    }
     if (entry.hasResolvedSymbol) {
       rapidjson::Value data(rapidjson::kObjectType);
       data.AddMember("uri", rapidjson::Value(entry.resolvedUri.c_str(), alloc), alloc);
@@ -4667,6 +4737,8 @@ void Server::handleCompletion(rapidjson::Document &request) {
       data.AddMember("documentation", rapidjson::Value(entry.resolvedSymbol.documentation.c_str(), alloc), alloc);
       data.AddMember("containerName", rapidjson::Value(entry.resolvedSymbol.containerName.c_str(), alloc), alloc);
       data.AddMember("isMember", entry.resolvedSymbol.isMember, alloc);
+      data.AddMember("isDeprecated", entry.resolvedSymbol.isDeprecated, alloc);
+      data.AddMember("deprecationMessage", rapidjson::Value(entry.resolvedSymbol.deprecationMessage.c_str(), alloc), alloc);
       item.AddMember("data", data, alloc);
     }
     items.PushBack(item, alloc);
@@ -4737,6 +4809,12 @@ void Server::handleCompletionResolve(rapidjson::Document &request) {
     if (data.HasMember("isMember") && data["isMember"].IsBool()) {
       exact.isMember = data["isMember"].GetBool();
     }
+    if (data.HasMember("isDeprecated") && data["isDeprecated"].IsBool()) {
+      exact.isDeprecated = data["isDeprecated"].GetBool();
+    }
+    if (data.HasMember("deprecationMessage") && data["deprecationMessage"].IsString()) {
+      exact.deprecationMessage = data["deprecationMessage"].GetString();
+    }
     if (exactOk) {
       resolvedSymbol = exact;
     }
@@ -4775,12 +4853,26 @@ void Server::handleCompletionResolve(rapidjson::Document &request) {
   }
 
   if(resolvedSymbol.has_value()) {
+    if (resolvedSymbol->isDeprecated && !item.HasMember("tags")) {
+      appendDeprecatedTagArray(item, LSP_COMPLETION_ITEM_TAG_DEPRECATED, alloc);
+    }
     if(!item.HasMember("detail")) {
       item.AddMember("detail", rapidjson::Value(resolvedSymbol->detail.c_str(), alloc), alloc);
     }
     std::string renderedDoc = DoxygenDoc::parse(resolvedSymbol->documentation).renderMarkdown();
     if(renderedDoc.empty()) {
       renderedDoc = resolvedSymbol->documentation;
+    }
+    if (resolvedSymbol->isDeprecated) {
+      std::string deprecationNote = "> Deprecated";
+      if (!resolvedSymbol->deprecationMessage.empty()) {
+        deprecationNote += ": " + resolvedSymbol->deprecationMessage;
+      }
+      if (!renderedDoc.empty()) {
+        renderedDoc = deprecationNote + "\n\n" + renderedDoc;
+      } else {
+        renderedDoc = deprecationNote;
+      }
     }
     if(!resolvedSymbol->signature.empty()) {
       if(!renderedDoc.empty()) {
@@ -4944,6 +5036,12 @@ void Server::handleHover(rapidjson::Document &request) {
     }
     if (!signatureBlock.empty()) {
       markdown += "\n\n```starbytes\n" + signatureBlock + "\n```";
+    }
+    if (bestSymbol->isDeprecated) {
+      markdown += "\n\n> Deprecated";
+      if (!bestSymbol->deprecationMessage.empty()) {
+        markdown += ": " + bestSymbol->deprecationMessage;
+      }
     }
     appendInheritanceMarkdown(markdown, *bestSymbol);
 
@@ -5770,6 +5868,9 @@ void Server::handleDocumentSymbol(rapidjson::Document &request) {
 
     docSymbol.AddMember("range", range, alloc);
     docSymbol.AddMember("selectionRange", selectionRange, alloc);
+    if (symbol.isDeprecated) {
+      appendDeprecatedTagArray(docSymbol, LSP_SYMBOL_TAG_DEPRECATED, alloc);
+    }
 
     rapidjson::Value children(rapidjson::kArrayType);
     docSymbol.AddMember("children", children, alloc);
@@ -5826,6 +5927,9 @@ void Server::handleWorkspaceSymbol(rapidjson::Document &request) {
 
       symbolInfo.AddMember("location", location, alloc);
       symbolInfo.AddMember("containerName", rapidjson::Value("", alloc), alloc);
+      if (symbol.isDeprecated) {
+        appendDeprecatedTagArray(symbolInfo, LSP_SYMBOL_TAG_DEPRECATED, alloc);
+      }
       result.PushBack(symbolInfo, alloc);
     }
   }
@@ -6907,7 +7011,7 @@ void Server::processRequest(rapidjson::Document &request) {
     handleCodeAction(request);
     return;
   }
-  if (method == "textDocument/semanticTokens/full") {
+  if (method == "textDocument/semanticTokens" || method == "textDocument/semanticTokens/full") {
     handleSemanticTokens(request);
     return;
   }
@@ -6915,7 +7019,7 @@ void Server::processRequest(rapidjson::Document &request) {
     handleSemanticTokensRange(request);
     return;
   }
-  if (method == "textDocument/semanticTokens/full/delta") {
+  if (method == "textDocument/semanticTokens/edits" || method == "textDocument/semanticTokens/full/delta") {
     handleSemanticTokensDelta(request);
     return;
   }

@@ -301,6 +301,36 @@ std::string extractLeadingDocComment(const std::vector<std::string> &lines, unsi
   return out;
 }
 
+bool hasAttributeNamed(const std::vector<ASTAttribute> &attrs, const std::string &name) {
+  for (const auto &attr : attrs) {
+    if (attr.name == name) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::string deprecationMessageFromAttributes(const std::vector<ASTAttribute> &attrs) {
+  for (const auto &attr : attrs) {
+    if (attr.name != "deprecated") {
+      continue;
+    }
+    for (const auto &arg : attr.args) {
+      if (arg.key.has_value() && arg.key.value() != "message") {
+        continue;
+      }
+      if (arg.value && arg.value->type == STR_LITERAL) {
+        auto *literal = static_cast<ASTLiteralExpr *>(arg.value);
+        if (literal->strValue.has_value()) {
+          return literal->strValue.value();
+        }
+      }
+    }
+    break;
+  }
+  return {};
+}
+
 std::string functionSignature(ASTFuncDecl *funcDecl) {
   if (!funcDecl || !funcDecl->funcId) {
     return {};
@@ -347,7 +377,8 @@ void pushSymbol(std::vector<SymbolEntry> &symbols,
                 const std::string &signature,
                 const std::vector<std::string> &lines,
                 const std::string &containerName,
-                bool isMember) {
+                bool isMember,
+                const std::vector<ASTAttribute> *attrs = nullptr) {
   if (!id) {
     return;
   }
@@ -365,6 +396,12 @@ void pushSymbol(std::vector<SymbolEntry> &symbols,
   symbol.length = id->codeRegion.endCol > id->codeRegion.startCol ? id->codeRegion.endCol - id->codeRegion.startCol
                                                                    : static_cast<unsigned>(symbol.name.size());
   symbol.documentation = extractLeadingDocComment(lines, symbol.line);
+  if (attrs) {
+    symbol.isDeprecated = hasAttributeNamed(*attrs, "deprecated");
+    if (symbol.isDeprecated) {
+      symbol.deprecationMessage = deprecationMessageFromAttributes(*attrs);
+    }
+  }
   symbols.push_back(std::move(symbol));
 }
 
@@ -466,7 +503,7 @@ void collectSymbolsFromDecl(ASTDecl *decl,
           signature += ":";
           signature += typeToString(spec.type);
         }
-        pushSymbol(symbols, spec.id, kind, detail, signature, lines, containerName, isMember);
+        pushSymbol(symbols, spec.id, kind, detail, signature, lines, containerName, isMember, &varDecl->attributes);
       }
       break;
     }
@@ -481,7 +518,8 @@ void collectSymbolsFromDecl(ASTDecl *decl,
                  functionSignature(funcDecl),
                  lines,
                  containerName,
-                 isMember);
+                 isMember,
+                 &funcDecl->attributes);
       break;
     }
     case CLASS_DECL: {
@@ -511,7 +549,15 @@ void collectSymbolsFromDecl(ASTDecl *decl,
           signature += typeToString(classDecl->interfaces[idx]);
         }
       }
-      pushSymbol(symbols, classDecl->id, kind, detail, signature, lines, containerName, !containerName.empty());
+      pushSymbol(symbols,
+                 classDecl->id,
+                 kind,
+                 detail,
+                 signature,
+                 lines,
+                 containerName,
+                 !containerName.empty(),
+                 &classDecl->attributes);
       for (auto *field : classDecl->fields) {
         collectSymbolsFromDecl(field, lines, symbols, classDecl->id ? classDecl->id->val : std::string());
       }
@@ -532,7 +578,8 @@ void collectSymbolsFromDecl(ASTDecl *decl,
                  signature,
                  lines,
                  containerName,
-                 !containerName.empty());
+                 !containerName.empty(),
+                 &interfaceDecl->attributes);
       for (auto *field : interfaceDecl->fields) {
         collectSymbolsFromDecl(field, lines, symbols, interfaceDecl->id ? interfaceDecl->id->val : std::string());
       }
@@ -573,7 +620,8 @@ void collectSymbolsFromDecl(ASTDecl *decl,
                  signature,
                  lines,
                  containerName,
-                 !containerName.empty());
+                 !containerName.empty(),
+                 &aliasDecl->attributes);
       break;
     }
     case SECURE_DECL: {

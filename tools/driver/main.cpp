@@ -92,10 +92,16 @@ struct ModuleSource {
     bool isInterfaceFile = false;
 };
 
+struct ModuleImportSite {
+    std::filesystem::path sourcePath;
+    unsigned line = 0;
+};
+
 struct ModuleBuildUnit {
     std::filesystem::path moduleDir;
     std::vector<ModuleSource> sources;
     std::vector<std::string> imports;
+    std::unordered_map<std::string, ModuleImportSite> importSites;
     std::vector<std::string> dependencyKeys;
     bool hasMainSource = false;
     bool hasInterfaceSource = false;
@@ -726,6 +732,36 @@ std::vector<std::string> extractImportsFromSource(const std::string &sourceText)
     return imports;
 }
 
+std::vector<std::pair<std::string, unsigned>> extractImportSitesFromSource(const std::string &sourceText) {
+    std::vector<std::pair<std::string, unsigned>> imports;
+    static const std::regex importRegex(R"(^\s*import\s+([A-Za-z_][A-Za-z0-9_]*)\s*$)");
+    std::istringstream lines(sourceText);
+    std::string line;
+    unsigned lineNumber = 0;
+    while(std::getline(lines, line)) {
+        ++lineNumber;
+        auto commentPos = line.find("//");
+        if(commentPos != std::string::npos) {
+            line = line.substr(0, commentPos);
+        }
+        std::smatch match;
+        if(!std::regex_match(line, match, importRegex) || match.size() < 2) {
+            continue;
+        }
+        auto name = normalizeImportModuleName(match[1].str());
+        if(name.empty()) {
+            continue;
+        }
+        auto existing = std::find_if(imports.begin(), imports.end(), [&](const auto &entry) {
+            return entry.first == name;
+        });
+        if(existing == imports.end()) {
+            imports.push_back({std::move(name), lineNumber});
+        }
+    }
+    return imports;
+}
+
 bool readFileText(const std::filesystem::path &path, std::string &outText, std::string &error) {
     auto fileLoadStart = std::chrono::steady_clock::now();
     std::ifstream in(path, std::ios::in);
@@ -850,6 +886,57 @@ std::string joinCycle(const std::vector<std::string> &stack, const std::string &
     return out.str();
 }
 
+std::string moduleDisplayName(const std::string &moduleKey) {
+    auto path = std::filesystem::path(moduleKey);
+    auto name = path.filename().string();
+    if(!name.empty()) {
+        return name;
+    }
+    return moduleKey;
+}
+
+std::string renderImportCycle(const std::vector<std::string> &stack,
+                              const std::string &tail,
+                              const std::unordered_map<std::string, const ModuleBuildUnit *> &activeUnits) {
+    auto cycleStart = std::find(stack.begin(), stack.end(), tail);
+    std::vector<std::string> cycle;
+    if(cycleStart != stack.end()) {
+        cycle.assign(cycleStart, stack.end());
+    } else {
+        cycle = stack;
+    }
+    cycle.push_back(tail);
+
+    std::ostringstream out;
+    out << "Cyclic module import detected:";
+    if(!cycle.empty()) {
+        out << "\nCycle: ";
+        for(size_t i = 0; i < cycle.size(); ++i) {
+            if(i > 0) {
+                out << " -> ";
+            }
+            out << moduleDisplayName(cycle[i]);
+        }
+        for(size_t i = 0; i + 1 < cycle.size(); ++i) {
+            const auto &fromKey = cycle[i];
+            const auto &toKey = cycle[i + 1];
+            out << "\n  " << moduleDisplayName(fromKey) << " imports " << moduleDisplayName(toKey);
+            auto unitIt = activeUnits.find(fromKey);
+            if(unitIt != activeUnits.end() && unitIt->second != nullptr) {
+                auto siteIt = unitIt->second->importSites.find(moduleDisplayName(toKey));
+                if(siteIt != unitIt->second->importSites.end()) {
+                    out << " at " << siteIt->second.sourcePath.string();
+                    if(siteIt->second.line > 0) {
+                        out << ":" << siteIt->second.line;
+                    }
+                }
+            }
+        }
+        return out.str();
+    }
+    return "Cyclic module import detected: " + joinCycle(stack, tail);
+}
+
 bool discoverModuleGraphByDirectory(const std::filesystem::path &moduleDir,
                                     const std::filesystem::path &workspaceRoot,
                                     const ResolverContext &resolverContext,
@@ -858,11 +945,12 @@ bool discoverModuleGraphByDirectory(const std::filesystem::path &moduleDir,
                                     uint64_t flagsHash,
                                     ModuleGraph &graph,
                                     std::unordered_set<std::string> &visiting,
+                                    std::unordered_map<std::string, const ModuleBuildUnit *> &activeUnits,
                                     std::vector<std::string> &stack,
                                     std::string &error) {
     auto moduleKey = makeAbsolutePathString(moduleDir);
     if(visiting.find(moduleKey) != visiting.end()) {
-        error = "Cyclic module import detected: " + joinCycle(stack, moduleKey);
+        error = renderImportCycle(stack, moduleKey, activeUnits);
         return false;
     }
     if(graph.unitsByKey.find(moduleKey) != graph.unitsByKey.end()) {
@@ -885,17 +973,25 @@ bool discoverModuleGraphByDirectory(const std::filesystem::path &moduleDir,
         auto cachedImports = resolveImportsFromCache(analysisCache, source, compilerVersion, flagsHash);
         auto imports = cachedImports.has_value() ? *cachedImports : extractImportsFromSource(source.fileText);
         updateImportCache(analysisCache, source, compilerVersion, flagsHash, imports);
+        auto importNamesWithLines = extractImportSitesFromSource(source.fileText);
         for(auto &name : imports) {
             if(importedNames.insert(name).second) {
                 unit.imports.push_back(name);
             }
         }
+        for(const auto &entry : importNamesWithLines) {
+            if(unit.importSites.find(entry.first) == unit.importSites.end()) {
+                unit.importSites.insert({entry.first, {source.filePath, entry.second}});
+            }
+        }
     }
+    activeUnits[moduleKey] = &unit;
 
     for(const auto &importName : unit.imports) {
         auto resolvedDir = resolveImportModuleDirectory(importName, unit.moduleDir, workspaceRoot, resolverContext);
         if(!resolvedDir.has_value()) {
             error = "Failed to resolve imported module `" + importName + "` from `" + moduleDir.string() + "`.";
+            activeUnits.erase(moduleKey);
             visiting.erase(moduleKey);
             stack.pop_back();
             return false;
@@ -912,14 +1008,17 @@ bool discoverModuleGraphByDirectory(const std::filesystem::path &moduleDir,
                                            flagsHash,
                                            graph,
                                            visiting,
+                                           activeUnits,
                                            stack,
                                            error)) {
+            activeUnits.erase(moduleKey);
             visiting.erase(moduleKey);
             stack.pop_back();
             return false;
         }
     }
 
+    activeUnits.erase(moduleKey);
     graph.unitsByKey.insert(std::make_pair(moduleKey, std::move(unit)));
     graph.buildOrder.push_back(moduleKey);
     visiting.erase(moduleKey);
@@ -955,6 +1054,7 @@ bool discoverModuleGraphBySingleFile(const std::filesystem::path &sourceFile,
     }
 
     std::unordered_set<std::string> visiting;
+    std::unordered_map<std::string, const ModuleBuildUnit *> activeUnits;
     std::vector<std::string> stack;
     for(const auto &importName : rootUnit.imports) {
         auto resolvedDir = resolveImportModuleDirectory(importName, rootUnit.moduleDir, workspaceRoot, resolverContext);
@@ -974,6 +1074,7 @@ bool discoverModuleGraphBySingleFile(const std::filesystem::path &sourceFile,
                                            flagsHash,
                                            graph,
                                            visiting,
+                                           activeUnits,
                                            stack,
                                            error)) {
             return false;
@@ -1000,6 +1101,7 @@ bool discoverModuleGraph(const std::filesystem::path &inputPath,
     std::error_code ec;
     if(std::filesystem::is_directory(inputPath, ec)) {
         std::unordered_set<std::string> visiting;
+        std::unordered_map<std::string, const ModuleBuildUnit *> activeUnits;
         std::vector<std::string> stack;
         if(!discoverModuleGraphByDirectory(inputPath,
                                            workspaceRoot,
@@ -1009,6 +1111,7 @@ bool discoverModuleGraph(const std::filesystem::path &inputPath,
                                            flagsHash,
                                            graph,
                                            visiting,
+                                           activeUnits,
                                            stack,
                                            error)) {
             return false;

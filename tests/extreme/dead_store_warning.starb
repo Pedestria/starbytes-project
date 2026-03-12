@@ -1,0 +1,16 @@
+func sample(input:Int) Int {
+    input = 5
+
+    decl value:Int = 1
+    value = 2
+
+    decl final:Int = value
+    decl keep:Int = final
+    final = 3
+
+    return input + value + keep
+}
+
+decl result = sample(1)
+print(result)
+print("DEAD-STORE-OK")

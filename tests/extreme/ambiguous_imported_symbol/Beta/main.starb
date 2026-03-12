@@ -1,0 +1,3 @@
+func ping() Int {
+    return 2
+}

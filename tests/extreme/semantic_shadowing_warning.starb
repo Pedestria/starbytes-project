@@ -1,0 +1,12 @@
+func shadowed(x: Int) Int {
+    decl x:Int = 7
+    decl maybe:String? = "x"
+    secure(decl ok = maybe) catch (x: String) {
+        print(x)
+    }
+    decl _x:Int = 5
+    return x
+}
+
+print(shadowed(3))
+print("SEMANTIC-SHADOWING-OK")

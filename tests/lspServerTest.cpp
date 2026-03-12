@@ -55,6 +55,7 @@ int main(int argc, char *argv[]) {
     const auto rootUri = std::string("file://") + std::filesystem::current_path().string();
     const std::string cmdLineUri = "file:///tmp/lsp-cmdline-test.starb";
     const std::string renameUri = "file:///tmp/lsp-rename-test.starb";
+    const std::string deprecationUri = "file:///tmp/lsp-deprecation-test.starb";
     const std::string cmdLineText =
         "import CmdLine\n"
         "decl args = CmdLine.positionals()\n"
@@ -69,6 +70,13 @@ int main(int argc, char *argv[]) {
         "func second(local:Int) Int {\n"
         "  return local\n"
         "}\n";
+    const std::string deprecationText =
+        "@deprecated(\"Use modernFunc.\")\n"
+        "func legacyFunc() Int {\n"
+        "  return 1\n"
+        "}\n"
+        "decl value:Int = legacyFunc()\n"
+        "leg\n";
 
     appendMessage(input, std::string(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"rootUri":")") +
                          rootUri + R"(","workspaceFolders":[{"uri":")" + rootUri + R"(","name":"starbytes-project"}]}})");
@@ -79,6 +87,8 @@ int main(int argc, char *argv[]) {
                          cmdLineUri + R"(","languageId":"starbytes","version":1,"text":")" + jsonEscape(cmdLineText) + R"("}}})");
     appendMessage(input, std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
                          renameUri + R"(","languageId":"starbytes","version":1,"text":")" + jsonEscape(renameText) + R"("}}})");
+    appendMessage(input, std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                         deprecationUri + R"(","languageId":"starbytes","version":1,"text":")" + jsonEscape(deprecationText) + R"("}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":5,"character":4}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":9,"character":1}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":4,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":9,"character":1}}})");
@@ -135,6 +145,14 @@ int main(int argc, char *argv[]) {
     appendMessage(input, std::string(R"({"jsonrpc":"2.0","id":51,"method":"textDocument/prepareRename","params":{"textDocument":{"uri":")") +
                          cmdLineUri + R"("},"position":{"line":2,"character":1}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":52,"method":"textDocument/rename","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"},"position":{"line":48,"character":10},"newName":"helperAnswer"}})");
+    appendMessage(input, std::string(R"({"jsonrpc":"2.0","id":53,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")") +
+                         deprecationUri + R"("}}})");
+    appendMessage(input, std::string(R"({"jsonrpc":"2.0","id":54,"method":"textDocument/hover","params":{"textDocument":{"uri":")") +
+                         deprecationUri + R"("},"position":{"line":4,"character":18}}})");
+    appendMessage(input, std::string(R"({"jsonrpc":"2.0","id":55,"method":"textDocument/completion","params":{"textDocument":{"uri":")") +
+                         deprecationUri + R"("},"position":{"line":5,"character":3}}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":56,"method":"completionItem/resolve","params":{"label":"legacyFunc","kind":3}})");
+    appendMessage(input, R"({"jsonrpc":"2.0","id":57,"method":"textDocument/semanticTokens","params":{"textDocument":{"uri":"file:///tmp/lsp-test.starb"}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":16,"method":"shutdown","params":null})");
     appendMessage(input, R"({"jsonrpc":"2.0","method":"exit"})");
 
@@ -238,6 +256,19 @@ int main(int argc, char *argv[]) {
        || !requireContains("\"file:///tmp/lsp-test.starb\"","rename-cross-file-main-uri")
        || !requireContains("\"line\":1,\"character\":5","rename-cross-file-helper-edit")
        || !requireContains("\"line\":48,\"character\":7","rename-cross-file-main-edit")) return 1;
+    if(!requireContains("\"id\":53","deprecated-diagnostic-id")
+       || !requireContains("Use of deprecated function `legacyFunc`. Use modernFunc.","deprecated-diagnostic-message")
+       || !requireContains("\"tags\":[2]","deprecated-diagnostic-tag")) return 1;
+    if(!requireContains("\"id\":54","deprecated-hover-id")
+       || !requireContains("> Deprecated: Use modernFunc.","deprecated-hover-note")
+       || !requireContains("func legacyFunc() Int","deprecated-hover-signature")) return 1;
+    if(!requireContains("\"id\":55","deprecated-completion-id")
+       || !requireContains("\"label\":\"legacyFunc\"","deprecated-completion-label")
+       || !requireContains("\"tags\":[1]","deprecated-completion-tag")) return 1;
+    if(!requireContains("\"id\":56","deprecated-completion-resolve-id")
+       || !requireContains("Use modernFunc.","deprecated-completion-resolve-note")
+       || !requireContains("func legacyFunc() Int","deprecated-completion-resolve-signature")) return 1;
+    if(!requireContains("\"id\":57","proposed-semantic-full-id") || !requireContains("\"resultId\"","proposed-semantic-result-id")) return 1;
     if(contains(result, "Undefined symbol `CmdLine`")) {
         std::cerr << "CmdLine import should resolve in LSP diagnostics.\n";
         std::cerr << result << std::endl;

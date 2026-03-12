@@ -1,0 +1,13 @@
+class PartialFieldRead {
+    decl value:Int
+
+    new(flag:Bool) {
+        if(flag) {
+            decl _peek = self.value
+            self.value = 1
+        }
+        else {
+            self.value = 2
+        }
+    }
+}

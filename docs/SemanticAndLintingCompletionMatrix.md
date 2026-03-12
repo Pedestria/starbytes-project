@@ -1,214 +1,424 @@
 # Semantic And Linting Completion Matrix
 
-Last updated: March 11, 2026
+Last updated: March 12, 2026
 
 ## Purpose
 
-This document audits the current Starbytes semantic analyzer and lint engine, then proposes the additional checking surface needed to make both engines feel complete for the current language.
+This document re-evaluates Starbytes semantic analysis and linting against two baselines:
 
-The goal is not to duplicate the two engines. The clean boundary is:
+1. the current Starbytes compiler and linguistics implementation
+2. the capability families used by Clang Sema, Clang diagnostics, clang-tidy, and the Clang Static Analyzer
 
-- semantic analyzer: reject invalid programs and enforce language/runtime rules
-- lint engine: flag suspicious, risky, or maintainability-hostile code that is still legal
+The goal is not to copy C or C++ behavior mechanically. The goal is to make the Starbytes semantic and linting surface complete for the language that exists today, while also making the boundary between compiler errors, lint warnings, and future analyzer-grade checks explicit.
 
-## Basis
+## External Reference Model
 
-This matrix is based on the implemented behavior in:
+The capability families in this matrix were cross-checked against these LLVM/Clang references:
+
+- Clang Sema API: [clang::Sema](https://clang.llvm.org/doxygen/classclang_1_1Sema.html)
+- Clang diagnostics model: [Expressive Diagnostics](https://clang.llvm.org/diagnostics)
+- Clang warning taxonomy: [DiagnosticsReference](https://clang.llvm.org/docs/DiagnosticsReference.html)
+- Warning suppression model: [WarningSuppressionMappings](https://clang.llvm.org/docs/WarningSuppressionMappings.html)
+- clang-tidy architecture and check families: [Clang-Tidy](https://clang.llvm.org/extra/clang-tidy/)
+- path-sensitive analyzer families: [Clang Static Analyzer checkers](https://clang.llvm.org/docs/analyzer/checkers.html)
+
+These references matter because they separate three things cleanly:
+
+- semantic validity checks
+- lint-style quality guidance
+- deeper path-sensitive analyzer checks
+
+Starbytes should adopt the same separation.
+
+## Local Basis
+
+This matrix is based on the current implementation in:
 
 - `/Users/alextopper/Documents/GitHub/starbytes-project/src/compiler/SemanticA.cpp`
 - `/Users/alextopper/Documents/GitHub/starbytes-project/src/compiler/ExprSema.cpp`
 - `/Users/alextopper/Documents/GitHub/starbytes-project/src/compiler/DeclSema.cpp`
 - `/Users/alextopper/Documents/GitHub/starbytes-project/src/linguistics/LintEngine.cpp`
+- `/Users/alextopper/Documents/GitHub/starbytes-project/src/linguistics/SuggestionEngine.cpp`
+- `/Users/alextopper/Documents/GitHub/starbytes-project/include/starbytes/compiler/SemanticA.h`
 - `/Users/alextopper/Documents/GitHub/starbytes-project/include/starbytes/linguistics/LintEngine.h`
-- `/Users/alextopper/Documents/GitHub/starbytes-project/tests/LinguisticsPhase3LintTest.cpp`
+
+## Boundary
+
+### Semantic analyzer owns
+
+- anything that makes a program invalid
+- exact type, symbol, module, and runtime contract enforcement
+- flow analysis required for correctness and soundness
+- declaration and attribute legality
+- diagnostics that code generation and runtime safety depend on
+
+### Lint engine owns
+
+- suspicious but legal constructs
+- maintainability, readability, and style policy
+- performance hints and API hygiene
+- optional team policy checks and configurable severity
+
+### Analyzer-tier pass owns
+
+- expensive path-sensitive and interprocedural reasoning
+- symbolic execution style checks
+- resource and protocol misuse patterns that exceed normal sema cost budgets
+
+Starbytes does not have this third tier yet. The matrix includes it so the roadmap stays honest.
 
 ## Current State Summary
 
-- The semantic analyzer is already substantial. It covers most declaration validity, type checking, generic specialization, member resolution, inheritance/interface conformance, and callable validation.
-- The lint engine is still foundational. It has rule metadata, severity handling, rule selection, and fix plumbing, but the rule set is small and mostly text-driven rather than AST- and sema-driven.
-- The highest-leverage completion step is not "add fifty more regex-like lint rules". It is to let lint consume compiler AST and semantic facts first.
+- Semantic analysis is already strong on declaration legality, type checking, generics, modules, secure declarations, native declaration validation, inheritance/interface conformance, definite assignment, unused binding warnings, and deprecation diagnostics.
+- Linting is now AST-backed for its real rules, but the rule surface is still small.
+- The main remaining compiler gaps are not expression typing. They are flow refinement, override/API contract checks, constant-condition reasoning, drift checks, and diagnostics policy/configuration.
+- The main remaining lint gaps are not plumbing. They are rule breadth, semantic-fact usage, suppression policy, and workspace-scale behavior.
 
 ## Current Semantic Analyzer Coverage
 
-| Area | Current implemented checks | Status | Main gap remaining |
-| --- | --- | --- | --- |
-| Name resolution and scoping | Lexical scope lookup, class/scope member lookup, module-scoped imports, qualified imported symbol enforcement, undefined symbol/member diagnostics, unused import warnings | Strong | No full shadowing policy diagnostics |
-| Declaration validity | `const` initialization, typed/untyped declaration validation, secure declaration initializer constraints, `return` outside function errors, constructor return rejection, definite-assignment diagnostics, unused local/parameter warnings | Strong | No broader field/property definite-init policy |
-| Attribute validation | `@native`, `@readonly`, `@private`, `@deprecated` declaration-shape validation plus deprecation use warnings in sema | Implemented | Deprecation payloads are surfaced at use sites |
-| Type checking | Arithmetic, logical, bitwise, comparison, ternary, cast, `await`, indexing, assignment, optional/throwable matching, typed collection matching | Strong | No flow-sensitive narrowing beyond current direct checks |
-| Callable checking | Function/method/constructor/inline-function arity checks, argument type checks, return type compatibility, generic callable specialization and inference, must-return control-flow diagnostics for non-`Void` callables | Strong | No richer override contract checking |
-| Generics | Generic types, free functions, methods, interface methods, defaults, constructor generics, substitution, inference from call arguments | Strong | No constraints/where-clause enforcement yet |
-| Object model | Single-superclass validation, circular inheritance rejection, duplicate method detection, duplicate constructor arity rejection, interface method signature compatibility | Strong | No richer override contract checking (`override` required/invalid override/covariant diagnostics) |
-| Control-flow warnings | Unreachable code after a proven `return`, unused invocation result warning for non-`Void` calls | Basic | No CFG-backed dead-store, constant-condition, or must-return analysis |
-| Modules and native interfaces | Interface/native declaration body rules, imported module namespace rules, native variable restrictions, module-scoped symbol surfaces | Strong | No API drift checking between source modules, interfaces, and native exports |
-| Diagnostics shape | Errors and warnings are emitted consistently through semantic diagnostics | Adequate | Codes are still broad; related families are not fine-grained by check kind |
+| Capability family | Current status | Notes |
+| --- | --- | --- |
+| Name lookup and lexical scoping | Implemented | Lexical lookup, class member lookup, scope lookup, imported module namespace lookup, undefined symbol diagnostics |
+| Import and module namespace rules | Implemented | Imported module members must be referenced as `ModuleName.member`; unused import warnings exist |
+| Declaration legality | Implemented | Invalid declaration placement, missing bodies, invalid native decl shapes, const initialization, secure decl legality |
+| Core expression typing | Implemented | Arithmetic, logic, bitwise, comparison, ternary, casts, indexing, assignment, `await`, optional/throwable compatibility |
+| Collection typing | Implemented | Typed arrays/maps/tasks and collection shape matching |
+| Call checking | Implemented | Arity, argument types, return compatibility, generic specialization and inference |
+| Generic declarations and invocations | Implemented for current feature set | Generic types, free functions, methods, interface methods, defaults, constructor generics |
+| Class/interface conformance | Implemented | Single superclass, interface conformance, duplicate methods, duplicate constructor arity, circular inheritance rejection |
+| Definite assignment | Implemented | Locals, params, secure catch bindings, top-level/module flow |
+| Must-return analysis | Implemented | Non-`Void` functions, methods, inline functions, interface default bodies |
+| Unused bindings | Implemented | Imports, locals, params, `@private` fields |
+| Deprecation diagnostics | Implemented | Variables, functions, classes, interfaces, type aliases, fields, methods; payload surfaces at use sites |
+| Unreachable code | Partial | Only direct proven-unreachable after `return`-style flow in current block walker |
+| Optional/throwable refinement | Partial | Secure-decl semantics exist, but full flow-sensitive narrowing does not |
+| Override contracts | Missing | No explicit override-required, invalid-override, accidental-overload diagnostics |
+| Constant-condition reasoning | Missing | No tautology/impossible-branch diagnostics |
+| API drift checks | Missing | No source/interface/native consistency audit |
+| Diagnostic policy/configuration | Partial | Diagnostics exist, but groups, fine-grained suppression, and warning policy are incomplete |
 
 ## Current Lint Engine Coverage
 
-### Engine capabilities already implemented
+### Implemented engine capabilities
 
-- rule registry with categories, tags, default severities, and stable rule codes
-- `strict` mode severity escalation
-- enabled/disabled rule selection
-- maximum finding caps
-- fix candidate plumbing for suggestions/code actions
+- compiler-backed AST analysis input
+- rule registry with stable IDs and categories
+- severity selection and `strict` escalation
+- enable/disable by selectors
+- max findings cap
+- suggestion and code-action plumbing
 
 ### Implemented rules
 
-| Rule | Code | Category | Current behavior | Limit |
-| --- | --- | --- | --- | --- |
-| `style.trailing_whitespace` | `SB-LINT-STYLE-S0001` | Style | Detects and autofixes trailing spaces/tabs | Text-only |
-| `correctness.assignment_in_condition` | `SB-LINT-CORR-C0001` | Correctness | Detects likely accidental `=` inside conditions from parsed AST | No richer constant-condition reasoning yet |
-| `performance.new_in_loop` | `SB-LINT-PERF-P0001` | Performance | Detects constructor allocation inside loop bodies from parsed AST | No cost model beyond direct allocation sites |
-| `safety.untyped_catch` | `SB-LINT-SAFE-A0001` | Safety | Detects broad/untyped `catch` clauses from parsed AST | No distinction between intentionally broad catch policies yet |
-| `docs.missing_decl_comment` | `SB-LINT-DOC-D0001` | Docs | Detects missing declaration comments on top-level API declarations | Still shallow; no param/return doc drift checks |
-| `correctness.shadowing` | `SB-LINT-CORR-C0004` | Correctness | Detects locals/catches that shadow outer bindings | No policy knobs yet for “allowed” shadowing cases |
+| Rule | Code | Category | Status |
+| --- | --- | --- | --- |
+| `style.trailing_whitespace` | `SB-LINT-STYLE-S0001` | Style | Implemented |
+| `correctness.assignment_in_condition` | `SB-LINT-CORR-C0001` | Correctness | Implemented |
+| `performance.new_in_loop` | `SB-LINT-PERF-P0001` | Performance | Implemented |
+| `safety.untyped_catch` | `SB-LINT-SAFE-A0001` | Safety | Implemented |
+| `docs.missing_decl_comment` | `SB-LINT-DOC-D0001` | Docs | Implemented |
+| `correctness.shadowing` | `SB-LINT-CORR-C0004` | Correctness | Implemented |
 
-### Current lint engine gap
+### Missing engine capabilities
 
-The lint engine now consumes:
+- per-rule suppression in source and config
+- semantic symbol identity as a first-class lint input
+- compiler-warning ingestion as lint categories or mirrors
+- workspace/project aggregation for cross-file lint
+- safe-vs-unsafe autofix classification hardening
+- per-file or path-scoped warning policy
 
-- parsed AST statements, including sema-invalid statements preserved through the raw consumer path
-- lexical binding and block-structure facts derived from compiler AST
-- declaration comments and callable signatures from compiler nodes
+## Complete Semantic Analyzer Capability Checklist
 
-The lint engine still does not yet consume:
+Status meanings:
 
-- symbol identities
-- inferred types
-- module/import ownership
-- full control-flow facts
-- semantic diagnostics as rule inputs
+- `Implemented`: present and materially usable now
+- `Partial`: present in a narrower form than a complete language-quality implementation
+- `Missing`: should exist for the current language, but does not
+- `Future feature dependent`: wait until the language feature is finalized
+- `Analyzer-tier later`: valuable, but should not live in ordinary sema
 
-Without those inputs, the lint engine will continue to miss real issues and produce brittle heuristics.
+### 1. Name lookup, redeclaration, and scope legality
 
-## Completion Boundary
-
-Use this split to decide where a new check belongs:
-
-### Semantic analyzer should own
-
-- anything that changes whether a program is valid
-- anything needed for runtime safety or soundness
-- anything that depends on exact type rules or symbol identity
-
-### Lint engine should own
-
-- suspicious but legal patterns
-- maintainability/performance guidance
-- team policy and public API hygiene
-- style/documentation checks
-
-## Proposed Semantic Analyzer Completion Features
-
-### Priority 0: high-value soundness and correctness checks
-
-| Feature | Why it matters | Notes |
+| Check family | Status | Notes |
 | --- | --- | --- |
-| Definite assignment / use-before-initialization | Prevents reading locals, fields, and catches before they are written on every path | Requires basic control-flow graph or block-path lattice |
-| Must-return analysis for non-`Void` callables | Current sema checks return type compatibility when a `return` exists, but not that all paths return | Should cover functions, methods, inline functions, and interface default bodies |
-| Unused imports / locals / parameters / private fields | High-signal correctness and cleanup feedback | Implemented in sema as warnings; `@private` fields warn when never read |
-| Shadowing diagnostics | Prevent accidental reuse of local/parameter/catch/import names | Severity should depend on scope distance and symbol kind |
-| Deprecation usage warnings | Use of deprecated variables, functions, classes, interfaces, type aliases, fields, and methods is surfaced from sema with message payloads | Implemented |
-| Constant-condition and impossible-branch detection | Catches `if true`, `while false`, contradictory checks, and always-true type tests | Split hard errors vs warnings carefully |
-| Invalid override and missing override contract checks | Makes class evolution safer and diagnostics more actionable | Covers accidental overload-vs-override mistakes |
-| Stronger optional/throwable flow refinement | Makes `secure`, guards, and checked paths narrow types predictably | Important for optional/throwable-heavy APIs |
+| Undefined symbol diagnostics | Implemented | Present |
+| Undefined member diagnostics | Implemented | Present |
+| Duplicate symbol in scope | Implemented | Present for major decl kinds |
+| Qualified import enforcement | Implemented | Present |
+| Ambiguous symbol lookup diagnostics | Implemented | Same-scope duplicates and cross-module imported-name ambiguity now diagnose instead of silently choosing a first match |
+| Shadowing diagnostics as compiler warnings | Implemented | Local/catch shadowing of outer bindings now warns in sema; lint rule remains for analysis tooling |
+| Import cycle diagnostics with clear path reporting | Implemented | Cycle reports now include the module chain and the import file:line for each edge in the loop |
+| Wrong-namespace or wrong-scope declaration diagnostics | Implemented | Namespace-only declarations now diagnose consistently in function and block scopes, including nested declarations inside control-flow blocks |
+| Forward declaration and declaration-ownership rules | Future feature dependent | Depends on whether Starbytes adds true forward declarations |
 
-### Priority 1: deeper semantic quality checks
+### 2. Declaration, initialization, and object-state legality
 
-| Feature | Why it matters | Notes |
+| Check family | Status | Notes |
 | --- | --- | --- |
-| Dead-store detection | Finds writes that are overwritten before read | Best implemented as semantic warning or sema-fed lint |
-| Lossy numeric conversion warnings | Helps catch narrowing and mixed numeric pitfalls | Especially relevant now that `Long` and `Double` exist |
-| Recursive alias / recursive type legality checks | Prevents pathological or runtime-hostile type cycles | Current alias resolution is strong, but legality policy is still shallow |
-| Public API/interface drift diagnostics | Detect source modules, rendered interfaces, and native exports that no longer agree | Important for library modules and LSP/builtin extraction |
-| Ambiguous module-name diagnostics | Prevent bad resolution when multiple module roots expose the same name | Especially relevant with `.starbmodpath` |
-| Compile-time constant enforcement where required | Needed once more constant-only contexts are added | Keep this in sema, not lint |
-| Stronger secure/catch propagation diagnostics | Warn/error when throwable or optional values are partially handled and partially leaked | Completes the current secure-decl model |
+| Const/immutable initialization requirements | Implemented | Present |
+| Use-before-initialization | Implemented | Present for current flow model |
+| Must-return on all paths | Implemented | Present |
+| Unused imports/locals/params/private fields | Implemented | Present as compiler warnings |
+| Constructor body return rejection | Implemented | Present |
+| Field definite initialization policy | Implemented | Required own-fields without declaration initializers must be definitely assigned on every constructor exit path; classes/structs with required fields and no constructors now diagnose |
+| Duplicate field initialization / double-initialize diagnostics | Implemented | Present as compiler warning for repeated `self.field = ...` writes along the same constructor path |
+| Partially initialized object diagnostics | Implemented | Present as compiler warnings for required-field reads, `self` escape, and `self` method calls before all required fields are initialized |
+| Dead-store diagnostics | Implemented | Present as compiler warnings for local/parameter writes that are overwritten or reach scope exit unread in the current conservative control-flow model |
 
-### Priority 2: future-dependent semantic checks
+### 3. Type formation and type-system legality
 
-These should land when the corresponding language features stabilize:
-
-| Feature | Dependency |
-| --- | --- |
-| Generic constraints / `where` clause enforcement | Generic constraints syntax and representation |
-| Variance legality checks | Variance syntax and assignability policy |
-| Enum exhaustiveness | Full enum semantics plus exhaustive branching form |
-| Purity / async misuse diagnostics | Stable purity/async contract model |
-| Ref/alias escape diagnostics | Final ADT/reference mutability semantics |
-
-## Proposed Lint Engine Completion Features
-
-### Required foundation work first
-
-| Feature | Why it matters |
-| --- | --- |
-| AST-backed lint traversal | Removes fragile string matching and enables node-accurate findings |
-| Semantic-fact input from compiler | Needed for type-aware, scope-aware, and import-aware linting |
-| Rule-level suppression model | Required before the rule set grows materially |
-| Stable safe/unsafe autofix classification | Needed so code actions stay trustworthy |
-| Incremental workspace caching | Important if lint expands to whole-project semantic checks |
-
-### Priority 0: semantic-aware lint rules
-
-| Feature | Why it matters | Boundary |
+| Check family | Status | Notes |
 | --- | --- | --- |
-| Unused symbol lint with severity by symbol kind | Strong signal for cleanup and dead code | Can reuse sema reachability/usage data |
-| Ignored non-`Void` results | Generalizes the current invocation warning into a configurable lint rule | Lint |
-| Redundant cast / redundant `is` / redundant optional unwrap patterns | Flags noise and logic that no longer does anything | Lint |
-| Constant-condition lint | Complements sema by catching suspicious but technically legal constant branches | Lint unless provably invalid |
-| Duplicate branch predicates / equivalent `if` arms | High-value bug detection | Lint |
-| Empty control blocks and empty catch bodies | Good safety/correctness signal | Lint |
-| Deprecation usage lint | Can be routed through lint even if declaration-side parsing stays in sema | Shared with sema diagnostics |
-| Shadowing lint with policy knobs | Some teams want warnings, some want errors only for dangerous cases | Lint configuration layer |
+| Unknown type diagnostics | Implemented | Present |
+| Generic argument count and defaults | Implemented | Present |
+| Generic type existence and substitution | Implemented | Present |
+| Function type legality | Implemented | Present |
+| Typed collection legality | Implemented | Present |
+| Recursive alias legality policy | Partial | Alias resolution exists; legality against hostile cycles is not fully formalized |
+| Invalid self-referential type graphs | Missing | Needed for stronger soundness and better diagnostics |
+| Constraint / where-clause enforcement | Future feature dependent | Feature not implemented yet |
+| Variance legality | Future feature dependent | Feature not implemented yet |
+| Constant-type-only contexts | Future feature dependent | Depends on more compile-time-only contexts |
 
-### Priority 1: performance and safety lint
+### 4. Conversions, casts, and numeric diagnostics
 
-| Feature | Why it matters |
+| Check family | Status | Notes |
+| --- | --- | --- |
+| Invalid cast diagnostics | Implemented | Present |
+| Optional/throwable compatibility | Implemented | Present |
+| Numeric operator typing | Implemented | Present |
+| Runtime `is` legality | Implemented | Present |
+| Lossy narrowing warnings | Missing | Clang has many numeric conversion warnings; Starbytes has none yet |
+| Suspicious mixed numeric type warnings | Missing | Especially useful with `Int`, `Long`, `Float`, `Double` |
+| Redundant cast diagnostics | Missing | Better as lint unless it changes validity |
+| Impossible runtime-type-test diagnostics | Partial | Present for exact builtin/runtime-exact `is` cases; general class-hierarchy reasoning remains conservative |
+
+### 5. Calls, overload-like behavior, and callable contracts
+
+| Check family | Status | Notes |
+| --- | --- | --- |
+| Arity and argument type checking | Implemented | Present |
+| Callable return compatibility | Implemented | Present |
+| Generic callable inference | Implemented | Present for current model |
+| Ignored non-`Void` results | Partial | Compiler warns in current direct form; could be generalized and policy-controlled |
+| Override-required / invalid-override / accidental-overload diagnostics | Missing | High-value correctness gap |
+| Covariant/contravariant override compatibility diagnostics | Missing | Needed once override contracts are formalized |
+| Virtual/interface dispatch contract diagnostics | Partial | Interface conformance exists; richer override semantics do not |
+| Recursion diagnostics such as obvious infinite recursion | Missing | Clang has related warning families; Starbytes has none |
+
+### 6. Control flow, dataflow, and refinement
+
+| Check family | Status | Notes |
+| --- | --- | --- |
+| Straight-line definite assignment | Implemented | Present |
+| Branch merge analysis | Implemented | Present in current flow walker |
+| Loop-aware conservative flow | Partial | Present conservatively, but not rich |
+| Unreachable code detection | Partial | Limited |
+| Constant-condition and impossible-branch detection | Implemented | Compiler warnings now cover constant Bool conditions in conditionals/loops/ternaries, with conservative impossible-`is` branch diagnostics |
+| Flow-sensitive optional/throwable narrowing | Missing | Important for `secure`-heavy code |
+| Flow-sensitive type narrowing after `is` | Missing | Useful once `is` becomes a real refinement tool |
+| Exhaustiveness diagnostics | Future feature dependent | Needs stable enum/pattern branching form |
+| Switch-like fallthrough diagnostics | Future feature dependent | Depends on language constructs |
+| Path-sensitive null/optional misuse | Analyzer-tier later | Better in a dedicated analyzer pass |
+
+### 7. Object model, inheritance, and interface contracts
+
+| Check family | Status | Notes |
+| --- | --- | --- |
+| Circular inheritance rejection | Implemented | Present |
+| Single-superclass enforcement | Implemented | Present |
+| Interface method compatibility | Implemented | Present |
+| Generic interface method compatibility | Implemented | Present |
+| Duplicate method and ctor-arity rejection | Implemented | Present |
+| Missing required method diagnostics with rich mismatch notes | Partial | Present, but note quality and mismatch detail can be deeper |
+| Private/protected-style access diagnostics | Future feature dependent | Starbytes currently recommends public-by-default plus interfaces |
+| Forbidden subclass / sealed type diagnostics | Future feature dependent | Depends on future attribute or type contract surface |
+| Constructor-state protocol diagnostics | Missing | Useful once richer init rules or field requirements stabilize |
+
+### 8. Modules, native interfaces, and API drift
+
+| Check family | Status | Notes |
+| --- | --- | --- |
+| Import placement and syntax legality | Implemented | Present |
+| Module namespace access rules | Implemented | Present |
+| Native declaration shape validation | Implemented | Present |
+| Native/source/interface symbol mismatch detection | Missing | Important for stdlib and library modules |
+| Rendered interface drift diagnostics | Missing | Source vs `.starbint` mismatch is not audited |
+| Ambiguous module root resolution diagnostics | Missing | Important with `.starbmodpath` |
+| Duplicate module name collision diagnostics | Missing | Needed for larger workspaces |
+| ABI contract diagnostics for native modules | Missing | Important for runtime stability |
+
+### 9. Attributes, annotations, and API lifecycle
+
+| Check family | Status | Notes |
+| --- | --- | --- |
+| Attribute legality validation | Implemented | Present for current attributes |
+| Deprecation use warnings | Implemented | Present with payloads |
+| Readonly/private/native/deprecated declaration-shape validation | Implemented | Present |
+| Attribute argument validation richness | Partial | Current checks are good, but attribute schema is not generalized |
+| Availability / version / platform annotations | Missing | Useful once stdlib and package ecosystem grow |
+| API evolution annotations beyond deprecation | Missing | Examples: renamed, unavailable, experimental |
+
+### 10. Diagnostics quality and operability
+
+Clang’s diagnostics model is a useful standard here: accurate columns, range highlights, fix-its, preserved user spelling, notes, and good recovery all materially improve compiler usability.
+
+| Check family | Status | Notes |
+| --- | --- | --- |
+| Precise source ranges and columns | Implemented | Present |
+| Related notes and fix-its | Partial | Infrastructure exists; coverage is uneven |
+| Type spelling preservation in diagnostics | Partial | Present in places, but not consistently polished |
+| Recovery after local semantic failures | Partial | Good enough for many cases, but not systematized |
+| Fine-grained diagnostic groups/codes | Partial | Codes exist, but grouping is still broad |
+| Warning-as-error policy | Missing | Important for toolchain maturity |
+| Per-file/path warning suppression | Missing | Clang-style suppression mapping analogue does not exist |
+| Machine-readable structured diagnostics parity | Partial | LSP/CLI structured output exists, but policy surface is incomplete |
+
+## Complete Lint Capability Checklist
+
+The lint surface should be modeled after clang-tidy families, but adapted to Starbytes instead of copying C++-specific checks.
+
+### A. Foundation and policy
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Compiler AST-backed traversal | Implemented | Present |
+| Compiler semantic facts as lint input | Partial | Some shared facts exist, but symbol identity/type/control-flow use is still shallow |
+| Rule registry and stable IDs | Implemented | Present |
+| Rule enable/disable selectors | Implemented | Present |
+| Source-level suppression comments | Missing | Clang-tidy-style suppression analogue is not present |
+| Per-path or per-module suppression policy | Missing | Important for adoption in large repos |
+| Warning severity remapping by rule | Partial | `strict` exists, but richer per-rule policy is missing |
+| Warnings-as-errors for lint | Missing | Desirable for CI |
+| Safe-vs-unsafe fix classification | Partial | Plumbing exists, policy is not hardened |
+| Workspace/project-wide lint aggregation | Missing | Current model is mostly file-local |
+
+### B. Correctness and bug-prone lint
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Assignment in condition | Implemented | Present |
+| Shadowing policy lint | Implemented | Present |
+| Ignored non-`Void` results | Missing | Good fit for lint policy layer |
+| Dead stores | Missing | High-value bugprone rule |
+| Duplicate conditions or identical branches | Missing | High-value logic check |
+| Constant conditions that are suspicious but legal | Missing | Good bugprone rule |
+| Empty branches / empty catches / empty loops | Missing | Good signal |
+| Redundant cast / redundant `is` / redundant unwrap | Missing | Good cleanup and bugprone signal |
+| Suspicious self-assignment / no-op update | Missing | Clang-family analogue worth adding |
+| Suspicious compare against impossible values | Missing | Useful once numeric warnings land |
+
+### C. Performance lint
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Allocation inside loop | Implemented | Present |
+| Repeated regex construction | Missing | Strong fit now that `Regex` is builtin |
+| String concatenation in loops | Missing | Common quadratic pattern |
+| Avoidable collection copies | Missing | Good with array/map-heavy code |
+| Repeated module/native calls in loops | Missing | Good hoisting hint |
+| Repeated size/property lookup in loops | Missing | Good micro-optimization hint |
+| Boxing/cast churn | Missing | Relevant to current runtime optimization work |
+| Inefficient numeric patterns | Missing | Useful once numeric runtime specialization expands |
+
+### D. Safety and security lint
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Untyped catch | Implemented | Present |
+| Broad catch that swallows errors | Missing | Strong safety rule |
+| Unchecked optional/throwable results | Missing | Natural Starbytes-specific safety rule |
+| Unsafe cast hotspots | Missing | High-value runtime safety lint |
+| Dangerous native/module API misuse patterns | Missing | Important as stdlib grows |
+| API protocol misuse | Missing | Better after more module surface stabilizes |
+
+### E. Readability, style, and maintainability lint
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Trailing whitespace | Implemented | Present |
+| Naming conventions by symbol kind | Missing | Useful once symbol identity is passed through lint |
+| Import ordering and duplicate imports | Missing | Good hygiene rule |
+| Overly complex expressions / deep nesting | Missing | Good readability family |
+| Prefer clearer scoped access or API shape | Missing | Useful once style policy is formalized |
+| Redundant qualifiers or noise syntax | Missing | Good cleanup family |
+
+### F. Documentation and API hygiene lint
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Missing top-level declaration comments | Implemented | Present |
+| Param/return docs completeness | Missing | Needed for public API quality |
+| Doc drift against signature | Missing | High-value and LSP-visible |
+| Public API export docs coverage | Missing | Good library-facing rule |
+| Deprecation surface hygiene | Missing | Examples: missing deprecation message, stale replacement text |
+
+### G. Portability, configuration, and ecosystem lint
+
+Starbytes does not have C/C++ portability problems, but it does have ecosystem portability issues that fill a similar role.
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Module-path portability warnings | Missing | `.starbmodpath` and workspace assumptions |
+| Native module availability warnings | Missing | Useful when code depends on optional native deps |
+| Stdlib/platform behavior compatibility hints | Missing | Relevant for ICU/OpenSSL/curl-backed modules |
+| Versioned API usage or package-policy lint | Missing | Important once `starbpkg` package ecosystem expands |
+
+## Analyzer-Tier Checks That Should Not Be Forced Into Ordinary Sema
+
+These are inspired by Clang Static Analyzer families. They are valuable, but they belong in a future deeper analysis pass, not in ordinary per-file semantic analysis.
+
+| Capability | Why it matters |
 | --- | --- |
-| Repeated regex construction in loops | Real cost, now that regex is a builtin API |
-| String concatenation in loops | Common accidental quadratic pattern |
-| Repeated container size/property lookups in hot loops | Actionable micro-optimization hint |
-| Repeated module/native calls in loops when hoistable | Useful once module use expands |
-| Boxed numeric churn / repeated numeric casts | Relevant to current runtime optimization work |
-| Avoidable collection copies / temporary arrays | Helps users write runtime-friendly code |
-| Broad catch that swallows errors | Strong safety signal |
-| Unchecked optional/throwable results | Fits Starbytes' optional/throwable model well |
-| Unsafe cast hot-spots | Good warning for runtime failure-prone code |
+| Path-sensitive optional/throwable misuse | Requires symbolic path reasoning |
+| Resource leak and protocol misuse | Better as interprocedural analysis |
+| Null/absence dereference family beyond local checks | Better with path-sensitive state |
+| Cross-function dead-store and unused-return propagation | Requires call graph reasoning |
+| Stateful API protocol checks for IO/FS/Net/Crypto | Better as checker families |
+| Dataflow-derived impossible state checks | Too expensive for ordinary sema |
 
-### Priority 2: API, docs, and maintainability lint
+## Re-evaluated Priority Order
 
-| Feature | Why it matters |
-| --- | --- |
-| Public declaration docs completeness | Current comment rule is too shallow for exported APIs |
-| Param/return doc coverage and drift | Keeps interfaces and hovers trustworthy |
-| Naming convention rules by symbol kind | Useful once the symbol table is available to lint |
-| Import ordering / duplicate import / unused import organization | Better project hygiene with scoped module imports |
-| Public API stability lint for library modules | Helps `starbpkg` and interface generation workflows |
+### Priority 0: finish semantic completeness for the current language
 
-## Recommended Delivery Order
+1. constant-condition and impossible-branch diagnostics
+2. override contract diagnostics
+3. stronger optional/throwable flow refinement
+4. field/class initialization policy diagnostics
+5. ambiguous module name and module drift diagnostics
+6. warning policy surface: warning groups, warnings-as-errors, suppression model
 
-1. Keep lint on compiler AST plus semantic facts.
-2. Add unused/shadowing/deprecation checks with shared symbol-usage data.
-3. Add constant-condition and dead-store analysis.
-4. Expand lint into performance/safety/API hygiene rules once the semantic substrate is stable.
+### Priority 1: finish lint as a real semantic-aware tool
 
-## Done State
+1. suppression model and per-rule severity remapping
+2. ignored-result, dead-store, duplicate-branch, empty-block, redundant-cast rules
+3. doc completeness and doc drift rules
+4. import organization and naming convention rules
+5. performance rules for regex, string, module calls, and collection copies
 
-Both engines are close to complete when the following are true:
+### Priority 2: add analyzer-tier checks as a separate pass
 
-- invalid programs are rejected with flow-aware semantic diagnostics, not just local expression checks
-- suspicious but legal programs are surfaced by lint using symbol/type/control-flow facts instead of text heuristics
-- public API drift across source, interface, native modules, and documentation is diagnosable
-- the LSP and `starbytes-ling` consume the same semantic truth instead of rebuilding approximations
+1. path-sensitive optional/throwable analysis
+2. resource/protocol misuse families
+3. cross-file API misuse and flow checks
 
 ## Practical Recommendation
 
-Do not spend the next cycle adding many more line-based lint rules. The higher-return move is:
+If the goal is a complete language-quality front end, the next semantic work should focus on compiler-owned correctness gaps, not more heuristic lint rules.
 
-1. keep exposing compiler AST + semantic facts to lint
-2. build unused/deprecation/import-ownership rules on that shared substrate
-3. expand CFG-backed semantic-aware lint beyond the remaining shallow rules
+If the goal is a complete developer experience, the next lint work should focus on:
 
-That path completes both engines faster than growing either one in isolation.
+1. suppression and policy configuration
+2. bugprone and dead-store style rules that reuse compiler facts
+3. documentation and API hygiene rules that directly improve LSP and library quality
+
+## Done State
+
+The semantic and linting stack is close to complete when all of the following are true:
+
+- invalid programs are rejected with flow-aware, symbol-aware, type-aware diagnostics
+- legal but suspicious programs are surfaced by lint through compiler facts, not source heuristics
+- diagnostics are configurable by group and suppressible at practical granularity
+- source modules, generated interfaces, native exports, LSP data, and docs can be checked for drift
+- analyzer-grade checks are separated into their own tier instead of bloating ordinary sema

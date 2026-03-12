@@ -1,0 +1,23 @@
+class DoubleInit {
+    decl value:Int
+    decl other:Int
+
+    new(flag:Bool) {
+        self.value = 1
+        self.value = 2
+        if(flag) {
+            self.other = 3
+        }
+        else {
+            self.other = 4
+        }
+    }
+
+    func read() Int {
+        return self.value + self.other
+    }
+}
+
+decl item = new DoubleInit(true)
+print(item.read())
+print("FIELD-DOUBLE-INIT-OK")

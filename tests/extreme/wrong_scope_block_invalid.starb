@@ -1,0 +1,21 @@
+if (true) {
+    class Local {}
+}
+
+if (true) {
+    interface Readable {}
+}
+
+if (true) {
+    def Alias = Int
+}
+
+if (true) {
+    scope Inner {}
+}
+
+if (true) {
+    func local() Int {
+        return 1
+    }
+}

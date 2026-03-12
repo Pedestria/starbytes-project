@@ -1,0 +1,4 @@
+func outer() Int {
+    import Time
+    return 0
+}

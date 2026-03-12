@@ -32,6 +32,11 @@ namespace starbytes {
         const string_set *genericTypeParams = nullptr;
         std::vector<ScopedBinding> scopedBindings;
     };
+
+    struct SemanticAConstantBoolInfo {
+        bool value = false;
+        std::string reason;
+    };
     /**
      * @brief The Semantics Analyzer
      * */
@@ -53,6 +58,9 @@ namespace starbytes {
         ASTType *evalExprForTypeId(ASTExpr *expr_to_eval,
                                    Semantics::STableContext & symbolTableContext,
                                    ASTScopeSemanticsContext & scopeContext);
+        std::optional<SemanticAConstantBoolInfo> evaluateCompileTimeBoolExpr(ASTExpr *expr_to_eval,
+                                                                             Semantics::STableContext &symbolTableContext,
+                                                                             ASTScopeSemanticsContext &scopeContext);
         bool typeMatches(ASTType *type,
                          ASTExpr *expr_to_eval,
                          Semantics::STableContext & symbolTableContext,

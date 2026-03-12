@@ -1,0 +1,3 @@
+class MissingCtor {
+    decl value:Int
+}

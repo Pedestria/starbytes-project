@@ -251,6 +251,7 @@ async function startLanguageClient(context: vscode.ExtensionContext): Promise<vo
   };
 
   langClient = new LanguageClient("starbytesLSP", "Starbytes LSP", serverOptions, clientOptions);
+  langClient.registerProposedFeatures();
   langClient.trace = mapTraceSetting(trace);
   langClient.start();
   await langClient.onReady();

@@ -2,6 +2,7 @@
 
 #include <rapidjson/document.h>
 
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -193,8 +194,10 @@ int main(int argc, char *argv[]) {
     std::stringstream input;
     std::stringstream output;
 
+    const auto rootUri = std::string("file://") + std::filesystem::current_path().string();
     const std::string uri = "file:///tmp/lsp-cache-regression.starb";
     const std::string helperUri = "file:///tmp/Helper/main.starb";
+    const std::string timeUri = "file:///tmp/lsp-time-regression.starb";
     const std::string invalidText = "decl value:Int =\nvalue\n";
     const std::string validText =
         "import Helper\n"
@@ -208,8 +211,12 @@ int main(int argc, char *argv[]) {
         "func helperValue() Int {\n"
         "  return 7\n"
         "}\n";
+    const std::string timeText =
+        "import Time\n"
+        "Time.timezoneUTC()\n";
 
-    appendMessage(input, R"({"jsonrpc":"2.0","id":100,"method":"initialize","params":{}})");
+    appendMessage(input, std::string(R"({"jsonrpc":"2.0","id":100,"method":"initialize","params":{"rootUri":")") +
+                         rootUri + R"(","workspaceFolders":[{"uri":")" + rootUri + R"(","name":"starbytes-project"}]}})");
     appendMessage(input, R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     appendMessage(input, std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
                          helperUri + R"(","languageId":"starbytes","version":1,"text":")" + jsonEscape(helperText) + R"("}}})");
@@ -225,6 +232,10 @@ int main(int argc, char *argv[]) {
                          uri + R"("}}})");
     appendMessage(input, std::string(R"({"jsonrpc":"2.0","id":104,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":")") +
                          uri + R"("}}})");
+    appendMessage(input, std::string(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")") +
+                         timeUri + R"(","languageId":"starbytes","version":1,"text":")" + jsonEscape(timeText) + R"("}}})");
+    appendMessage(input, std::string(R"({"jsonrpc":"2.0","id":105,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":")") +
+                         timeUri + R"("}}})");
     appendMessage(input, R"({"jsonrpc":"2.0","id":199,"method":"shutdown","params":null})");
     appendMessage(input, R"({"jsonrpc":"2.0","method":"exit"})");
 
@@ -292,6 +303,20 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     if(!ensure(hasSemanticToken(validDecoded, 6, 7, 11, 2), "imported module member should be function-highlighted")) {
+        return 1;
+    }
+
+    auto timeTokens = findResponseById(messages, 105);
+    if(!ensure(timeTokens != nullptr, "missing stdlib semantic token response")) {
+        return 1;
+    }
+
+    auto timeData = readSemanticData(*timeTokens);
+    auto timeDecoded = decodeSemanticData(timeData);
+    if(!ensure(hasSemanticToken(timeDecoded, 1, 0, 4, 0), "stdlib module receiver should be namespace-highlighted")) {
+        return 1;
+    }
+    if(!ensure(hasSemanticToken(timeDecoded, 1, 5, 11, 2), "stdlib module member should be function-highlighted")) {
         return 1;
     }
 

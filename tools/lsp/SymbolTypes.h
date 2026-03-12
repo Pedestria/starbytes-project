@@ -49,6 +49,8 @@ struct SymbolEntry {
   std::string documentation;
   std::string containerName;
   bool isMember = false;
+  bool isDeprecated = false;
+  std::string deprecationMessage;
   unsigned line = 0;
   unsigned start = 0;
   unsigned length = 0;
@@ -61,6 +63,8 @@ struct SymbolEntry {
            documentation == other.documentation &&
            containerName == other.containerName &&
            isMember == other.isMember &&
+           isDeprecated == other.isDeprecated &&
+           deprecationMessage == other.deprecationMessage &&
            line == other.line &&
            start == other.start &&
            length == other.length;
