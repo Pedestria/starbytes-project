@@ -112,6 +112,22 @@ decl sink:Int = kernel(4)
         cleanup();
         return fail("expected object-allocation subsystem timing");
     }
+    if(profile.refCountIncrements == 0 || profile.refCountDecrements == 0) {
+        cleanup();
+        return fail("expected refcount counters");
+    }
+    if(profile.objectAllocations[static_cast<size_t>(StarbytesRuntimeObjectKindCustomClass)] == 0) {
+        cleanup();
+        return fail("expected custom-class allocation counts");
+    }
+    if(profile.objectAllocations[static_cast<size_t>(StarbytesRuntimeObjectKindNumber)] == 0) {
+        cleanup();
+        return fail("expected number allocation counts");
+    }
+    if(profile.objectDeallocations[static_cast<size_t>(StarbytesRuntimeObjectKindCustomClass)] == 0) {
+        cleanup();
+        return fail("expected custom-class deallocation counts");
+    }
 
     bool sawKernel = false;
     for(const auto &entry : profile.functionStats) {

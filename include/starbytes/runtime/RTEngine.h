@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "starbytes/interop.h"
+
 #ifndef STARBYTES_RT_RTENGINE_H
 #define STARBYTES_RT_RTENGINE_H
 
@@ -22,6 +24,7 @@ enum class RuntimeProfileSubsystem : uint8_t {
 
 constexpr size_t RuntimeProfileOpcodeCount = 256;
 constexpr size_t RuntimeProfileSubsystemCount = static_cast<size_t>(RuntimeProfileSubsystem::Count);
+constexpr size_t RuntimeProfileObjectKindCount = static_cast<size_t>(StarbytesRuntimeObjectKindCount);
 
 struct RuntimeFunctionProfileData {
     std::string name;
@@ -35,8 +38,14 @@ struct RuntimeProfileData {
     uint64_t totalRuntimeNs = 0;
     uint64_t dispatchCount = 0;
     uint64_t functionCallCount = 0;
+    bool subsystemTimingsOverlap = true;
+    bool functionTimingsOverlap = true;
     std::array<uint64_t, RuntimeProfileOpcodeCount> opcodeExecutions = {};
     std::array<uint64_t, RuntimeProfileSubsystemCount> subsystemNs = {};
+    std::array<uint64_t, RuntimeProfileObjectKindCount> objectAllocations = {};
+    std::array<uint64_t, RuntimeProfileObjectKindCount> objectDeallocations = {};
+    uint64_t refCountIncrements = 0;
+    uint64_t refCountDecrements = 0;
     std::vector<RuntimeFunctionProfileData> functionStats;
     uint64_t quickenedSitesInstalled = 0;
     uint64_t quickenedExecutions = 0;

@@ -447,6 +447,28 @@ static std::string emittedNameForScopeMember(ModuleGenContext *context,ASTExpr *
     return entry->name;
 }
 
+static std::string directCalleeRuntimeName(ModuleGenContext *context,ASTExpr *callee){
+    if(!callee){
+        return {};
+    }
+    if(callee->type == ID_EXPR && callee->id && callee->id->type == ASTIdentifier::Function){
+        if(context && context->tableContext){
+            if(auto *entry = context->tableContext->findEntryByEmittedNoDiag(callee->id->val)){
+                if(entry->type == Semantics::SymbolTable::Entry::Function){
+                    return entry->emittedName.empty() ? entry->name : entry->emittedName;
+                }
+            }
+        }
+        return callee->id->val;
+    }
+    if(callee->type == MEMBER_EXPR && callee->isScopeAccess
+       && callee->rightExpr && callee->rightExpr->id
+       && callee->rightExpr->id->type == ASTIdentifier::Function){
+        return emittedNameForScopeMember(context,callee);
+    }
+    return {};
+}
+
 static RTTypedNumericKind promotedFastKind(RTTypedNumericKind lhs,RTTypedNumericKind rhs){
     return lhs >= rhs ? lhs : rhs;
 }
@@ -1718,9 +1740,16 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
             }
         }
 
-        RTCode code = CODE_RTIVKFUNC;
+        auto directCalleeName = directCalleeRuntimeName(genContext,expr->callee);
+        RTCode code = directCalleeName.empty() ? CODE_RTIVKFUNC : CODE_RTCALL_DIRECT;
         genContext->out.write((const char *)&code,sizeof(RTCode));
-        consumeStmt(expr->callee);
+        if(directCalleeName.empty()){
+            consumeStmt(expr->callee);
+        }
+        else {
+            RTID funcId = makeOwnedRTID(directCalleeName);
+            genContext->out << &funcId;
+        }
         unsigned argCount = expr->exprArrayData.size();
         genContext->out.write((const char *)&argCount,sizeof(argCount));
         for(auto *arg : expr->exprArrayData){

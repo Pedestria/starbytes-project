@@ -61,6 +61,7 @@ typedef unsigned char RTCode;
 #define CODE_RTTYPED_INDEX_GET 0x27
 #define CODE_RTTYPED_INDEX_SET 0x28
 #define CODE_RTTYPED_INTRINSIC 0x29
+#define CODE_RTCALL_DIRECT 0x2A
 
 /// Condtional Type
 #define COND_TYPE_IF 0x0 // if()
@@ -205,6 +206,7 @@ struct RTFuncTemplate {
     /// Position of CODE_RTBLOCK_BEGIN
     std::istream::pos_type block_start_pos;
     std::map<std::streamoff, RTQuickenedExpr> quickenedExprs;
+    std::vector<char> decodedBody;
 };
 
 RTCODE_STREAM_OBJECT(RTFuncTemplate)

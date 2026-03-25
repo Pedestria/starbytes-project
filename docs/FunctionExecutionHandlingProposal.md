@@ -2,71 +2,109 @@
 
 ## Goal
 
-Design a new Starbytes function execution path that attacks the current Track A bottlenecks without requiring a JIT as the first move.
+Design and track a Starbytes function execution path that attacks the current Track A bottlenecks without requiring a JIT as the first move.
 
-This proposal is driven by:
+This document now serves two purposes:
 
-- the current Starbytes runtime and profile data
-- CPython source code
-- V8 source code
+- record the original call-path redesign proposal
+- track which slices are now implemented as of March 25, 2026
 
-The target is a materially faster interpreter call path for:
+The target remains a materially faster interpreter path for:
 
 - exact-arity Starbytes function calls
 - monomorphic method calls
 - builtin/native calls
 - small hot helper functions in numeric kernels
 
+## Status Update
+
+### Implemented
+
+The current runtime now includes the following parts of the proposal:
+
+- decoded function bodies stored on each runtime function template:
+  - [`src/compiler/RTCode.cpp:647`](/Users/alextopper/Documents/GitHub/starbytes-project/src/compiler/RTCode.cpp#L647)
+- direct in-memory function body execution via `MemoryInputStream`, rather than seek/restore on the shared module stream:
+  - [`src/runtime/RTEngine.cpp:2029`](/Users/alextopper/Documents/GitHub/starbytes-project/src/runtime/RTEngine.cpp#L2029)
+- reusable local-frame free list instead of rebuilding a fresh frame object every call:
+  - [`src/runtime/RTEngine.cpp:1134`](/Users/alextopper/Documents/GitHub/starbytes-project/src/runtime/RTEngine.cpp#L1134)
+- direct-call opcode for semantically resolved function calls:
+  - codegen: [`src/compiler/CodeGen.cpp:1743`](/Users/alextopper/Documents/GitHub/starbytes-project/src/compiler/CodeGen.cpp#L1743)
+  - runtime dispatch: [`src/runtime/RTEngine.cpp:2329`](/Users/alextopper/Documents/GitHub/starbytes-project/src/runtime/RTEngine.cpp#L2329)
+- direct-arg buffering for exact direct calls, avoiding the old generic vector-building path for those sites:
+  - [`src/runtime/RTEngine.cpp:2224`](/Users/alextopper/Documents/GitHub/starbytes-project/src/runtime/RTEngine.cpp#L2224)
+
+### Partially implemented
+
+- The decoded code image exists, but the runtime does not yet maintain an explicit `pc/frame_base/operand_base/caller/return_pc` frame machine.
+- The frame arena goal is partially met by a free list, but not by a dedicated arena with fully separated object/numeric storage.
+
+### Not yet implemented
+
+- call-site feedback table for calls
+- quickening from dynamic calls to direct/member-specialized calls
+- builtin member ids and dedicated builtin member opcodes
+- direct method slot caching for user-defined methods
+- full removal of scope-map bookkeeping from fast-call eligible functions
+- leaf-function quickening/inlining
+
 ## Current Signal
 
-### Benchmark evidence
+### Latest benchmark evidence
 
-Measured from:
+Latest measured report:
+
+- [`benchmark/results/summaries/track_a_steady-state_20260325T230531Z.report.md`](/Users/alextopper/Documents/GitHub/starbytes-project/benchmark/results/summaries/track_a_steady-state_20260325T230531Z.report.md)
+
+Compared against the degraded call-path baseline:
 
 - `benchmark/results/raw/track_a_starbytes_steady-state_20260325T182048Z`
-- baseline comparison: `benchmark/results/summaries/track_a_steady-state_20260309T014224Z.report.md`
 
-Key results:
+Key Starbytes results:
 
-| workload | current mean(s) | prior mean(s) | slowdown |
+| workload | degraded baseline(s) | current(s) | change |
 |---|---:|---:|---:|
-| binary-trees | 196.812 | 39.414 | 4.99x |
-| spectral-norm | 41.044 | 6.431 | 6.38x |
-| n-body | 1.396 | 1.026 | 1.36x |
-| k-nucleotide | 0.606 | 0.127 | 4.76x |
-| fasta | 0.520 | 0.170 | 3.07x |
-| regex-redux | 0.031 | 0.023 | 1.33x |
+| binary-trees | 196.812 | 28.104 | 7.00x faster |
+| spectral-norm | 41.044 | 16.177 | 2.54x faster |
+| n-body | 1.396 | 1.431 | 2.5% slower |
+| k-nucleotide | 0.606 | 0.609 | roughly flat |
+| fasta | 0.520 | 0.381 | 1.37x faster |
+| regex-redux | 0.031 | 0.028 | 1.09x faster |
 
-The two dominant failures are:
+Interpretation:
 
-- `binary-trees`: runtime profile shows `makeTree` and `checkTree` dominating, with very high function-call and member-access cost.
-- `spectral-norm`: helper `A` is called `460,800` times and alone accounts for about `29.2s` self time in the runtime profile.
+- the function-call redesign work landed real wins in `binary-trees` and `spectral-norm`
+- `n-body` is still mostly an index-access problem
+- `k-nucleotide` is still primarily a member/builtin dispatch problem
 
-### What the current runtime is doing
+### Latest runtime profile signal
 
-The current hot path still routes many calls through generic object machinery:
+Current important profiles:
 
-- generic function invocation opcode dispatch: [`src/runtime/RTEngine.cpp:2289`](../src/runtime/RTEngine.cpp#L2289)
-- generic function entry and argument materialization: [`src/runtime/RTEngine.cpp:2105`](../src/runtime/RTEngine.cpp#L2105)
-- alternate value-based call path with the same frame/setup model: [`src/runtime/RTEngine.cpp:1894`](../src/runtime/RTEngine.cpp#L1894)
-- member invocation gathers args dynamically and then performs runtime method lookup: [`src/runtime/RTEngine.cpp:3533`](../src/runtime/RTEngine.cpp#L3533)
-- codegen currently emits only two broad call opcodes for most calls: [`src/compiler/CodeGen.cpp:1669`](../src/compiler/CodeGen.cpp#L1669), [`src/compiler/CodeGen.cpp:1721`](../src/compiler/CodeGen.cpp#L1721)
+- [`steady-state_binary-trees.runtime-profile.json`](/Users/alextopper/Documents/GitHub/starbytes-project/benchmark/results/raw/track_a_steady-state_20260325T230531Z/steady-state_binary-trees.runtime-profile.json)
+- [`steady-state_spectral-norm.runtime-profile.json`](/Users/alextopper/Documents/GitHub/starbytes-project/benchmark/results/raw/track_a_steady-state_20260325T230531Z/steady-state_spectral-norm.runtime-profile.json)
+- [`steady-state_k-nucleotide.runtime-profile.json`](/Users/alextopper/Documents/GitHub/starbytes-project/benchmark/results/raw/track_a_steady-state_20260325T230531Z/steady-state_k-nucleotide.runtime-profile.json)
 
-Observed costs in that path:
+Observed signal:
 
-- per-call `std::vector<StarbytesObject>` argument collection
-- per-call `Twine` scope-string construction
-- per-call `pushLocalFrame()` resizing and object-slot ownership setup
-- stream seeking into callee bytecode bodies
-- generic `StarbytesFuncRef` indirection for direct function calls
-- method dispatch by runtime string/class lookup
-- builtin member dispatch through a large string-comparison ladder
+- `binary-trees`
+  - total runtime dropped from about `200990 ms` to about `30985 ms`
+  - `makeTree` and `checkTree` both fell sharply
+  - `CODE_RTCALL_DIRECT` replaced `CODE_RTIVKFUNC`/`CODE_RTFUNC_REF` for the hot recursive calls
+  - remaining large cost: member access
+- `spectral-norm`
+  - total runtime dropped from about `41638 ms` to about `16146 ms`
+  - hot helper `A` dropped from about `29159 ms` to about `2272 ms`
+  - remaining large cost is no longer generic function entry
+- `k-nucleotide`
+  - member access is still about `357.839 ms`
+  - `CODE_RTMEMBER_IVK` still executes `15125` times
+  - direct function calls are negligible there
 
-This is exactly the wrong shape for:
+The current conclusion is different from the original March 25 baseline:
 
-- recursive exact-function calls like `binary-trees`
-- tiny helper calls like `spectral-norm.A`
-- repeated collection/string method calls like `k-nucleotide` and `fasta`
+- generic function entry is no longer the primary runtime emergency
+- member/builtin dispatch is now the clearest next call-path bottleneck
 
 ## External Grounding
 
@@ -82,7 +120,7 @@ CPython also has specialized interpreter paths that push a new interpreter frame
 - `BINARY_OP_SUBSCR_GETITEM` caches a Python function target, pushes `_PyFrame_PushUnchecked(...)`, then `DISPATCH()` continues in the new frame:
   - [generated_cases.c.h#L3668-L3709](https://github.com/python/cpython/blob/main/Python/generated_cases.c.h#L3668-L3709)
 
-The important CPython lesson is not "copy this opcode exactly". It is:
+The important CPython lesson is:
 
 - keep a raw argument-span ABI
 - let exact known callees enter frames directly
@@ -101,390 +139,238 @@ V8 also carries per-function invocation and optimization state in its feedback v
 - feedback vector header includes invocation count, profiler ticks, and optimized code cell:
   - [feedback-vector.h#L105-L145](https://chromium.googlesource.com/v8/v8/%2B/52ab610bd13/src/feedback-vector.h#105)
 
-V8's interpreter entry consults that feedback before normal frame setup:
-
-- load feedback vector
-- check tiering/optimized-code state
-- increment invocation count
-- then push the stack frame
-  - [builtins-x64.cc#L887-L919](https://chromium.googlesource.com/v8/v8/%2B/fbb9df7218ae348b56104ff8fdd82b578e42d189/src/builtins/x64/builtins-x64.cc#887)
-  - [builtins-x64.cc#L904-L906](https://chromium.googlesource.com/v8/v8/%2B/fbb9df7218ae348b56104ff8fdd82b578e42d189/src/builtins/x64/builtins-x64.cc#904)
-
 The important V8 lesson is:
 
 - classify call shapes early
 - attach call-site feedback to them
 - let feedback drive specialization of hot call sites
 
-## Assumptions
-
-- `binary-trees` and `spectral-norm` are the primary runtime priorities right now.
-- We want an interpreter-first solution before a full optimizing JIT.
-- Starbytes function/method identities are stable enough within a module load to support call-site caching.
-- Preserving the full dynamic language surface still matters, so there must remain a generic fallback path.
-
-## Proposal
+## Proposal Status by Item
 
 ## 1. Replace the current generic call path with a stack-span fast call ABI
 
-Introduce one internal call entry point:
+### Status
 
-```cpp
-StarbytesObject enterCall(const RTCallTarget &target,
-                          StackArgSpan args,
-                          ReceiverMode receiverMode,
-                          StarbytesObject boundSelf,
-                          CallSiteState *site);
-```
+Partially implemented.
 
-Properties:
+What landed:
 
-- `StackArgSpan` points at already-evaluated arguments in a contiguous VM-owned array.
-- No per-call `std::vector<StarbytesObject>` allocation on the exact-function path.
-- No `StarbytesFuncRef` object creation for statically resolved direct calls.
-- No `Twine` scope-string creation on the hot path.
-- One call entry for Starbytes, builtin, and native callees, with specialized subpaths.
+- direct calls now evaluate args into a contiguous VM-owned buffer before entry
+- exact known direct calls no longer require a `StarbytesFuncRef` object at the call site
 
-This is the direct Starbytes analogue of CPython's vectorcall idea: raw args first, generic object calling only as fallback.
+What has not landed:
+
+- no single `enterCall(...)`-style unified call entry point yet
+- Starbytes, builtin, and native paths are still split across different helpers
+- function entry still builds a scope string and still touches the allocator path
 
 ## 2. Stop using `std::istream` position switching as the primary callee-entry mechanism
 
-Today the call path seeks into the callee bytecode body, runs until `CODE_RTFUNCBLOCK_END`, then restores the prior stream position. That is mechanically expensive and keeps calls tied to stream state.
+### Status
 
-Replace it with a decoded runtime code image:
+Mostly implemented for function entry.
 
-- each function owns:
-  - `bytecode_begin`
-  - `bytecode_end`
-  - local-slot layout
-  - argument count
-  - flags
-- each active frame stores:
-  - `pc`
-  - `frame_base`
-  - `operand_base`
-  - `caller`
-  - `return_pc`
+What landed:
 
-This lets the interpreter:
+- function bodies are decoded and stored in `RTFuncTemplate::decodedBody`
+- function execution now uses an in-memory input stream over that body
+- direct function entry no longer seeks into the shared module stream and restores afterward
 
-- jump directly into a callee frame
-- return without stream seek/restore
-- support future inline-call and tail-call work
+What remains:
 
-This follows the same broad direction as CPython's direct interpreter-frame handoff in generated cases.
+- the runtime still uses stream-style decoding inside the function body
+- the interpreter is not yet running on an explicit PC/frame machine
 
 ## 3. Split one broad call opcode into explicit call shapes
 
-Replace the current "mostly everything goes through `CODE_RTIVKFUNC` or `CODE_RTMEMBER_IVK`" design with these bytecodes:
+### Status
 
-- `CALL_DIRECT func_index argc`
-- `CALL_METHOD_DIRECT class_id method_slot argc`
-- `CALL_BUILTIN builtin_id argc`
-- `CALL_NATIVE native_index argc`
-- `CALL_CLOSURE slot argc`
-- `CALL_DYNAMIC argc`
+Partially implemented.
 
-Rules:
+What landed:
 
-- `CALL_DIRECT` is used when semantic/codegen can name the exact runtime function.
-- `CALL_METHOD_DIRECT` is used when the receiver class slot is statically known.
-- `CALL_BUILTIN` is used for stdlib/runtime builtins and hot container/string methods.
-- `CALL_DYNAMIC` remains the fallback for true dynamic callable values.
+- `CODE_RTCALL_DIRECT`
 
-This mirrors V8's choice to distinguish property-call and generic-call shapes at bytecode generation time instead of hoping one runtime path serves all of them well.
+What remains:
+
+- no direct builtin-member opcode
+- no direct method opcode
+- no closure-specific opcode
+- `CODE_RTIVKFUNC` is still the fallback generic dynamic-call path
+- `CODE_RTMEMBER_IVK` is still too broad
 
 ## 4. Add per-call-site feedback and quickening for calls
 
-Create a `RuntimeCallSiteFeedback` table indexed by function bytecode offset.
+### Status
 
-Each entry should track:
+Not implemented.
 
-- execution count
-- last callee id
-- last receiver class id
-- observed arity
-- monomorphic vs polymorphic state
-- fast-path hit count
-- deopt/fallback count
-
-Use it to quicken:
-
-- `CALL_DYNAMIC` -> `CALL_DIRECT` when the same function target repeats
-- `CALL_DYNAMIC` -> `CALL_METHOD_DIRECT` when the same receiver class + method repeats
-- `CALL_METHOD_DIRECT` -> polymorphic mini-cache when a small set of receiver classes appears
-
-This is the Starbytes equivalent of V8's `AddCallICSlot()` plus feedback-vector driven specialization, but kept interpreter-only.
+The runtime has expression quickening for some numeric/index cases, but it does not yet have call-site feedback or call quickening.
 
 ## 5. Introduce a reusable frame arena instead of per-call frame rebuilding
 
-The current local frame setup resizes vectors and transfers ownership object-by-object. That is too expensive for `makeTree`, `checkTree`, and `A`.
+### Status
 
-Replace it with:
+Partially implemented.
 
-- a VM frame arena or free-list
-- fixed layout from compile-time metadata
-- inline storage for the common small-frame case
-- typed slot storage separated from object slots
+What landed:
 
-Target properties:
+- reusable frame free list for `LocalFrame`
 
-- no `std::vector::resize()` in the hot call path
-- no repeated slot-kind initialization for every invocation
-- no per-call allocator scope registration for locals
+What remains:
 
-Frame lifecycle becomes:
-
-1. reserve frame from arena
-2. copy or move raw argument span into slot window
-3. install `self` into a known receiver slot if present
-4. jump to `pc = target.bytecode_begin`
-5. release frame back to free-list on return
+- dedicated arena
+- inline small-frame storage policy
+- stronger separation between object slots and typed numeric slots at frame allocation level
 
 ## 6. Move `self` and locals fully into frame slots, not scope maps
 
-Right now the interpreter still interacts with allocator/scope machinery in function entry. That adds bookkeeping noise to exact-function calls.
+### Status
 
-For fast-call eligible functions:
+Not implemented.
 
-- `self` lives in a dedicated receiver slot
-- args live in arg slots
-- locals live in local slots
-- the scope map is only used when a function actually needs dynamic name semantics
+The runtime still constructs a function scope string and still installs `self` through allocator-backed scope state:
 
-Fast-call eligibility should require:
-
-- no dynamic scope access
-- no reflective locals lookup
-- no runtime feature that depends on allocator-backed local name maps
-
-This reduces overhead for the Track A kernels, which are structurally simple and slot-friendly.
+- [`src/runtime/RTEngine.cpp:2065`](/Users/alextopper/Documents/GitHub/starbytes-project/src/runtime/RTEngine.cpp#L2065)
 
 ## 7. Give member calls direct method slots and builtin ids
 
-`CODE_RTMEMBER_IVK` is doing too much:
+### Status
 
-- generic receiver evaluation
-- member-name string decoding
-- collection/string/regex/dict builtin dispatch by string comparison
-- dynamic class hierarchy lookup
-- final call dispatch
+Not implemented here.
 
-That should become two layers:
+This is now the clearest next slice. The follow-on planning for that work lives in:
 
-### Builtin member fast path
-
-At codegen or first quickening, map hot builtin members to compact ids:
-
-- `ARRAY_PUSH`
-- `ARRAY_AT`
-- `STRING_UPPER`
-- `STRING_SPLIT`
-- `DICT_GET`
-- etc.
-
-Then dispatch by enum, not by repeated string compare.
-
-### User method fast path
-
-For monomorphic receivers:
-
-- cache `receiver_class_id -> runtime_method*`
-- validate class id
-- enter direct method call
-
-This is especially relevant to:
-
-- `binary-trees`, where object/member traffic is large
-- `k-nucleotide`, where member-access cost is dominant
+- [`docs/MemberBuiltinDispatchPlan.md`](/Users/alextopper/Documents/GitHub/starbytes-project/docs/MemberBuiltinDispatchPlan.md)
 
 ## 8. Add an exact-arity leaf-function fast path
 
-The profile says `spectral-norm.A` is the hot function, and it is tiny. Paying full generic call overhead for it is wasteful.
+### Status
 
-Add a leaf fast path for functions that are:
+Not implemented as a dedicated feature.
 
-- exact arity
-- non-lazy
-- non-native
-- no microtask interaction
-- no dynamic scope requirements
-- no variadic/keyword-like behavior
-- small bytecode body
-
-For those functions, allow:
-
-- direct frame entry with no generic-call fallback checks inside the hot path
-- optional inline expansion after the call site becomes hot and monomorphic
-
-This is the highest-leverage fix for `spectral-norm`.
-
-Important constraint:
-
-- do not start with general-purpose inlining across the whole language
-- start with exact-arity leaf-call quickening only
-
-That keeps the first slice reversible.
+The current `CALL_DIRECT` plus decoded-body path already captures much of the gross overhead that made `spectral-norm.A` expensive, but there is no leaf-specific quickening or inline expansion yet.
 
 ## Proposed Runtime Shape
 
-### Fast path
+The updated proposal shape is now:
 
-1. Evaluate callee and args into operand stack slots.
-2. Load call-site feedback record.
-3. If site is specialized and guards hold:
-   - direct-enter Starbytes frame, builtin handler, or native callback
-4. Else:
-   - take generic resolver
-   - update feedback
-   - maybe quicken site
+### Completed base
 
-### Generic fallback
+1. Evaluate direct-call args into a contiguous temporary buffer.
+2. Enter decoded in-memory function bodies directly.
+3. Reuse frames through a free list.
 
-Fallback still supports:
+### Remaining fast-path work
 
-- function refs
-- dynamic callable values
-- lazy functions
-- reflective behavior
-- any feature not yet expressible in a fast call opcode
+1. Add call-site feedback for remaining dynamic call shapes.
+2. Split member dispatch into:
+   - builtin member opcodes
+   - direct field-slot access
+   - cached user-method dispatch
+3. Remove scope-map overhead from slot-friendly functions.
+4. Add leaf-function quickening only if the post-member-dispatch profile still justifies it.
 
-The difference is that fallback is no longer the default.
-
-## Why this tackles the measured problems
+## Why this still matters
 
 ### binary-trees
 
-Current profile:
+The original function-call redesign worked:
 
-- `makeTree`: `1,324,382` calls
-- `checkTree`: `1,324,382` calls
-- heavy `CODE_RTMEMBER_GET`, `CODE_RTMEMBER_SET`, local refs, object creation
+- recursive call overhead dropped dramatically
 
-Impact of proposal:
+The remaining large cost is now:
 
-- exact direct recursive call path removes generic function-ref and arg-vector overhead
-- reusable frames remove repeated frame allocation/setup cost
-- receiver/local slots cut scope-map work
-- monomorphic method/member fast path reduces member dispatch overhead
+- `CODE_RTMEMBER_GET`
+- `CODE_RTMEMBER_SET`
+
+So the next relevant item is proposal item 7, not more generic call reshaping.
 
 ### spectral-norm
 
-Current profile:
+The original call-path redesign worked:
 
-- `A`: `460,800` calls
-- about `29.2s` self time
+- helper `A` no longer dominates at the old level
 
-Impact of proposal:
-
-- `CALL_DIRECT` exact-arity leaf fast path removes most current per-call tax
-- call-site feedback can quicken this helper aggressively
-- optional leaf inline expansion is feasible later if the frame fast path is still not enough
+Leaf-only call quickening is still possible later, but it is no longer the most urgent runtime project.
 
 ### n-body
 
-Current profile is mostly typed index access, not function calls. This proposal helps less there, which is correct. It should not be sold as the whole runtime answer.
+This is still mostly typed index access and numeric loop execution. This proposal was never the whole answer there.
 
 ### k-nucleotide and fasta
 
-These benefit mostly from:
-
-- builtin member ids
-- monomorphic member dispatch
-- less generic call packaging for helper functions
-
-### regex-redux
-
-Runtime is tiny relative to total benchmark wall time, so function-call redesign is not the priority there.
-
-## Non-goals
-
-- No full JIT in this phase.
-- No speculative deoptimization framework beyond call-site quickening guards.
-- No attempt to solve all collection/index costs here.
-- No attempt to make dynamic reflective calls as fast as exact direct calls.
+These still point directly at builtin/member dispatch and are the strongest argument for finishing proposal item 7.
 
 ## Thin-Slice Rollout
 
-### Phase 1
+### Phase 1 [Implemented]
 
-Implement only:
+Implemented:
 
 - decoded code image
-- frame arena
+- frame free-list reuse
 - `CALL_DIRECT`
-- exact-arity direct Starbytes frame entry
+- exact direct Starbytes function entry through decoded bodies
+
+Observed result:
+
+- `binary-trees` and `spectral-norm` improved materially against the degraded baseline
+
+### Phase 2 [Next]
+
+Implement:
+
+- builtin member ids for hot string/array/dict/regex methods
+- dedicated builtin member opcode(s)
+- direct field-slot get/set where semantic/codegen can prove the target
 
 Success criteria:
 
-- `spectral-norm` improves materially
-- `binary-trees` drops significantly
-- no semantic change on existing runtime-profile tests
+- `k-nucleotide` improves materially
+- `binary-trees` member-access time drops materially
+- runtime profiles show lower `CODE_RTMEMBER_GET`/`SET`/`IVK` usage
 
-### Phase 2
+### Phase 3 [Later]
 
 Implement:
 
 - call-site feedback table
-- quickening from dynamic/direct and member/direct
-- builtin member ids for hottest stdlib methods
+- dynamic-to-direct call quickening
+- monomorphic user-method cache
+- optional leaf-function quickening if still justified
 
 Success criteria:
 
-- `k-nucleotide` and `fasta` improve
-- fallback counts become visible in runtime profiles
-
-### Phase 3
-
-Implement:
-
-- exact-arity leaf-call fast path
-- optional tiny-function inline quickening for proven hot monomorphic sites
-
-Success criteria:
-
-- `spectral-norm.A` no longer dominates runtime at its current level
+- remaining fallback counts become visible and actionable in runtime profiles
 
 ## Validation
 
 Track with:
 
-- existing runtime profile JSON
-- new call-site counters:
-  - fast direct calls
-  - generic fallback calls
-  - monomorphic method hits
-  - polymorphic method hits
-  - call-site deopts
+- runtime profile JSON already emitted by the driver
+- opcode counts for:
+  - `CODE_RTIVKFUNC`
+  - `CODE_RTCALL_DIRECT`
+  - `CODE_RTMEMBER_GET`
+  - `CODE_RTMEMBER_SET`
+  - `CODE_RTMEMBER_IVK`
 
-Add benchmark gates for:
+Benchmark gates should continue to emphasize:
 
 - `binary-trees`
 - `spectral-norm`
 - `k-nucleotide`
 
-And add correctness tests for:
-
-- direct function calls
-- bound method calls
-- builtin member fast paths
-- fallback on dynamic call target changes
-
 ## Recommendation
 
-The first implementation slice should be:
+Do not spend the next runtime slice re-solving generic function entry.
 
-1. decoded in-memory bytecode bodies
-2. frame arena
-3. `CALL_DIRECT`
-4. exact-arity direct frame entry
+That slice already paid off. The proposal should now be interpreted as:
 
-That is the smallest end-to-end change that aligns with both:
-
-- CPython's raw-argument plus direct-frame fast path
-- V8's call-shape separation and feedback-driven specialization
-
-It directly attacks the two worst measured failures without committing Starbytes to a full JIT architecture before the interpreter is ready.
+1. keep the implemented direct-call and decoded-body work
+2. shift follow-on effort to member/builtin dispatch specialization
+3. revisit call-site feedback and leaf quickening only after member dispatch is cheaper
 
 ## Sources
 
@@ -497,6 +383,3 @@ It directly attacks the two worst measured failures without committing Starbytes
 - V8 feedback vector layout and call IC slot creation:
   - [v8 `src/feedback-vector.h#L105-L145`](https://chromium.googlesource.com/v8/v8/%2B/52ab610bd13/src/feedback-vector.h#105)
   - [v8 `src/feedback-vector.h#L233-L282`](https://chromium.googlesource.com/v8/v8/%2B/52ab610bd13/src/feedback-vector.h#233)
-- V8 interpreter entry using feedback vector state and invocation counts:
-  - [v8 `src/builtins/x64/builtins-x64.cc#L887-L919`](https://chromium.googlesource.com/v8/v8/%2B/fbb9df7218ae348b56104ff8fdd82b578e42d189/src/builtins/x64/builtins-x64.cc#887)
-  - [v8 `src/builtins/x64/builtins-x64.cc#L904-L906`](https://chromium.googlesource.com/v8/v8/%2B/fbb9df7218ae348b56104ff8fdd82b578e42d189/src/builtins/x64/builtins-x64.cc#904)

@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <iomanip>
+#include <array>
 #include <cstring>
 #include <cassert>
 #include <cmath>
@@ -21,6 +22,7 @@
 #include <deque>
 #include <limits>
 #include <chrono>
+#include <streambuf>
 #include <unordered_map>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
@@ -104,6 +106,7 @@ static std::string resolveNativeCallbackName(const RTFuncTemplate *func){
 
 static bool isExpressionOpcode(RTCode code){
     return code == CODE_RTIVKFUNC
+        || code == CODE_RTCALL_DIRECT
         || code == CODE_UNARY_OPERATOR
         || code == CODE_RTTYPED_NEGATE
         || code == CODE_BINARY_OPERATOR
@@ -169,6 +172,96 @@ static std::string mangleClassMethodName(string_ref className,string_ref methodN
 }
 
 static int clampSliceBound(int bound,int len);
+
+class MemoryStreamBuf final : public std::streambuf {
+public:
+    MemoryStreamBuf(const char *data,size_t size){
+        reset(data,size);
+    }
+
+    void reset(const char *data,size_t size){
+        auto *begin = const_cast<char *>(data);
+        setg(begin,begin,begin + size);
+    }
+
+protected:
+    pos_type seekoff(off_type off,std::ios_base::seekdir dir,std::ios_base::openmode which) override{
+        if((which & std::ios_base::in) == 0){
+            return pos_type(off_type(-1));
+        }
+        char *base = eback();
+        char *next = nullptr;
+        switch(dir){
+            case std::ios_base::beg:
+                next = base + off;
+                break;
+            case std::ios_base::cur:
+                next = gptr() + off;
+                break;
+            case std::ios_base::end:
+                next = egptr() + off;
+                break;
+            default:
+                return pos_type(off_type(-1));
+        }
+        if(next < base || next > egptr()){
+            return pos_type(off_type(-1));
+        }
+        setg(base,next,egptr());
+        return pos_type(next - base);
+    }
+
+    pos_type seekpos(pos_type pos,std::ios_base::openmode which) override{
+        return seekoff(off_type(pos),std::ios_base::beg,which);
+    }
+};
+
+class MemoryInputStream final : public std::istream {
+    MemoryStreamBuf buffer;
+public:
+    MemoryInputStream(const char *data,size_t size)
+        : std::istream(nullptr), buffer(data,size) {
+        rdbuf(&buffer);
+        clear();
+    }
+};
+
+class DirectArgBuffer {
+    static constexpr size_t InlineCapacity = 8;
+    std::array<StarbytesObject, InlineCapacity> inlineStorage = {};
+    std::vector<StarbytesObject> heapStorage;
+    StarbytesObject *buffer = inlineStorage.data();
+    unsigned count = 0;
+
+public:
+    explicit DirectArgBuffer(unsigned argCount):count(argCount){
+        if(argCount > InlineCapacity){
+            heapStorage.resize(argCount,nullptr);
+            buffer = heapStorage.data();
+        }
+    }
+
+    StarbytesObject *data(){
+        return buffer;
+    }
+
+    const StarbytesObject *data() const{
+        return buffer;
+    }
+
+    unsigned size() const{
+        return count;
+    }
+
+    void releaseAll(){
+        for(unsigned i = 0;i < count;++i){
+            if(buffer[i]){
+                StarbytesObjectRelease(buffer[i]);
+                buffer[i] = nullptr;
+            }
+        }
+    }
+};
 
 static size_t utf8ScalarWidth(const std::string &text,size_t byteOffset){
     if(byteOffset >= text.size()){
@@ -724,10 +817,12 @@ class InterpImpl final : public Interp {
 
     std::unique_ptr<RTAllocator> allocator;
     std::vector<LocalFrame> localFrames;
+    std::vector<LocalFrame> localFrameFreeList;
     
     std::vector<RTClass> classes;
     
     std::vector<RTFuncTemplate> functions;
+    string_map<size_t> functionIndexByName;
     std::vector<StarbytesNativeModule *> nativeModules;
     string_map<StarbytesFuncCallback> nativeCallbackCache;
     string_map<StarbytesFuncCallback> nativeValueCallbackCache;
@@ -752,6 +847,7 @@ class InterpImpl final : public Interp {
     void endFunctionProfile();
     
     StarbytesObject invokeFunc(std::istream &in,RTFuncTemplate *func_temp,unsigned argCount,StarbytesObject boundSelf = nullptr);
+    void registerFunctionTemplate(RTFuncTemplate funcTemp);
     RTClass *findClassByName(string_ref className);
     RTClass *findClassByType(StarbytesClassType classType);
     bool buildClassHierarchy(RTClass *classMeta,std::vector<RTClass *> &hierarchy);
@@ -799,7 +895,7 @@ public:
             for(auto *param : params){
                 funcTemplate.argsTemplate.push_back({strlen(param),param});
             }
-            functions.push_back(std::move(funcTemplate));
+            registerFunctionTemplate(std::move(funcTemplate));
         };
         addBuiltinTemplate("print",{"object"});
         stdlib::addMathBuiltinTemplates(functions);
@@ -809,6 +905,10 @@ public:
     void setProfilingEnabled(bool enabled) override {
         runtimeProfilingEnabled = enabled;
         runtimeProfile.enabled = enabled;
+        StarbytesRuntimeProfileSetLowLevelCountersEnabled(enabled ? 1 : 0);
+        if(enabled){
+            StarbytesRuntimeProfileResetLowLevelCounters();
+        }
     }
     bool addExtension(const std::string &path) override;
     bool hasRuntimeError() const override {
@@ -946,14 +1046,18 @@ bool InterpImpl::lookupClassFieldSlot(StarbytesObject object,const std::string &
     return true;
 }
 
+void InterpImpl::registerFunctionTemplate(RTFuncTemplate funcTemp){
+    auto index = functions.size();
+    functionIndexByName[rtidToString(funcTemp.name)] = index;
+    functions.push_back(std::move(funcTemp));
+}
+
 RTFuncTemplate *InterpImpl::findFunctionByName(string_ref functionName){
-    for(auto &funcTemplate : functions){
-        string_ref tempName(funcTemplate.name.value,(uint32_t)funcTemplate.name.len);
-        if(functionName == tempName){
-            return &funcTemplate;
-        }
+    auto found = functionIndexByName.find(functionName.view());
+    if(found == functionIndexByName.end() || found->second >= functions.size()){
+        return nullptr;
     }
-    return nullptr;
+    return &functions[found->second];
 }
 
 InterpImpl::LocalFrame *InterpImpl::currentLocalFrame(){
@@ -1028,8 +1132,22 @@ void InterpImpl::endFunctionProfile(){
 }
 
 void InterpImpl::pushLocalFrame(const RTFuncTemplate *funcTemp){
-    LocalFrame frame;
+    if(!localFrameFreeList.empty()){
+        localFrames.push_back(std::move(localFrameFreeList.back()));
+        localFrameFreeList.pop_back();
+    }
+    else {
+        localFrames.emplace_back();
+    }
+    auto &frame = localFrames.back();
     frame.funcTemplate = funcTemp;
+    for(auto &slot : frame.slots){
+        if(slot.object){
+            StarbytesObjectRelease(slot.object);
+            slot.object = nullptr;
+        }
+        slot.hasNumericValue = false;
+    }
     size_t slotCount = 0;
     if(funcTemp){
         slotCount = funcTemp->argsTemplate.size() + funcTemp->localSlotNames.size();
@@ -1037,10 +1155,15 @@ void InterpImpl::pushLocalFrame(const RTFuncTemplate *funcTemp){
     frame.slots.resize(slotCount);
     if(funcTemp){
         for(size_t i = 0;i < slotCount;++i){
-            frame.slots[i].kind = (i < funcTemp->slotKinds.size())? funcTemp->slotKinds[i] : RTTYPED_NUM_OBJECT;
+            auto &slot = frame.slots[i];
+            slot.kind = (i < funcTemp->slotKinds.size())? funcTemp->slotKinds[i] : RTTYPED_NUM_OBJECT;
+            slot.hasNumericValue = false;
+            slot.intValue = 0;
+            slot.longValue = 0;
+            slot.floatValue = 0.0f;
+            slot.doubleValue = 0.0;
         }
     }
-    localFrames.push_back(std::move(frame));
 }
 
 void InterpImpl::popLocalFrame(){
@@ -1052,8 +1175,12 @@ void InterpImpl::popLocalFrame(){
     for(auto &slot : frame.slots){
         if(slot.object){
             StarbytesObjectRelease(slot.object);
+            slot.object = nullptr;
         }
+        slot.hasNumericValue = false;
     }
+    frame.funcTemplate = nullptr;
+    localFrameFreeList.push_back(std::move(frame));
 }
 
 StarbytesObject InterpImpl::referenceLocalSlot(uint32_t slot){
@@ -1540,12 +1667,20 @@ RTQuickenedExpr *InterpImpl::getOrInstallQuickenedExpr(std::istream &in,
         return nullptr;
     }
     auto *funcTemplate = const_cast<RTFuncTemplate *>(frame->funcTemplate);
-    if(funcTemplate->block_start_pos == std::istream::pos_type(-1)
-       || exprStart == std::istream::pos_type(-1)
-       || exprStart < funcTemplate->block_start_pos){
+    if(exprStart == std::istream::pos_type(-1)){
         return nullptr;
     }
-    auto offset = static_cast<std::streamoff>(exprStart - funcTemplate->block_start_pos);
+    std::streamoff offset = 0;
+    if(!funcTemplate->decodedBody.empty()){
+        offset = static_cast<std::streamoff>(exprStart);
+    }
+    else {
+        if(funcTemplate->block_start_pos == std::istream::pos_type(-1)
+           || exprStart < funcTemplate->block_start_pos){
+            return nullptr;
+        }
+        offset = static_cast<std::streamoff>(exprStart - funcTemplate->block_start_pos);
+    }
     auto found = funcTemplate->quickenedExprs.find(offset);
     if(found != funcTemplate->quickenedExprs.end()){
         return &found->second;
@@ -1947,41 +2082,25 @@ StarbytesObject InterpImpl::invokeFuncWithValues(RTFuncTemplate *func_temp,
     }
 
     allocator->setScope(funcScope);
-    auto current_pos = func_temp->block_start_pos;
-    if(!activeInput){
+    if(func_temp->decodedBody.empty()){
         popLocalFrame();
         allocator->clearScope();
         allocator->setScope(parentScope);
         return nullptr;
     }
-    auto &bodyIn = *activeInput;
-    auto resumePos = bodyIn.tellg();
-    bodyIn.clear();
-    bodyIn.seekg(current_pos);
+    MemoryInputStream bodyIn(func_temp->decodedBody.data(),func_temp->decodedBody.size());
 
     func_temp->invocations += 1;
-    RTCode code = CODE_MODULE_END;
-    if(!bodyIn.read((char *)&code,sizeof(RTCode))){
-        bodyIn.clear();
-        bodyIn.seekg(resumePos);
-        popLocalFrame();
-        allocator->clearScope();
-        allocator->setScope(parentScope);
-        return nullptr;
-    }
     bool willReturn = false;
     StarbytesObject return_val = nullptr;
-    while(bodyIn.good() && code != CODE_RTFUNCBLOCK_END){
-        if(!willReturn){
-            execNorm(code,bodyIn,&willReturn,&return_val);
-            processMicrotasks();
-        }
-        if(!bodyIn.read((char *)&code,sizeof(RTCode))){
+    RTCode code = CODE_MODULE_END;
+    while(bodyIn.read((char *)&code,sizeof(RTCode))){
+        if(willReturn){
             break;
         }
+        execNorm(code,bodyIn,&willReturn,&return_val);
+        processMicrotasks();
     }
-    bodyIn.clear();
-    bodyIn.seekg(resumePos);
     popLocalFrame();
     allocator->clearScope();
     allocator->setScope(parentScope);
@@ -2107,118 +2226,13 @@ StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_te
         discardExprArgs(in,argCount);
         return nullptr;
     }
-    std::string parentScope = allocator->currentScope;
-    string_ref func_name = {func_temp->name.value,(uint32_t)func_temp->name.len};
-    std::string functionName = func_name.str();
-    ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::FunctionCall);
-    ScopedFunctionProfile functionProfile(this,functionName);
-    
-    if(func_name == "print"){
-        if(argCount > 0){
-            auto object_to_print = evalExpr(in);
-            if(object_to_print || lastRuntimeError.empty()){
-                stdlib::print(object_to_print,runtimeClassRegistry);
-            }
-            if(object_to_print){
-                StarbytesObjectRelease(object_to_print);
-            }
-            --argCount;
-        }
-        if(argCount > 0){
-            discardExprArgs(in,argCount);
-        }
-        return nullptr;
+    DirectArgBuffer argBuffer(argCount);
+    for(unsigned i = 0;i < argCount;++i){
+        argBuffer.data()[i] = evalExpr(in);
     }
-    if(stdlib::isMathBuiltinFunction(func_name)){
-        std::vector<StarbytesObject> args;
-        args.reserve(argCount);
-        while(argCount > 0){
-            args.push_back(evalExpr(in));
-            --argCount;
-        }
-        auto result = stdlib::invokeMathBuiltinFunction(func_name,{args.data(), static_cast<uint32_t>(args.size())},lastRuntimeError);
-        for(auto *arg : args){
-            if(arg){
-                StarbytesObjectRelease(arg);
-            }
-        }
-        return result;
-    }
-    auto nativeCallbackName = resolveNativeCallbackName(func_temp);
-    if(!nativeCallbackName.empty()){
-        auto callback = findNativeCallback(string_ref(nativeCallbackName));
-        if(callback){
-            return invokeNativeFunc(in,callback,argCount,boundSelf);
-        }
-        if(func_temp->blockByteSize == 0){
-            discardExprArgs(in,argCount);
-            lastRuntimeError = "native callback `" + nativeCallbackName + "` is not loaded";
-            return nullptr;
-        }
-    }
-    Twine funcScopeBuilder;
-    funcScopeBuilder + func_name.str();
-    funcScopeBuilder + std::to_string(func_temp->invocations);
-    std::string funcScope = funcScopeBuilder.str();
-    std::vector<StarbytesObject> args;
-    args.reserve(argCount);
-    while(argCount > 0){
-        args.push_back(evalExpr(in));
-        --argCount;
-    }
-    auto resumePos = in.tellg();
-    pushLocalFrame(func_temp);
-
-    if(boundSelf){
-        StarbytesObjectReference(boundSelf);
-        allocator->allocVariable(string_ref("self"),boundSelf,funcScope);
-    }
-
-    uint32_t paramSlot = 0;
-    for(auto *arg : args){
-        if(paramSlot < func_temp->argsTemplate.size()){
-            storeLocalSlotOwned(paramSlot,arg);
-            ++paramSlot;
-        }
-        else if(arg){
-            StarbytesObjectRelease(arg);
-        }
-    }
-    allocator->setScope(funcScope);
-    auto current_pos = func_temp->block_start_pos;
-    /// Invoke
-    in.seekg(current_pos);
-    
-    func_temp->invocations += 1;
-                
-    RTCode code = CODE_MODULE_END;
-    if(!in.read((char *)&code,sizeof(RTCode))){
-        in.clear();
-        in.seekg(resumePos);
-        popLocalFrame();
-        allocator->clearScope();
-        allocator->setScope(parentScope);
-        return nullptr;
-    }
-    bool willReturn = false;
-    StarbytesObject return_val = nullptr;
-    while(in.good() && code != CODE_RTFUNCBLOCK_END){
-        if(!willReturn){
-            execNorm(code,in,&willReturn,&return_val);
-            processMicrotasks();
-        }
-        if(!in.read((char *)&code,sizeof(RTCode))){
-            break;
-        }
-    };
-    in.seekg(resumePos);
-    
-    popLocalFrame();
-    allocator->clearScope();
-    allocator->setScope(parentScope);
-    
-    return return_val;
-    
+    auto result = invokeFuncWithValues(func_temp,{argBuffer.data(), argCount},boundSelf);
+    argBuffer.releaseAll();
+    return result;
 }
 
 StarbytesObject InterpImpl::evalExpr(std::istream & in){
@@ -2311,6 +2325,22 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             }
             StarbytesObjectRelease(funcRefObject);
             return returnValue;
+        }
+        case CODE_RTCALL_DIRECT: {
+            RTID funcId;
+            in >> &funcId;
+            unsigned argCount = 0;
+            in.read((char *)&argCount,sizeof(argCount));
+            auto *funcTemplate = findFunctionByName(string_ref(funcId.value,funcId.len));
+            if(!funcTemplate){
+                discardExprArgs(in,argCount);
+                lastRuntimeError = "direct call target does not exist";
+                return nullptr;
+            }
+            if(funcTemplate->isLazy){
+                return scheduleLazyCall(in,funcTemplate,argCount);
+            }
+            return invokeFunc(in,funcTemplate,argCount);
         }
         case CODE_UNARY_OPERATOR: {
             RTCode unaryCode = UNARY_OP_NOT;
@@ -4331,6 +4361,17 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             }
             break;
         }
+        case CODE_RTCALL_DIRECT: {
+            RTID funcId;
+            in >> &funcId;
+            unsigned argCount = 0;
+            in.read((char *)&argCount,sizeof(argCount));
+            while(argCount > 0){
+                skipExpr(in);
+                --argCount;
+            }
+            break;
+        }
         case CODE_UNARY_OPERATOR: {
             RTCode unaryCode = UNARY_OP_NOT;
             in.read((char *)&unaryCode,sizeof(unaryCode));
@@ -4917,9 +4958,10 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
     else if(code == CODE_RTFUNC){
         RTFuncTemplate funcTemp;
         in >> &funcTemp;
-        functions.push_back(funcTemp);
+        registerFunctionTemplate(std::move(funcTemp));
     }
     else if(code == CODE_RTIVKFUNC
+         || code == CODE_RTCALL_DIRECT
          || code == CODE_UNARY_OPERATOR
          || code == CODE_RTTYPED_NEGATE
          || code == CODE_BINARY_OPERATOR
@@ -4973,6 +5015,9 @@ void InterpImpl::exec(std::istream & in){
     allocator->setScope(g);
     activeInput = &in;
     lastRuntimeError.clear();
+    if(runtimeProfilingEnabled){
+        StarbytesRuntimeProfileResetLowLevelCounters();
+    }
     if(!in.read((char *)&code,sizeof(RTCode))){
         activeInput = nullptr;
         return;
@@ -4994,6 +5039,14 @@ void InterpImpl::exec(std::istream & in){
     activeInput = nullptr;
     if(runtimeProfilingEnabled){
         auto execEnd = std::chrono::steady_clock::now();
+        StarbytesRuntimeLowLevelCounters lowLevelCounters = {};
+        StarbytesRuntimeProfileGetLowLevelCounters(&lowLevelCounters);
+        for(size_t i = 0; i < runtimeProfile.objectAllocations.size(); ++i){
+            runtimeProfile.objectAllocations[i] = lowLevelCounters.objectAllocations[i];
+            runtimeProfile.objectDeallocations[i] = lowLevelCounters.objectDeallocations[i];
+        }
+        runtimeProfile.refCountIncrements = lowLevelCounters.refCountIncrements;
+        runtimeProfile.refCountDecrements = lowLevelCounters.refCountDecrements;
         runtimeProfile.totalRuntimeNs += (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(execEnd - execStart).count();
     }
 }

@@ -62,10 +62,54 @@ static char *gRuntimeExecutablePath = NULL;
 static char *gRuntimeScriptPath = NULL;
 static char **gRuntimeScriptArgs = NULL;
 static unsigned gRuntimeScriptArgCount = 0;
+static int gRuntimeProfileLowLevelCountersEnabled = 0;
+static StarbytesRuntimeLowLevelCounters gRuntimeLowLevelCounters;
 static const char *kEnvExecutablePath = "STARBYTES_EXECUTABLE_PATH";
 static const char *kEnvScriptPath = "STARBYTES_SCRIPT_PATH";
 static const char *kEnvScriptArgCount = "STARBYTES_SCRIPT_ARGC";
 static const char *kEnvScriptArgPrefix = "STARBYTES_SCRIPT_ARG_";
+
+static StarbytesRuntimeObjectKind StarbytesRuntimeObjectKindFromType(StarbytesClassType type){
+    if(type == StarbytesStrType()){
+        return StarbytesRuntimeObjectKindString;
+    }
+    if(type == StarbytesArrayType()){
+        return StarbytesRuntimeObjectKindArray;
+    }
+    if(type == StarbytesDictType()){
+        return StarbytesRuntimeObjectKindDict;
+    }
+    if(type == StarbytesNumType()){
+        return StarbytesRuntimeObjectKindNumber;
+    }
+    if(type == StarbytesBoolType()){
+        return StarbytesRuntimeObjectKindBool;
+    }
+    if(type == StarbytesFuncRefType()){
+        return StarbytesRuntimeObjectKindFuncRef;
+    }
+    if(type == StarbytesRegexType()){
+        return StarbytesRuntimeObjectKindRegex;
+    }
+    if(type == StarbytesTaskType()){
+        return StarbytesRuntimeObjectKindTask;
+    }
+    return StarbytesRuntimeObjectKindCustomClass;
+}
+
+static void StarbytesRuntimeProfileRecordAllocation(StarbytesClassType type){
+    if(!gRuntimeProfileLowLevelCountersEnabled){
+        return;
+    }
+    gRuntimeLowLevelCounters.objectAllocations[StarbytesRuntimeObjectKindFromType(type)] += 1;
+}
+
+static void StarbytesRuntimeProfileRecordDeallocation(StarbytesClassType type){
+    if(!gRuntimeProfileLowLevelCountersEnabled){
+        return;
+    }
+    gRuntimeLowLevelCounters.objectDeallocations[StarbytesRuntimeObjectKindFromType(type)] += 1;
+}
 
 static char *StarbytesDupString(const char *value){
     if(value == NULL){
@@ -318,6 +362,21 @@ void StarbytesRuntimePushScriptArg(const char *arg){
     StarbytesSetEnvVar(kEnvScriptArgCount,countBuffer);
 }
 
+void StarbytesRuntimeProfileSetLowLevelCountersEnabled(int enabled){
+    gRuntimeProfileLowLevelCountersEnabled = enabled ? 1 : 0;
+}
+
+void StarbytesRuntimeProfileResetLowLevelCounters(){
+    memset(&gRuntimeLowLevelCounters,0,sizeof(gRuntimeLowLevelCounters));
+}
+
+void StarbytesRuntimeProfileGetLowLevelCounters(StarbytesRuntimeLowLevelCounters *outCounters){
+    if(outCounters == NULL){
+        return;
+    }
+    *outCounters = gRuntimeLowLevelCounters;
+}
+
 CString StarbytesRuntimeGetExecutablePath(){
     if(gRuntimeExecutablePath == NULL){
         const char *fromEnv = getenv(kEnvExecutablePath);
@@ -414,6 +473,7 @@ StarbytesObject StarbytesObjectNew(StarbytesClassType type){
     
     StarbytesObject mem = (StarbytesObject)malloc(sizeof(struct _StarbytesObject));
     memcpy(mem,&obj,sizeof(struct _StarbytesObject));
+    StarbytesRuntimeProfileRecordAllocation(type);
     return mem;
 }
 
@@ -472,12 +532,19 @@ StarbytesObjectProperty * StarbytesObjectIndexProperty(StarbytesObject obj,unsig
 }
 
 void StarbytesObjectReference(StarbytesObject obj){
+    if(gRuntimeProfileLowLevelCountersEnabled){
+        gRuntimeLowLevelCounters.refCountIncrements += 1;
+    }
     obj->refCount += 1;
 }
 
 void StarbytesObjectRelease(StarbytesObject obj){
+    if(gRuntimeProfileLowLevelCountersEnabled){
+        gRuntimeLowLevelCounters.refCountDecrements += 1;
+    }
     obj->refCount -= 1;
     if(obj->refCount == 0){
+        StarbytesRuntimeProfileRecordDeallocation(obj->type);
         unsigned prop_c = obj->nProp;
         StarbytesObjectProperty *prop_ptr = obj->props;
         for(;prop_c > 0;prop_c--){

@@ -153,6 +153,20 @@ class Disassembler {
                 out << " ";
             };
         }
+        else if(code == CODE_RTCALL_DIRECT){
+            out << "CODE_RTCALL_DIRECT ";
+            RTID id;
+            in >> &id;
+            out.write(id.value,sizeof(char) * id.len);
+            unsigned arg_count = 0;
+            in.read((char *)&arg_count,sizeof(arg_count));
+            out << " " << arg_count << " ";
+            for(unsigned i = 0;i < arg_count;i++){
+                in.read((char *)&code,sizeof(RTCode));
+                _disasm_expr(code);
+                out << " ";
+            }
+        }
         else if(code == CODE_UNARY_OPERATOR){
             RTCode unaryCode = UNARY_OP_NOT;
             in.read((char *)&unaryCode,sizeof(unaryCode));
@@ -438,7 +452,7 @@ public:
         RTCode code;
         in.read((char *)&code,sizeof(RTCode));
         while (code != CODE_MODULE_END) {
-            if(code == CODE_RTIVKFUNC || code == CODE_CONDITIONAL || code == CODE_RTREGEX_LITERAL
+            if(code == CODE_RTIVKFUNC || code == CODE_RTCALL_DIRECT || code == CODE_CONDITIONAL || code == CODE_RTREGEX_LITERAL
                || code == CODE_UNARY_OPERATOR || code == CODE_RTTYPED_NEGATE || code == CODE_BINARY_OPERATOR
                || code == CODE_RTTYPED_BINARY || code == CODE_RTTYPED_COMPARE
                || code == CODE_RTVAR_SET || code == CODE_RTLOCAL_REF || code == CODE_RTTYPED_LOCAL_REF || code == CODE_RTLOCAL_SET

@@ -86,6 +86,7 @@ const char *opcodeName(uint8_t code) {
         case CODE_RTTYPED_INDEX_GET: return "CODE_RTTYPED_INDEX_GET";
         case CODE_RTTYPED_INDEX_SET: return "CODE_RTTYPED_INDEX_SET";
         case CODE_RTTYPED_INTRINSIC: return "CODE_RTTYPED_INTRINSIC";
+        case CODE_RTCALL_DIRECT: return "CODE_RTCALL_DIRECT";
         default: return "CODE_UNKNOWN";
     }
 }
@@ -100,6 +101,22 @@ const char *subsystemName(starbytes::Runtime::RuntimeProfileSubsystem subsystem)
         case RuntimeProfileSubsystem::ObjectAllocation: return "object_allocation";
         case RuntimeProfileSubsystem::Microtasks: return "microtasks";
         case RuntimeProfileSubsystem::Count: return "count";
+    }
+    return "unknown";
+}
+
+const char *objectKindName(StarbytesRuntimeObjectKind kind) {
+    switch(kind) {
+        case StarbytesRuntimeObjectKindString: return "string";
+        case StarbytesRuntimeObjectKindArray: return "array";
+        case StarbytesRuntimeObjectKindDict: return "dict";
+        case StarbytesRuntimeObjectKindNumber: return "number";
+        case StarbytesRuntimeObjectKindBool: return "bool";
+        case StarbytesRuntimeObjectKindFuncRef: return "func_ref";
+        case StarbytesRuntimeObjectKindRegex: return "regex";
+        case StarbytesRuntimeObjectKindTask: return "task";
+        case StarbytesRuntimeObjectKindCustomClass: return "custom_class";
+        case StarbytesRuntimeObjectKindCount: return "count";
     }
     return "unknown";
 }
@@ -122,13 +139,51 @@ void printRuntimeProfileJson(std::ostream &out,const RuntimeProfileReport &repor
     out << "  \"input\": \"" << jsonEscape(report.input) << "\",\n";
     out << "  \"module\": \"" << jsonEscape(report.moduleName) << "\",\n";
     out << "  \"runtime_error\": \"" << jsonEscape(report.runtimeError) << "\",\n";
+    out << "  \"overlap_rules\": {\n";
+    out << "    \"subsystems_are_inclusive\": " << (report.runtime.subsystemTimingsOverlap ? "true" : "false") << ",\n";
+    out << "    \"function_totals_are_inclusive\": " << (report.runtime.functionTimingsOverlap ? "true" : "false") << "\n";
+    out << "  },\n";
     out << "  \"counts\": {\n";
     out << "    \"dispatch\": " << report.runtime.dispatchCount << ",\n";
     out << "    \"function_calls\": " << report.runtime.functionCallCount << ",\n";
+    out << "    \"refcount_increments\": " << report.runtime.refCountIncrements << ",\n";
+    out << "    \"refcount_decrements\": " << report.runtime.refCountDecrements << ",\n";
     out << "    \"runtime_quickened_sites\": " << report.runtime.quickenedSitesInstalled << ",\n";
     out << "    \"runtime_quickened_executions\": " << report.runtime.quickenedExecutions << ",\n";
     out << "    \"runtime_quickened_specializations\": " << report.runtime.quickenedSpecializations << ",\n";
     out << "    \"runtime_quickened_fallbacks\": " << report.runtime.quickenedFallbacks << "\n";
+    out << "  },\n";
+    out << "  \"objects\": {\n";
+    out << "    \"allocations\": [\n";
+    bool firstAllocation = true;
+    for(size_t i = 0; i < report.runtime.objectAllocations.size(); ++i) {
+        auto count = report.runtime.objectAllocations[i];
+        if(count == 0) {
+            continue;
+        }
+        if(!firstAllocation) {
+            out << ",\n";
+        }
+        firstAllocation = false;
+        out << "      {\"kind\":\"" << objectKindName(static_cast<StarbytesRuntimeObjectKind>(i))
+            << "\",\"count\":" << count << "}";
+    }
+    out << "\n    ],\n";
+    out << "    \"deallocations\": [\n";
+    bool firstDeallocation = true;
+    for(size_t i = 0; i < report.runtime.objectDeallocations.size(); ++i) {
+        auto count = report.runtime.objectDeallocations[i];
+        if(count == 0) {
+            continue;
+        }
+        if(!firstDeallocation) {
+            out << ",\n";
+        }
+        firstDeallocation = false;
+        out << "      {\"kind\":\"" << objectKindName(static_cast<StarbytesRuntimeObjectKind>(i))
+            << "\",\"count\":" << count << "}";
+    }
+    out << "\n    ]\n";
     out << "  },\n";
     out << "  \"timings_ms\": {\n";
     out << "    \"total_runtime\": " << nsToMs(report.runtime.totalRuntimeNs) << "\n";
@@ -207,6 +262,14 @@ void printRuntimeProfileSummary(std::ostream &out,
     out << "total runtime: " << nsToMs(report.runtime.totalRuntimeNs) << " ms\n";
     out << "dispatch count: " << report.runtime.dispatchCount << "\n";
     out << "function calls: " << report.runtime.functionCallCount << "\n";
+    out << "refcount increments: " << report.runtime.refCountIncrements << "\n";
+    out << "refcount decrements: " << report.runtime.refCountDecrements << "\n";
+    if(report.runtime.subsystemTimingsOverlap) {
+        out << "Note: subsystem timings are overlapping/inclusive and should not be summed.\n";
+    }
+    if(report.runtime.functionTimingsOverlap) {
+        out << "Note: function totals are inclusive; parent and child time overlaps by design.\n";
+    }
 
     struct SubsystemRow {
         Runtime::RuntimeProfileSubsystem subsystem = Runtime::RuntimeProfileSubsystem::FunctionCall;
@@ -262,6 +325,44 @@ void printRuntimeProfileSummary(std::ostream &out,
                 << ": calls=" << entry.callCount
                 << ", total=" << nsToMs(entry.totalNs) << " ms"
                 << ", self=" << nsToMs(entry.selfNs) << " ms\n";
+        }
+    }
+
+    struct ObjectCountRow {
+        StarbytesRuntimeObjectKind kind = StarbytesRuntimeObjectKindString;
+        uint64_t allocations = 0;
+        uint64_t deallocations = 0;
+    };
+    std::vector<ObjectCountRow> objectCounts;
+    for(size_t i = 0; i < report.runtime.objectAllocations.size(); ++i) {
+        auto allocations = report.runtime.objectAllocations[i];
+        auto deallocations = report.runtime.objectDeallocations[i];
+        if(allocations == 0 && deallocations == 0) {
+            continue;
+        }
+        objectCounts.push_back({static_cast<StarbytesRuntimeObjectKind>(i), allocations, deallocations});
+    }
+    std::sort(objectCounts.begin(),objectCounts.end(),[](const auto &lhs,const auto &rhs){
+        auto lhsTotal = lhs.allocations + lhs.deallocations;
+        auto rhsTotal = rhs.allocations + rhs.deallocations;
+        if(lhsTotal != rhsTotal) {
+            return lhsTotal > rhsTotal;
+        }
+        if(lhs.allocations != rhs.allocations) {
+            return lhs.allocations > rhs.allocations;
+        }
+        return lhs.deallocations > rhs.deallocations;
+    });
+
+    out << "Object counts:\n";
+    if(objectCounts.empty()) {
+        out << "  (none)\n";
+    }
+    else {
+        for(const auto &entry : objectCounts) {
+            out << "  " << objectKindName(entry.kind)
+                << ": allocations=" << entry.allocations
+                << ", deallocations=" << entry.deallocations << "\n";
         }
     }
     out.unsetf(std::ios::floatfield);

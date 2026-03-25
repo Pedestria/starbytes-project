@@ -145,6 +145,16 @@ namespace Runtime {
                 }
                 break;
             }
+            case CODE_RTCALL_DIRECT: {
+                skipRTIDPayload(is);
+                unsigned argCount = 0;
+                is.read((char *)&argCount,sizeof(argCount));
+                while(argCount > 0){
+                    skipExpr(is);
+                    --argCount;
+                }
+                break;
+            }
             case CODE_UNARY_OPERATOR: {
                 RTCode unaryCode = UNARY_OP_NOT;
                 is.read((char *)&unaryCode,sizeof(unaryCode));
@@ -637,7 +647,8 @@ namespace Runtime {
         if(code == CODE_RTFUNCBLOCK_BEGIN){
             obj->block_start_pos = is.tellg();
             if(obj->blockByteSize > 0){
-                is.seekg((std::streamoff)obj->blockByteSize,std::ios_base::cur);
+                obj->decodedBody.resize(obj->blockByteSize);
+                is.read(obj->decodedBody.data(),(std::streamsize)obj->blockByteSize);
             }
             RTCode endCode = CODE_MODULE_END;
             is.read((char *)&endCode,sizeof(RTCode));

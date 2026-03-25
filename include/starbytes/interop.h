@@ -37,6 +37,26 @@ StarbytesClassType StarbytesFuncRefType();
 StarbytesClassType StarbytesRegexType();
 StarbytesClassType StarbytesTaskType();
 
+typedef enum {
+    StarbytesRuntimeObjectKindString = 0,
+    StarbytesRuntimeObjectKindArray,
+    StarbytesRuntimeObjectKindDict,
+    StarbytesRuntimeObjectKindNumber,
+    StarbytesRuntimeObjectKindBool,
+    StarbytesRuntimeObjectKindFuncRef,
+    StarbytesRuntimeObjectKindRegex,
+    StarbytesRuntimeObjectKindTask,
+    StarbytesRuntimeObjectKindCustomClass,
+    StarbytesRuntimeObjectKindCount
+} StarbytesRuntimeObjectKind;
+
+typedef struct {
+    uint64_t objectAllocations[StarbytesRuntimeObjectKindCount];
+    uint64_t objectDeallocations[StarbytesRuntimeObjectKindCount];
+    uint64_t refCountIncrements;
+    uint64_t refCountDecrements;
+} StarbytesRuntimeLowLevelCounters;
+
 
 typedef struct _StarbytesObject * StarbytesObject;
 
@@ -65,6 +85,10 @@ StarbytesObject StarbytesObjectGetProperty(StarbytesObject obj,const char * name
 void StarbytesObjectReference(StarbytesObject obj);
 
 void StarbytesObjectRelease(StarbytesObject obj);
+
+void StarbytesRuntimeProfileSetLowLevelCountersEnabled(int enabled);
+void StarbytesRuntimeProfileResetLowLevelCounters();
+void StarbytesRuntimeProfileGetLowLevelCounters(StarbytesRuntimeLowLevelCounters *outCounters);
 
 #define COMPARE_EQUAL 0x00
 #define COMPARE_LESS 0x01
