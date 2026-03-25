@@ -83,6 +83,7 @@ while(iteration < 8){
     }
 
     auto interp = Runtime::Interp::Create();
+    interp->setProfilingEnabled(true);
     std::ifstream in(outputFile,std::ios::in | std::ios::binary);
     if(!in.is_open()) {
         cleanup();

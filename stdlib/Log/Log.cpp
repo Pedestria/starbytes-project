@@ -106,8 +106,8 @@ std::string dictToLogFields(StarbytesObject object,int depth) {
         return "";
     }
 
-    auto keys = StarbytesObjectGetProperty(object,"keys");
-    auto values = StarbytesObjectGetProperty(object,"values");
+    auto keys = StarbytesDictGetKeys(object);
+    auto values = StarbytesDictGetValues(object);
     if(!keys || !values || !StarbytesObjectTypecheck(keys,StarbytesArrayType()) || !StarbytesObjectTypecheck(values,StarbytesArrayType())) {
         return "";
     }

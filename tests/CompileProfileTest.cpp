@@ -1,8 +1,8 @@
 #include "starbytes/compiler/AST.h"
 #include "starbytes/compiler/Parser.h"
 
-#include <fstream>
 #include <iostream>
+#include <sstream>
 
 namespace {
 
@@ -27,13 +27,13 @@ int fail(const char *message) {
 }
 
 int main() {
-    std::ifstream in("./test.starb");
-    if(!in.is_open()) {
-        in.open("./tests/test.starb");
-    }
-    if(!in.is_open()) {
-        return fail("cannot open test source");
-    }
+    std::istringstream in(R"starb(
+func add(a:Int,b:Int) Int {
+    return a + b
+}
+
+decl total:Int = add(1, 2)
+)starb");
 
     NullConsumer consumer;
     starbytes::Parser parser(consumer);

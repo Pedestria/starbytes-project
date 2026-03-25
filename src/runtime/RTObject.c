@@ -7,6 +7,28 @@
 
 #include <starbytes/interop.h>
 
+typedef struct {
+    StarbytesNumT type;
+    double d;
+    float f;
+    int64_t l;
+    int i;
+} StarbytesNumPriv;
+
+typedef struct {
+    StarbytesBoolVal val;
+} StarbytesBoolPriv;
+
+typedef struct {
+    StarbytesFuncTemplate *ref;
+} StarbytesFuncRefPriv;
+
+typedef struct {
+    StarbytesTaskState state;
+    StarbytesObject value;
+    char *error;
+} StarbytesTaskPriv;
+
 
 
 
@@ -20,6 +42,12 @@ struct _StarbytesObject {
     
     void *privData;
     void (*freePrivData)(void *);
+    union {
+        StarbytesNumPriv num;
+        StarbytesBoolPriv boolean;
+        StarbytesFuncRefPriv funcRef;
+        StarbytesTaskPriv task;
+    } inlinePayload;
     
 };
 
@@ -137,6 +165,78 @@ static void StarbytesBuildArgEnvName(unsigned index,char *buffer,size_t bufferSi
 
 static void _StarbytesPrivDataFreeDefault(void *data){
     free(data);
+}
+
+static StarbytesNumPriv *StarbytesNumGetPriv(StarbytesNum num){
+    return num ? &num->inlinePayload.num : NULL;
+}
+
+static StarbytesBoolPriv *StarbytesBoolGetPriv(StarbytesBool boolean){
+    return boolean ? &boolean->inlinePayload.boolean : NULL;
+}
+
+static StarbytesFuncRefPriv *StarbytesFuncRefGetPriv(StarbytesFuncRef ref){
+    return ref ? &ref->inlinePayload.funcRef : NULL;
+}
+
+static StarbytesTaskPriv *StarbytesTaskGetPriv(StarbytesTask task){
+    return task ? &task->inlinePayload.task : NULL;
+}
+
+static void StarbytesReleaseInlinePayload(StarbytesObject obj){
+    if(obj == NULL){
+        return;
+    }
+    if(obj->type == StarbytesTaskType()){
+        if(obj->inlinePayload.task.value != NULL){
+            StarbytesObjectRelease(obj->inlinePayload.task.value);
+            obj->inlinePayload.task.value = NULL;
+        }
+        if(obj->inlinePayload.task.error != NULL){
+            free(obj->inlinePayload.task.error);
+            obj->inlinePayload.task.error = NULL;
+        }
+        obj->inlinePayload.task.state = StarbytesTaskRejected;
+    }
+}
+
+typedef struct {
+    unsigned int fieldCount;
+    const char **fieldNames;
+    StarbytesObject *fieldValues;
+} StarbytesClassObjectPriv;
+
+static void _StarbytesClassObjectFree(void *data);
+
+static int StarbytesObjectHasClassFieldLayout(StarbytesObject obj){
+    return obj != NULL
+        && !StarbytesObjectIs(obj)
+        && obj->privData != NULL
+        && obj->freePrivData == _StarbytesClassObjectFree;
+}
+
+static StarbytesClassObjectPriv *StarbytesClassObjectGetPriv(StarbytesObject obj){
+    if(!StarbytesObjectHasClassFieldLayout(obj)){
+        return NULL;
+    }
+    return (StarbytesClassObjectPriv *)obj->privData;
+}
+
+static void _StarbytesClassObjectFree(void *data){
+    StarbytesClassObjectPriv *priv = (StarbytesClassObjectPriv *)data;
+    if(priv == NULL){
+        return;
+    }
+    if(priv->fieldValues != NULL){
+        for(unsigned int i = 0; i < priv->fieldCount; ++i){
+            if(priv->fieldValues[i] != NULL){
+                StarbytesObjectRelease(priv->fieldValues[i]);
+            }
+        }
+        free(priv->fieldValues);
+    }
+    free((void *)priv->fieldNames);
+    free(priv);
 }
 
 StarbytesObject StarbytesFuncArgsGetArg(StarbytesFuncArgs args){
@@ -307,11 +407,9 @@ int StarbytesObjectIs(StarbytesObject obj){
 
 StarbytesObject StarbytesObjectNew(StarbytesClassType type){
     struct _StarbytesObject obj;
-    obj.nProp = 0;
-    obj.props = NULL;
+    memset(&obj,0,sizeof(struct _StarbytesObject));
     obj.refCount = 1;
     obj.type = type;
-    obj.privData = NULL;
     obj.freePrivData = _StarbytesPrivDataFreeDefault;
     
     StarbytesObject mem = (StarbytesObject)malloc(sizeof(struct _StarbytesObject));
@@ -328,6 +426,11 @@ unsigned int StarbytesObjectGetPropertyCount(StarbytesObject obj){
 }
 
 void StarbytesObjectAddProperty(StarbytesObject obj,char *name,StarbytesObject data){
+    int classFieldIndex = StarbytesClassObjectFindField(obj,name);
+    if(classFieldIndex >= 0){
+        StarbytesClassObjectSetField(obj,(unsigned int)classFieldIndex,data);
+        return;
+    }
     
     StarbytesObjectProperty prop;
     strcpy(prop.name,name);
@@ -345,6 +448,10 @@ void StarbytesObjectAddProperty(StarbytesObject obj,char *name,StarbytesObject d
 }
 
 StarbytesObject StarbytesObjectGetProperty(StarbytesObject obj,const char * name){
+    int classFieldIndex = StarbytesClassObjectFindField(obj,name);
+    if(classFieldIndex >= 0){
+        return StarbytesClassObjectGetField(obj,(unsigned int)classFieldIndex);
+    }
     unsigned prop_c = obj->nProp;
     StarbytesObjectProperty *prop_ptr = obj->props;
     StarbytesObject rc = NULL;
@@ -378,6 +485,7 @@ void StarbytesObjectRelease(StarbytesObject obj){
             ++prop_ptr;
         }
         free(obj->props);
+        StarbytesReleaseInlinePayload(obj);
         if(obj->freePrivData){
             obj->freePrivData(obj->privData);
         }
@@ -392,21 +500,92 @@ StarbytesObject StarbytesClassObjectNew(StarbytesClassType type){
     return StarbytesObjectNew(type);
 }
 
+StarbytesObject StarbytesClassObjectNewWithFields(StarbytesClassType type,unsigned int fieldCount,const char *const *fieldNames){
+    StarbytesObject obj = StarbytesObjectNew(type);
+    StarbytesClassObjectPriv privData;
+    privData.fieldCount = fieldCount;
+    privData.fieldNames = NULL;
+    privData.fieldValues = NULL;
+
+    if(fieldCount > 0){
+        privData.fieldNames = (const char **)calloc(fieldCount,sizeof(char *));
+        privData.fieldValues = (StarbytesObject *)calloc(fieldCount,sizeof(StarbytesObject));
+        if(privData.fieldNames == NULL || privData.fieldValues == NULL){
+            free((void *)privData.fieldNames);
+            free(privData.fieldValues);
+            free(obj);
+            return NULL;
+        }
+        for(unsigned int i = 0; i < fieldCount; ++i){
+            privData.fieldNames[i] = fieldNames != NULL ? fieldNames[i] : NULL;
+        }
+    }
+
+    obj->freePrivData = _StarbytesClassObjectFree;
+    obj->privData = malloc(sizeof(StarbytesClassObjectPriv));
+    if(obj->privData == NULL){
+        free((void *)privData.fieldNames);
+        free(privData.fieldValues);
+        free(obj);
+        return NULL;
+    }
+    memcpy(obj->privData,&privData,sizeof(StarbytesClassObjectPriv));
+    return obj;
+}
+
 StarbytesClassType StarbytesClassObjectGetClass(StarbytesObject obj){
     return obj->type;
+}
+
+unsigned int StarbytesClassObjectGetFieldCount(StarbytesObject obj){
+    StarbytesClassObjectPriv *priv = StarbytesClassObjectGetPriv(obj);
+    return priv ? priv->fieldCount : 0u;
+}
+
+const char *StarbytesClassObjectGetFieldName(StarbytesObject obj,unsigned int idx){
+    StarbytesClassObjectPriv *priv = StarbytesClassObjectGetPriv(obj);
+    if(priv == NULL || idx >= priv->fieldCount){
+        return NULL;
+    }
+    return priv->fieldNames[idx];
+}
+
+StarbytesObject StarbytesClassObjectGetField(StarbytesObject obj,unsigned int idx){
+    StarbytesClassObjectPriv *priv = StarbytesClassObjectGetPriv(obj);
+    if(priv == NULL || idx >= priv->fieldCount){
+        return NULL;
+    }
+    return priv->fieldValues[idx];
+}
+
+void StarbytesClassObjectSetField(StarbytesObject obj,unsigned int idx,StarbytesObject value){
+    StarbytesClassObjectPriv *priv = StarbytesClassObjectGetPriv(obj);
+    if(priv == NULL || idx >= priv->fieldCount){
+        return;
+    }
+    if(priv->fieldValues[idx] != NULL){
+        StarbytesObjectRelease(priv->fieldValues[idx]);
+    }
+    priv->fieldValues[idx] = value;
+}
+
+int StarbytesClassObjectFindField(StarbytesObject obj,const char *name){
+    StarbytesClassObjectPriv *priv = StarbytesClassObjectGetPriv(obj);
+    if(priv == NULL || name == NULL){
+        return -1;
+    }
+    for(unsigned int i = 0; i < priv->fieldCount; ++i){
+        const char *fieldName = priv->fieldNames[i];
+        if(fieldName != NULL && strcmp(fieldName,name) == 0){
+            return (int)i;
+        }
+    }
+    return -1;
 }
 
 
 
 /// Number Class
-
-typedef struct {
-    StarbytesNumT type;
-    double d;
-    float f;
-    int64_t l;
-    int i;
-} StarbytesNumPriv;
 
 static int StarbytesNumIsIntegralType(StarbytesNumT type){
     return type == NumTypeInt || type == NumTypeLong;
@@ -457,48 +636,38 @@ static StarbytesNumT StarbytesPromotedNumericType(StarbytesNumT lhs,StarbytesNum
     return NumTypeInt;
 }
 
-void _StarbytesNumFree(void *data){
-    StarbytesNumPriv *priv = (StarbytesNumPriv *)data;
-    free(priv);
-}
-
 StarbytesNum StarbytesNumNew(StarbytesNumT type,...){
     StarbytesObject obj = StarbytesObjectNew(StarbytesNumType());
-    obj->freePrivData = _StarbytesNumFree;
-    StarbytesNumPriv priv;
-    priv.type = type;
-    priv.d = 0.0;
-    priv.f = 0.0f;
-    priv.l = 0;
-    priv.i = 0;
+    StarbytesNumPriv *priv = StarbytesNumGetPriv(obj);
+    priv->type = type;
+    priv->d = 0.0;
+    priv->f = 0.0f;
+    priv->l = 0;
+    priv->i = 0;
 
     va_list args;
     va_start(args,type);
     switch(type){
         case NumTypeInt:
-            priv.i = va_arg(args,int);
+            priv->i = va_arg(args,int);
             break;
         case NumTypeLong:
-            priv.l = va_arg(args,int64_t);
+            priv->l = va_arg(args,int64_t);
             break;
         case NumTypeFloat:
-            priv.f = (float)va_arg(args,double);
+            priv->f = (float)va_arg(args,double);
             break;
         case NumTypeDouble:
         default:
-            priv.d = va_arg(args,double);
+            priv->d = va_arg(args,double);
             break;
     }
     va_end(args);
-    
-    obj->privData = malloc(sizeof(StarbytesNumPriv));
-    memcpy(obj->privData,&priv,sizeof(StarbytesNumPriv));
-    
     return obj;
 }
 
 StarbytesNum StarbytesNumCopy(StarbytesNum num){
-    StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
+    StarbytesNumPriv *priv = StarbytesNumGetPriv(num);
     switch(priv->type){
         case NumTypeInt:
             return StarbytesNumNew(priv->type,priv->i);
@@ -513,7 +682,7 @@ StarbytesNum StarbytesNumCopy(StarbytesNum num){
 }
 
 StarbytesNum StarbytesNumConvertTo(StarbytesNum num,StarbytesNumT type){
-    StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
+    StarbytesNumPriv *priv = StarbytesNumGetPriv(num);
     if(priv->type == type){
         return StarbytesNumCopy(num);
     }
@@ -532,8 +701,8 @@ StarbytesNum StarbytesNumConvertTo(StarbytesNum num,StarbytesNumT type){
 }
 
 int StarbytesNumCompare(StarbytesNum lhs,StarbytesNum rhs){
-    StarbytesNumPriv *privLhs = (StarbytesNumPriv *)lhs->privData;
-    StarbytesNumPriv *privRhs = (StarbytesNumPriv *)rhs->privData;
+    StarbytesNumPriv *privLhs = StarbytesNumGetPriv(lhs);
+    StarbytesNumPriv *privRhs = StarbytesNumGetPriv(rhs);
 
     if(StarbytesNumIsIntegralType(privLhs->type) && StarbytesNumIsIntegralType(privRhs->type)){
         int64_t lhsVal = StarbytesNumAsInt64(privLhs);
@@ -560,7 +729,7 @@ int StarbytesNumCompare(StarbytesNum lhs,StarbytesNum rhs){
 }
 
 void StarbytesNumAssign(StarbytesNum num,StarbytesNumT type,...){
-    StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
+    StarbytesNumPriv *priv = StarbytesNumGetPriv(num);
     priv->type = type;
     priv->d = 0.0;
     priv->f = 0.0f;
@@ -587,8 +756,8 @@ void StarbytesNumAssign(StarbytesNum num,StarbytesNumT type,...){
 }
 
 StarbytesNum StarbytesNumAdd(StarbytesNum a,StarbytesNum b){
-    StarbytesNumPriv *a_priv = (StarbytesNumPriv *)a->privData;
-    StarbytesNumPriv *b_priv = (StarbytesNumPriv *)b->privData;
+    StarbytesNumPriv *a_priv = StarbytesNumGetPriv(a);
+    StarbytesNumPriv *b_priv = StarbytesNumGetPriv(b);
 
     if(StarbytesNumIsIntegralType(a_priv->type) && StarbytesNumIsIntegralType(b_priv->type)){
         if(a_priv->type == NumTypeLong || b_priv->type == NumTypeLong){
@@ -605,8 +774,8 @@ StarbytesNum StarbytesNumAdd(StarbytesNum a,StarbytesNum b){
 }
 
 StarbytesNum StarbytesNumSub(StarbytesNum a,StarbytesNum b){
-    StarbytesNumPriv *a_priv = (StarbytesNumPriv *)a->privData;
-    StarbytesNumPriv *b_priv = (StarbytesNumPriv *)b->privData;
+    StarbytesNumPriv *a_priv = StarbytesNumGetPriv(a);
+    StarbytesNumPriv *b_priv = StarbytesNumGetPriv(b);
 
     if(StarbytesNumIsIntegralType(a_priv->type) && StarbytesNumIsIntegralType(b_priv->type)){
         if(a_priv->type == NumTypeLong || b_priv->type == NumTypeLong){
@@ -623,30 +792,30 @@ StarbytesNum StarbytesNumSub(StarbytesNum a,StarbytesNum b){
 }
 
 StarbytesNumT StarbytesNumGetType(StarbytesNum num){
-    StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
+    StarbytesNumPriv *priv = StarbytesNumGetPriv(num);
     return priv->type;
 }
 
 int StarbytesNumGetIntValue(StarbytesNum num){
-    StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
+    StarbytesNumPriv *priv = StarbytesNumGetPriv(num);
     assert(priv->type == NumTypeInt);
     return priv->i;
 }
 
 int64_t StarbytesNumGetLongValue(StarbytesNum num){
-    StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
+    StarbytesNumPriv *priv = StarbytesNumGetPriv(num);
     assert(priv->type == NumTypeLong);
     return priv->l;
 }
 
 float StarbytesNumGetFloatValue(StarbytesNum num){
-    StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
+    StarbytesNumPriv *priv = StarbytesNumGetPriv(num);
     assert(priv->type == NumTypeFloat);
     return priv->f;
 }
 
 double StarbytesNumGetDoubleValue(StarbytesNum num){
-    StarbytesNumPriv *priv = (StarbytesNumPriv *)num->privData;
+    StarbytesNumPriv *priv = StarbytesNumGetPriv(num);
     assert(priv->type == NumTypeDouble);
     return priv->d;
 }
@@ -656,6 +825,7 @@ double StarbytesNumGetDoubleValue(StarbytesNum num){
 typedef struct {
     StarbytesStrEncoding encoding;
     void *data;
+    unsigned int length;
 } StarbytesStrPriv;
 
 void _StarbytesStrFree(void * obj){
@@ -666,10 +836,10 @@ void _StarbytesStrFree(void * obj){
 
 StarbytesStr StarbytesStrNew(StarbytesStrEncoding enc){
     StarbytesObject obj = StarbytesObjectNew(StarbytesStrType());
-    StarbytesObjectAddProperty(obj,"length",StarbytesNumNew(NumTypeInt,(int)0));
     StarbytesStrPriv privData;
     privData.encoding = enc;
     privData.data = NULL;
+    privData.length = 0;
     obj->freePrivData = _StarbytesStrFree;
     obj->privData = malloc(sizeof(StarbytesStrPriv));
     memcpy(obj->privData,&privData,sizeof(StarbytesStrPriv));
@@ -684,10 +854,9 @@ StarbytesStr StarbytesStrCopy(StarbytesStr str){
 
 StarbytesStr StarbytesStrNewWithData(const char * data){
     StarbytesStr str = StarbytesStrNew(StrEncodingUTF8);
-    StarbytesObject len = StarbytesObjectGetProperty(str,"length");
     unsigned int dataLen = (unsigned int)strlen(data);
-    StarbytesNumAssign(len,NumTypeInt,utf8_scalar_length(data));
     StarbytesStrPriv *privData = (StarbytesStrPriv *)str->privData;
+    privData->length = utf8_scalar_length(data);
     privData->data = malloc(sizeof(char) * (dataLen + 1));
     memcpy(privData->data,data,dataLen);
     ((char *)privData->data)[dataLen] = '\0';
@@ -695,8 +864,8 @@ StarbytesStr StarbytesStrNewWithData(const char * data){
 }
 
 unsigned StarbytesStrLength(StarbytesStr str){
-    StarbytesNum len = StarbytesObjectGetProperty(str,"length");
-    return (unsigned)StarbytesNumGetIntValue(len);
+    StarbytesStrPriv *privData = (StarbytesStrPriv *)str->privData;
+    return privData ? privData->length : 0u;
 }
 
 int StarbytesStrCompare(StarbytesStr lhs,StarbytesStr rhs){
@@ -761,8 +930,7 @@ char * StarbytesStrGetBuffer(StarbytesStr str){
 }
 
 unsigned int StarbytesStrGetLength(StarbytesStr str){
-    StarbytesObject len = StarbytesObjectGetProperty(str,"length");
-    return (uint32_t)StarbytesNumGetIntValue(len);
+    return (uint32_t)StarbytesStrLength(str);
 }
 
 unsigned StarbytesStrByteLength(StarbytesStr str){
@@ -791,14 +959,9 @@ typedef struct {
     StarbytesObject *cache;
 } StarbytesArrayPriv;
 
-static StarbytesNum StarbytesArrayLengthObject(StarbytesArray array){
-    return (StarbytesNum)StarbytesObjectGetProperty(array,"length");
-}
-
 static void StarbytesArraySyncLength(StarbytesArray array,unsigned int length){
     StarbytesArrayPriv *priv = (StarbytesArrayPriv *)array->privData;
     priv->length = length;
-    StarbytesNumAssign(StarbytesArrayLengthObject(array),NumTypeInt,(int)length);
 }
 
 static size_t StarbytesArrayElementSize(StarbytesArrayStorageKind kind){
@@ -873,11 +1036,10 @@ static StarbytesArrayStorageKind StarbytesPromotedArrayKind(StarbytesArrayStorag
 }
 
 static int StarbytesObjectToArrayNumeric(StarbytesObject obj,StarbytesArrayStorageKind *kindOut,long double *valueOut){
-    StarbytesNumPriv *priv;
     if(obj == NULL || !StarbytesObjectTypecheck(obj,StarbytesNumType())){
         return 0;
     }
-    priv = (StarbytesNumPriv *)obj->privData;
+    StarbytesNumPriv *priv = StarbytesNumGetPriv(obj);
     *kindOut = StarbytesArrayKindFromNumType(priv->type);
     *valueOut = StarbytesNumAsLongDouble(priv);
     return 1;
@@ -1096,8 +1258,6 @@ void _StarbytesArrayFree(StarbytesObject array){
 
 StarbytesArray StarbytesArrayNew(){
     StarbytesObject obj = StarbytesObjectNew(StarbytesArrayType());
-    int len = 0;
-    StarbytesObjectAddProperty(obj,"length",StarbytesNumNew(NumTypeInt,len));
     StarbytesArrayPriv privData;
     privData.length = 0;
     privData.capacity = 0;
@@ -1300,29 +1460,58 @@ int StarbytesArrayTrySetNumeric(StarbytesArray array,unsigned int index,Starbyte
 }
 
 
+typedef struct {
+    unsigned int length;
+    StarbytesArray keys;
+    StarbytesArray values;
+} StarbytesDictPriv;
+
+static void _StarbytesDictFree(void *data){
+    StarbytesDictPriv *priv = (StarbytesDictPriv *)data;
+    if(priv == NULL){
+        return;
+    }
+    if(priv->keys){
+        StarbytesObjectRelease(priv->keys);
+    }
+    if(priv->values){
+        StarbytesObjectRelease(priv->values);
+    }
+    free(priv);
+}
+
 StarbytesDict StarbytesDictNew(){
     StarbytesObject obj = StarbytesObjectNew(StarbytesDictType());
-    StarbytesObjectAddProperty(obj,"length",StarbytesNumNew(NumTypeInt,(int)0));
-    StarbytesObjectAddProperty(obj,"keys",StarbytesArrayNew());
-    StarbytesObjectAddProperty(obj,"values",StarbytesArrayNew());
+    StarbytesDictPriv privData;
+    privData.length = 0;
+    privData.keys = StarbytesArrayNew();
+    privData.values = StarbytesArrayNew();
+    obj->freePrivData = _StarbytesDictFree;
+    obj->privData = malloc(sizeof(StarbytesDictPriv));
+    memcpy(obj->privData,&privData,sizeof(StarbytesDictPriv));
     return obj;
 }
 
 StarbytesDict StarbytesDictCopy(StarbytesDict dict){
     StarbytesObject obj = StarbytesObjectNew(StarbytesDictType());
-    StarbytesNum dictL = StarbytesObjectGetProperty(dict,"length");
-    StarbytesObjectAddProperty(obj,"length",StarbytesNumCopy(dictL));
-    StarbytesObjectAddProperty(obj,"keys",StarbytesArrayCopy(StarbytesObjectGetProperty(dict,"keys")));
-    StarbytesObjectAddProperty(obj,"values",StarbytesArrayCopy(StarbytesObjectGetProperty(dict,"values")));
+    StarbytesDictPriv privData;
+    privData.length = StarbytesDictGetLength(dict);
+    privData.keys = StarbytesArrayCopy(StarbytesDictGetKeys(dict));
+    privData.values = StarbytesArrayCopy(StarbytesDictGetValues(dict));
+    obj->freePrivData = _StarbytesDictFree;
+    obj->privData = malloc(sizeof(StarbytesDictPriv));
+    memcpy(obj->privData,&privData,sizeof(StarbytesDictPriv));
     return obj;
 }
 
 void StarbytesDictSet(StarbytesDict dict,StarbytesObject key,StarbytesObject val){
-    assert(key->type == StarbytesNumType() || key->type == StarbytesStrType());
-    StarbytesArray keys = StarbytesObjectGetProperty(dict,"keys");
-    StarbytesArray vals = StarbytesObjectGetProperty(dict,"values");
-    unsigned int len = StarbytesArrayGetLength(keys);
+    StarbytesDictPriv *priv = (StarbytesDictPriv *)dict->privData;
+    StarbytesArray keys = priv->keys;
+    StarbytesArray vals = priv->values;
+    unsigned int len;
     int willReturn = 0;
+    assert(key->type == StarbytesNumType() || key->type == StarbytesStrType());
+    len = StarbytesArrayGetLength(keys);
     for(unsigned i = 0;i < len;i++){
         StarbytesObject _key = StarbytesArrayIndex(keys,i);
         if(_key->type == StarbytesNumType()){
@@ -1342,22 +1531,19 @@ void StarbytesDictSet(StarbytesDict dict,StarbytesObject key,StarbytesObject val
     }
     
     if(willReturn == 0){
-    
-        /// Key doesn't exist.
         StarbytesArrayPush(keys,key);
         StarbytesArrayPush(vals,val);
-        
-        StarbytesNumAssign(StarbytesObjectGetProperty(dict,"length"),NumTypeInt,(int)len + 1);
+        priv->length = len + 1;
     }
 }
 
 StarbytesObject StarbytesDictGet(StarbytesDict dict,StarbytesObject key){
+    StarbytesDictPriv *priv = (StarbytesDictPriv *)dict->privData;
+    StarbytesArray keys = priv->keys;
+    StarbytesArray vals = priv->values;
+    unsigned int len;
     assert(key->type == StarbytesNumType() || key->type == StarbytesStrType());
-    StarbytesArray keys = StarbytesObjectGetProperty(dict,"keys");
-    StarbytesArray vals = StarbytesObjectGetProperty(dict,"values");
-    
-    unsigned int len = StarbytesArrayGetLength(keys);
-    int willReturn = 0;
+    len = StarbytesArrayGetLength(keys);
     for(unsigned i = 0;i < len;i++){
         StarbytesObject _key = StarbytesArrayIndex(keys,i);
         if(_key->type == StarbytesNumType()){
@@ -1374,104 +1560,79 @@ StarbytesObject StarbytesDictGet(StarbytesDict dict,StarbytesObject key){
     return NULL;
 }
 
+unsigned int StarbytesDictGetLength(StarbytesDict dict){
+    StarbytesDictPriv *priv = (StarbytesDictPriv *)dict->privData;
+    return priv ? priv->length : 0u;
+}
+
+StarbytesArray StarbytesDictGetKeys(StarbytesDict dict){
+    StarbytesDictPriv *priv = (StarbytesDictPriv *)dict->privData;
+    return priv ? priv->keys : NULL;
+}
+
+StarbytesArray StarbytesDictGetValues(StarbytesDict dict){
+    StarbytesDictPriv *priv = (StarbytesDictPriv *)dict->privData;
+    return priv ? priv->values : NULL;
+}
+
+void StarbytesDictSetLength(StarbytesDict dict,unsigned int length){
+    StarbytesDictPriv *priv = (StarbytesDictPriv *)dict->privData;
+    if(priv){
+        priv->length = length;
+    }
+}
+
 /// Starbytes Bool
 ///
 
-typedef struct {
-    StarbytesBoolVal val;
-} StarbytesBoolPriv;
-
-void _StarbytesBoolFree(void *data){
-    StarbytesBoolPriv *priv = (StarbytesBoolPriv *)data;
-    free(priv);
-}
-
 StarbytesBool StarbytesBoolNew(StarbytesBoolVal val){
     StarbytesObject obj = StarbytesObjectNew(StarbytesBoolType());
-    StarbytesBoolPriv privData;
-    privData.val = val;
-    obj->privData = malloc(sizeof(StarbytesBoolPriv));
-    obj->freePrivData = _StarbytesBoolFree;
-    memcpy(obj->privData,&privData,sizeof(StarbytesBoolPriv));
+    obj->inlinePayload.boolean.val = val;
     return obj;
 }
 
 StarbytesBoolVal StarbytesBoolValue(StarbytesBool boolean){
-    StarbytesBoolPriv *privData = (StarbytesBoolPriv *)boolean->privData;
+    StarbytesBoolPriv *privData = StarbytesBoolGetPriv(boolean);
     return privData->val;
 }
 
 
 /// Starbytes Func Ref
 
-typedef struct {
-    StarbytesFuncTemplate *ref;
-} StarbytesFuncRefPriv;
-
-void _StarbytesFuncRefFree(void *data){
-    StarbytesFuncRefPriv *priv = (StarbytesFuncRefPriv *)data;
-    free(priv);
-}
-
 StarbytesFuncRef StarbytesFuncRefNew(StarbytesFuncTemplate *_template){
     StarbytesObject obj = StarbytesObjectNew(StarbytesFuncRefType());
-    StarbytesFuncRefPriv privData;
-    privData.ref = _template;
-    obj->privData = malloc(sizeof(StarbytesFuncRefPriv));
-    obj->freePrivData = _StarbytesFuncRefFree;
-    memcpy(obj->privData,&privData,sizeof(StarbytesFuncRefPriv));
+    obj->inlinePayload.funcRef.ref = _template;
     return obj;
 }
 
 StarbytesFuncTemplate * StarbytesFuncRefGetPtr(StarbytesFuncRef ref){
-    StarbytesFuncRefPriv * privData = (StarbytesFuncRefPriv *)ref->privData;
+    StarbytesFuncRefPriv * privData = StarbytesFuncRefGetPriv(ref);
     return privData->ref;
 };
 
 /// Starbytes Task
 
-typedef struct {
-    StarbytesTaskState state;
-    StarbytesObject value;
-    char *error;
-} StarbytesTaskPriv;
-
-void _StarbytesTaskFree(void *data){
-    StarbytesTaskPriv *priv = (StarbytesTaskPriv *)data;
-    if(priv->value){
-        StarbytesObjectRelease(priv->value);
-    }
-    if(priv->error){
-        free(priv->error);
-    }
-    free(priv);
-}
-
 StarbytesTask StarbytesTaskNew(){
     StarbytesObject obj = StarbytesObjectNew(StarbytesTaskType());
-    StarbytesTaskPriv privData;
-    privData.state = StarbytesTaskPending;
-    privData.value = NULL;
-    privData.error = NULL;
-    obj->privData = malloc(sizeof(StarbytesTaskPriv));
-    obj->freePrivData = _StarbytesTaskFree;
-    memcpy(obj->privData,&privData,sizeof(StarbytesTaskPriv));
+    obj->inlinePayload.task.state = StarbytesTaskPending;
+    obj->inlinePayload.task.value = NULL;
+    obj->inlinePayload.task.error = NULL;
     return obj;
 }
 
 StarbytesTaskState StarbytesTaskGetState(StarbytesTask task){
-    if(!task || !task->privData){
+    if(!task){
         return StarbytesTaskRejected;
     }
-    StarbytesTaskPriv *privData = (StarbytesTaskPriv *)task->privData;
+    StarbytesTaskPriv *privData = StarbytesTaskGetPriv(task);
     return privData->state;
 }
 
 void StarbytesTaskResolve(StarbytesTask task,StarbytesObject value){
-    if(!task || !task->privData){
+    if(!task){
         return;
     }
-    StarbytesTaskPriv *privData = (StarbytesTaskPriv *)task->privData;
+    StarbytesTaskPriv *privData = StarbytesTaskGetPriv(task);
     if(privData->state != StarbytesTaskPending){
         return;
     }
@@ -1483,10 +1644,10 @@ void StarbytesTaskResolve(StarbytesTask task,StarbytesObject value){
 }
 
 void StarbytesTaskReject(StarbytesTask task,const char *error){
-    if(!task || !task->privData){
+    if(!task){
         return;
     }
-    StarbytesTaskPriv *privData = (StarbytesTaskPriv *)task->privData;
+    StarbytesTaskPriv *privData = StarbytesTaskGetPriv(task);
     if(privData->state != StarbytesTaskPending){
         return;
     }
@@ -1499,10 +1660,10 @@ void StarbytesTaskReject(StarbytesTask task,const char *error){
 }
 
 StarbytesObject StarbytesTaskGetValue(StarbytesTask task){
-    if(!task || !task->privData){
+    if(!task){
         return NULL;
     }
-    StarbytesTaskPriv *privData = (StarbytesTaskPriv *)task->privData;
+    StarbytesTaskPriv *privData = StarbytesTaskGetPriv(task);
     if(privData->state != StarbytesTaskResolved || !privData->value){
         return NULL;
     }
@@ -1511,10 +1672,10 @@ StarbytesObject StarbytesTaskGetValue(StarbytesTask task){
 }
 
 CString StarbytesTaskGetError(StarbytesTask task){
-    if(!task || !task->privData){
+    if(!task){
         return NULL;
     }
-    StarbytesTaskPriv *privData = (StarbytesTaskPriv *)task->privData;
+    StarbytesTaskPriv *privData = StarbytesTaskGetPriv(task);
     if(privData->state != StarbytesTaskRejected){
         return NULL;
     }

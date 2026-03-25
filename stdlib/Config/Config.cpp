@@ -199,8 +199,8 @@ StarbytesObject mergeDicts(StarbytesObject baseDict,StarbytesObject overlayDict,
     }
 
     auto merged = StarbytesDictCopy(baseDict);
-    auto overlayKeys = StarbytesObjectGetProperty(overlayDict,"keys");
-    auto overlayValues = StarbytesObjectGetProperty(overlayDict,"values");
+    auto overlayKeys = StarbytesDictGetKeys(overlayDict);
+    auto overlayValues = StarbytesDictGetValues(overlayDict);
     if(!overlayKeys || !overlayValues || !StarbytesObjectTypecheck(overlayKeys,StarbytesArrayType())
        || !StarbytesObjectTypecheck(overlayValues,StarbytesArrayType())) {
         return merged;
@@ -239,8 +239,8 @@ string_map<std::string> dictToStringMap(StarbytesObject dict) {
         return out;
     }
 
-    auto keys = StarbytesObjectGetProperty(dict,"keys");
-    auto values = StarbytesObjectGetProperty(dict,"values");
+    auto keys = StarbytesDictGetKeys(dict);
+    auto values = StarbytesDictGetValues(dict);
     if(!keys || !values || !StarbytesObjectTypecheck(keys,StarbytesArrayType()) || !StarbytesObjectTypecheck(values,StarbytesArrayType())) {
         return out;
     }

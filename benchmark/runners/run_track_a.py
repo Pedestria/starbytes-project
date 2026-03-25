@@ -155,6 +155,71 @@ def build_starbytes_command(root: Path,
     return BenchmarkCommand("starbytes", command), None
 
 
+def build_starbytes_runtime_profile_command(root: Path,
+                                            starbytes_bin: str,
+                                            native_dir: Path,
+                                            build_dir: Path,
+                                            workload: str,
+                                            args: list[str],
+                                            mode: str,
+                                            profile_out: Path) -> list[str]:
+    src = source_path(root, "starbytes", workload)
+    cache_dir = build_dir / "starbytes-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    if mode == "ttfr":
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return [
+            starbytes_bin,
+            "run",
+            str(src),
+            "-d",
+            str(cache_dir),
+            "-L",
+            str(native_dir),
+            "--profile-runtime-out",
+            str(profile_out),
+            "--",
+            *args,
+        ]
+
+    output_path = build_dir / "starbytes-steady" / f"{WORKLOAD_FILES[workload]}.starbmod"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    warmup_cmd = [
+        starbytes_bin,
+        "compile",
+        str(src),
+        "-o",
+        str(output_path),
+        "-d",
+        str(cache_dir),
+        "-L",
+        str(native_dir),
+        "--no-run",
+        "--",
+        *args,
+    ]
+    subprocess.run(warmup_cmd, cwd=root, check=True)
+    return [
+        starbytes_bin,
+        "compile",
+        str(src),
+        "-o",
+        str(output_path),
+        "-d",
+        str(cache_dir),
+        "-L",
+        str(native_dir),
+        "--profile-runtime-out",
+        str(profile_out),
+        "--run",
+        "--",
+        *args,
+    ]
+
+
 def build_python_command(root: Path, python_bin: str, workload: str, args: list[str]) -> BenchmarkCommand:
     src = source_path(root, "python", workload)
     return BenchmarkCommand("python", quoted([python_bin, str(src), *args]))
@@ -267,6 +332,27 @@ def run_hyperfine(root: Path,
     subprocess.run(hyperfine_cmd, cwd=root, check=True)
 
 
+def capture_starbytes_runtime_profile(root: Path,
+                                      inputs: dict,
+                                      args: argparse.Namespace,
+                                      workload: str,
+                                      build_dir: Path,
+                                      profile_out: Path) -> None:
+    native_dir = root / "build" / "stdlib"
+    run_args = workload_args(inputs, workload, root)
+    command = build_starbytes_runtime_profile_command(
+        root,
+        args.starbytes_bin,
+        native_dir,
+        build_dir,
+        workload,
+        run_args,
+        args.mode,
+        profile_out,
+    )
+    subprocess.run(command, cwd=root, check=True, text=True, capture_output=True)
+
+
 def write_dry_run(mode: str, workload_commands: dict[str, list[BenchmarkCommand]]) -> None:
     print(f"Track A {mode} command plan")
     for workload, commands in workload_commands.items():
@@ -290,6 +376,7 @@ def main() -> int:
     parser.add_argument("--hyperfine-bin", default="hyperfine")
     parser.add_argument("--raw-root", default=str(root / "benchmark" / "results" / "raw"))
     parser.add_argument("--summary-root", default=str(root / "benchmark" / "results" / "summaries"))
+    parser.add_argument("--starbytes-runtime-profiles", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
@@ -342,6 +429,9 @@ def main() -> int:
             args.runs,
             args.warmup,
         )
+        if args.starbytes_runtime_profiles:
+            runtime_profile_path = run_raw_dir / f"{args.mode}_{workload}.runtime-profile.json"
+            capture_starbytes_runtime_profile(root, inputs, args, workload, build_dir, runtime_profile_path)
 
     summary_path = summary_root / f"track_a_{args.mode}_{timestamp}.summary.json"
     report_path = summary_root / f"track_a_{args.mode}_{timestamp}.report.md"

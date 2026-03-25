@@ -7,6 +7,7 @@
 #include "starbytes/interop.h"
 #include "starbytes/runtime/RTEngine.h"
 #include "profile/CompileProfile.h"
+#include "profile/RuntimeProfile.h"
 
 #include <algorithm>
 #include <chrono>
@@ -56,6 +57,9 @@ struct DriverOptions {
     bool printModulePath = false;
     bool profileCompile = false;
     std::string profileCompileOutPath;
+    bool profileRuntime = false;
+    bool printRuntimeProfileSummary = false;
+    std::string profileRuntimeOutPath;
     bool logDiagnostics = true;
     bool autoLoadNative = true;
     bool infer64BitNumbers = false;
@@ -147,6 +151,7 @@ struct ResolverContext {
 };
 
 using CompileProfileData = starbytes::driver::profile::CompileProfileData;
+using RuntimeProfileReport = starbytes::driver::profile::RuntimeProfileReport;
 
 CompileProfileData *gActiveCompileProfile = nullptr;
 
@@ -1642,6 +1647,9 @@ void printHelp(std::ostream &out) {
     out << "      --profile-compile      Print structured compile phase timings.\n";
     out << "      --profile-compile-out <path>\n";
     out << "                              Write compile profile output to file.\n";
+    out << "      --profile-runtime      Print runtime profile summary after execution.\n";
+    out << "      --profile-runtime-out <path>\n";
+    out << "                              Write detailed runtime profile output to file.\n";
     out << "      --no-diagnostics       Do not print diagnostics buffered by runtime handlers.\n";
     out << "  -n, --native <path>        Load a native module binary before runtime execution (repeatable).\n";
     out << "  -L, --native-dir <dir>     Add a search directory for auto native module resolution (repeatable).\n";
@@ -1703,6 +1711,8 @@ ParseResult parseArgs(int argc, const char *argv[], DriverOptions &opts) {
     parser.addFlagOption("print-module-path");
     parser.addFlagOption("profile-compile");
     parser.addValueOption("profile-compile-out");
+    parser.addFlagOption("profile-runtime");
+    parser.addValueOption("profile-runtime-out");
     parser.addFlagOption("no-diagnostics");
     parser.addFlagOption("no-native-auto");
     parser.addFlagOption("infer-64bit-numbers");
@@ -1730,6 +1740,8 @@ ParseResult parseArgs(int argc, const char *argv[], DriverOptions &opts) {
     opts.cleanModule = parsed.hasFlag("clean");
     opts.printModulePath = parsed.hasFlag("print-module-path");
     opts.profileCompile = parsed.hasFlag("profile-compile");
+    opts.printRuntimeProfileSummary = parsed.hasFlag("profile-runtime");
+    opts.profileRuntime = opts.printRuntimeProfileSummary;
     opts.logDiagnostics = !parsed.hasFlag("no-diagnostics");
     opts.autoLoadNative = !parsed.hasFlag("no-native-auto");
     opts.infer64BitNumbers = parsed.hasFlag("infer-64bit-numbers");
@@ -1751,6 +1763,11 @@ ParseResult parseArgs(int argc, const char *argv[], DriverOptions &opts) {
     if(!profileOutValues.empty()) {
         opts.profileCompileOutPath = profileOutValues.back();
         opts.profileCompile = true;
+    }
+    const auto &runtimeProfileOutValues = parsed.values("profile-runtime-out");
+    if(!runtimeProfileOutValues.empty()) {
+        opts.profileRuntimeOutPath = runtimeProfileOutValues.back();
+        opts.profileRuntime = true;
     }
     opts.nativeModules.assign(parsed.values("native").begin(),parsed.values("native").end());
     opts.nativeSearchDirs.assign(parsed.values("native-dir").begin(),parsed.values("native-dir").end());
@@ -1853,6 +1870,9 @@ int main(int argc, const char *argv[]) {
     auto sessionStart = std::chrono::steady_clock::now();
     CompileProfileData profile;
     std::string profileOutPath;
+    RuntimeProfileReport runtimeProfile;
+    std::string runtimeProfileOutPath;
+    bool printRuntimeProfileSummary = false;
     auto finishWith = [&](int code) {
         gActiveCompileProfile = nullptr;
         if(profile.enabled) {
@@ -1871,6 +1891,19 @@ int main(int argc, const char *argv[]) {
                 starbytes::driver::profile::printCompileProfile(std::cout, profile, code == 0);
             }
         }
+        runtimeProfile.success = code == 0;
+        if(runtimeProfile.enabled && printRuntimeProfileSummary) {
+            starbytes::driver::profile::printRuntimeProfileSummary(std::cout, runtimeProfile);
+        }
+        if(runtimeProfile.enabled && !runtimeProfileOutPath.empty()) {
+            std::ofstream out(runtimeProfileOutPath, std::ios::out | std::ios::trunc);
+            if(!out.is_open()) {
+                std::cerr << "Failed to open runtime profile output file: " << runtimeProfileOutPath << std::endl;
+                return 1;
+            }
+            starbytes::driver::profile::printRuntimeProfileJson(out, runtimeProfile);
+            out.close();
+        }
         return code;
     };
 
@@ -1885,6 +1918,12 @@ int main(int argc, const char *argv[]) {
     profile.command = commandToString(opts.command);
     profile.input = opts.scriptPath;
     profile.moduleName = opts.moduleName;
+    runtimeProfile.enabled = opts.profileRuntime;
+    runtimeProfile.command = commandToString(opts.command);
+    runtimeProfile.input = opts.scriptPath;
+    runtimeProfile.moduleName = opts.moduleName;
+    runtimeProfileOutPath = opts.profileRuntimeOutPath;
+    printRuntimeProfileSummary = opts.printRuntimeProfileSummary;
 
     if(!parsed.ok) {
         if(!parsed.error.empty()) {
@@ -1913,6 +1952,7 @@ int main(int argc, const char *argv[]) {
     auto workspaceRoot = std::filesystem::current_path();
     auto absoluteInputPath = std::filesystem::path(makeAbsolutePathString(inputPath));
     profile.input = absoluteInputPath.string();
+    runtimeProfile.input = absoluteInputPath.string();
 
     StarbytesRuntimeSetExecutablePath((argc > 0 && argv[0]) ? argv[0] : "");
     StarbytesRuntimeSetScriptPath(absoluteInputPath.string().c_str());
@@ -1986,6 +2026,7 @@ int main(int argc, const char *argv[]) {
         opts.moduleName = defaultModuleNameForPath(absoluteInputPath);
     }
     profile.moduleName = opts.moduleName;
+    runtimeProfile.moduleName = opts.moduleName;
 
     if(graph.rootIsDirectory && opts.executeAfterCompile && !graph.rootHasMainSource) {
         std::cerr << "Missing entrypoint `main." << STARBYTES_SRCFILE_EXT
@@ -2298,6 +2339,7 @@ int main(int argc, const char *argv[]) {
         }
 
         auto interp = starbytes::Runtime::Interp::Create();
+        interp->setProfilingEnabled(opts.profileRuntime || profile.enabled);
         std::unordered_set<std::string> loadedNativePaths;
         auto tryLoadNativeModule = [&](const std::filesystem::path &nativePath, bool required) -> bool {
             auto normalizedPath = makeAbsolutePathString(nativePath);
@@ -2351,17 +2393,27 @@ int main(int argc, const char *argv[]) {
         }
 
         interp->exec(rtcodeIn);
-        if(interp->hasRuntimeError() && starbytes::stdDiagnosticHandler) {
-            starbytes::stdDiagnosticHandler->push(starbytes::StandardDiagnostic::createError(interp->takeRuntimeError()));
+        std::string runtimeErrorMessage;
+        if(interp->hasRuntimeError()) {
+            runtimeErrorMessage = interp->takeRuntimeError();
+            if(starbytes::stdDiagnosticHandler) {
+                starbytes::stdDiagnosticHandler->push(starbytes::StandardDiagnostic::createError(runtimeErrorMessage));
+            }
         }
-        if(profile.enabled) {
+        if(profile.enabled || opts.profileRuntime) {
             auto runtimeEnd = std::chrono::steady_clock::now();
-            profile.runtimeExecNs = std::chrono::duration_cast<std::chrono::nanoseconds>(runtimeEnd - runtimeStart).count();
-            auto runtimeProfile = interp->getProfileData();
-            profile.runtimeQuickenedSites = runtimeProfile.quickenedSitesInstalled;
-            profile.runtimeQuickenedExecutions = runtimeProfile.quickenedExecutions;
-            profile.runtimeQuickenedSpecializations = runtimeProfile.quickenedSpecializations;
-            profile.runtimeQuickenedFallbacks = runtimeProfile.quickenedFallbacks;
+            auto interpProfile = interp->getProfileData();
+            if(profile.enabled) {
+                profile.runtimeExecNs = std::chrono::duration_cast<std::chrono::nanoseconds>(runtimeEnd - runtimeStart).count();
+                profile.runtimeQuickenedSites = interpProfile.quickenedSitesInstalled;
+                profile.runtimeQuickenedExecutions = interpProfile.quickenedExecutions;
+                profile.runtimeQuickenedSpecializations = interpProfile.quickenedSpecializations;
+                profile.runtimeQuickenedFallbacks = interpProfile.quickenedFallbacks;
+            }
+            if(opts.profileRuntime) {
+                runtimeProfile.runtime = interpProfile;
+                runtimeProfile.runtimeError = runtimeErrorMessage;
+            }
         }
     }
 

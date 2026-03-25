@@ -396,7 +396,7 @@ That is more likely to deliver real speedups than trying to perfect immediate re
 
 ## Recommended Phases
 
-## Phase 1: Inline builtin payloads into the object header
+## Phase 1: Inline builtin payloads into the object header [Implemented]
 
 ### Goal
 
@@ -435,7 +435,15 @@ Low-to-medium.
 
 This is structural but localized to runtime object representation.
 
-## Phase 2: Stop storing builtin metadata as generic object properties
+### Status
+
+- implemented
+- `Num`, `Bool`, `FuncRef`, and `Task` now store their fixed-size payloads inline in `_StarbytesObject`
+- numeric wrappers no longer allocate a second heap block for `StarbytesNumPriv`
+- bool/function-ref/task objects no longer allocate separate private payload structs
+- task teardown still preserves dynamic payload cleanup for retained result values and error strings
+
+## Phase 2: Stop storing builtin metadata as generic object properties [Implemented]
 
 ### Goal
 
@@ -471,7 +479,15 @@ Low.
 
 Semantics can remain unchanged because the runtime already handles builtin members specially in many places.
 
-## Phase 3: Replace class instance property bags with field-slot layouts
+### Status
+
+- implemented
+- `String.length`, `Array.length`, and `Dict.length` are now stored as direct runtime metadata instead of generic object properties
+- `Dict.keys` and `Dict.values` now live in dedicated dict storage instead of generic object properties
+- runtime member access now synthesizes builtin `length` reads from direct metadata
+- native/runtime helper code now uses dedicated dict getters instead of property-table lookup
+
+## Phase 3: Replace class instance property bags with field-slot layouts [Implemented]
 
 ### Goal
 
@@ -517,6 +533,14 @@ This should directly improve:
 Medium.
 
 This touches instance construction and field/member runtime behavior, but it is still conceptually straightforward.
+
+### Status
+
+- implemented
+- runtime class metadata now builds stable inherited field-slot layouts
+- class instances now allocate contiguous field storage when the class layout is known
+- runtime member reads/writes for class fields now resolve through slot access instead of linear property lookup
+- generic named-property fallback remains available for dynamic or legacy cases
 
 ## Phase 4: Add a small-object allocator / slab allocator
 

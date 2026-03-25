@@ -87,14 +87,29 @@ namespace starbytes {
                 StarbytesClassType t = StarbytesClassObjectGetClass(object);
                 
                 std::cout << reg[t] << "(" << std::flush;
-                unsigned prop_n = StarbytesObjectGetPropertyCount(object);
-                for(unsigned i = 0;i < prop_n;i++){
-                    if(i > 0){
+                bool needsSeparator = false;
+                unsigned fieldCount = StarbytesClassObjectGetFieldCount(object);
+                for(unsigned i = 0;i < fieldCount;i++){
+                    auto fieldName = StarbytesClassObjectGetFieldName(object,i);
+                    if(!fieldName){
+                        continue;
+                    }
+                    if(needsSeparator){
                         std::cout << ", " << std::flush;
                     }
+                    std::cout << fieldName << "=" << std::flush;
+                    _print_rt_obj(StarbytesClassObjectGetField(object,i),reg);
+                    needsSeparator = true;
+                }
+                unsigned prop_n = StarbytesObjectGetPropertyCount(object);
+                for(unsigned i = 0;i < prop_n;i++){
                     auto prop = StarbytesObjectIndexProperty(object,i);
+                    if(needsSeparator){
+                        std::cout << ", " << std::flush;
+                    }
                     std::cout << prop->name << "=" << std::flush;
                     _print_rt_obj(prop->data,reg);
+                    needsSeparator = true;
                 }
                 std::cout << ")" << std::flush;
             };
@@ -186,7 +201,7 @@ namespace starbytes {
             /// Print StarbytesDict
             else {
                     std::cout << "{" << std::flush;
-                    StarbytesArray keys = StarbytesObjectGetProperty(object,"keys"),vals = StarbytesObjectGetProperty(object,"values");
+                    StarbytesArray keys = StarbytesDictGetKeys(object),vals = StarbytesDictGetValues(object);
                     
                     auto len = StarbytesArrayGetLength(keys);
                     for(unsigned i = 0;i < len;i++){

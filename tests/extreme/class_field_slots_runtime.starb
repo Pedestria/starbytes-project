@@ -1,0 +1,32 @@
+import JSON
+
+class BaseNode {
+    decl left:Int = 1
+}
+
+class Node : BaseNode {
+    decl right:Int = 2
+
+    new(seed:Int) {
+        self.left = seed
+        self.right = seed + 1
+    }
+
+    func sum() Int {
+        return self.left + self.right
+    }
+}
+
+decl node = new Node(7)
+decl initialOk = node.left == 7 && node.right == 8 && node.sum() == 15
+node.right = 20
+decl updatedOk = node.left == 7 && node.right == 20 && node.sum() == 27
+secure(decl json = JSON.stringify(node)) catch {}
+decl jsonOk = json.length > 0
+
+print(node)
+print(json)
+
+if(initialOk && updatedOk && jsonOk) {
+    print("CLASS-FIELD-SLOTS-OK")
+}

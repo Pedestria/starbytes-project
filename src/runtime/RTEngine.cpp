@@ -20,6 +20,8 @@
 #include <vector>
 #include <deque>
 #include <limits>
+#include <chrono>
+#include <unordered_map>
 
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
@@ -98,6 +100,39 @@ static std::string resolveNativeCallbackName(const RTFuncTemplate *func){
         }
     }
     return defaultName;
+}
+
+static bool isExpressionOpcode(RTCode code){
+    return code == CODE_RTIVKFUNC
+        || code == CODE_UNARY_OPERATOR
+        || code == CODE_RTTYPED_NEGATE
+        || code == CODE_BINARY_OPERATOR
+        || code == CODE_RTTYPED_BINARY
+        || code == CODE_RTTYPED_COMPARE
+        || code == CODE_RTTYPECHECK
+        || code == CODE_RTTERNARY
+        || code == CODE_RTCAST
+        || code == CODE_RTTYPED_INTRINSIC
+        || code == CODE_RTMEMBER_SET
+        || code == CODE_RTMEMBER_IVK
+        || code == CODE_RTMEMBER_GET
+        || code == CODE_RTNEWOBJ
+        || code == CODE_RTREGEX_LITERAL
+        || code == CODE_RTVAR_SET
+        || code == CODE_RTLOCAL_REF
+        || code == CODE_RTTYPED_LOCAL_REF
+        || code == CODE_RTLOCAL_SET
+        || code == CODE_RTARRAY_LITERAL
+        || code == CODE_RTINDEX_GET
+        || code == CODE_RTTYPED_INDEX_GET
+        || code == CODE_RTINDEX_SET
+        || code == CODE_RTTYPED_INDEX_SET
+        || code == CODE_RTDICT_LITERAL
+        || code == CODE_RTOBJCREATE
+        || code == CODE_RTINTOBJCREATE
+        || code == CODE_RTVAR_REF
+        || code == CODE_RTOBJVAR_REF
+        || code == CODE_RTFUNC_REF;
 }
 
 static std::string resolveNativeValueName(const RTVar *var){
@@ -623,6 +658,55 @@ struct ScheduledTaskCall {
 };
 
 class InterpImpl final : public Interp {
+    struct RuntimeClassLayout {
+        std::vector<const char *> fieldNames;
+        string_map<uint32_t> slotByName;
+    };
+
+    struct ActiveFunctionProfile {
+        size_t statsIndex = 0;
+        std::chrono::steady_clock::time_point start;
+        uint64_t childNs = 0;
+    };
+
+    class ScopedSubsystemTimer {
+        InterpImpl *owner = nullptr;
+        RuntimeProfileSubsystem subsystem = RuntimeProfileSubsystem::FunctionCall;
+        std::chrono::steady_clock::time_point start;
+    public:
+        ScopedSubsystemTimer(InterpImpl *owner,RuntimeProfileSubsystem subsystem)
+            : owner(owner), subsystem(subsystem) {
+            if(owner && owner->runtimeProfilingEnabled){
+                start = std::chrono::steady_clock::now();
+            }
+        }
+
+        ~ScopedSubsystemTimer(){
+            if(!owner || !owner->runtimeProfilingEnabled){
+                return;
+            }
+            auto end = std::chrono::steady_clock::now();
+            auto ns = (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+            owner->addSubsystemTime(subsystem,ns);
+        }
+    };
+
+    class ScopedFunctionProfile {
+        InterpImpl *owner = nullptr;
+    public:
+        ScopedFunctionProfile(InterpImpl *owner,const std::string &name):owner(owner){
+            if(owner){
+                owner->beginFunctionProfile(name);
+            }
+        }
+
+        ~ScopedFunctionProfile(){
+            if(owner){
+                owner->endFunctionProfile();
+            }
+        }
+    };
+
     struct LocalSlot {
         RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
         bool hasNumericValue = false;
@@ -654,16 +738,27 @@ class InterpImpl final : public Interp {
     map<StarbytesClassType,std::string> runtimeClassRegistry;
     string_map<StarbytesClassType> classTypeByName;
     map<StarbytesClassType,size_t> classIndexByType;
+    map<StarbytesClassType,RuntimeClassLayout> classLayouts;
     std::string lastRuntimeError;
     RuntimeProfileData runtimeProfile;
+    bool runtimeProfilingEnabled = false;
+    std::unordered_map<std::string,size_t> functionProfileIndex;
+    std::vector<ActiveFunctionProfile> activeFunctionProfiles;
 
     void execNorm(RTCode &code,std::istream &in,bool * willReturn,StarbytesObject *return_val);
+    void recordOpcodeDispatch(RTCode code);
+    void addSubsystemTime(RuntimeProfileSubsystem subsystem,uint64_t ns);
+    void beginFunctionProfile(const std::string &name);
+    void endFunctionProfile();
     
     StarbytesObject invokeFunc(std::istream &in,RTFuncTemplate *func_temp,unsigned argCount,StarbytesObject boundSelf = nullptr);
     RTClass *findClassByName(string_ref className);
     RTClass *findClassByType(StarbytesClassType classType);
     bool buildClassHierarchy(RTClass *classMeta,std::vector<RTClass *> &hierarchy);
     RTClass *findMethodOwnerInHierarchy(RTClass *classMeta,const std::string &methodName);
+    const RuntimeClassLayout *findClassLayout(StarbytesClassType classType) const;
+    void rebuildClassLayout(StarbytesClassType classType);
+    bool lookupClassFieldSlot(StarbytesObject object,const std::string &memberName,uint32_t &slotOut) const;
     RTFuncTemplate *findFunctionByName(string_ref functionName);
     LocalFrame *currentLocalFrame();
     const LocalFrame *currentLocalFrame() const;
@@ -711,6 +806,10 @@ public:
     };
     ~InterpImpl() override;
     void exec(std::istream &in) override;
+    void setProfilingEnabled(bool enabled) override {
+        runtimeProfilingEnabled = enabled;
+        runtimeProfile.enabled = enabled;
+    }
     bool addExtension(const std::string &path) override;
     bool hasRuntimeError() const override {
         return !lastRuntimeError.empty();
@@ -791,6 +890,62 @@ RTClass *InterpImpl::findMethodOwnerInHierarchy(RTClass *classMeta,const std::st
     return nullptr;
 }
 
+const InterpImpl::RuntimeClassLayout *InterpImpl::findClassLayout(StarbytesClassType classType) const{
+    auto foundLayout = classLayouts.find(classType);
+    if(foundLayout == classLayouts.end()){
+        return nullptr;
+    }
+    return &foundLayout->second;
+}
+
+void InterpImpl::rebuildClassLayout(StarbytesClassType classType){
+    auto *classMeta = findClassByType(classType);
+    if(!classMeta){
+        classLayouts.erase(classType);
+        return;
+    }
+
+    std::vector<RTClass *> hierarchy;
+    if(!buildClassHierarchy(classMeta,hierarchy)){
+        hierarchy.push_back(classMeta);
+    }
+
+    RuntimeClassLayout layout;
+    for(auto *classInChain : hierarchy){
+        for(auto &field : classInChain->fields){
+            auto fieldName = rtidToString(field.id);
+            if(layout.slotByName.find(fieldName) != layout.slotByName.end()){
+                continue;
+            }
+            auto slot = (uint32_t)layout.fieldNames.size();
+            layout.fieldNames.push_back(field.id.value);
+            layout.slotByName.insert(std::make_pair(std::move(fieldName),slot));
+        }
+    }
+
+    classLayouts[classType] = std::move(layout);
+}
+
+bool InterpImpl::lookupClassFieldSlot(StarbytesObject object,const std::string &memberName,uint32_t &slotOut) const{
+    slotOut = 0;
+    if(!object || StarbytesObjectIs(object)){
+        return false;
+    }
+    auto *layout = findClassLayout(StarbytesClassObjectGetClass(object));
+    if(!layout){
+        return false;
+    }
+    if(StarbytesClassObjectGetFieldCount(object) != layout->fieldNames.size()){
+        return false;
+    }
+    auto foundSlot = layout->slotByName.find(memberName);
+    if(foundSlot == layout->slotByName.end()){
+        return false;
+    }
+    slotOut = foundSlot->second;
+    return true;
+}
+
 RTFuncTemplate *InterpImpl::findFunctionByName(string_ref functionName){
     for(auto &funcTemplate : functions){
         string_ref tempName(funcTemplate.name.value,(uint32_t)funcTemplate.name.len);
@@ -813,6 +968,63 @@ const InterpImpl::LocalFrame *InterpImpl::currentLocalFrame() const{
         return nullptr;
     }
     return &localFrames.back();
+}
+
+void InterpImpl::recordOpcodeDispatch(RTCode code){
+    if(!runtimeProfilingEnabled){
+        return;
+    }
+    runtimeProfile.dispatchCount += 1;
+    runtimeProfile.opcodeExecutions[code] += 1;
+}
+
+void InterpImpl::addSubsystemTime(RuntimeProfileSubsystem subsystem,uint64_t ns){
+    if(!runtimeProfilingEnabled){
+        return;
+    }
+    auto index = static_cast<size_t>(subsystem);
+    if(index >= runtimeProfile.subsystemNs.size()){
+        return;
+    }
+    runtimeProfile.subsystemNs[index] += ns;
+}
+
+void InterpImpl::beginFunctionProfile(const std::string &name){
+    if(!runtimeProfilingEnabled || name.empty()){
+        return;
+    }
+    size_t statsIndex = 0;
+    auto found = functionProfileIndex.find(name);
+    if(found == functionProfileIndex.end()){
+        statsIndex = runtimeProfile.functionStats.size();
+        functionProfileIndex.emplace(name,statsIndex);
+        runtimeProfile.functionStats.push_back({name,0,0,0});
+    }
+    else {
+        statsIndex = found->second;
+    }
+    runtimeProfile.functionCallCount += 1;
+    runtimeProfile.functionStats[statsIndex].callCount += 1;
+    activeFunctionProfiles.push_back({statsIndex,std::chrono::steady_clock::now(),0});
+}
+
+void InterpImpl::endFunctionProfile(){
+    if(!runtimeProfilingEnabled || activeFunctionProfiles.empty()){
+        return;
+    }
+    auto frame = activeFunctionProfiles.back();
+    activeFunctionProfiles.pop_back();
+    auto end = std::chrono::steady_clock::now();
+    auto totalNs = (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(end - frame.start).count();
+    auto selfNs = totalNs > frame.childNs ? totalNs - frame.childNs : 0;
+    if(frame.statsIndex < runtimeProfile.functionStats.size()){
+        auto &stats = runtimeProfile.functionStats[frame.statsIndex];
+        stats.totalNs += totalNs;
+        stats.selfNs += selfNs;
+    }
+    if(!activeFunctionProfiles.empty()){
+        activeFunctionProfiles.back().childNs += totalNs;
+    }
 }
 
 void InterpImpl::pushLocalFrame(const RTFuncTemplate *funcTemp){
@@ -1344,7 +1556,9 @@ RTQuickenedExpr *InterpImpl::getOrInstallQuickenedExpr(std::istream &in,
     }
     auto inserted = funcTemplate->quickenedExprs.insert(std::make_pair(offset,candidate));
     if(inserted.second){
-        runtimeProfile.quickenedSitesInstalled += 1;
+        if(runtimeProfilingEnabled){
+            runtimeProfile.quickenedSitesInstalled += 1;
+        }
     }
     return &inserted.first->second;
 }
@@ -1361,13 +1575,17 @@ bool InterpImpl::tryExecuteQuickenedExpr(std::istream &in,
         in.seekg(endPos);
         result = value;
         expr.executions += 1;
-        runtimeProfile.quickenedExecutions += 1;
+        if(runtimeProfilingEnabled){
+            runtimeProfile.quickenedExecutions += 1;
+        }
         return true;
     };
 
     auto fail = [&]() -> bool {
         expr.fallbackCount += 1;
-        runtimeProfile.quickenedFallbacks += 1;
+        if(runtimeProfilingEnabled){
+            runtimeProfile.quickenedFallbacks += 1;
+        }
         return false;
     };
 
@@ -1381,7 +1599,9 @@ bool InterpImpl::tryExecuteQuickenedExpr(std::istream &in,
         }
         if(!hasRhs){
             expr.numericKind = typedKindFromNumType(lhsType);
-            runtimeProfile.quickenedSpecializations += 1;
+            if(runtimeProfilingEnabled){
+                runtimeProfile.quickenedSpecializations += 1;
+            }
             return expr.numericKind;
         }
         StarbytesNumT rhsType = NumTypeInt;
@@ -1389,7 +1609,9 @@ bool InterpImpl::tryExecuteQuickenedExpr(std::istream &in,
             return RTTYPED_NUM_OBJECT;
         }
         expr.numericKind = typedKindFromNumType(promoteNumericType(lhsType,rhsType));
-        runtimeProfile.quickenedSpecializations += 1;
+        if(runtimeProfilingEnabled){
+            runtimeProfile.quickenedSpecializations += 1;
+        }
         return expr.numericKind;
     };
 
@@ -1585,6 +1807,7 @@ StarbytesObject InterpImpl::invokeNativeFunc(std::istream &in,
                                              StarbytesFuncCallback callback,
                                              unsigned argCount,
                                              StarbytesObject boundSelf){
+    ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::NativeCall);
     std::vector<StarbytesObject> args;
     args.reserve(argCount + (boundSelf ? 1u : 0u));
     if(boundSelf){
@@ -1629,6 +1852,7 @@ StarbytesObject InterpImpl::invokeNativeFunc(std::istream &in,
 StarbytesObject InterpImpl::invokeNativeFuncWithValues(StarbytesFuncCallback callback,
                                                        ArrayRef<StarbytesObject> args,
                                                        StarbytesObject boundSelf){
+    ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::NativeCall);
     std::vector<StarbytesObject> callArgs;
     callArgs.reserve(args.size() + (boundSelf ? 1u : 0u));
     if(boundSelf){
@@ -1675,6 +1899,9 @@ StarbytesObject InterpImpl::invokeFuncWithValues(RTFuncTemplate *func_temp,
     }
     std::string parentScope = allocator->currentScope;
     string_ref func_name = {func_temp->name.value,(uint32_t)func_temp->name.len};
+    std::string functionName = func_name.str();
+    ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::FunctionCall);
+    ScopedFunctionProfile functionProfile(this,functionName);
 
     if(func_name == "print"){
         if(!args.empty()){
@@ -1863,6 +2090,7 @@ void InterpImpl::processOneMicrotask(){
 }
 
 void InterpImpl::processMicrotasks(){
+    ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::Microtasks);
     if(isDrainingMicrotasks){
         return;
     }
@@ -1881,6 +2109,9 @@ StarbytesObject InterpImpl::invokeFunc(std::istream & in,RTFuncTemplate *func_te
     }
     std::string parentScope = allocator->currentScope;
     string_ref func_name = {func_temp->name.value,(uint32_t)func_temp->name.len};
+    std::string functionName = func_name.str();
+    ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::FunctionCall);
+    ScopedFunctionProfile functionProfile(this,functionName);
     
     if(func_name == "print"){
         if(argCount > 0){
@@ -1994,6 +2225,9 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
     auto exprStart = in.tellg();
     RTCode code;
     in.read((char *)&code,sizeof(RTCode));
+    if(code != CODE_MODULE_END){
+        recordOpcodeDispatch(code);
+    }
     if(code != CODE_MODULE_END){
         if(auto *quickened = getOrInstallQuickenedExpr(in,exprStart,code)){
             StarbytesObject quickenedResult = nullptr;
@@ -2904,6 +3138,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             return evalExpr(in);
         }
         case CODE_RTINDEX_GET: {
+            ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::IndexAccess);
             auto collection = evalExpr(in);
             auto index = evalExpr(in);
             if(!collection || !index){
@@ -2963,6 +3198,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             return result;
         }
         case CODE_RTTYPED_INDEX_GET: {
+            ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::IndexAccess);
             RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
             in.read((char *)&kind,sizeof(kind));
             auto collection = evalExpr(in);
@@ -2999,6 +3235,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             return result;
         }
         case CODE_RTINDEX_SET: {
+            ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::IndexAccess);
             auto collection = evalExpr(in);
             auto index = evalExpr(in);
             auto value = evalExpr(in);
@@ -3050,6 +3287,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             return value;
         }
         case CODE_RTTYPED_INDEX_SET: {
+            ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::IndexAccess);
             RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
             in.read((char *)&kind,sizeof(kind));
             auto collection = evalExpr(in);
@@ -3098,6 +3336,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             return value;
         }
         case CODE_RTNEWOBJ : {
+            ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::ObjectAllocation);
             RTID classId;
             in >> &classId;
             std::string className = rtidToString(classId);
@@ -3116,23 +3355,35 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 classType = foundClassType->second;
             }
 
-            StarbytesObject instance = StarbytesClassObjectNew(classType);
+            const RuntimeClassLayout *classLayout = findClassLayout(classType);
+            StarbytesObject instance = nullptr;
+            if(classLayout){
+                const char *const *fieldNames = classLayout->fieldNames.empty() ? nullptr : classLayout->fieldNames.data();
+                instance = StarbytesClassObjectNewWithFields(classType,(unsigned int)classLayout->fieldNames.size(),fieldNames);
+                if(!instance){
+                    discardExprArgs(in,argCount);
+                    lastRuntimeError = "failed to allocate class instance";
+                    return nullptr;
+                }
+                for(unsigned int slot = 0; slot < classLayout->fieldNames.size(); ++slot){
+                    auto defaultValue = StarbytesBoolNew(StarbytesBoolFalse);
+                    StarbytesClassObjectSetField(instance,slot,defaultValue);
+                }
+            }
+            else {
+                instance = StarbytesClassObjectNew(classType);
+                if(!instance){
+                    discardExprArgs(in,argCount);
+                    lastRuntimeError = "failed to allocate class instance";
+                    return nullptr;
+                }
+            }
+
             auto *classMeta = findClassByType(classType);
             if(classMeta){
                 std::vector<RTClass *> hierarchy;
                 if(!buildClassHierarchy(classMeta,hierarchy)){
                     hierarchy.push_back(classMeta);
-                }
-
-                for(auto *classInChain : hierarchy){
-                    for(auto &field : classInChain->fields){
-                        std::string fieldName = rtidToString(field.id);
-                        auto existingProperty = StarbytesObjectGetProperty(instance,fieldName.c_str());
-                        if(existingProperty){
-                            continue;
-                        }
-                        StarbytesObjectAddProperty(instance,const_cast<char *>(fieldName.c_str()),StarbytesBoolNew(StarbytesBoolFalse));
-                    }
                 }
 
                 for(auto *classInChain : hierarchy){
@@ -3185,6 +3436,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             return instance;
         }
         case CODE_RTMEMBER_GET : {
+            ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::MemberAccess);
             auto object = evalExpr(in);
             RTID memberId;
             in >> &memberId;
@@ -3192,9 +3444,31 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
 
             StarbytesObject value = nullptr;
             if(object){
-                value = StarbytesObjectGetProperty(object,memberName.c_str());
-                if(value){
-                    StarbytesObjectReference(value);
+                if(memberName == "length"){
+                    if(StarbytesObjectTypecheck(object,StarbytesStrType())){
+                        value = StarbytesNumNew(NumTypeInt,(int)StarbytesStrLength(object));
+                    }
+                    else if(StarbytesObjectTypecheck(object,StarbytesArrayType())){
+                        value = StarbytesNumNew(NumTypeInt,(int)StarbytesArrayGetLength(object));
+                    }
+                    else if(StarbytesObjectTypecheck(object,StarbytesDictType())){
+                        value = StarbytesNumNew(NumTypeInt,(int)StarbytesDictGetLength(object));
+                    }
+                }
+                if(!value){
+                    uint32_t fieldSlot = 0;
+                    if(lookupClassFieldSlot(object,memberName,fieldSlot)){
+                        value = StarbytesClassObjectGetField(object,fieldSlot);
+                        if(value){
+                            StarbytesObjectReference(value);
+                        }
+                    }
+                }
+                if(!value){
+                    value = StarbytesObjectGetProperty(object,memberName.c_str());
+                    if(value){
+                        StarbytesObjectReference(value);
+                    }
                 }
                 StarbytesObjectRelease(object);
             }
@@ -3204,6 +3478,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             return StarbytesBoolNew(StarbytesBoolFalse);
         }
         case CODE_RTMEMBER_SET : {
+            ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::MemberAccess);
             auto object = evalExpr(in);
             RTID memberId;
             in >> &memberId;
@@ -3217,6 +3492,22 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             }
 
             std::string memberName = rtidToString(memberId);
+            if((StarbytesObjectTypecheck(object,StarbytesStrType()) ||
+                StarbytesObjectTypecheck(object,StarbytesArrayType()) ||
+                StarbytesObjectTypecheck(object,StarbytesDictType())) &&
+               (memberName == "length" || memberName == "keys" || memberName == "values")){
+                StarbytesObjectRelease(object);
+                StarbytesObjectRelease(value);
+                lastRuntimeError = "Builtin metadata member `" + memberName + "` is read-only";
+                return nullptr;
+            }
+            uint32_t fieldSlot = 0;
+            if(lookupClassFieldSlot(object,memberName,fieldSlot)){
+                StarbytesObjectReference(value);
+                StarbytesClassObjectSetField(object,fieldSlot,value);
+                StarbytesObjectRelease(object);
+                return value;
+            }
             bool found = false;
             unsigned propCount = StarbytesObjectGetPropertyCount(object);
             for(unsigned i = 0;i < propCount;i++){
@@ -3240,6 +3531,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             return value;
         }
         case CODE_RTMEMBER_IVK : {
+            ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::MemberAccess);
             auto object = evalExpr(in);
             RTID memberId;
             in >> &memberId;
@@ -3797,14 +4089,14 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 }
 
                 if(StarbytesObjectTypecheck(object,StarbytesDictType())){
-                    auto dictLen = StarbytesObjectGetProperty(object,"length");
-                    auto keys = StarbytesObjectGetProperty(object,"keys");
-                    auto values = StarbytesObjectGetProperty(object,"values");
+                    auto dictLen = StarbytesDictGetLength(object);
+                    auto keys = StarbytesDictGetKeys(object);
+                    auto values = StarbytesDictGetValues(object);
                     if(methodName == "isEmpty"){
                         if(argCount != 0){
                             return failWithArgs("Dict.isEmpty expects 0 arguments");
                         }
-                        bool isEmpty = !dictLen || StarbytesNumGetIntValue(dictLen) == 0;
+                        bool isEmpty = dictLen == 0;
                         StarbytesObjectRelease(object);
                         return StarbytesBoolNew((StarbytesBoolVal)isEmpty);
                     }
@@ -3852,9 +4144,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                         }
                         StarbytesArrayPop(keys);
                         StarbytesArrayPop(values);
-                        if(dictLen){
-                            StarbytesNumAssign(dictLen,NumTypeInt,(int)(len - 1));
-                        }
+                        StarbytesDictSetLength(object,len - 1);
                         releaseArgs(args);
                         StarbytesObjectRelease(object);
                         return removed;
@@ -3897,9 +4187,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                         while(values && StarbytesArrayGetLength(values) > 0){
                             StarbytesArrayPop(values);
                         }
-                        if(dictLen){
-                            StarbytesNumAssign(dictLen,NumTypeInt,0);
-                        }
+                        StarbytesDictSetLength(object,0);
                         StarbytesObjectRelease(object);
                         return StarbytesBoolNew((StarbytesBoolVal)true);
                     }
@@ -3953,6 +4241,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             break;
         }
         case CODE_RTREGEX_LITERAL: {
+            ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::ObjectAllocation);
             RTID patternId;
             RTID flagsId;
             in >> &patternId;
@@ -4395,6 +4684,9 @@ void InterpImpl::executeRuntimeBlock(std::istream &in,RTCode endCode,bool *willR
 }
 
 void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,StarbytesObject *return_val){
+    if(!isExpressionOpcode(code)){
+        recordOpcodeDispatch(code);
+    }
     if(code == CODE_RTVAR){
         RTVar var;
         in >> &var;
@@ -4667,11 +4959,15 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
         runtimeClassRegistry[classType] = className;
         classIndexByType[classType] = classes.size();
         classes.emplace_back(std::move(_class));
+        for(const auto &entry : classIndexByType){
+            rebuildClassLayout(entry.first);
+        }
     }
 }
 
 void InterpImpl::exec(std::istream & in){
     std::cout << "Interp Starting" << std::endl;
+    auto execStart = std::chrono::steady_clock::now();
     RTCode code = CODE_MODULE_END;
     std::string g = "GLOBAL";
     allocator->setScope(g);
@@ -4696,6 +4992,10 @@ void InterpImpl::exec(std::istream & in){
     processMicrotasks();
     allocator->clearScope();
     activeInput = nullptr;
+    if(runtimeProfilingEnabled){
+        auto execEnd = std::chrono::steady_clock::now();
+        runtimeProfile.totalRuntimeNs += (uint64_t)std::chrono::duration_cast<std::chrono::nanoseconds>(execEnd - execStart).count();
+    }
 }
 
 InterpImpl::~InterpImpl(){

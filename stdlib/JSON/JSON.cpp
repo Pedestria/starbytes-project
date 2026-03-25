@@ -215,8 +215,8 @@ bool starbytesToJson(StarbytesObject object,Value &out,Document::AllocatorType &
         return true;
     }
     if(StarbytesObjectTypecheck(object,StarbytesDictType())) {
-        auto keys = StarbytesObjectGetProperty(object,"keys");
-        auto values = StarbytesObjectGetProperty(object,"values");
+        auto keys = StarbytesDictGetKeys(object);
+        auto values = StarbytesDictGetValues(object);
         if(!keys || !values || !StarbytesObjectTypecheck(keys,StarbytesArrayType()) || !StarbytesObjectTypecheck(values,StarbytesArrayType())) {
             return false;
         }
@@ -268,6 +268,20 @@ bool starbytesToJson(StarbytesObject object,Value &out,Document::AllocatorType &
 
     if(!StarbytesObjectIs(object)) {
         out.SetObject();
+        auto fieldCount = StarbytesClassObjectGetFieldCount(object);
+        for(unsigned i = 0; i < fieldCount; ++i) {
+            auto fieldName = StarbytesClassObjectGetFieldName(object,i);
+            if(fieldName == nullptr || fieldName[0] == '\0') {
+                continue;
+            }
+            Value key;
+            key.SetString(fieldName,allocator);
+            Value mapped;
+            if(!starbytesToJson(StarbytesClassObjectGetField(object,i),mapped,allocator,depth + 1)) {
+                return false;
+            }
+            out.AddMember(key,mapped,allocator);
+        }
         auto propCount = StarbytesObjectGetPropertyCount(object);
         for(unsigned i = 0; i < propCount; ++i) {
             auto *prop = StarbytesObjectIndexProperty(object,i);

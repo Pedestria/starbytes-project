@@ -54,6 +54,15 @@ add_starbytes_test(
 
 add_starbytes_test(
     NAME
+    "runtime-profile-test"
+    INCLUDE_LIB
+    FILES
+    "RuntimeProfileTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
     "diagnostic-baseline-test"
     INCLUDE_LIB
     FILES

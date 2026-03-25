@@ -87,7 +87,13 @@ typedef StarbytesObject StarbytesClassObject;
 
 StarbytesClassType StarbytesMakeClass(const char *name);
 StarbytesObject StarbytesClassObjectNew(StarbytesClassType type);
+StarbytesObject StarbytesClassObjectNewWithFields(StarbytesClassType type,unsigned int fieldCount,const char *const *fieldNames);
 StarbytesClassType StarbytesClassObjectGetClass(StarbytesObject);
+unsigned int StarbytesClassObjectGetFieldCount(StarbytesObject obj);
+const char *StarbytesClassObjectGetFieldName(StarbytesObject obj,unsigned int idx);
+StarbytesObject StarbytesClassObjectGetField(StarbytesObject obj,unsigned int idx);
+void StarbytesClassObjectSetField(StarbytesObject obj,unsigned int idx,StarbytesObject value);
+int StarbytesClassObjectFindField(StarbytesObject obj,const char *name);
 
 
 
@@ -158,6 +164,10 @@ StarbytesDict StarbytesDictNew();
 StarbytesDict StarbytesDictCopy(StarbytesDict);
 void StarbytesDictSet(StarbytesDict dict,StarbytesObject key,StarbytesObject val);
 StarbytesObject StarbytesDictGet(StarbytesDict dict,StarbytesObject key);
+unsigned int StarbytesDictGetLength(StarbytesDict dict);
+StarbytesArray StarbytesDictGetKeys(StarbytesDict dict);
+StarbytesArray StarbytesDictGetValues(StarbytesDict dict);
+void StarbytesDictSetLength(StarbytesDict dict,unsigned int length);
 /// @}
 ///
 ///@name Starbytes Boolean Methods

@@ -185,8 +185,8 @@ bool readDictStringEntries(StarbytesObject dict,std::vector<EntryPayload> &outEn
         return false;
     }
 
-    auto keys = StarbytesObjectGetProperty(dict,"keys");
-    auto values = StarbytesObjectGetProperty(dict,"values");
+    auto keys = StarbytesDictGetKeys(dict);
+    auto values = StarbytesDictGetValues(dict);
     if(!keys || !values || !StarbytesObjectTypecheck(keys,StarbytesArrayType()) || !StarbytesObjectTypecheck(values,StarbytesArrayType())) {
         return false;
     }

@@ -257,6 +257,10 @@ run_expect_success "field-definite-initialization-run" "$STARBYTES_BIN" run "$RO
 assert_log_contains "field-definite-initialization-run" "FIELD-DEFINITE-INIT-OK"
 assert_log_not_contains "field-definite-initialization-run" 'initialized more than once along the same constructor path'
 assert_log_not_contains "field-definite-initialization-run" 'partially initialized'
+run_expect_success "class-field-slots-runtime-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/class_field_slots_runtime.starb"
+run_expect_success "class-field-slots-runtime-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/class_field_slots_runtime.starb"
+assert_log_contains "class-field-slots-runtime-run" 'Node\(left='
+assert_log_contains "class-field-slots-runtime-run" 'CLASS-FIELD-SLOTS-OK'
 run_expect_success "partial-object-diagnostics-warning-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/partial_object_diagnostics_warning.starb"
 assert_log_contains "partial-object-diagnostics-warning-check" 'Partially initialized `self` escapes before required field is initialized: `other`'
 assert_log_contains "partial-object-diagnostics-warning-check" 'Method `ping` is called on partially initialized object; required field is not yet initialized: `other`'
