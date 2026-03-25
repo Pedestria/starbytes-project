@@ -63,6 +63,33 @@ static void StarbytesSetOwnedString(char **slot,const char *value){
     *slot = StarbytesDupString(value);
 }
 
+static unsigned utf8_scalar_length(const char *data){
+    if(data == NULL){
+        return 0;
+    }
+    const unsigned char *ptr = (const unsigned char *)data;
+    unsigned count = 0;
+    while(*ptr != '\0'){
+        unsigned char lead = *ptr;
+        size_t width = 1;
+        if((lead & 0x80u) == 0x00u){
+            width = 1;
+        }
+        else if((lead & 0xE0u) == 0xC0u && ptr[1] != '\0'){
+            width = 2;
+        }
+        else if((lead & 0xF0u) == 0xE0u && ptr[1] != '\0' && ptr[2] != '\0'){
+            width = 3;
+        }
+        else if((lead & 0xF8u) == 0xF0u && ptr[1] != '\0' && ptr[2] != '\0' && ptr[3] != '\0'){
+            width = 4;
+        }
+        ptr += width;
+        ++count;
+    }
+    return count;
+}
+
 static void StarbytesSetEnvVar(const char *name,const char *value){
     if(name == NULL){
         return;
@@ -659,7 +686,7 @@ StarbytesStr StarbytesStrNewWithData(const char * data){
     StarbytesStr str = StarbytesStrNew(StrEncodingUTF8);
     StarbytesObject len = StarbytesObjectGetProperty(str,"length");
     unsigned int dataLen = (unsigned int)strlen(data);
-    StarbytesNumAssign(len,NumTypeInt,dataLen);
+    StarbytesNumAssign(len,NumTypeInt,utf8_scalar_length(data));
     StarbytesStrPriv *privData = (StarbytesStrPriv *)str->privData;
     privData->data = malloc(sizeof(char) * (dataLen + 1));
     memcpy(privData->data,data,dataLen);
@@ -677,24 +704,17 @@ int StarbytesStrCompare(StarbytesStr lhs,StarbytesStr rhs){
     StarbytesStrPriv *privDataRhs = (StarbytesStrPriv *)rhs->privData;
     
     if(privDataLhs->encoding == privDataRhs->encoding){
+        if(privDataRhs->encoding == StrEncodingUTF8){
+            int cmp = strcmp((const char *)privDataLhs->data,(const char *)privDataRhs->data);
+            if(cmp == 0){
+                return COMPARE_EQUAL;
+            }
+            return cmp < 0 ? COMPARE_LESS : COMPARE_GREATER;
+        }
         uint32_t lhs_size = StarbytesStrLength(lhs);
         uint32_t rhs_size = StarbytesStrLength(rhs);
         if(lhs_size == rhs_size){
-            if(privDataRhs->encoding == StrEncodingUTF8){
-                char *lhs_it = (char *)privDataLhs->data;
-                char *rhs_it = (char *)privDataRhs->data;
-                
-                for(unsigned i = 0;i < lhs_size;i++){
-                    if(*lhs_it != *rhs_it){
-                        return COMPARE_NOTEQUAL;
-                    }
-                    ++lhs_it;
-                    ++rhs_it;
-                }
-                
-                return COMPARE_EQUAL;
-            }
-            else if(privDataRhs->encoding == StrEncodingUTF16){
+            if(privDataRhs->encoding == StrEncodingUTF16){
                 short *lhs_it = (short *)privDataLhs->data;
                 short *rhs_it = (short *)privDataRhs->data;
                 
@@ -743,6 +763,14 @@ char * StarbytesStrGetBuffer(StarbytesStr str){
 unsigned int StarbytesStrGetLength(StarbytesStr str){
     StarbytesObject len = StarbytesObjectGetProperty(str,"length");
     return (uint32_t)StarbytesNumGetIntValue(len);
+}
+
+unsigned StarbytesStrByteLength(StarbytesStr str){
+    StarbytesStrPriv *privData = (StarbytesStrPriv *)str->privData;
+    if(privData == NULL || privData->data == NULL){
+        return 0;
+    }
+    return (unsigned)strlen((const char *)privData->data);
 }
 
 /// Array Class

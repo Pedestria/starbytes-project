@@ -7,22 +7,22 @@ func intArg(args:String[],index:Int,fallback:Int) Int {
     return fallback
 }
 
-func A(i:Int,j:Int) Float {
+func A(i:Int,j:Int) Double {
     decl ij:Int = i + j
     decl denom:Int = ((ij * (ij + 1) / 2) + i + 1)
-    return 1.0 / Float(denom)
+    return 1.0 / Double(denom)
 }
 
 decl args = CmdLine.positionals()
 decl n:Int = intArg(args,0,120)
 decl iterations:Int = intArg(args,1,8)
 
-decl u:Float[] = []
-decl v:Float[] = []
-decl tmp:Float[] = []
+decl u:Double[] = []
+decl v:Double[] = []
+decl tmp:Double[] = []
 decl i:Int = 0
 decl j:Int = 0
-decl s:Float = 0.0
+decl s:Double = 0.0
 while(i < n){
     u.push(1.0)
     v.push(0.0)
@@ -82,8 +82,8 @@ while(t < iterations){
     t += 1
 }
 
-decl vBv:Float = 0.0
-decl vv:Float = 0.0
+decl vBv:Double = 0.0
+decl vv:Double = 0.0
 i = 0
 while(i < n){
     vBv += u[i] * v[i]

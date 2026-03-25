@@ -32,6 +32,7 @@ namespace starbytes {
                 std::string name;
                 ASTType *type;
                 bool isReadonly = false;
+                bool isProtected = false;
                 bool isDeprecated = false;
                 std::string deprecationMessage;
             };
@@ -44,6 +45,7 @@ namespace starbytes {
                 string_map<ASTType *> paramMap;
                 std::vector<std::pair<std::string,ASTType *>> orderedParams;
                 bool isLazy = false;
+                bool isProtected = false;
                 bool isDeprecated = false;
                 std::string deprecationMessage;
             };

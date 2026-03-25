@@ -1,0 +1,9 @@
+class Base {
+    decl token:Int = 1
+}
+
+class Derived : Base {
+    func token() Int {
+        return 1
+    }
+}

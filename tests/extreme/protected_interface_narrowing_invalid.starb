@@ -1,0 +1,10 @@
+interface Gate {
+    func ping() Int
+}
+
+class GateImpl : Gate {
+    @protected
+    func ping() Int {
+        return 1
+    }
+}

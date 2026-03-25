@@ -121,6 +121,20 @@ run_expect_success "core-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/core
 assert_log_contains "core-run" "EXTREME-CORE-OK"
 assert_log_contains "core-run" "OPS-BITWISE-OK"
 assert_log_contains "core-run" "OPS-SHORTCIRCUIT-OK"
+run_expect_success "string-indexing-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/string_indexing.starb"
+run_expect_success "string-indexing-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/string_indexing.starb"
+assert_log_contains "string-indexing-run" "STRING-INDEX-CATCH"
+assert_log_contains "string-indexing-run" "String.at index out of range"
+assert_log_contains "string-indexing-run" "STRING-INDEX-OK"
+run_expect_success "unicode-string-indexing-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/unicode_string_indexing.starb"
+run_expect_success "unicode-string-indexing-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/unicode_string_indexing.starb"
+assert_log_contains "unicode-string-indexing-run" "UNICODE-STRING-INDEX-CATCH"
+assert_log_contains "unicode-string-indexing-run" "String.at index out of range"
+assert_log_contains "unicode-string-indexing-run" "UNICODE-STRING-INDEX-OK"
+run_expect_failure "string-indexing-invalid-index-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/string_indexing_invalid_index.starb"
+assert_log_contains "string-indexing-invalid-index-check" "String indexing requires Int index"
+run_expect_failure "string-indexing-assign-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/string_indexing_assign_invalid.starb"
+assert_log_contains "string-indexing-assign-invalid-check" "Cannot assign through String index; String is immutable"
 run_expect_success "recursive-typed-locals-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/recursive_typed_locals_edge.starb"
 run_expect_success "recursive-typed-locals-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/recursive_typed_locals_edge.starb"
 assert_log_contains "recursive-typed-locals-run" "RECURSIVE-TYPED-LOCALS-OK"
@@ -151,6 +165,33 @@ assert_log_not_contains "constant-condition-no-warning-run" 'always true'
 assert_log_not_contains "constant-condition-no-warning-run" 'always false'
 assert_log_not_contains "constant-condition-no-warning-run" 'unreachable'
 assert_log_contains "constant-condition-no-warning-run" 'CONST-COND-NO-WARN-OK'
+run_expect_success "override-contracts-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/override_contracts.starb"
+run_expect_success "override-contracts-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/override_contracts.starb"
+assert_log_contains "override-contracts-run" 'OVERRIDE-CONTRACTS-OK'
+run_expect_failure "override-contract-param-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/override_contract_param_invalid.starb"
+assert_log_contains "override-contract-param-invalid-check" 'does not match inherited superclass parameter signature; accidental overloading is not supported'
+run_expect_failure "override-contract-return-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/override_contract_return_invalid.starb"
+assert_log_contains "override-contract-return-invalid-check" 'return type does not match inherited superclass method declaration'
+run_expect_failure "override-contract-generic-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/override_contract_generic_invalid.starb"
+assert_log_contains "override-contract-generic-invalid-check" 'generic parameter count does not match inherited superclass method declaration'
+run_expect_failure "override-contract-kind-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/override_contract_kind_invalid.starb"
+assert_log_contains "override-contract-kind-invalid-check" 'conflicts with inherited field `token`; invalid override kind'
+run_expect_success "protected-class-access-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/protected_class_access.starb"
+run_expect_success "protected-class-access-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/protected_class_access.starb"
+assert_log_contains "protected-class-access-run" 'PROTECTED-CLASS-OK'
+run_expect_success "protected-interface-access-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/protected_interface_access.starb"
+run_expect_success "protected-interface-access-run" "$STARBYTES_BIN" run "$ROOT_DIR/tests/extreme/protected_interface_access.starb"
+assert_log_contains "protected-interface-access-run" 'PROTECTED-INTERFACE-OK'
+run_expect_failure "protected-external-field-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/protected_external_field_invalid.starb"
+assert_log_contains "protected-external-field-invalid-check" 'Protected field `token` is not accessible from the current context'
+run_expect_failure "protected-external-method-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/protected_external_method_invalid.starb"
+assert_log_contains "protected-external-method-invalid-check" 'Protected method `ping` is not accessible from the current context'
+run_expect_failure "protected-narrowing-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/protected_narrowing_invalid.starb"
+assert_log_contains "protected-narrowing-invalid-check" 'narrows inherited superclass visibility from public to protected'
+run_expect_failure "protected-interface-narrowing-invalid-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/protected_interface_narrowing_invalid.starb"
+assert_log_contains "protected-interface-narrowing-invalid-check" 'narrows interface visibility from public to protected'
+run_expect_failure "protected-invalid-placement-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/protected_invalid_placement.starb"
+assert_log_contains "protected-invalid-placement-check" '@protected is only valid on class/interface methods and fields'
 run_expect_success "semantic-unused-bindings-check" "$STARBYTES_BIN" check "$ROOT_DIR/tests/extreme/semantic_unused_bindings.starb"
 assert_log_contains "semantic-unused-bindings-check" 'Imported module `Math` is unused'
 assert_log_contains "semantic-unused-bindings-check" 'Imported module `Unicode` is unused'

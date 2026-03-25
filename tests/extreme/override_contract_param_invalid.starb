@@ -1,0 +1,11 @@
+class Base {
+    func echo(value:Int) Int {
+        return value
+    }
+}
+
+class Derived : Base {
+    func echo(value:String) Int {
+        return 1
+    }
+}

@@ -65,6 +65,9 @@ func split(separator:String) Array<String>
 func repeat(count:Int) String
 ```
 
+- `length`, `at`, `slice`, `indexOf`, and `lastIndexOf` use Unicode scalar indexing.
+- `String[index]` is supported as sugar for scalar indexing and returns `String?`.
+
 ## `Array<T>` Members
 
 ```starbytes

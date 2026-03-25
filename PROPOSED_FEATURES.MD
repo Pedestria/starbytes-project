@@ -31,17 +31,20 @@ Expand/fix generics:
 
 LSP type resolution from the wrapped variable in secure decls.
 
+Remove CodeView's from LSP Hovers.
+
 Implement Qualified type refs
 
 Add compiled-regex caching on Regex objects once the API surface is locked.
-
-Are bitwise operations builtin into the runtime?
 
 Explore the limitation around assigning/casting concrete class instances to interface-typed values. 
 
 Fix contextual expected-type inference
 
 Fix full-file integration (so files execute appropriately)
+
+Move module graphing code and driver to `driver` subsystem in `src`, so that the LSP can use
+proper module resolution when searching for modules.
 
 Long bitwise ops in runtime
     width-specific integer semantics beyond current Int

@@ -133,6 +133,115 @@ static std::string mangleClassMethodName(string_ref className,string_ref methodN
     return out.str();
 }
 
+static int clampSliceBound(int bound,int len);
+
+static size_t utf8ScalarWidth(const std::string &text,size_t byteOffset){
+    if(byteOffset >= text.size()){
+        return 0;
+    }
+    auto lead = (unsigned char)text[byteOffset];
+    if((lead & 0x80u) == 0x00u){
+        return 1;
+    }
+    if((lead & 0xE0u) == 0xC0u && byteOffset + 1 < text.size()){
+        return 2;
+    }
+    if((lead & 0xF0u) == 0xE0u && byteOffset + 2 < text.size()){
+        return 3;
+    }
+    if((lead & 0xF8u) == 0xF0u && byteOffset + 3 < text.size()){
+        return 4;
+    }
+    return 1;
+}
+
+static int utf8ScalarCount(const std::string &text){
+    int count = 0;
+    size_t offset = 0;
+    while(offset < text.size()){
+        auto width = utf8ScalarWidth(text,offset);
+        if(width == 0){
+            break;
+        }
+        offset += width;
+        ++count;
+    }
+    return count;
+}
+
+static bool utf8ByteOffsetForScalarIndex(const std::string &text,int scalarIndex,size_t &byteOffsetOut){
+    if(scalarIndex < 0){
+        return false;
+    }
+    size_t offset = 0;
+    int current = 0;
+    while(offset < text.size()){
+        if(current == scalarIndex){
+            byteOffsetOut = offset;
+            return true;
+        }
+        auto width = utf8ScalarWidth(text,offset);
+        if(width == 0){
+            return false;
+        }
+        offset += width;
+        ++current;
+    }
+    if(current == scalarIndex){
+        byteOffsetOut = offset;
+        return true;
+    }
+    return false;
+}
+
+static bool utf8ScalarSlice(const std::string &text,int startScalar,int endScalar,std::string &out){
+    int scalarLength = utf8ScalarCount(text);
+    startScalar = clampSliceBound(startScalar,scalarLength);
+    endScalar = clampSliceBound(endScalar,scalarLength);
+    if(endScalar < startScalar){
+        endScalar = startScalar;
+    }
+    size_t startByte = 0;
+    size_t endByte = 0;
+    if(!utf8ByteOffsetForScalarIndex(text,startScalar,startByte)
+       || !utf8ByteOffsetForScalarIndex(text,endScalar,endByte)
+       || endByte < startByte){
+        return false;
+    }
+    out = text.substr(startByte,endByte - startByte);
+    return true;
+}
+
+static bool utf8ScalarAt(const std::string &text,int scalarIndex,std::string &out){
+    size_t startByte = 0;
+    if(!utf8ByteOffsetForScalarIndex(text,scalarIndex,startByte) || startByte >= text.size()){
+        return false;
+    }
+    auto width = utf8ScalarWidth(text,startByte);
+    if(width == 0 || startByte + width > text.size()){
+        return false;
+    }
+    out = text.substr(startByte,width);
+    return true;
+}
+
+static int utf8ScalarIndexForByteOffset(const std::string &text,size_t byteOffset){
+    if(byteOffset == std::string::npos || byteOffset > text.size()){
+        return -1;
+    }
+    int scalarIndex = 0;
+    size_t offset = 0;
+    while(offset < byteOffset && offset < text.size()){
+        auto width = utf8ScalarWidth(text,offset);
+        if(width == 0){
+            return -1;
+        }
+        offset += width;
+        ++scalarIndex;
+    }
+    return (offset == byteOffset) ? scalarIndex : -1;
+}
+
 static uint32_t regexCompileOptionsFromFlags(const std::string &flags){
     uint32_t options = 0;
     for(char flag : flags){
@@ -2821,6 +2930,27 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                     result = StarbytesArrayIndex(collection,(unsigned)idx);
                 }
             }
+            else if(StarbytesObjectTypecheck(collection,StarbytesStrType()) &&
+                    StarbytesObjectTypecheck(index,StarbytesNumType())){
+                int idx = -1;
+                auto indexType = StarbytesNumGetType(index);
+                if(indexType == NumTypeInt){
+                    idx = StarbytesNumGetIntValue(index);
+                }
+                if(idx >= 0){
+                    auto source = std::string(StarbytesStrGetBuffer(collection));
+                    std::string ch;
+                    if(utf8ScalarAt(source,idx,ch)){
+                        result = StarbytesStrNewWithData(ch.c_str());
+                    }
+                    else {
+                        lastRuntimeError = "String.at index out of range";
+                    }
+                }
+                else {
+                    lastRuntimeError = "String.at index out of range";
+                }
+            }
             else if(StarbytesObjectTypecheck(collection,StarbytesDictType()) &&
                     (StarbytesObjectTypecheck(index,StarbytesStrType()) || StarbytesObjectTypecheck(index,StarbytesNumType()))){
                 result = StarbytesDictGet(collection,index);
@@ -2907,6 +3037,9 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                     (StarbytesObjectTypecheck(index,StarbytesStrType()) || StarbytesObjectTypecheck(index,StarbytesNumType()))){
                 StarbytesDictSet(collection,index,value);
                 success = true;
+            }
+            else if(StarbytesObjectTypecheck(collection,StarbytesStrType())){
+                lastRuntimeError = "Cannot assign through String index; String is immutable";
             }
             StarbytesObjectRelease(collection);
             StarbytesObjectRelease(index);
@@ -3193,7 +3326,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
 
                 if(StarbytesObjectTypecheck(object,StarbytesStrType())){
                     auto source = std::string(StarbytesStrGetBuffer(object));
-                    auto length = (int)source.size();
+                    auto length = utf8ScalarCount(source);
 
                     if(methodName == "isEmpty"){
                         if(argCount != 0){
@@ -3210,10 +3343,10 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                         if(!expectIntArg(args[0],index)){
                             return failWithArgs("String.at expects Int index");
                         }
-                        if(index < 0 || index >= length){
+                        std::string ch;
+                        if(!utf8ScalarAt(source,index,ch)){
                             return failWithArgs("String.at index out of range");
                         }
-                        std::string ch(1,source[(size_t)index]);
                         releaseArgs(args);
                         StarbytesObjectRelease(object);
                         return StarbytesStrNewWithData(ch.c_str());
@@ -3227,12 +3360,10 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                         if(!expectIntArg(args[0],start) || !expectIntArg(args[1],end)){
                             return failWithArgs("String.slice expects Int arguments");
                         }
-                        start = clampSliceBound(start,length);
-                        end = clampSliceBound(end,length);
-                        if(end < start){
-                            end = start;
+                        std::string out;
+                        if(!utf8ScalarSlice(source,start,end,out)){
+                            return failWithArgs("String.slice failed");
                         }
-                        auto out = source.substr((size_t)start,(size_t)(end - start));
                         releaseArgs(args);
                         StarbytesObjectRelease(object);
                         return StarbytesStrNewWithData(out.c_str());
@@ -3260,11 +3391,11 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                         }
                         else if(methodName == "indexOf"){
                             auto pos = source.find(needle);
-                            intResult = (pos == std::string::npos)? -1 : (int)pos;
+                            intResult = (pos == std::string::npos)? -1 : utf8ScalarIndexForByteOffset(source,pos);
                         }
                         else {
                             auto pos = source.rfind(needle);
-                            intResult = (pos == std::string::npos)? -1 : (int)pos;
+                            intResult = (pos == std::string::npos)? -1 : utf8ScalarIndexForByteOffset(source,pos);
                         }
                         releaseArgs(args);
                         StarbytesObjectRelease(object);
@@ -3321,11 +3452,17 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                         }
                         auto out = StarbytesArrayNew();
                         if(sep.empty()){
-                            for(char c : source){
-                                std::string part(1,c);
+                            size_t offset = 0;
+                            while(offset < source.size()){
+                                auto width = utf8ScalarWidth(source,offset);
+                                if(width == 0){
+                                    break;
+                                }
+                                std::string part = source.substr(offset,width);
                                 auto strObj = StarbytesStrNewWithData(part.c_str());
                                 StarbytesArrayPush(out,strObj);
                                 StarbytesObjectRelease(strObj);
+                                offset += width;
                             }
                         }
                         else {

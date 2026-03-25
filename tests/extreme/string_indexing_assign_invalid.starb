@@ -1,0 +1,2 @@
+decl text = "star"
+text[0] = "S"

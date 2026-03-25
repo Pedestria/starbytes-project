@@ -1,0 +1,11 @@
+class Base {
+    @protected
+    func ping() Int {
+        return 2
+    }
+}
+
+class Derived : Base {}
+
+decl item = new Derived()
+print(item.ping())

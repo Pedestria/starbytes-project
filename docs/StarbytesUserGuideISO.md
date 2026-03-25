@@ -312,6 +312,7 @@ System attributes:
 
 - `@readonly`
 - `@private`
+- `@protected`
 - `@deprecated(...)`
 - `@native(...)`
 

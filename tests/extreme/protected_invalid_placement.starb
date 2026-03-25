@@ -1,0 +1,4 @@
+@protected
+func nope() Int {
+    return 1
+}

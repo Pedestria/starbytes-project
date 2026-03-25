@@ -66,6 +66,10 @@ namespace starbytes {
         return std::nullopt;
     }
 
+    static bool protectedFromAttributes(const std::vector<ASTAttribute> &attrs){
+        return hasAttributeNamed(attrs,"protected");
+    }
+
     static bool validateSystemAttribute(ASTDecl *decl,
                                         const ASTAttribute &attr,
                                         DiagnosticHandler &errStream){
@@ -92,6 +96,20 @@ namespace starbytes {
             }
             if(!attr.args.empty()){
                 pushAttrError("@private does not accept arguments.");
+                return false;
+            }
+            return true;
+        }
+
+        if(attr.name == "protected"){
+            bool validMethod = decl->type == FUNC_DECL && decl->scope && decl->scope->type == ASTScope::Class;
+            bool validField = decl->type == VAR_DECL && decl->scope && decl->scope->type == ASTScope::Class;
+            if(!(validMethod || validField)){
+                pushAttrError("@protected is only valid on class/interface methods and fields.");
+                return false;
+            }
+            if(!attr.args.empty()){
+                pushAttrError("@protected does not accept arguments.");
                 return false;
             }
             return true;
@@ -169,7 +187,7 @@ namespace starbytes {
 
     static bool validateAttributesForDecl(ASTDecl *decl, DiagnosticHandler &errStream){
         for(auto &attr : decl->attributes){
-            if(attr.name == "readonly" || attr.name == "private" || attr.name == "deprecated" || attr.name == "native"){
+            if(attr.name == "readonly" || attr.name == "private" || attr.name == "protected" || attr.name == "deprecated" || attr.name == "native"){
                 if(!validateSystemAttribute(decl,attr,errStream)){
                     return false;
                 }
@@ -2422,6 +2440,262 @@ namespace starbytes {
         return true;
     }
 
+    static ASTType *substituteTypeParams(ASTType *type,
+                                         const string_map<ASTType *> &bindings,
+                                         ASTStmt *parent);
+
+    static ASTType *resolveAliasType(ASTType *type,
+                                     Semantics::STableContext &symbolTableContext,
+                                     std::shared_ptr<ASTScope> scope,
+                                     const string_set *genericTypeParams);
+
+    static bool orderedParamTypesStructurallyMatch(const std::map<ASTIdentifier *,ASTType *> &actualParams,
+                                                   const std::vector<std::pair<std::string,ASTType *>> &requiredParams){
+        auto actualOrdered = orderedParamPairs(actualParams);
+        if(actualOrdered.size() != requiredParams.size()){
+            return false;
+        }
+        for(size_t i = 0;i < actualOrdered.size();++i){
+            if(!actualOrdered[i].second || !requiredParams[i].second){
+                return false;
+            }
+            if(!typesStructurallyEqual(actualOrdered[i].second,requiredParams[i].second)){
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static bool protectedVisibilityCompatible(bool requiredProtected,bool actualProtected){
+        if(requiredProtected){
+            return true;
+        }
+        return !actualProtected;
+    }
+
+    static string_map<ASTType *> classBindingsFromInstanceType(Semantics::SymbolTable::Class *classData,
+                                                               ASTType *instanceType){
+        string_map<ASTType *> bindings;
+        if(!classData || !instanceType){
+            return bindings;
+        }
+        if(classData->genericParams.size() != instanceType->typeParams.size()){
+            return bindings;
+        }
+        for(size_t i = 0;i < classData->genericParams.size();++i){
+            bindings.insert(std::make_pair(classData->genericParams[i].name,instanceType->typeParams[i]));
+        }
+        return bindings;
+    }
+
+    static Semantics::SymbolTable::Class *resolveClassDataFromType(ASTType *type,
+                                                                   Semantics::STableContext &symbolTableContext,
+                                                                   std::shared_ptr<ASTScope> scope){
+        if(!type){
+            return nullptr;
+        }
+        auto *entry = findTypeEntryNoDiag(symbolTableContext,type->getName(),scope);
+        if(!entry || entry->type != Semantics::SymbolTable::Entry::Class){
+            return nullptr;
+        }
+        auto *classData = (Semantics::SymbolTable::Class *)entry->data;
+        if(!classData || !classData->classType){
+            return nullptr;
+        }
+        return classData;
+    }
+
+    static Semantics::SymbolTable::Var *findFieldDataByName(Semantics::SymbolTable::Class *classData,
+                                                            const std::string &fieldName){
+        if(!classData){
+            return nullptr;
+        }
+        for(auto *field : classData->fields){
+            if(field && field->name == fieldName){
+                return field;
+            }
+        }
+        return nullptr;
+    }
+
+    static Semantics::SymbolTable::Var *findFieldDataByNameRecursive(Semantics::SymbolTable::Class *classData,
+                                                                     Semantics::STableContext &symbolTableContext,
+                                                                     std::shared_ptr<ASTScope> scope,
+                                                                     const std::string &fieldName,
+                                                                     string_set &visited){
+        if(!classData){
+            return nullptr;
+        }
+        if(auto *field = findFieldDataByName(classData,fieldName)){
+            return field;
+        }
+        if(!classData->superClassType){
+            return nullptr;
+        }
+        auto superName = classData->superClassType->getName();
+        if(visited.find(superName.view()) != visited.end()){
+            return nullptr;
+        }
+        visited.insert(superName.str());
+        auto *superData = resolveClassDataFromType(classData->superClassType,symbolTableContext,scope);
+        return findFieldDataByNameRecursive(superData,symbolTableContext,scope,fieldName,visited);
+    }
+
+    static Semantics::SymbolTable::Function *findMethodDataByName(Semantics::SymbolTable::Class *classData,
+                                                                  const std::string &methodName){
+        if(!classData){
+            return nullptr;
+        }
+        for(auto *method : classData->instMethods){
+            if(method && method->name == methodName){
+                return method;
+            }
+        }
+        return nullptr;
+    }
+
+    static Semantics::SymbolTable::Function *findMethodDataByNameRecursive(Semantics::SymbolTable::Class *classData,
+                                                                           Semantics::STableContext &symbolTableContext,
+                                                                           std::shared_ptr<ASTScope> scope,
+                                                                           const std::string &methodName,
+                                                                           string_set &visited){
+        if(!classData){
+            return nullptr;
+        }
+        if(auto *method = findMethodDataByName(classData,methodName)){
+            return method;
+        }
+        if(!classData->superClassType){
+            return nullptr;
+        }
+        auto superName = classData->superClassType->getName();
+        if(visited.find(superName.view()) != visited.end()){
+            return nullptr;
+        }
+        visited.insert(superName.str());
+        auto *superData = resolveClassDataFromType(classData->superClassType,symbolTableContext,scope);
+        return findMethodDataByNameRecursive(superData,symbolTableContext,scope,methodName,visited);
+    }
+
+    static bool validateClassOverrideContracts(ASTClassDecl *classDecl,
+                                               Semantics::STableContext &symbolTableContext,
+                                               std::shared_ptr<ASTScope> scope,
+                                               const string_set &classGenericParams,
+                                               DiagnosticHandler &errStream){
+        if(!classDecl || !classDecl->superClass){
+            return true;
+        }
+        auto *superData = resolveClassDataFromType(classDecl->superClass,symbolTableContext,scope);
+        if(!superData){
+            return true;
+        }
+
+        auto superBindings = classBindingsFromInstanceType(superData,classDecl->superClass);
+
+        for(auto *fieldDecl : classDecl->fields){
+            if(!fieldDecl){
+                continue;
+            }
+            for(const auto &spec : fieldDecl->specs){
+                if(!spec.id){
+                    continue;
+                }
+                string_set visited;
+                if(auto *superMethod = findMethodDataByNameRecursive(superData,symbolTableContext,scope,spec.id->val,visited)){
+                    (void)superMethod;
+                    std::ostringstream ss;
+                    ss << "Field `" << spec.id->val << "` in class `" << classDecl->id->sourceName
+                       << "` conflicts with inherited method `" << spec.id->val << "`; invalid override kind.";
+                    errStream.push(SemanticADiagnostic::create(ss.str(),fieldDecl,Diagnostic::Error));
+                    return false;
+                }
+            }
+        }
+
+        for(auto *methodDecl : classDecl->methods){
+            if(!methodDecl || !methodDecl->funcId){
+                continue;
+            }
+
+            string_set fieldVisited;
+            if(findFieldDataByNameRecursive(superData,symbolTableContext,scope,methodDecl->funcId->val,fieldVisited)){
+                std::ostringstream ss;
+                ss << "Method `" << methodDecl->funcId->val << "` in class `" << classDecl->id->sourceName
+                   << "` conflicts with inherited field `" << methodDecl->funcId->val << "`; invalid override kind.";
+                errStream.push(SemanticADiagnostic::create(ss.str(),methodDecl,Diagnostic::Error));
+                return false;
+            }
+
+            string_set methodVisited;
+            auto *superMethod = findMethodDataByNameRecursive(superData,symbolTableContext,scope,methodDecl->funcId->val,methodVisited);
+            if(!superMethod){
+                continue;
+            }
+
+            if(superMethod->genericParams.size() != methodDecl->genericParams.size()){
+                std::ostringstream ss;
+                ss << "Method `" << methodDecl->funcId->val << "` in class `" << classDecl->id->sourceName
+                   << "` generic parameter count does not match inherited superclass method declaration.";
+                errStream.push(SemanticADiagnostic::create(ss.str(),methodDecl,Diagnostic::Error));
+                return false;
+            }
+
+            bool actualProtected = protectedFromAttributes(methodDecl->attributes);
+            if(!protectedVisibilityCompatible(superMethod->isProtected,actualProtected)){
+                std::ostringstream ss;
+                ss << "Method `" << methodDecl->funcId->val << "` in class `" << classDecl->id->sourceName
+                   << "` narrows inherited superclass visibility from public to protected.";
+                errStream.push(SemanticADiagnostic::create(ss.str(),methodDecl,Diagnostic::Error));
+                return false;
+            }
+
+            auto methodGenericParams = classGenericParams;
+            string_map<ASTType *> superMethodBindings = superBindings;
+            for(size_t i = 0;i < methodDecl->genericParams.size();++i){
+                auto *methodGeneric = methodDecl->genericParams[i];
+                if(!methodGeneric || !methodGeneric->id){
+                    errStream.push(SemanticADiagnostic::create("Malformed class method generic parameter.",methodDecl,Diagnostic::Error));
+                    return false;
+                }
+                methodGenericParams.insert(methodGeneric->id->val);
+                auto *boundGenericType = ASTType::Create(methodGeneric->id->val,methodDecl,true,false);
+                boundGenericType->isGenericParam = true;
+                superMethodBindings[superMethod->genericParams[i].name] = boundGenericType;
+            }
+
+            if(!superMethod->returnType || !methodDecl->returnType){
+                errStream.push(SemanticADiagnostic::create("Superclass override contract is missing return type metadata.",methodDecl,Diagnostic::Error));
+                return false;
+            }
+
+            auto *requiredReturnType = substituteTypeParams(superMethod->returnType,superMethodBindings,classDecl);
+            requiredReturnType = resolveAliasType(requiredReturnType,symbolTableContext,scope,&methodGenericParams);
+            auto *classReturnType = resolveAliasType(methodDecl->returnType,symbolTableContext,scope,&methodGenericParams);
+            if(!typesStructurallyEqual(requiredReturnType,classReturnType)){
+                std::ostringstream ss;
+                ss << "Method `" << methodDecl->funcId->val << "` in class `" << classDecl->id->sourceName
+                   << "` return type does not match inherited superclass method declaration.";
+                errStream.push(SemanticADiagnostic::create(ss.str(),methodDecl,Diagnostic::Error));
+                return false;
+            }
+
+            auto requiredOrderedParams = superMethod->orderedParams;
+            for(auto &requiredParam : requiredOrderedParams){
+                auto *substituted = substituteTypeParams(requiredParam.second,superMethodBindings,classDecl);
+                requiredParam.second = resolveAliasType(substituted,symbolTableContext,scope,&methodGenericParams);
+            }
+            if(!orderedParamTypesStructurallyMatch(methodDecl->params,requiredOrderedParams)){
+                std::ostringstream ss;
+                ss << "Method `" << methodDecl->funcId->val << "` in class `" << classDecl->id->sourceName
+                   << "` does not match inherited superclass parameter signature; accidental overloading is not supported.";
+                errStream.push(SemanticADiagnostic::create(ss.str(),methodDecl,Diagnostic::Error));
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     static Semantics::SymbolTable::GenericParam::Variance toSymbolGenericVariance(ASTGenericVariance variance){
         switch(variance){
             case ASTGenericVariance::In:
@@ -2700,6 +2974,7 @@ namespace starbytes {
                         field->name = spec.id->val;
                         field->type = spec.type;
                         field->isReadonly = readonlyField;
+                        field->isProtected = protectedFromAttributes(fieldDecl->attributes);
                         applyDeprecationMetadata(field,fieldDecl->attributes);
                         data->fields.push_back(field);
                     }
@@ -2713,6 +2988,7 @@ namespace starbytes {
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
+                    method->isProtected = protectedFromAttributes(methodDecl->attributes);
                     applyDeprecationMetadata(method,methodDecl->attributes);
                     appendGenericParams(method->genericParams,methodDecl->genericParams);
                     fillFunctionParamsFromDecl(method,methodDecl->params);
@@ -2763,6 +3039,7 @@ namespace starbytes {
                         field->name = spec.id->val;
                         field->type = spec.type;
                         field->isReadonly = fieldDecl->isConst;
+                        field->isProtected = protectedFromAttributes(fieldDecl->attributes);
                         applyDeprecationMetadata(field,fieldDecl->attributes);
                         data->fields.push_back(field);
                     }
@@ -2776,6 +3053,7 @@ namespace starbytes {
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
+                    method->isProtected = protectedFromAttributes(methodDecl->attributes);
                     applyDeprecationMetadata(method,methodDecl->attributes);
                     appendGenericParams(method->genericParams,methodDecl->genericParams);
                     fillFunctionParamsFromDecl(method,methodDecl->params);
@@ -3193,6 +3471,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                          field->name = v_spec.id->val;
                          field->type = v_spec.type;
                          field->isReadonly = readonlyField;
+                         field->isProtected = protectedFromAttributes(f->attributes);
                          applyDeprecationMetadata(field,f->attributes);
                          data->fields.push_back(field);
                      }
@@ -3203,6 +3482,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                      method->returnType = m->returnType;
                      method->funcType = m->funcType;
                      method->isLazy = m->isLazy;
+                     method->isProtected = protectedFromAttributes(m->attributes);
                      applyDeprecationMetadata(method,m->attributes);
                      appendGenericParams(method->genericParams,m->genericParams);
                      fillFunctionParamsFromDecl(method,m->params);
@@ -3256,6 +3536,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                         field->name = spec.id->val;
                         field->type = spec.type;
                         field->isReadonly = fieldDecl->isConst;
+                        field->isProtected = protectedFromAttributes(fieldDecl->attributes);
                         applyDeprecationMetadata(field,fieldDecl->attributes);
                         data->fields.push_back(field);
                     }
@@ -3267,6 +3548,7 @@ static ASTType *substituteTypeParams(ASTType *type,
                     method->returnType = methodDecl->returnType;
                     method->funcType = methodDecl->funcType;
                     method->isLazy = methodDecl->isLazy;
+                    method->isProtected = protectedFromAttributes(methodDecl->attributes);
                     applyDeprecationMetadata(method,methodDecl->attributes);
                     appendGenericParams(method->genericParams,methodDecl->genericParams);
                     fillFunctionParamsFromDecl(method,methodDecl->params);
@@ -4068,6 +4350,14 @@ static ASTType *substituteTypeParams(ASTType *type,
                             }
                         }
 
+                        if(!validateClassOverrideContracts(classDecl,
+                                                           symbolTableContext,
+                                                           scope,
+                                                           classGenericParams,
+                                                           errStream)){
+                            return false;
+                        }
+
                         std::set<size_t> ctorArities;
                         for(auto &c : classDecl->constructors){
                             size_t arity = c->params.size();
@@ -4154,16 +4444,24 @@ static ASTType *substituteTypeParams(ASTType *type,
                                     continue;
                                 }
                                 string_set visited;
-                                auto *classFieldType = findFieldTypeByNameRecursive(classDecl,symbolTableContext,scope,requiredField->name,visited);
-                                if(!classFieldType){
+                                auto *classData = resolveClassDataFromType(classDecl->classType,symbolTableContext,scope);
+                                auto *classField = findFieldDataByNameRecursive(classData,symbolTableContext,scope,requiredField->name,visited);
+                                if(!classField){
                                     std::ostringstream ss;
                                     ss << "Class `" << classDecl->id->val << "` does not implement interface field `" << requiredField->name << "`.";
                                     errStream.push(SemanticADiagnostic::create(ss.str(),classDecl,Diagnostic::Error));
                                     return false;
                                 }
+                                if(!protectedVisibilityCompatible(requiredField->isProtected,classField->isProtected)){
+                                    std::ostringstream ss;
+                                    ss << "Class field `" << requiredField->name
+                                       << "` narrows interface visibility from public to protected.";
+                                    errStream.push(SemanticADiagnostic::create(ss.str(),classDecl,Diagnostic::Error));
+                                    return false;
+                                }
                                 auto *requiredFieldType = substituteTypeParams(requiredField->type,interfaceBindings,classDecl);
                                 requiredFieldType = resolveAliasType(requiredFieldType,symbolTableContext,scope,&classGenericParams);
-                                auto *resolvedClassFieldType = resolveAliasType(classFieldType,symbolTableContext,scope,&classGenericParams);
+                                auto *resolvedClassFieldType = resolveAliasType(classField->type,symbolTableContext,scope,&classGenericParams);
                                 if(!requiredFieldType->match(resolvedClassFieldType,[&](std::string message){
                                     std::ostringstream ss;
                                     ss << message << "\nContext: Interface field `" << requiredField->name << "` does not match class field type.";
@@ -4189,6 +4487,14 @@ static ASTType *substituteTypeParams(ASTType *type,
                                     std::ostringstream ss;
                                     ss << "Class method `" << classMethod->funcId->val
                                        << "` generic parameter count does not match interface method declaration.";
+                                    errStream.push(SemanticADiagnostic::create(ss.str(),classMethod,Diagnostic::Error));
+                                    return false;
+                                }
+                                bool classMethodProtected = protectedFromAttributes(classMethod->attributes);
+                                if(!protectedVisibilityCompatible(requiredMethod->isProtected,classMethodProtected)){
+                                    std::ostringstream ss;
+                                    ss << "Class method `" << classMethod->funcId->val
+                                       << "` narrows interface visibility from public to protected.";
                                     errStream.push(SemanticADiagnostic::create(ss.str(),classMethod,Diagnostic::Error));
                                     return false;
                                 }

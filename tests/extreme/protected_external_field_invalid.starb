@@ -1,0 +1,9 @@
+class Base {
+    @protected
+    decl token:Int = 2
+}
+
+class Derived : Base {}
+
+decl item = new Derived()
+print(item.token)

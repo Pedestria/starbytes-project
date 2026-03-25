@@ -149,6 +149,14 @@ Validated system attributes:
   - valid only on class fields
   - no arguments
   - fields remain public by default; `@private` currently acts as a semantic signal for unused-field warnings rather than enforced access control
+- `@protected`
+  - valid only on class/interface methods and fields
+  - no arguments
+  - enforced by sema:
+    - accessible inside the declaring type
+    - accessible in subclasses for class members
+    - accessible in implementing classes and interface default methods for interface members
+    - not accessible from unrelated external code
 - `@deprecated`
   - valid on class/interface/type alias/function/field declarations
   - optional single string argument
@@ -171,6 +179,7 @@ Validated system attributes:
 - Member access resolves against scope symbols, class fields/methods, and inherited members
 - Index access semantics:
   - `Array[index]`: index must be `Int`
+  - `String[index]`: index must be `Int`, result type is `String?`, and indexing is by Unicode scalar value
   - `Dict[key]`: key must be `String`/`Int`/`Float`
 
 ### 5.3 Unary Operators

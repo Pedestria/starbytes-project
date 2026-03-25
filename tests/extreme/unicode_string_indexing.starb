@@ -1,0 +1,33 @@
+decl text = "aé🙂z"
+
+secure(decl second:String? = text[1]) catch {
+    print("UNICODE-STRING-SECOND-CATCH")
+}
+secure(decl third:String? = text.at(2)) catch {
+    print("UNICODE-STRING-THIRD-CATCH")
+}
+secure(decl bad:String? = text[4]) catch (error:String) {
+    print("UNICODE-STRING-INDEX-CATCH")
+    print(error)
+}
+
+decl sliced = text.slice(1,3)
+decl pieces = text.split("")
+secure(decl piece1:String? = pieces.at(1)) catch {
+    print("UNICODE-STRING-PIECE1-CATCH")
+}
+secure(decl piece2:String? = pieces.at(2)) catch {
+    print("UNICODE-STRING-PIECE2-CATCH")
+}
+
+if(text.length == 4
+   && sliced == "é🙂"
+   && text.indexOf("é") == 1
+   && text.lastIndexOf("🙂") == 2
+   && pieces.length == 4){
+    print(second)
+    print(third)
+    print(piece1)
+    print(piece2)
+    print("UNICODE-STRING-INDEX-OK")
+}

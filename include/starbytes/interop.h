@@ -108,6 +108,7 @@ StarbytesStr StarbytesStrCopy(StarbytesStr);
 int StarbytesStrCompare(StarbytesStr lhs,StarbytesStr rhs);
 char *StarbytesStrGetBuffer(StarbytesStr);
 unsigned StarbytesStrLength(StarbytesStr);
+unsigned StarbytesStrByteLength(StarbytesStr);
 void StarbytesStrDestroy(StarbytesStr );
 /// @}
 

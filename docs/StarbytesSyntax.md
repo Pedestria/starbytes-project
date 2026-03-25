@@ -74,6 +74,7 @@ Examples:
 
 - `@readonly`
 - `@private`
+- `@protected`
 - `@deprecated("message")`
 - `@native(name="symbol")`
 
@@ -281,7 +282,7 @@ return expr
 
 - Member access: `obj.field`
 - Call: `fn(arg1,arg2)`
-- Index: `arr[i]`, `dict[key]`
+- Index: `arr[i]`, `text[i]`, `dict[key]`
 - Chaining: `obj.method()[i].field`
 
 ### 6.3 Operator Precedence and Associativity

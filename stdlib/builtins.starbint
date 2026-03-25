@@ -30,16 +30,16 @@ func max(lhs:Number,rhs:Number) Number
 
 /// @brief Intrinsic UTF-8 string type.
 interface String {
-    /// @brief Number of code units in the string representation.
+    /// @brief Number of Unicode scalar values in the string.
     decl length:Int
 
     /// @brief Returns whether the string is empty.
     func isEmpty() Bool
-    /// @brief Returns character at index.
-    /// @param index Zero-based index.
-    /// @return Optional single-character string.
+    /// @brief Returns Unicode scalar at index.
+    /// @param index Zero-based Unicode scalar index.
+    /// @return Optional single-scalar string.
     func at(index:Int) String?
-    /// @brief Returns substring in half-open range [start,end).
+    /// @brief Returns substring in half-open Unicode scalar range [start,end).
     func slice(start:Int,end:Int) String
 
     /// @brief Returns whether string contains a substring.
@@ -48,9 +48,9 @@ interface String {
     func startsWith(prefix:String) Bool
     /// @brief Returns whether string ends with suffix.
     func endsWith(suffix:String) Bool
-    /// @brief Returns first index of substring or -1.
+    /// @brief Returns first Unicode scalar index of substring or -1.
     func indexOf(value:String) Int
-    /// @brief Returns last index of substring or -1.
+    /// @brief Returns last Unicode scalar index of substring or -1.
     func lastIndexOf(value:String) Int
 
     /// @brief Lowercase transform.

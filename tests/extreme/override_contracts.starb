@@ -1,0 +1,24 @@
+class Base {
+    func echo(value:Int) Int {
+        return value
+    }
+
+    func wrap<T>(value:T) T {
+        return value
+    }
+}
+
+class Derived : Base {
+    func echo(other:Int) Int {
+        return other + 1
+    }
+
+    func wrap<U>(item:U) U {
+        return item
+    }
+}
+
+decl derived = new Derived()
+print(derived.echo(2))
+print(derived.wrap<String>("ok"))
+print("OVERRIDE-CONTRACTS-OK")

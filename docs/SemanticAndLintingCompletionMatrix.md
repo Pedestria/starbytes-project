@@ -202,7 +202,7 @@ Status meanings:
 | Callable return compatibility | Implemented | Present |
 | Generic callable inference | Implemented | Present for current model |
 | Ignored non-`Void` results | Partial | Compiler warns in current direct form; could be generalized and policy-controlled |
-| Override-required / invalid-override / accidental-overload diagnostics | Missing | High-value correctness gap |
+| Override-required / invalid-override / accidental-overload diagnostics | Partial | Superclass override contracts now diagnose invalid member-kind override plus generic-count, parameter-signature, and return-type mismatches; explicit override-required still awaits an override marker feature |
 | Covariant/contravariant override compatibility diagnostics | Missing | Needed once override contracts are formalized |
 | Virtual/interface dispatch contract diagnostics | Partial | Interface conformance exists; richer override semantics do not |
 | Recursion diagnostics such as obvious infinite recursion | Missing | Clang has related warning families; Starbytes has none |
@@ -232,7 +232,7 @@ Status meanings:
 | Generic interface method compatibility | Implemented | Present |
 | Duplicate method and ctor-arity rejection | Implemented | Present |
 | Missing required method diagnostics with rich mismatch notes | Partial | Present, but note quality and mismatch detail can be deeper |
-| Private/protected-style access diagnostics | Future feature dependent | Starbytes currently recommends public-by-default plus interfaces |
+| Private/protected-style access diagnostics | Partial | `@protected` access is enforced for class/interface methods and fields; `@private` remains a warning-oriented field annotation rather than enforced access control |
 | Forbidden subclass / sealed type diagnostics | Future feature dependent | Depends on future attribute or type contract surface |
 | Constructor-state protocol diagnostics | Missing | Useful once richer init rules or field requirements stabilize |
 

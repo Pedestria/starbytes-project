@@ -7,20 +7,20 @@ func intArg(args:String[],index:Int,fallback:Int) Int {
     return fallback
 }
 
-func chooseBase(value:Int) String {
+func chooseBaseCode(value:Int) Int {
     if(value < 270){
-        return "A"
+        return 0
     }
     elif(value < 390){
-        return "C"
+        return 1
     }
     elif(value < 510){
-        return "G"
+        return 2
     }
     elif(value < 780){
-        return "T"
+        return 3
     }
-    return "N"
+    return 4
 }
 
 decl args = CmdLine.positionals()
@@ -28,70 +28,39 @@ decl repeatLength:Int = intArg(args,0,4000)
 decl randomLength:Int = intArg(args,1,4000)
 decl state:Int = intArg(args,2,42)
 
-decl source = "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGG"
+decl sourceCodes:Int[] = [
+    2, 2, 1, 1, 2, 2, 2, 1, 2, 1, 2, 2, 3, 2, 2, 1, 3, 1, 0, 1, 2,
+    1, 1, 3, 2, 3, 0, 0, 3, 1, 1, 1, 0, 2, 1, 0, 1, 3, 3, 3, 2, 2
+]
 decl sourceIndex:Int = 0
-decl base:String = ""
-
-decl repeatA:Int = 0
-decl repeatC:Int = 0
-decl repeatG:Int = 0
-decl repeatT:Int = 0
-
-decl randomA:Int = 0
-decl randomC:Int = 0
-decl randomG:Int = 0
-decl randomT:Int = 0
-decl randomN:Int = 0
+decl code:Int = 0
+decl repeatCounts:Int[] = [0, 0, 0, 0, 0]
+decl randomCounts:Int[] = [0, 0, 0, 0, 0]
 
 decl i:Int = 0
 while(i < repeatLength){
-    sourceIndex = i % source.length
-    base = source.slice(sourceIndex,sourceIndex + 1)
-    if(base == "A"){
-        repeatA += 1
-    }
-    elif(base == "C"){
-        repeatC += 1
-    }
-    elif(base == "G"){
-        repeatG += 1
-    }
-    else {
-        repeatT += 1
-    }
+    sourceIndex = i % sourceCodes.length
+    code = sourceCodes[sourceIndex]
+    repeatCounts[code] = repeatCounts[code] + 1
     i += 1
 }
 
 i = 0
 while(i < randomLength){
     state = ((state * 3877) + 29573) % 139968
-    base = chooseBase(state % 1000)
-    if(base == "A"){
-        randomA += 1
-    }
-    elif(base == "C"){
-        randomC += 1
-    }
-    elif(base == "G"){
-        randomG += 1
-    }
-    elif(base == "T"){
-        randomT += 1
-    }
-    else {
-        randomN += 1
-    }
+    code = chooseBaseCode(state % 1000)
+    randomCounts[code] = randomCounts[code] + 1
     i += 1
 }
 
 print(repeatLength)
 print(randomLength)
-print(repeatA)
-print(repeatC)
-print(repeatG)
-print(repeatT)
-print(randomA)
-print(randomC)
-print(randomG)
-print(randomT)
-print(randomN)
+print(repeatCounts[0])
+print(repeatCounts[1])
+print(repeatCounts[2])
+print(repeatCounts[3])
+print(randomCounts[0])
+print(randomCounts[1])
+print(randomCounts[2])
+print(randomCounts[3])
+print(randomCounts[4])

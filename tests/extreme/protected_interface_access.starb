@@ -1,0 +1,25 @@
+interface Gate {
+    @protected
+    decl token:Int
+
+    @protected
+    func ping() Int
+}
+
+class GateImpl : Gate {
+    @protected
+    decl token:Int = 7
+
+    @protected
+    func ping() Int {
+        return self.token
+    }
+
+    func read() Int {
+        return self.ping() + self.token
+    }
+}
+
+decl gate = new GateImpl()
+print(gate.read())
+print("PROTECTED-INTERFACE-OK")

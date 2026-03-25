@@ -1,0 +1,12 @@
+class Base {
+    func ping() Int {
+        return 1
+    }
+}
+
+class Derived : Base {
+    @protected
+    func ping() Int {
+        return 2
+    }
+}

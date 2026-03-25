@@ -1,0 +1,19 @@
+class Base {
+    @protected
+    decl token:Int = 2
+
+    @protected
+    func ping() Int {
+        return self.token
+    }
+}
+
+class Derived : Base {
+    func read() Int {
+        return self.token + self.ping()
+    }
+}
+
+decl item = new Derived()
+print(item.read())
+print("PROTECTED-CLASS-OK")

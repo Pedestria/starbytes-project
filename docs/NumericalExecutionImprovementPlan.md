@@ -396,7 +396,7 @@ This is the Starbytes analogue of the strategy described in PEP 659 and visible 
   - `runtime_quickened_specializations`
   - `runtime_quickened_fallbacks`
 
-## Phase 6: Workload-Specific Kernel Cleanup
+## Phase 6: Workload-Specific Kernel Cleanup [Implemented]
 
 This phase applies algorithm-aware cleanup after the execution model is improved.
 
@@ -409,6 +409,12 @@ This phase applies algorithm-aware cleanup after the execution model is improved
 - Use buffer swapping instead of copy loops where semantics permit.
 - Consider an interpreter-recognized matrix-vector kernel only after generic typed-array execution is in place.
 
+### Status
+
+- implemented
+- `benchmark/languages/starbytes/track_a/spectral_norm.starb` now uses `Double` end-to-end
+- the cleanup keeps the same parity-checked power-method structure while aligning the numeric path with the runtime's real `Double` support
+
 ### n-body
 
 - Match the Python algorithm exactly.
@@ -419,6 +425,13 @@ This phase applies algorithm-aware cleanup after the execution model is improved
   - `mag = dt * invDist * invDist * invDist`
 - Hoist body count and constant masses.
 - For the current five-body benchmark, optionally precompute pair indices or unroll the pair loop as a benchmark-specific optimization after the generic fast path lands.
+
+### Status
+
+- implemented
+- `benchmark/languages/starbytes/track_a/n_body.starb` now uses `Double[]` for coordinates, velocity, and mass
+- the temporary `sqrtApprox` helper was removed in favor of the runtime `sqrt` intrinsic
+- body count and `dt` are now hoisted explicitly in the benchmark kernel
 
 ### fasta
 
@@ -432,6 +445,12 @@ This phase applies algorithm-aware cleanup after the execution model is improved
   - use prefix probability tables
   - generate into output buffers in chunks
   - keep RNG and lookup on native numeric primitives
+
+### Status
+
+- implemented for the current custom count-based workload
+- `benchmark/languages/starbytes/track_a/fasta.starb` now uses integer-coded bases and fixed `Int[]` counters
+- the repeat and random hot loops no longer allocate one-character substring objects
 
 ## Phase 7: Benchmark and Correctness Guardrails
 

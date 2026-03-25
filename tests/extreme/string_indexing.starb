@@ -1,0 +1,16 @@
+decl text = "star"
+
+secure(decl first:String? = text[0]) catch {
+    print("STRING-INDEX-FIRST-CATCH")
+}
+secure(decl fourth:String? = text[3]) catch {
+    print("STRING-INDEX-FOURTH-CATCH")
+}
+secure(decl bad:String? = text[9]) catch (error:String) {
+    print("STRING-INDEX-CATCH")
+    print(error)
+}
+
+print(first)
+print(fourth)
+print("STRING-INDEX-OK")

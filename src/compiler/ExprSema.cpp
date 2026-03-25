@@ -437,30 +437,38 @@ struct ClassMethodLookupResult {
     Semantics::SymbolTable::Class *owner = nullptr;
 };
 
-static Semantics::SymbolTable::Var *findClassFieldRecursive(Semantics::STableContext &symbolTableContext,
-                                                            Semantics::SymbolTable::Class *classData,
-                                                            string_ref fieldName,
-                                                            std::shared_ptr<ASTScope> scope,
-                                                            string_set &visited){
+struct ClassFieldLookupResult {
+    Semantics::SymbolTable::Var *field = nullptr;
+    Semantics::SymbolTable::Class *owner = nullptr;
+};
+
+static ClassFieldLookupResult findClassFieldRecursive(Semantics::STableContext &symbolTableContext,
+                                                      Semantics::SymbolTable::Class *classData,
+                                                      string_ref fieldName,
+                                                      std::shared_ptr<ASTScope> scope,
+                                                      string_set &visited){
+    ClassFieldLookupResult result;
     if(!classData || !classData->classType){
-        return nullptr;
+        return result;
     }
     auto className = classData->classType->getName();
     if(visited.find(className.view()) != visited.end()){
-        return nullptr;
+        return result;
     }
     visited.insert(className.str());
     for(auto *field : classData->fields){
         if(field->name == fieldName){
-            return field;
+            result.field = field;
+            result.owner = classData;
+            return result;
         }
     }
     if(!classData->superClassType){
-        return nullptr;
+        return result;
     }
     auto *superEntry = findClassEntry(symbolTableContext,classData->superClassType->getName(),scope);
     if(!superEntry){
-        return nullptr;
+        return result;
     }
     auto *superData = (Semantics::SymbolTable::Class *)superEntry->data;
     return findClassFieldRecursive(symbolTableContext,superData,fieldName,scope,visited);
@@ -519,6 +527,15 @@ static ASTType *findClassFieldTypeFromDecl(ASTClassDecl *classDecl,string_ref fi
     return nullptr;
 }
 
+static bool hasAttributeNamed(const std::vector<ASTAttribute> &attrs,const std::string &name){
+    for(const auto &attr : attrs){
+        if(attr.name == name){
+            return true;
+        }
+    }
+    return false;
+}
+
 static ASTFuncDecl *findClassMethodFromDecl(ASTClassDecl *classDecl,string_ref methodName){
     for(auto *methodDecl : classDecl->methods){
         if(methodDecl->funcId && methodDecl->funcId->val == methodName){
@@ -554,8 +571,10 @@ static ASTType *findClassFieldTypeFromDeclRecursive(ASTClassDecl *classDecl,
                                                     std::shared_ptr<ASTScope> scope,
                                                     string_ref fieldName,
                                                     bool *isReadonly,
+                                                    bool *isProtected,
                                                     bool *isDeprecated,
                                                     std::string *deprecationMessage,
+                                                    std::string *ownerClassName,
                                                     string_set &visited){
     if(!classDecl){
         return nullptr;
@@ -601,11 +620,17 @@ static ASTType *findClassFieldTypeFromDeclRecursive(ASTClassDecl *classDecl,
                         if(isReadonly){
                             *isReadonly = readonlyField;
                         }
+                        if(isProtected){
+                            *isProtected = hasAttributeNamed(fieldDecl->attributes,"protected");
+                        }
                         if(isDeprecated){
                             *isDeprecated = deprecatedField;
                         }
                         if(deprecationMessage){
                             *deprecationMessage = deprecatedMessageValue;
+                        }
+                        if(ownerClassName && classDecl->id){
+                            *ownerClassName = classDecl->id->val;
                         }
                         return ownField;
                     }
@@ -623,8 +648,10 @@ static ASTType *findClassFieldTypeFromDeclRecursive(ASTClassDecl *classDecl,
                                                scope,
                                                fieldName,
                                                isReadonly,
+                                               isProtected,
                                                isDeprecated,
                                                deprecationMessage,
+                                               ownerClassName,
                                                visited);
 }
 
@@ -914,6 +941,243 @@ static bool classExtendsOrEquals(Semantics::STableContext &symbolTableContext,
                                  std::shared_ptr<ASTScope> scope){
     string_set visited;
     return classExtendsOrEqualsRecursive(symbolTableContext,className,expectedAncestor,scope,visited);
+}
+
+static bool interfaceNameMatchesExpected(Semantics::STableContext &symbolTableContext,
+                                         string_ref interfaceName,
+                                         string_ref expectedInterface,
+                                         std::shared_ptr<ASTScope> scope){
+    auto *entry = findTypeEntryNoDiag(symbolTableContext,interfaceName,scope);
+    if(!entry || entry->type != Semantics::SymbolTable::Entry::Interface){
+        return interfaceName == expectedInterface;
+    }
+    return interfaceName == expectedInterface
+        || entry->name == expectedInterface
+        || (!entry->emittedName.empty() && entry->emittedName == expectedInterface);
+}
+
+static bool classImplementsInterfaceOrEqualsRecursive(Semantics::STableContext &symbolTableContext,
+                                                      string_ref className,
+                                                      string_ref expectedInterface,
+                                                      std::shared_ptr<ASTScope> scope,
+                                                      string_set &visited){
+    auto *entry = findClassEntry(symbolTableContext,className,scope);
+    if(!entry){
+        return false;
+    }
+    auto *classData = (Semantics::SymbolTable::Class *)entry->data;
+    string_ref currentName = classData && classData->classType ? classData->classType->getName() : string_ref(entry->name);
+    auto visitedKey = currentName.str();
+    if(visited.find(visitedKey) != visited.end()){
+        return false;
+    }
+    visited.insert(visitedKey);
+
+    for(auto *interfaceType : classData->interfaces){
+        if(!interfaceType){
+            continue;
+        }
+        if(interfaceNameMatchesExpected(symbolTableContext,interfaceType->getName(),expectedInterface,scope)){
+            return true;
+        }
+    }
+
+    if(!classData || !classData->superClassType){
+        return false;
+    }
+    return classImplementsInterfaceOrEqualsRecursive(symbolTableContext,
+                                                     classData->superClassType->getName(),
+                                                     expectedInterface,
+                                                     scope,
+                                                     visited);
+}
+
+static bool classImplementsInterfaceOrEquals(Semantics::STableContext &symbolTableContext,
+                                             string_ref className,
+                                             string_ref expectedInterface,
+                                             std::shared_ptr<ASTScope> scope){
+    string_set visited;
+    return classImplementsInterfaceOrEqualsRecursive(symbolTableContext,className,expectedInterface,scope,visited);
+}
+
+static ASTType *currentSelfType(ASTScopeSemanticsContext &scopeContext){
+    if(!scopeContext.args){
+        return nullptr;
+    }
+    for(const auto &pair : *scopeContext.args){
+        if(pair.first && pair.first->val == "self"){
+            return pair.second;
+        }
+    }
+    return nullptr;
+}
+
+static bool typeNameMatchesDeclaredType(string_ref candidate,
+                                        ASTType *declaredType,
+                                        ASTIdentifier *declId){
+    if(candidate.empty()){
+        return false;
+    }
+    if(declaredType && declaredType->getName() == candidate){
+        return true;
+    }
+    if(declId && declId->val == candidate){
+        return true;
+    }
+    if(declId && !declId->sourceName.empty() && declId->sourceName == candidate){
+        return true;
+    }
+    return false;
+}
+
+static bool classDeclExtendsOrEquals(ASTClassDecl *classDecl,
+                                     string_ref expectedAncestor,
+                                     Semantics::STableContext &symbolTableContext,
+                                     std::shared_ptr<ASTScope> scope,
+                                     string_set &visited){
+    if(!classDecl){
+        return false;
+    }
+    auto visitedKey = classDecl->id ? classDecl->id->val : (classDecl->classType ? classDecl->classType->getName().str() : std::string());
+    if(!visitedKey.empty()){
+        if(visited.find(visitedKey) != visited.end()){
+            return false;
+        }
+        visited.insert(visitedKey);
+    }
+    if(typeNameMatchesDeclaredType(expectedAncestor,classDecl->classType,classDecl->id)){
+        return true;
+    }
+    if(!classDecl->superClass){
+        return false;
+    }
+    auto superName = classDecl->superClass->getName();
+    if(superName == expectedAncestor){
+        return true;
+    }
+    auto *superDecl = resolveClassDeclFromType(classDecl->superClass,symbolTableContext,scope);
+    return classDeclExtendsOrEquals(superDecl,expectedAncestor,symbolTableContext,scope,visited);
+}
+
+static bool classDeclImplementsInterfaceOrEquals(ASTClassDecl *classDecl,
+                                                 string_ref expectedInterface,
+                                                 Semantics::STableContext &symbolTableContext,
+                                                 std::shared_ptr<ASTScope> scope,
+                                                 string_set &visited){
+    if(!classDecl){
+        return false;
+    }
+    auto visitedKey = classDecl->id ? classDecl->id->val : (classDecl->classType ? classDecl->classType->getName().str() : std::string());
+    if(!visitedKey.empty()){
+        if(visited.find(visitedKey) != visited.end()){
+            return false;
+        }
+        visited.insert(visitedKey);
+    }
+    for(auto *interfaceType : classDecl->interfaces){
+        if(!interfaceType){
+            continue;
+        }
+        if(interfaceType->getName() == expectedInterface){
+            return true;
+        }
+    }
+    if(!classDecl->superClass){
+        return false;
+    }
+    auto *superDecl = resolveClassDeclFromType(classDecl->superClass,symbolTableContext,scope);
+    return classDeclImplementsInterfaceOrEquals(superDecl,expectedInterface,symbolTableContext,scope,visited);
+}
+
+static bool canAccessProtectedClassMember(Semantics::STableContext &symbolTableContext,
+                                          ASTScopeSemanticsContext &scopeContext,
+                                          Semantics::SymbolTable::Class *ownerClass){
+    if(!ownerClass || !ownerClass->classType){
+        return false;
+    }
+    auto *selfType = currentSelfType(scopeContext);
+    if(!selfType){
+        return false;
+    }
+    if(auto *parentNode = selfType->getParentNode()){
+        if(parentNode->type == CLASS_DECL){
+            string_set visited;
+            if(classDeclExtendsOrEquals((ASTClassDecl *)parentNode,
+                                        ownerClass->classType->getName(),
+                                        symbolTableContext,
+                                        scopeContext.scope,
+                                        visited)){
+                return true;
+            }
+        }
+    }
+    return classExtendsOrEquals(symbolTableContext,selfType->getName(),ownerClass->classType->getName(),scopeContext.scope);
+}
+
+static bool canAccessProtectedClassMember(Semantics::STableContext &symbolTableContext,
+                                          ASTScopeSemanticsContext &scopeContext,
+                                          string_ref ownerClassName){
+    auto *selfType = currentSelfType(scopeContext);
+    if(!selfType){
+        return false;
+    }
+    if(auto *parentNode = selfType->getParentNode()){
+        if(parentNode->type == CLASS_DECL){
+            string_set visited;
+            if(classDeclExtendsOrEquals((ASTClassDecl *)parentNode,
+                                        ownerClassName,
+                                        symbolTableContext,
+                                        scopeContext.scope,
+                                        visited)){
+                return true;
+            }
+        }
+    }
+    return classExtendsOrEquals(symbolTableContext,selfType->getName(),ownerClassName,scopeContext.scope);
+}
+
+static bool canAccessProtectedInterfaceMember(Semantics::STableContext &symbolTableContext,
+                                              ASTScopeSemanticsContext &scopeContext,
+                                              Semantics::SymbolTable::Interface *ownerInterface){
+    if(!ownerInterface || !ownerInterface->interfaceType){
+        return false;
+    }
+    auto *selfType = currentSelfType(scopeContext);
+    if(!selfType){
+        return false;
+    }
+    if(auto *parentNode = selfType->getParentNode()){
+        if(parentNode->type == INTERFACE_DECL){
+            auto *interfaceDecl = (ASTInterfaceDecl *)parentNode;
+            if(typeNameMatchesDeclaredType(ownerInterface->interfaceType->getName(),interfaceDecl->interfaceType,interfaceDecl->id)){
+                return true;
+            }
+        }
+        if(parentNode->type == CLASS_DECL){
+            string_set visited;
+            if(classDeclImplementsInterfaceOrEquals((ASTClassDecl *)parentNode,
+                                                   ownerInterface->interfaceType->getName(),
+                                                   symbolTableContext,
+                                                   scopeContext.scope,
+                                                   visited)){
+                return true;
+            }
+        }
+    }
+    auto *selfEntry = findTypeEntryNoDiag(symbolTableContext,selfType->getName(),scopeContext.scope);
+    if(selfEntry && selfEntry->type == Semantics::SymbolTable::Entry::Interface){
+        return interfaceNameMatchesExpected(symbolTableContext,selfType->getName(),ownerInterface->interfaceType->getName(),scopeContext.scope);
+    }
+    return classImplementsInterfaceOrEquals(symbolTableContext,selfType->getName(),ownerInterface->interfaceType->getName(),scopeContext.scope);
+}
+
+static void emitProtectedAccessError(DiagnosticHandler &errStream,
+                                     ASTExpr *expr,
+                                     const char *memberKind,
+                                     const std::string &memberName){
+    std::ostringstream ss;
+    ss << "Protected " << memberKind << " `" << memberName << "` is not accessible from the current context.";
+    errStream.push(SemanticADiagnostic::create(ss.str(),expr,Diagnostic::Error));
 }
 
 static ASTType *makeFunctionType(ASTType *returnType,
@@ -1908,6 +2172,14 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     type = arrayElementType(baseType,expr_to_eval,false);
                     break;
                 }
+                if(isStringType(baseType)){
+                    if(!indexType->nameMatches(INT_TYPE)){
+                        errStream.push(SemanticADiagnostic::create("String indexing requires Int index.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
+                    }
+                    type = cloneTypeWithQualifiers(STRING_TYPE,expr_to_eval,true,false);
+                    break;
+                }
                 if(isDictType(baseType)){
                     if(!(isStringType(indexType) || isNumericType(indexType))){
                         errStream.push(SemanticADiagnostic::create("Dictionary indexing requires String/Int/Long/Float/Double key.",expr_to_eval,Diagnostic::Error));
@@ -2308,22 +2580,31 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
                     auto classBindings = classBindingsFromInstanceType(classData,leftType);
                     string_set visited;
-                    if(auto *field = findClassFieldRecursive(symbolTableContext,classData,memberName,scopeContext.scope,visited)){
+                    auto fieldLookup = findClassFieldRecursive(symbolTableContext,classData,memberName,scopeContext.scope,visited);
+                    if(fieldLookup.field){
+                        if(fieldLookup.field->isProtected && !canAccessProtectedClassMember(symbolTableContext,scopeContext,fieldLookup.owner)){
+                            emitProtectedAccessError(errStream,expr_to_eval,"field",memberName);
+                            return nullptr;
+                        }
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
-                        if(field->isDeprecated){
+                        if(fieldLookup.field->isDeprecated){
                             warnDeprecatedUse("field",
                                               memberName,
                                               std::string("field:") + leftType->getName().str() + "::" + memberName,
-                                              field->deprecationMessage,
+                                              fieldLookup.field->deprecationMessage,
                                               expr_to_eval);
                         }
-                        auto *boundFieldType = substituteTypeParams(field->type,classBindings,expr_to_eval);
+                        auto *boundFieldType = substituteTypeParams(fieldLookup.field->type,classBindings,expr_to_eval);
                         type = normalizeType(boundFieldType);
                         break;
                     }
                     visited.clear();
                     auto methodLookup = findClassMethodRecursive(symbolTableContext,classData,memberName,scopeContext.scope,visited);
                     if(methodLookup.method){
+                        if(methodLookup.method->isProtected && !canAccessProtectedClassMember(symbolTableContext,scopeContext,methodLookup.owner)){
+                            emitProtectedAccessError(errStream,expr_to_eval,"method",memberName);
+                            return nullptr;
+                        }
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
                         if(methodLookup.method->isDeprecated){
                             warnDeprecatedUse("method",
@@ -2349,6 +2630,10 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     bool resolvedMember = false;
                     for(auto *field : interfaceData->fields){
                         if(field && field->name == memberName){
+                            if(field->isProtected && !canAccessProtectedInterfaceMember(symbolTableContext,scopeContext,interfaceData)){
+                                emitProtectedAccessError(errStream,expr_to_eval,"field",memberName);
+                                return nullptr;
+                            }
                             expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
                             if(field->isDeprecated){
                                 warnDeprecatedUse("field",
@@ -2368,6 +2653,10 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     }
                     for(auto *method : interfaceData->methods){
                         if(method && method->name == memberName){
+                            if(method->isProtected && !canAccessProtectedInterfaceMember(symbolTableContext,scopeContext,interfaceData)){
+                                emitProtectedAccessError(errStream,expr_to_eval,"method",memberName);
+                                return nullptr;
+                            }
                             expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
                             if(method->isDeprecated){
                                 warnDeprecatedUse("method",
@@ -2395,17 +2684,25 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                 if(classNode && classNode->type == CLASS_DECL){
                     auto *classDecl = (ASTClassDecl *)classNode;
                     bool readonly = false;
+                    bool isProtected = false;
                     bool deprecated = false;
                     std::string deprecationMessage;
+                    std::string ownerClassName;
                     string_set visited;
                     if(auto *fieldType = findClassFieldTypeFromDeclRecursive(classDecl,
                                                                             symbolTableContext,
                                                                             scopeContext.scope,
                                                                             memberName,
                                                                             &readonly,
+                                                                            &isProtected,
                                                                             &deprecated,
                                                                             &deprecationMessage,
+                                                                            &ownerClassName,
                                                                             visited)){
+                        if(isProtected && !canAccessProtectedClassMember(symbolTableContext,scopeContext,ownerClassName)){
+                            emitProtectedAccessError(errStream,expr_to_eval,"field",memberName);
+                            return nullptr;
+                        }
                         (void)readonly;
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Var;
                         if(deprecated){
@@ -2420,6 +2717,13 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     }
                     visited.clear();
                     if(auto *methodDecl = findClassMethodFromDeclRecursive(classDecl,symbolTableContext,scopeContext.scope,memberName,visited)){
+                        auto ownerClassName = classDecl->id ? classDecl->id->val
+                                                            : (classDecl->classType ? classDecl->classType->getName().str() : memberName);
+                        if(hasAttributeNamed(methodDecl->attributes,"protected")
+                           && !canAccessProtectedClassMember(symbolTableContext,scopeContext,ownerClassName)){
+                            emitProtectedAccessError(errStream,expr_to_eval,"method",memberName);
+                            return nullptr;
+                        }
                         expr_to_eval->rightExpr->id->type = ASTIdentifier::Function;
                         warnDeprecatedDeclAttrs("method",methodDecl->funcId,methodDecl->attributes,expr_to_eval);
                         auto *methodType = buildFunctionTypeFromDecl(methodDecl,expr_to_eval);
@@ -2524,8 +2828,8 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                     if(classEntry){
                         auto *classData = (Semantics::SymbolTable::Class *)classEntry->data;
                         string_set visited;
-                        auto *field = findClassFieldRecursive(symbolTableContext,classData,memberExpr->rightExpr->id->val,scopeContext.scope,visited);
-                        if(field && field->isReadonly){
+                        auto fieldLookup = findClassFieldRecursive(symbolTableContext,classData,memberExpr->rightExpr->id->val,scopeContext.scope,visited);
+                        if(fieldLookup.field && fieldLookup.field->isReadonly){
                             errStream.push(SemanticADiagnostic::create("Cannot assign to readonly/const field.",expr_to_eval,Diagnostic::Error));
                             return nullptr;
                         }
@@ -2534,12 +2838,15 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         ASTStmt *classNode = baseType->getParentNode();
                         if(classNode && classNode->type == CLASS_DECL){
                             bool readonly = false;
+                            bool isProtected = false;
                             string_set visited;
                             auto *fieldType = findClassFieldTypeFromDeclRecursive((ASTClassDecl *)classNode,
                                                                                   symbolTableContext,
                                                                                   scopeContext.scope,
                                                                                   memberExpr->rightExpr->id->val,
                                                                                   &readonly,
+                                                                                  &isProtected,
+                                                                                  nullptr,
                                                                                   nullptr,
                                                                                   nullptr,
                                                                                   visited);
@@ -2565,6 +2872,10 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             errStream.push(SemanticADiagnostic::create("Array assignment index must be Int.",expr_to_eval,Diagnostic::Error));
                             return nullptr;
                         }
+                    }
+                    else if(isStringType(baseType)){
+                        errStream.push(SemanticADiagnostic::create("Cannot assign through String index; String is immutable.",expr_to_eval,Diagnostic::Error));
+                        return nullptr;
                     }
                     else if(isDictType(baseType)){
                         if(!(isStringType(indexType) || isNumericType(indexType))){
@@ -2809,6 +3120,10 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         string_set visited;
                         auto methodLookup = findClassMethodRecursive(symbolTableContext,classData,memberName,scopeContext.scope,visited);
                         if(methodLookup.method){
+                            if(methodLookup.method->isProtected && !canAccessProtectedClassMember(symbolTableContext,scopeContext,methodLookup.owner)){
+                                emitProtectedAccessError(errStream,expr_to_eval,"method",memberName);
+                                return nullptr;
+                            }
                             resolvedInstanceMethod = true;
                             if(!methodLookup.method->genericParams.empty()){
                                 auto expectedParams = orderedFunctionParamTypes(methodLookup.method);
@@ -2874,6 +3189,10 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                                 }
                             }
                             if(method){
+                                if(method->isProtected && !canAccessProtectedInterfaceMember(symbolTableContext,scopeContext,interfaceData)){
+                                    emitProtectedAccessError(errStream,expr_to_eval,"method",memberName);
+                                    return nullptr;
+                                }
                                 resolvedInstanceMethod = true;
                                 if(!method->genericParams.empty()){
                                     auto expectedParams = orderedFunctionParamTypes(method);
@@ -3428,6 +3747,10 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             errStream.push(SemanticADiagnostic::create("Unknown method.",expr_to_eval,Diagnostic::Error));
                             return nullptr;
                         }
+                        if(lookup.method->isProtected && !canAccessProtectedClassMember(symbolTableContext,scopeContext,lookup.owner)){
+                            emitProtectedAccessError(errStream,expr_to_eval,"method",memberExpr->rightExpr->id->val);
+                            return nullptr;
+                        }
                         auto expectedParams = orderedFunctionParamTypes(lookup.method);
                         if(expr_to_eval->exprArrayData.size() != expectedParams.size()){
                             errStream.push(SemanticADiagnostic::create("Incorrect number of method arguments.",expr_to_eval,Diagnostic::Error));
@@ -3466,6 +3789,10 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                             errStream.push(SemanticADiagnostic::create("Unknown method.",expr_to_eval,Diagnostic::Error));
                             return nullptr;
                         }
+                        if(method->isProtected && !canAccessProtectedInterfaceMember(symbolTableContext,scopeContext,interfaceData)){
+                            emitProtectedAccessError(errStream,expr_to_eval,"method",memberExpr->rightExpr->id->val);
+                            return nullptr;
+                        }
                         auto expectedParams = orderedFunctionParamTypes(method);
                         if(expr_to_eval->exprArrayData.size() != expectedParams.size()){
                             errStream.push(SemanticADiagnostic::create("Incorrect number of method arguments.",expr_to_eval,Diagnostic::Error));
@@ -3496,6 +3823,13 @@ ASTType * SemanticA::evalExprForTypeId(ASTExpr *expr_to_eval,
                         auto *methodDecl = findClassMethodFromDeclRecursive(classDecl,symbolTableContext,scopeContext.scope,memberExpr->rightExpr->id->val,visited);
                         if(!methodDecl){
                             errStream.push(SemanticADiagnostic::create("Unknown method.",expr_to_eval,Diagnostic::Error));
+                            return nullptr;
+                        }
+                        auto ownerClassName = classDecl->id ? classDecl->id->val
+                                                            : (classDecl->classType ? classDecl->classType->getName().str() : memberExpr->rightExpr->id->val);
+                        if(hasAttributeNamed(methodDecl->attributes,"protected")
+                           && !canAccessProtectedClassMember(symbolTableContext,scopeContext,ownerClassName)){
+                            emitProtectedAccessError(errStream,expr_to_eval,"method",memberExpr->rightExpr->id->val);
                             return nullptr;
                         }
                         if(expr_to_eval->exprArrayData.size() != methodDecl->params.size()){

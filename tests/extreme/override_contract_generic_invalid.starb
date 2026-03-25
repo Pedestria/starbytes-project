@@ -1,0 +1,11 @@
+class Base {
+    func wrap<T>(value:T) T {
+        return value
+    }
+}
+
+class Derived : Base {
+    func wrap(value:Int) Int {
+        return value
+    }
+}

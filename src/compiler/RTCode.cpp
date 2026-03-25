@@ -840,7 +840,7 @@ namespace Runtime {
             os.write((char *)&code2,sizeof(RTCode));
             
             RTID strVal;
-            strVal.len = StarbytesStrLength(*obj);
+            strVal.len = StarbytesStrByteLength(*obj);
             strVal.value = StarbytesStrGetBuffer(*obj);
             os << &strVal;
         }
