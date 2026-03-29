@@ -107,6 +107,7 @@ static std::string resolveNativeCallbackName(const RTFuncTemplate *func){
 static bool isExpressionOpcode(RTCode code){
     return code == CODE_RTIVKFUNC
         || code == CODE_RTCALL_DIRECT
+        || code == CODE_RTCALL_BUILTIN_MEMBER
         || code == CODE_UNARY_OPERATOR
         || code == CODE_RTTYPED_NEGATE
         || code == CODE_BINARY_OPERATOR
@@ -117,8 +118,10 @@ static bool isExpressionOpcode(RTCode code){
         || code == CODE_RTCAST
         || code == CODE_RTTYPED_INTRINSIC
         || code == CODE_RTMEMBER_SET
+        || code == CODE_RTMEMBER_SET_FIELD_SLOT
         || code == CODE_RTMEMBER_IVK
         || code == CODE_RTMEMBER_GET
+        || code == CODE_RTMEMBER_GET_FIELD_SLOT
         || code == CODE_RTNEWOBJ
         || code == CODE_RTREGEX_LITERAL
         || code == CODE_RTVAR_SET
@@ -855,6 +858,7 @@ class InterpImpl final : public Interp {
     const RuntimeClassLayout *findClassLayout(StarbytesClassType classType) const;
     void rebuildClassLayout(StarbytesClassType classType);
     bool lookupClassFieldSlot(StarbytesObject object,const std::string &memberName,uint32_t &slotOut) const;
+    bool canAccessDirectFieldSlot(StarbytesObject object,uint32_t slot) const;
     RTFuncTemplate *findFunctionByName(string_ref functionName);
     LocalFrame *currentLocalFrame();
     const LocalFrame *currentLocalFrame() const;
@@ -881,6 +885,8 @@ class InterpImpl final : public Interp {
     StarbytesObject invokeNativeFunc(std::istream &in,StarbytesFuncCallback callback,unsigned argCount,StarbytesObject boundSelf);
     StarbytesObject invokeNativeFuncWithValues(StarbytesFuncCallback callback,ArrayRef<StarbytesObject> args,StarbytesObject boundSelf);
     StarbytesObject invokeFuncWithValues(RTFuncTemplate *func_temp,ArrayRef<StarbytesObject> args,StarbytesObject boundSelf = nullptr);
+    StarbytesObject invokeResolvedClassMethod(std::istream &in,StarbytesObject object,const std::string &methodName,unsigned argCount);
+    StarbytesObject invokeBuiltinMember(std::istream &in,StarbytesObject object,RTBuiltinMemberId memberId,unsigned argCount);
     StarbytesTask scheduleLazyCall(std::istream &in,RTFuncTemplate *func_temp,unsigned argCount,StarbytesObject boundSelf = nullptr);
     void processOneMicrotask();
     void processMicrotasks();
@@ -1044,6 +1050,777 @@ bool InterpImpl::lookupClassFieldSlot(StarbytesObject object,const std::string &
     }
     slotOut = foundSlot->second;
     return true;
+}
+
+bool InterpImpl::canAccessDirectFieldSlot(StarbytesObject object,uint32_t slot) const{
+    if(!object || StarbytesObjectIs(object)){
+        return false;
+    }
+    auto classType = StarbytesClassObjectGetClass(object);
+    auto *layout = findClassLayout(classType);
+    if(!layout){
+        return false;
+    }
+    auto fieldCount = StarbytesClassObjectGetFieldCount(object);
+    return fieldCount == layout->fieldNames.size() && slot < fieldCount;
+}
+
+StarbytesObject InterpImpl::invokeResolvedClassMethod(std::istream &in,
+                                                      StarbytesObject object,
+                                                      const std::string &methodName,
+                                                      unsigned argCount){
+    StarbytesClassType classType = StarbytesClassObjectGetClass(object);
+    auto *classMeta = findClassByType(classType);
+    if(!classMeta){
+        StarbytesObjectRelease(object);
+        discardExprArgs(in,argCount);
+        return nullptr;
+    }
+
+    auto *methodOwner = findMethodOwnerInHierarchy(classMeta,methodName);
+    if(!methodOwner){
+        StarbytesObjectRelease(object);
+        discardExprArgs(in,argCount);
+        return nullptr;
+    }
+
+    std::string className = rtidToString(methodOwner->name);
+    std::string mangledName = mangleClassMethodName(className,methodName);
+    auto *runtimeMethod = findFunctionByName(string_ref(mangledName));
+    if(!runtimeMethod){
+        StarbytesObjectRelease(object);
+        discardExprArgs(in,argCount);
+        return nullptr;
+    }
+
+    StarbytesObject result = nullptr;
+    if(runtimeMethod->isLazy){
+        result = scheduleLazyCall(in,runtimeMethod,argCount,object);
+    }
+    else {
+        result = invokeFunc(in,runtimeMethod,argCount,object);
+    }
+    StarbytesObjectRelease(object);
+    return result;
+}
+
+StarbytesObject InterpImpl::invokeBuiltinMember(std::istream &in,
+                                                StarbytesObject object,
+                                                RTBuiltinMemberId memberId,
+                                                unsigned argCount){
+    if(!object){
+        discardExprArgs(in,argCount);
+        return nullptr;
+    }
+
+    if(StarbytesObjectTypecheck(object,StarbytesStrType())
+       || StarbytesObjectTypecheck(object,StarbytesRegexType())
+       || StarbytesObjectTypecheck(object,StarbytesArrayType())
+       || StarbytesObjectTypecheck(object,StarbytesDictType())){
+        DirectArgBuffer argBuffer(argCount);
+        unsigned consumedArgs = 0;
+        auto collectArgs = [&]() -> bool {
+            consumedArgs = 0;
+            for(unsigned i = 0;i < argCount;++i){
+                auto arg = evalExpr(in);
+                ++consumedArgs;
+                if(!arg){
+                    for(unsigned j = 0;j < consumedArgs - 1;++j){
+                        if(argBuffer.data()[j]){
+                            StarbytesObjectRelease(argBuffer.data()[j]);
+                            argBuffer.data()[j] = nullptr;
+                        }
+                    }
+                    consumedArgs = 0;
+                    return false;
+                }
+                argBuffer.data()[i] = arg;
+            }
+            return true;
+        };
+        auto releaseArgs = [&](){
+            argBuffer.releaseAll();
+        };
+        auto discardRemainingArgs = [&](){
+            if(consumedArgs < argCount){
+                discardExprArgs(in,argCount - consumedArgs);
+                consumedArgs = argCount;
+            }
+        };
+        auto failWithArgs = [&](const std::string &message) -> StarbytesObject {
+            discardRemainingArgs();
+            if(!message.empty()){
+                lastRuntimeError = message;
+            }
+            releaseArgs();
+            StarbytesObjectRelease(object);
+            return nullptr;
+        };
+        auto expectIntArg = [&](StarbytesObject arg,int &value) -> bool {
+            if(!arg || !StarbytesObjectTypecheck(arg,StarbytesNumType())){
+                return false;
+            }
+            auto argType = StarbytesNumGetType(arg);
+            if(argType == NumTypeInt){
+                value = StarbytesNumGetIntValue(arg);
+                return true;
+            }
+            if(argType == NumTypeLong){
+                value = (int)StarbytesNumGetLongValue(arg);
+                return true;
+            }
+            return false;
+        };
+        auto expectStringArg = [&](StarbytesObject arg,std::string &value) -> bool {
+            if(!arg || !StarbytesObjectTypecheck(arg,StarbytesStrType())){
+                return false;
+            }
+            value = StarbytesStrGetBuffer(arg);
+            return true;
+        };
+
+        if(StarbytesObjectTypecheck(object,StarbytesStrType())){
+            auto source = std::string(StarbytesStrGetBuffer(object));
+            switch(memberId){
+                case RTBUILTIN_MEMBER_STRING_IS_EMPTY:
+                case RTBUILTIN_MEMBER_ARRAY_IS_EMPTY:
+                case RTBUILTIN_MEMBER_DICT_IS_EMPTY:
+                    if(argCount != 0){
+                        return failWithArgs("String.isEmpty expects 0 arguments");
+                    }
+                    StarbytesObjectRelease(object);
+                    return StarbytesBoolNew((StarbytesBoolVal)source.empty());
+                case RTBUILTIN_MEMBER_STRING_AT:
+                case RTBUILTIN_MEMBER_ARRAY_AT: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("String.at expects 1 argument");
+                    }
+                    int index = 0;
+                    if(!expectIntArg(argBuffer.data()[0],index)){
+                        return failWithArgs("String.at expects Int index");
+                    }
+                    std::string ch;
+                    if(!utf8ScalarAt(source,index,ch)){
+                        return failWithArgs("String.at index out of range");
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return StarbytesStrNewWithData(ch.c_str());
+                }
+                case RTBUILTIN_MEMBER_STRING_SLICE:
+                case RTBUILTIN_MEMBER_ARRAY_SLICE: {
+                    if(argCount != 2 || !collectArgs()){
+                        return failWithArgs("String.slice expects 2 arguments");
+                    }
+                    int start = 0;
+                    int end = 0;
+                    if(!expectIntArg(argBuffer.data()[0],start) || !expectIntArg(argBuffer.data()[1],end)){
+                        return failWithArgs("String.slice expects Int arguments");
+                    }
+                    std::string out;
+                    if(!utf8ScalarSlice(source,start,end,out)){
+                        return failWithArgs("String.slice failed");
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return StarbytesStrNewWithData(out.c_str());
+                }
+                case RTBUILTIN_MEMBER_STRING_CONTAINS:
+                case RTBUILTIN_MEMBER_ARRAY_CONTAINS:
+                case RTBUILTIN_MEMBER_STRING_STARTS_WITH:
+                case RTBUILTIN_MEMBER_STRING_ENDS_WITH:
+                case RTBUILTIN_MEMBER_STRING_INDEX_OF:
+                case RTBUILTIN_MEMBER_ARRAY_INDEX_OF:
+                case RTBUILTIN_MEMBER_STRING_LAST_INDEX_OF: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("String method expects 1 argument");
+                    }
+                    std::string needle;
+                    if(!expectStringArg(argBuffer.data()[0],needle)){
+                        return failWithArgs("String method expects String argument");
+                    }
+                    bool boolResult = false;
+                    int intResult = -1;
+                    if(memberId == RTBUILTIN_MEMBER_STRING_CONTAINS || memberId == RTBUILTIN_MEMBER_ARRAY_CONTAINS){
+                        boolResult = source.find(needle) != std::string::npos;
+                    }
+                    else if(memberId == RTBUILTIN_MEMBER_STRING_STARTS_WITH){
+                        boolResult = source.rfind(needle,0) == 0;
+                    }
+                    else if(memberId == RTBUILTIN_MEMBER_STRING_ENDS_WITH){
+                        boolResult = needle.size() <= source.size()
+                            && source.compare(source.size() - needle.size(),needle.size(),needle) == 0;
+                    }
+                    else if(memberId == RTBUILTIN_MEMBER_STRING_INDEX_OF || memberId == RTBUILTIN_MEMBER_ARRAY_INDEX_OF){
+                        auto pos = source.find(needle);
+                        intResult = (pos == std::string::npos) ? -1 : utf8ScalarIndexForByteOffset(source,pos);
+                    }
+                    else {
+                        auto pos = source.rfind(needle);
+                        intResult = (pos == std::string::npos) ? -1 : utf8ScalarIndexForByteOffset(source,pos);
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    if(memberId == RTBUILTIN_MEMBER_STRING_INDEX_OF
+                       || memberId == RTBUILTIN_MEMBER_ARRAY_INDEX_OF
+                       || memberId == RTBUILTIN_MEMBER_STRING_LAST_INDEX_OF){
+                        return StarbytesNumNew(NumTypeInt,intResult);
+                    }
+                    return StarbytesBoolNew((StarbytesBoolVal)boolResult);
+                }
+                case RTBUILTIN_MEMBER_STRING_LOWER:
+                    if(argCount != 0){
+                        return failWithArgs("String.lower expects 0 arguments");
+                    }
+                    {
+                        std::string out = source;
+                        std::transform(out.begin(),out.end(),out.begin(),[](unsigned char c){ return (char)std::tolower(c); });
+                        StarbytesObjectRelease(object);
+                        return StarbytesStrNewWithData(out.c_str());
+                    }
+                case RTBUILTIN_MEMBER_STRING_UPPER:
+                    if(argCount != 0){
+                        return failWithArgs("String.upper expects 0 arguments");
+                    }
+                    {
+                        std::string out = source;
+                        std::transform(out.begin(),out.end(),out.begin(),[](unsigned char c){ return (char)std::toupper(c); });
+                        StarbytesObjectRelease(object);
+                        return StarbytesStrNewWithData(out.c_str());
+                    }
+                case RTBUILTIN_MEMBER_STRING_TRIM:
+                    if(argCount != 0){
+                        return failWithArgs("String.trim expects 0 arguments");
+                    }
+                    {
+                        auto out = stringTrim(source);
+                        StarbytesObjectRelease(object);
+                        return StarbytesStrNewWithData(out.c_str());
+                    }
+                case RTBUILTIN_MEMBER_STRING_REPLACE:
+                case RTBUILTIN_MEMBER_REGEX_REPLACE: {
+                    if(argCount != 2 || !collectArgs()){
+                        return failWithArgs("String.replace expects 2 arguments");
+                    }
+                    std::string oldValue;
+                    std::string newValue;
+                    if(!expectStringArg(argBuffer.data()[0],oldValue) || !expectStringArg(argBuffer.data()[1],newValue)){
+                        return failWithArgs("String.replace expects String arguments");
+                    }
+                    std::string out = source;
+                    if(!oldValue.empty()){
+                        size_t start = 0;
+                        while((start = out.find(oldValue,start)) != std::string::npos){
+                            out.replace(start,oldValue.size(),newValue);
+                            start += newValue.size();
+                        }
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return StarbytesStrNewWithData(out.c_str());
+                }
+                case RTBUILTIN_MEMBER_STRING_SPLIT: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("String.split expects 1 argument");
+                    }
+                    std::string sep;
+                    if(!expectStringArg(argBuffer.data()[0],sep)){
+                        return failWithArgs("String.split expects String separator");
+                    }
+                    auto out = StarbytesArrayNew();
+                    if(sep.empty()){
+                        size_t offset = 0;
+                        while(offset < source.size()){
+                            auto width = utf8ScalarWidth(source,offset);
+                            if(width == 0){
+                                break;
+                            }
+                            std::string part = source.substr(offset,width);
+                            auto strObj = StarbytesStrNewWithData(part.c_str());
+                            StarbytesArrayPush(out,strObj);
+                            StarbytesObjectRelease(strObj);
+                            offset += width;
+                        }
+                    }
+                    else {
+                        size_t start = 0;
+                        while(true){
+                            auto pos = source.find(sep,start);
+                            std::string part = (pos == std::string::npos)
+                                ? source.substr(start)
+                                : source.substr(start,pos - start);
+                            auto strObj = StarbytesStrNewWithData(part.c_str());
+                            StarbytesArrayPush(out,strObj);
+                            StarbytesObjectRelease(strObj);
+                            if(pos == std::string::npos){
+                                break;
+                            }
+                            start = pos + sep.size();
+                        }
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return out;
+                }
+                case RTBUILTIN_MEMBER_STRING_REPEAT: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("String.repeat expects 1 argument");
+                    }
+                    int count = 0;
+                    if(!expectIntArg(argBuffer.data()[0],count)){
+                        return failWithArgs("String.repeat expects Int count");
+                    }
+                    if(count < 0){
+                        count = 0;
+                    }
+                    std::string out;
+                    out.reserve(source.size() * (size_t)count);
+                    for(int i = 0;i < count;++i){
+                        out += source;
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return StarbytesStrNewWithData(out.c_str());
+                }
+                default:
+                    discardExprArgs(in,argCount);
+                    StarbytesObjectRelease(object);
+                    return nullptr;
+            }
+        }
+
+        if(StarbytesObjectTypecheck(object,StarbytesRegexType())){
+            switch(memberId){
+                case RTBUILTIN_MEMBER_REGEX_MATCH: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("Regex.match expects 1 argument");
+                    }
+                    std::string text;
+                    if(!expectStringArg(argBuffer.data()[0],text)){
+                        return failWithArgs("Regex.match expects String text");
+                    }
+                    std::string error;
+                    auto result = regex::match(object,text,error);
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    if(!result && !error.empty()){
+                        lastRuntimeError = error;
+                    }
+                    return result;
+                }
+                case RTBUILTIN_MEMBER_REGEX_FIND_ALL: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("Regex.findAll expects 1 argument");
+                    }
+                    std::string text;
+                    if(!expectStringArg(argBuffer.data()[0],text)){
+                        return failWithArgs("Regex.findAll expects String text");
+                    }
+                    std::string error;
+                    auto result = regex::findAll(object,text,error);
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    if(!result && !error.empty()){
+                        lastRuntimeError = error;
+                    }
+                    return result;
+                }
+                case RTBUILTIN_MEMBER_STRING_REPLACE:
+                case RTBUILTIN_MEMBER_REGEX_REPLACE: {
+                    if(argCount != 2 || !collectArgs()){
+                        return failWithArgs("Regex.replace expects 2 arguments");
+                    }
+                    std::string text;
+                    std::string replacement;
+                    if(!expectStringArg(argBuffer.data()[0],text) || !expectStringArg(argBuffer.data()[1],replacement)){
+                        return failWithArgs("Regex.replace expects String arguments");
+                    }
+                    std::string error;
+                    auto result = regex::replace(object,text,replacement,error);
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    if(!result && !error.empty()){
+                        lastRuntimeError = error;
+                    }
+                    return result;
+                }
+                default:
+                    discardExprArgs(in,argCount);
+                    StarbytesObjectRelease(object);
+                    return nullptr;
+            }
+        }
+
+        if(StarbytesObjectTypecheck(object,StarbytesArrayType())){
+            auto arrayLen = StarbytesArrayGetLength(object);
+            switch(memberId){
+                case RTBUILTIN_MEMBER_STRING_IS_EMPTY:
+                case RTBUILTIN_MEMBER_ARRAY_IS_EMPTY:
+                case RTBUILTIN_MEMBER_DICT_IS_EMPTY:
+                    if(argCount != 0){
+                        return failWithArgs("Array.isEmpty expects 0 arguments");
+                    }
+                    StarbytesObjectRelease(object);
+                    return StarbytesBoolNew((StarbytesBoolVal)(arrayLen == 0));
+                case RTBUILTIN_MEMBER_ARRAY_PUSH:
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("Array.push expects 1 argument");
+                    }
+                    StarbytesArrayPush(object,argBuffer.data()[0]);
+                    {
+                        auto nextLen = (int)StarbytesArrayGetLength(object);
+                        releaseArgs();
+                        StarbytesObjectRelease(object);
+                        return StarbytesNumNew(NumTypeInt,nextLen);
+                    }
+                case RTBUILTIN_MEMBER_ARRAY_POP:
+                    if(argCount != 0){
+                        return failWithArgs("Array.pop expects 0 arguments");
+                    }
+                    if(arrayLen == 0){
+                        return failWithArgs("Array.pop on empty array");
+                    }
+                    {
+                        auto value = StarbytesArrayIndex(object,arrayLen - 1);
+                        if(value){
+                            StarbytesObjectReference(value);
+                        }
+                        StarbytesArrayPop(object);
+                        StarbytesObjectRelease(object);
+                        return value;
+                    }
+                case RTBUILTIN_MEMBER_STRING_AT:
+                case RTBUILTIN_MEMBER_ARRAY_AT: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("Array.at expects 1 argument");
+                    }
+                    int index = 0;
+                    if(!expectIntArg(argBuffer.data()[0],index)){
+                        return failWithArgs("Array.at expects Int index");
+                    }
+                    if(index < 0 || (unsigned)index >= arrayLen){
+                        return failWithArgs("Array.at index out of range");
+                    }
+                    auto value = StarbytesArrayIndex(object,(unsigned)index);
+                    if(value){
+                        StarbytesObjectReference(value);
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return value;
+                }
+                case RTBUILTIN_MEMBER_ARRAY_SET:
+                case RTBUILTIN_MEMBER_DICT_SET: {
+                    if(argCount != 2 || !collectArgs()){
+                        return failWithArgs("Array.set expects 2 arguments");
+                    }
+                    int index = 0;
+                    if(!expectIntArg(argBuffer.data()[0],index)){
+                        return failWithArgs("Array.set expects Int index");
+                    }
+                    bool ok = index >= 0 && (unsigned)index < arrayLen;
+                    if(ok){
+                        StarbytesArraySet(object,(unsigned)index,argBuffer.data()[1]);
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return StarbytesBoolNew((StarbytesBoolVal)ok);
+                }
+                case RTBUILTIN_MEMBER_ARRAY_INSERT: {
+                    if(argCount != 2 || !collectArgs()){
+                        return failWithArgs("Array.insert expects 2 arguments");
+                    }
+                    int index = 0;
+                    if(!expectIntArg(argBuffer.data()[0],index)){
+                        return failWithArgs("Array.insert expects Int index");
+                    }
+                    bool ok = index >= 0 && (unsigned)index <= arrayLen;
+                    if(ok){
+                        StarbytesArrayPush(object,argBuffer.data()[1]);
+                        for(unsigned pos = arrayLen; pos > (unsigned)index; --pos){
+                            auto shifted = StarbytesArrayIndex(object,pos - 1);
+                            StarbytesArraySet(object,pos,shifted);
+                        }
+                        StarbytesArraySet(object,(unsigned)index,argBuffer.data()[1]);
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return StarbytesBoolNew((StarbytesBoolVal)ok);
+                }
+                case RTBUILTIN_MEMBER_ARRAY_REMOVE_AT: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("Array.removeAt expects 1 argument");
+                    }
+                    int index = 0;
+                    if(!expectIntArg(argBuffer.data()[0],index)){
+                        return failWithArgs("Array.removeAt expects Int index");
+                    }
+                    if(index < 0 || (unsigned)index >= arrayLen){
+                        return failWithArgs("Array.removeAt index out of range");
+                    }
+                    auto removed = StarbytesArrayIndex(object,(unsigned)index);
+                    if(removed){
+                        StarbytesObjectReference(removed);
+                    }
+                    for(unsigned pos = (unsigned)index; pos + 1 < arrayLen; ++pos){
+                        auto shifted = StarbytesArrayIndex(object,pos + 1);
+                        StarbytesArraySet(object,pos,shifted);
+                    }
+                    StarbytesArrayPop(object);
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return removed;
+                }
+                case RTBUILTIN_MEMBER_ARRAY_CLEAR:
+                case RTBUILTIN_MEMBER_DICT_CLEAR:
+                    if(argCount != 0){
+                        return failWithArgs("Array.clear expects 0 arguments");
+                    }
+                    while(StarbytesArrayGetLength(object) > 0){
+                        StarbytesArrayPop(object);
+                    }
+                    StarbytesObjectRelease(object);
+                    return StarbytesBoolNew((StarbytesBoolVal)true);
+                case RTBUILTIN_MEMBER_STRING_CONTAINS:
+                case RTBUILTIN_MEMBER_ARRAY_CONTAINS:
+                case RTBUILTIN_MEMBER_STRING_INDEX_OF:
+                case RTBUILTIN_MEMBER_ARRAY_INDEX_OF: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("Array method expects 1 argument");
+                    }
+                    int foundIndex = -1;
+                    for(unsigned i = 0;i < arrayLen;++i){
+                        auto value = StarbytesArrayIndex(object,i);
+                        if(runtimeObjectEquals(value,argBuffer.data()[0])){
+                            foundIndex = (int)i;
+                            break;
+                        }
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    if(memberId == RTBUILTIN_MEMBER_STRING_INDEX_OF || memberId == RTBUILTIN_MEMBER_ARRAY_INDEX_OF){
+                        return StarbytesNumNew(NumTypeInt,foundIndex);
+                    }
+                    return StarbytesBoolNew((StarbytesBoolVal)(foundIndex >= 0));
+                }
+                case RTBUILTIN_MEMBER_STRING_SLICE:
+                case RTBUILTIN_MEMBER_ARRAY_SLICE: {
+                    if(argCount != 2 || !collectArgs()){
+                        return failWithArgs("Array.slice expects 2 arguments");
+                    }
+                    int start = 0;
+                    int end = 0;
+                    if(!expectIntArg(argBuffer.data()[0],start) || !expectIntArg(argBuffer.data()[1],end)){
+                        return failWithArgs("Array.slice expects Int arguments");
+                    }
+                    int lenInt = (int)arrayLen;
+                    start = clampSliceBound(start,lenInt);
+                    end = clampSliceBound(end,lenInt);
+                    if(end < start){
+                        end = start;
+                    }
+                    auto out = StarbytesArrayNew();
+                    StarbytesArrayReserve(out,(unsigned)(end - start));
+                    for(int i = start;i < end;++i){
+                        auto value = StarbytesArrayIndex(object,(unsigned)i);
+                        StarbytesArrayPush(out,value);
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return out;
+                }
+                case RTBUILTIN_MEMBER_ARRAY_JOIN: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("Array.join expects 1 argument");
+                    }
+                    std::string sep;
+                    if(!expectStringArg(argBuffer.data()[0],sep)){
+                        return failWithArgs("Array.join expects String separator");
+                    }
+                    std::string out;
+                    for(unsigned i = 0;i < arrayLen;++i){
+                        if(i > 0){
+                            out += sep;
+                        }
+                        out += objectToString(StarbytesArrayIndex(object,i));
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return StarbytesStrNewWithData(out.c_str());
+                }
+                case RTBUILTIN_MEMBER_ARRAY_COPY:
+                case RTBUILTIN_MEMBER_DICT_COPY: {
+                    if(argCount != 0){
+                        return failWithArgs("Array.copy expects 0 arguments");
+                    }
+                    auto out = StarbytesArrayCopy(object);
+                    StarbytesObjectRelease(object);
+                    return out;
+                }
+                case RTBUILTIN_MEMBER_ARRAY_REVERSE:
+                    if(argCount != 0){
+                        return failWithArgs("Array.reverse expects 0 arguments");
+                    }
+                    {
+                        auto out = StarbytesArrayNew();
+                        StarbytesArrayReserve(out,arrayLen);
+                        for(unsigned i = arrayLen;i > 0;--i){
+                            StarbytesArrayPush(out,StarbytesArrayIndex(object,i - 1));
+                        }
+                        StarbytesObjectRelease(object);
+                        return out;
+                    }
+                default:
+                    discardExprArgs(in,argCount);
+                    StarbytesObjectRelease(object);
+                    return nullptr;
+            }
+        }
+
+        if(StarbytesObjectTypecheck(object,StarbytesDictType())){
+            auto dictLen = StarbytesDictGetLength(object);
+            auto keys = StarbytesDictGetKeys(object);
+            auto values = StarbytesDictGetValues(object);
+            switch(memberId){
+                case RTBUILTIN_MEMBER_STRING_IS_EMPTY:
+                case RTBUILTIN_MEMBER_ARRAY_IS_EMPTY:
+                case RTBUILTIN_MEMBER_DICT_IS_EMPTY:
+                    if(argCount != 0){
+                        return failWithArgs("Dict.isEmpty expects 0 arguments");
+                    }
+                    StarbytesObjectRelease(object);
+                    return StarbytesBoolNew((StarbytesBoolVal)(dictLen == 0));
+                case RTBUILTIN_MEMBER_DICT_HAS: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("Dict.has expects 1 argument");
+                    }
+                    if(!isDictKeyObject(argBuffer.data()[0])){
+                        return failWithArgs("Dict key must be String/Int/Long/Float/Double");
+                    }
+                    auto value = StarbytesDictGet(object,argBuffer.data()[0]);
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return StarbytesBoolNew((StarbytesBoolVal)(value != nullptr));
+                }
+                case RTBUILTIN_MEMBER_DICT_GET: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("Dict.get expects 1 argument");
+                    }
+                    if(!isDictKeyObject(argBuffer.data()[0])){
+                        return failWithArgs("Dict key must be String/Int/Long/Float/Double");
+                    }
+                    auto value = StarbytesDictGet(object,argBuffer.data()[0]);
+                    if(value){
+                        StarbytesObjectReference(value);
+                    }
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return value;
+                }
+                case RTBUILTIN_MEMBER_DICT_REMOVE: {
+                    if(argCount != 1 || !collectArgs()){
+                        return failWithArgs("Dict.remove expects 1 argument");
+                    }
+                    if(!isDictKeyObject(argBuffer.data()[0])){
+                        return failWithArgs("Dict key must be String/Int/Long/Float/Double");
+                    }
+                    unsigned len = keys ? StarbytesArrayGetLength(keys) : 0;
+                    int found = -1;
+                    for(unsigned i = 0;i < len;++i){
+                        auto keyAt = StarbytesArrayIndex(keys,i);
+                        if(runtimeObjectEquals(keyAt,argBuffer.data()[0])){
+                            found = (int)i;
+                            break;
+                        }
+                    }
+                    if(found < 0){
+                        return failWithArgs("Dict key not found");
+                    }
+                    auto removed = StarbytesArrayIndex(values,(unsigned)found);
+                    if(removed){
+                        StarbytesObjectReference(removed);
+                    }
+                    for(unsigned pos = (unsigned)found; pos + 1 < len; ++pos){
+                        StarbytesArraySet(keys,pos,StarbytesArrayIndex(keys,pos + 1));
+                        StarbytesArraySet(values,pos,StarbytesArrayIndex(values,pos + 1));
+                    }
+                    StarbytesArrayPop(keys);
+                    StarbytesArrayPop(values);
+                    StarbytesDictSetLength(object,len - 1);
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return removed;
+                }
+                case RTBUILTIN_MEMBER_ARRAY_SET:
+                case RTBUILTIN_MEMBER_DICT_SET: {
+                    if(argCount != 2 || !collectArgs()){
+                        return failWithArgs("Dict.set expects 2 arguments");
+                    }
+                    if(!isDictKeyObject(argBuffer.data()[0])){
+                        return failWithArgs("Dict key must be String/Int/Long/Float/Double");
+                    }
+                    StarbytesDictSet(object,argBuffer.data()[0],argBuffer.data()[1]);
+                    releaseArgs();
+                    StarbytesObjectRelease(object);
+                    return StarbytesBoolNew((StarbytesBoolVal)true);
+                }
+                case RTBUILTIN_MEMBER_DICT_KEYS:
+                    if(argCount != 0){
+                        return failWithArgs("Dict.keys expects 0 arguments");
+                    }
+                    {
+                        auto out = keys ? StarbytesArrayCopy(keys) : StarbytesArrayNew();
+                        StarbytesObjectRelease(object);
+                        return out;
+                    }
+                case RTBUILTIN_MEMBER_DICT_VALUES:
+                    if(argCount != 0){
+                        return failWithArgs("Dict.values expects 0 arguments");
+                    }
+                    {
+                        auto out = values ? StarbytesArrayCopy(values) : StarbytesArrayNew();
+                        StarbytesObjectRelease(object);
+                        return out;
+                    }
+                case RTBUILTIN_MEMBER_ARRAY_CLEAR:
+                case RTBUILTIN_MEMBER_DICT_CLEAR:
+                    if(argCount != 0){
+                        return failWithArgs("Dict.clear expects 0 arguments");
+                    }
+                    while(keys && StarbytesArrayGetLength(keys) > 0){
+                        StarbytesArrayPop(keys);
+                    }
+                    while(values && StarbytesArrayGetLength(values) > 0){
+                        StarbytesArrayPop(values);
+                    }
+                    StarbytesDictSetLength(object,0);
+                    StarbytesObjectRelease(object);
+                    return StarbytesBoolNew((StarbytesBoolVal)true);
+                case RTBUILTIN_MEMBER_ARRAY_COPY:
+                case RTBUILTIN_MEMBER_DICT_COPY:
+                    if(argCount != 0){
+                        return failWithArgs("Dict.copy expects 0 arguments");
+                    }
+                    {
+                        auto out = StarbytesDictCopy(object);
+                        StarbytesObjectRelease(object);
+                        return out;
+                    }
+                default:
+                    discardExprArgs(in,argCount);
+                    StarbytesObjectRelease(object);
+                    return nullptr;
+            }
+        }
+    }
+
+    auto *methodName = rtBuiltinMemberName(memberId);
+    if(!methodName){
+        discardExprArgs(in,argCount);
+        StarbytesObjectRelease(object);
+        return nullptr;
+    }
+    return invokeResolvedClassMethod(in,object,methodName,argCount);
 }
 
 void InterpImpl::registerFunctionTemplate(RTFuncTemplate funcTemp){
@@ -2342,6 +3119,15 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             }
             return invokeFunc(in,funcTemplate,argCount);
         }
+        case CODE_RTCALL_BUILTIN_MEMBER: {
+            ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::MemberAccess);
+            auto object = evalExpr(in);
+            RTBuiltinMemberId memberId = RTBUILTIN_MEMBER_INVALID;
+            in.read((char *)&memberId,sizeof(memberId));
+            unsigned argCount = 0;
+            in.read((char *)&argCount,sizeof(argCount));
+            return invokeBuiltinMember(in,object,memberId,argCount);
+        }
         case CODE_UNARY_OPERATOR: {
             RTCode unaryCode = UNARY_OP_NOT;
             in.read((char *)&unaryCode,sizeof(unaryCode));
@@ -3507,6 +4293,27 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             }
             return StarbytesBoolNew(StarbytesBoolFalse);
         }
+        case CODE_RTMEMBER_GET_FIELD_SLOT : {
+            ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::MemberAccess);
+            auto object = evalExpr(in);
+            uint32_t fieldSlot = 0;
+            in.read((char *)&fieldSlot,sizeof(fieldSlot));
+            if(!canAccessDirectFieldSlot(object,fieldSlot)){
+                if(object){
+                    StarbytesObjectRelease(object);
+                }
+                return StarbytesBoolNew(StarbytesBoolFalse);
+            }
+            auto value = StarbytesClassObjectGetField(object,fieldSlot);
+            if(value){
+                StarbytesObjectReference(value);
+            }
+            StarbytesObjectRelease(object);
+            if(value){
+                return value;
+            }
+            return StarbytesBoolNew(StarbytesBoolFalse);
+        }
         case CODE_RTMEMBER_SET : {
             ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::MemberAccess);
             auto object = evalExpr(in);
@@ -3557,6 +4364,27 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 StarbytesObjectReference(value);
                 StarbytesObjectAddProperty(object,const_cast<char *>(memberName.c_str()),value);
             }
+            StarbytesObjectRelease(object);
+            return value;
+        }
+        case CODE_RTMEMBER_SET_FIELD_SLOT : {
+            ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::MemberAccess);
+            auto object = evalExpr(in);
+            uint32_t fieldSlot = 0;
+            in.read((char *)&fieldSlot,sizeof(fieldSlot));
+            auto value = evalExpr(in);
+            if(!value){
+                value = StarbytesBoolNew(StarbytesBoolFalse);
+            }
+            if(!canAccessDirectFieldSlot(object,fieldSlot)){
+                if(object){
+                    StarbytesObjectRelease(object);
+                }
+                StarbytesObjectRelease(value);
+                return nullptr;
+            }
+            StarbytesObjectReference(value);
+            StarbytesClassObjectSetField(object,fieldSlot,value);
             StarbytesObjectRelease(object);
             return value;
         }
@@ -4235,40 +5063,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 }
             }
 
-            StarbytesClassType classType = StarbytesClassObjectGetClass(object);
-            auto *classMeta = findClassByType(classType);
-            if(!classMeta){
-                StarbytesObjectRelease(object);
-                discardExprArgs(in,argCount);
-                return nullptr;
-            }
-
-            auto *methodOwner = findMethodOwnerInHierarchy(classMeta,methodName);
-            if(!methodOwner){
-                StarbytesObjectRelease(object);
-                discardExprArgs(in,argCount);
-                return nullptr;
-            }
-
-            std::string className = rtidToString(methodOwner->name);
-            std::string mangledName = mangleClassMethodName(className,methodName);
-            auto *runtimeMethod = findFunctionByName(string_ref(mangledName));
-            if(!runtimeMethod){
-                StarbytesObjectRelease(object);
-                discardExprArgs(in,argCount);
-                return nullptr;
-            }
-
-            StarbytesObject result = nullptr;
-            if(runtimeMethod->isLazy){
-                result = scheduleLazyCall(in,runtimeMethod,argCount,object);
-            }
-            else {
-                result = invokeFunc(in,runtimeMethod,argCount,object);
-            }
-            StarbytesObjectRelease(object);
-            return result;
-            break;
+            return invokeResolvedClassMethod(in,object,methodName,argCount);
         }
         case CODE_RTREGEX_LITERAL: {
             ScopedSubsystemTimer subsystemTimer(this,RuntimeProfileSubsystem::ObjectAllocation);
@@ -4372,6 +5167,19 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             }
             break;
         }
+        case CODE_RTCALL_BUILTIN_MEMBER: {
+            skipExpr(in);
+            RTBuiltinMemberId memberId = RTBUILTIN_MEMBER_INVALID;
+            in.read((char *)&memberId,sizeof(memberId));
+            (void)memberId;
+            unsigned argCount = 0;
+            in.read((char *)&argCount,sizeof(argCount));
+            while(argCount > 0){
+                skipExpr(in);
+                --argCount;
+            }
+            break;
+        }
         case CODE_UNARY_OPERATOR: {
             RTCode unaryCode = UNARY_OP_NOT;
             in.read((char *)&unaryCode,sizeof(unaryCode));
@@ -4428,10 +5236,25 @@ void InterpImpl::skipExprFromCode(std::istream &in,RTCode code){
             in >> &memberId;
             break;
         }
+        case CODE_RTMEMBER_GET_FIELD_SLOT: {
+            skipExpr(in);
+            uint32_t slot = 0;
+            in.read((char *)&slot,sizeof(slot));
+            (void)slot;
+            break;
+        }
         case CODE_RTMEMBER_SET: {
             skipExpr(in);
             RTID memberId;
             in >> &memberId;
+            skipExpr(in);
+            break;
+        }
+        case CODE_RTMEMBER_SET_FIELD_SLOT: {
+            skipExpr(in);
+            uint32_t slot = 0;
+            in.read((char *)&slot,sizeof(slot));
+            (void)slot;
             skipExpr(in);
             break;
         }
@@ -4962,6 +5785,7 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
     }
     else if(code == CODE_RTIVKFUNC
          || code == CODE_RTCALL_DIRECT
+         || code == CODE_RTCALL_BUILTIN_MEMBER
          || code == CODE_UNARY_OPERATOR
          || code == CODE_RTTYPED_NEGATE
          || code == CODE_BINARY_OPERATOR
@@ -4972,8 +5796,10 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
          || code == CODE_RTCAST
          || code == CODE_RTTYPED_INTRINSIC
          || code == CODE_RTMEMBER_SET
+         || code == CODE_RTMEMBER_SET_FIELD_SLOT
          || code == CODE_RTMEMBER_IVK
          || code == CODE_RTMEMBER_GET
+         || code == CODE_RTMEMBER_GET_FIELD_SLOT
          || code == CODE_RTNEWOBJ
          || code == CODE_RTREGEX_LITERAL
          || code == CODE_RTVAR_SET

@@ -23,6 +23,7 @@ public:
 private:
     struct LocalSlotContext {
         std::map<std::string,FastTypeInfo> slotTypeMap;
+        std::map<std::string,ASTType *> slotSemanticTypeMap;
         std::map<std::string,uint32_t> slotMap;
         std::vector<Runtime::RTID> localSlotNames;
         std::vector<Runtime::RTTypedNumericKind> slotKinds;
@@ -38,8 +39,11 @@ private:
     friend class Parser;
     StarbytesObject exprToRTInternalObject(ASTExpr *expr);
     FastTypeInfo inferFastType(ASTExpr *expr) const;
+    ASTType *inferSemanticType(ASTExpr *expr) const;
     FastTypeInfo fastTypeFromTypeNode(ASTType *type) const;
     bool currentLocalSlotFastType(string_ref name,FastTypeInfo &typeOut) const;
+    bool currentLocalSlotSemanticType(string_ref name,ASTType *&typeOut) const;
+    bool tryResolveDirectFieldSlot(ASTExpr *memberExpr,uint32_t &slotOut) const;
     void ensureInlineFunctionTemplate(ASTExpr *inlineExpr,const std::string &hint);
     void ensureInlineExprTemplates(ASTExpr *expr);
 public:

@@ -63,7 +63,9 @@ const char *opcodeName(uint8_t code) {
         case CODE_BINARY_OPERATOR: return "CODE_BINARY_OPERATOR";
         case CODE_RTNEWOBJ: return "CODE_RTNEWOBJ";
         case CODE_RTMEMBER_GET: return "CODE_RTMEMBER_GET";
+        case CODE_RTMEMBER_GET_FIELD_SLOT: return "CODE_RTMEMBER_GET_FIELD_SLOT";
         case CODE_RTMEMBER_SET: return "CODE_RTMEMBER_SET";
+        case CODE_RTMEMBER_SET_FIELD_SLOT: return "CODE_RTMEMBER_SET_FIELD_SLOT";
         case CODE_RTMEMBER_IVK: return "CODE_RTMEMBER_IVK";
         case CODE_RTSECURE_DECL: return "CODE_RTSECURE_DECL";
         case CODE_RTREGEX_LITERAL: return "CODE_RTREGEX_LITERAL";
@@ -87,6 +89,7 @@ const char *opcodeName(uint8_t code) {
         case CODE_RTTYPED_INDEX_SET: return "CODE_RTTYPED_INDEX_SET";
         case CODE_RTTYPED_INTRINSIC: return "CODE_RTTYPED_INTRINSIC";
         case CODE_RTCALL_DIRECT: return "CODE_RTCALL_DIRECT";
+        case CODE_RTCALL_BUILTIN_MEMBER: return "CODE_RTCALL_BUILTIN_MEMBER";
         default: return "CODE_UNKNOWN";
     }
 }

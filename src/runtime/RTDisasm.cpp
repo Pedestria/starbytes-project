@@ -167,6 +167,23 @@ class Disassembler {
                 out << " ";
             }
         }
+        else if(code == CODE_RTCALL_BUILTIN_MEMBER){
+            out << "CODE_RTCALL_BUILTIN_MEMBER ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            RTBuiltinMemberId memberId = RTBUILTIN_MEMBER_INVALID;
+            in.read((char *)&memberId,sizeof(memberId));
+            auto *memberName = rtBuiltinMemberName(memberId);
+            out << " " << (memberName ? memberName : "<invalid>");
+            unsigned arg_count = 0;
+            in.read((char *)&arg_count,sizeof(arg_count));
+            out << " " << arg_count << " ";
+            for(unsigned i = 0;i < arg_count;i++){
+                in.read((char *)&code,sizeof(RTCode));
+                _disasm_expr(code);
+                out << " ";
+            }
+        }
         else if(code == CODE_UNARY_OPERATOR){
             RTCode unaryCode = UNARY_OP_NOT;
             in.read((char *)&unaryCode,sizeof(unaryCode));
@@ -230,6 +247,62 @@ class Disassembler {
             out << "CODE_RTLOCAL_SET " << slot << " ";
             in.read((char *)&code,sizeof(RTCode));
             _disasm_expr(code);
+        }
+        else if(code == CODE_RTMEMBER_GET){
+            out << "CODE_RTMEMBER_GET ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            RTID memberId;
+            in >> &memberId;
+            out << " ";
+            out.write(memberId.value,sizeof(char) * memberId.len);
+        }
+        else if(code == CODE_RTMEMBER_GET_FIELD_SLOT){
+            out << "CODE_RTMEMBER_GET_FIELD_SLOT ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            uint32_t slot = 0;
+            in.read((char *)&slot,sizeof(slot));
+            out << " " << slot;
+        }
+        else if(code == CODE_RTMEMBER_SET){
+            out << "CODE_RTMEMBER_SET ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            RTID memberId;
+            in >> &memberId;
+            out << " ";
+            out.write(memberId.value,sizeof(char) * memberId.len);
+            out << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
+        else if(code == CODE_RTMEMBER_SET_FIELD_SLOT){
+            out << "CODE_RTMEMBER_SET_FIELD_SLOT ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            uint32_t slot = 0;
+            in.read((char *)&slot,sizeof(slot));
+            out << " " << slot << " ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+        }
+        else if(code == CODE_RTMEMBER_IVK){
+            out << "CODE_RTMEMBER_IVK ";
+            in.read((char *)&code,sizeof(RTCode));
+            _disasm_expr(code);
+            RTID memberId;
+            in >> &memberId;
+            out << " ";
+            out.write(memberId.value,sizeof(char) * memberId.len);
+            unsigned arg_count = 0;
+            in.read((char *)&arg_count,sizeof(arg_count));
+            out << " " << arg_count << " ";
+            for(unsigned i = 0;i < arg_count;i++){
+                in.read((char *)&code,sizeof(RTCode));
+                _disasm_expr(code);
+                out << " ";
+            }
         }
         else if(code == CODE_RTLOCAL_DECL){
             uint32_t slot = 0;
@@ -452,7 +525,11 @@ public:
         RTCode code;
         in.read((char *)&code,sizeof(RTCode));
         while (code != CODE_MODULE_END) {
-            if(code == CODE_RTIVKFUNC || code == CODE_RTCALL_DIRECT || code == CODE_CONDITIONAL || code == CODE_RTREGEX_LITERAL
+            if(code == CODE_RTIVKFUNC || code == CODE_RTCALL_DIRECT || code == CODE_RTCALL_BUILTIN_MEMBER
+               || code == CODE_RTMEMBER_GET || code == CODE_RTMEMBER_GET_FIELD_SLOT
+               || code == CODE_RTMEMBER_SET || code == CODE_RTMEMBER_SET_FIELD_SLOT
+               || code == CODE_RTMEMBER_IVK
+               || code == CODE_CONDITIONAL || code == CODE_RTREGEX_LITERAL
                || code == CODE_UNARY_OPERATOR || code == CODE_RTTYPED_NEGATE || code == CODE_BINARY_OPERATOR
                || code == CODE_RTTYPED_BINARY || code == CODE_RTTYPED_COMPARE
                || code == CODE_RTVAR_SET || code == CODE_RTLOCAL_REF || code == CODE_RTTYPED_LOCAL_REF || code == CODE_RTLOCAL_SET

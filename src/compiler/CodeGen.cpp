@@ -86,9 +86,14 @@ static void emitRuntimeFunction(ASTBlockStmt *blockStmt,
 
 inline void ASTIdentifier_to_RTID(ASTIdentifier *var,RTID &out);
 static RTID makeOwnedRTID(string_ref value);
+struct LocalSlotSemanticInfo {
+    std::string name;
+    CodeGen::FastTypeInfo fastType;
+    ASTType *semanticType = nullptr;
+};
 static void collectLocalSlotInfosFromBlock(ASTBlockStmt *blockStmt,
                                            std::set<std::string> &seen,
-                                           std::vector<std::pair<std::string,CodeGen::FastTypeInfo>> &out,
+                                           std::vector<LocalSlotSemanticInfo> &out,
                                            const CodeGen *codeGen);
 
 static bool paramComesBefore(ASTIdentifier *lhs,ASTIdentifier *rhs){
@@ -217,7 +222,7 @@ CodeGen::FastTypeInfo CodeGen::fastTypeFromTypeNode(ASTType *type) const{
 static void recordLocalSlotInfo(ASTIdentifier *id,
                                 ASTType *type,
                                 std::set<std::string> &seen,
-                                std::vector<std::pair<std::string,CodeGen::FastTypeInfo>> &out,
+                                std::vector<LocalSlotSemanticInfo> &out,
                                 const CodeGen *codeGen){
     if(!id){
         return;
@@ -232,18 +237,18 @@ static void recordLocalSlotInfo(ASTIdentifier *id,
                 info.arrayElementKind = fastScalarKindFromType(type->typeParams.front());
             }
         }
-        out.push_back({id->val,info});
+        out.push_back({id->val,info,type});
     }
 }
 
 static void collectLocalSlotInfosFromDecl(ASTDecl *decl,
                                           std::set<std::string> &seen,
-                                          std::vector<std::pair<std::string,CodeGen::FastTypeInfo>> &out,
+                                          std::vector<LocalSlotSemanticInfo> &out,
                                           const CodeGen *codeGen);
 
 static void collectLocalSlotInfosFromBlock(ASTBlockStmt *blockStmt,
                                            std::set<std::string> &seen,
-                                           std::vector<std::pair<std::string,CodeGen::FastTypeInfo>> &out,
+                                           std::vector<LocalSlotSemanticInfo> &out,
                                            const CodeGen *codeGen){
     if(!blockStmt){
         return;
@@ -257,7 +262,7 @@ static void collectLocalSlotInfosFromBlock(ASTBlockStmt *blockStmt,
 
 static void collectLocalSlotInfosFromDecl(ASTDecl *decl,
                                           std::set<std::string> &seen,
-                                          std::vector<std::pair<std::string,CodeGen::FastTypeInfo>> &out,
+                                          std::vector<LocalSlotSemanticInfo> &out,
                                           const CodeGen *codeGen){
     if(!decl){
         return;
@@ -314,18 +319,20 @@ void CodeGen::pushLocalSlotContext(const std::vector<std::pair<ASTIdentifier *,A
         context.slotMap.emplace(argName,nextSlot++);
         auto typeInfo = fastTypeFromTypeNode(paramPair.second);
         context.slotTypeMap[argName] = typeInfo;
+        context.slotSemanticTypeMap[argName] = paramPair.second;
         context.slotKinds.push_back(typeInfo.scalarKind);
     }
 
-    std::vector<std::pair<std::string,FastTypeInfo>> localInfos;
+    std::vector<LocalSlotSemanticInfo> localInfos;
     collectLocalSlotInfosFromBlock(blockStmt,seen,localInfos,this);
     for(const auto &localInfo : localInfos){
-        context.slotMap.emplace(localInfo.first,nextSlot++);
-        context.slotTypeMap[localInfo.first] = localInfo.second;
-        auto slotId = makeOwnedRTID(localInfo.first);
+        context.slotMap.emplace(localInfo.name,nextSlot++);
+        context.slotTypeMap[localInfo.name] = localInfo.fastType;
+        context.slotSemanticTypeMap[localInfo.name] = localInfo.semanticType;
+        auto slotId = makeOwnedRTID(localInfo.name);
         templ.localSlotNames.push_back(slotId);
         context.localSlotNames.push_back(slotId);
-        context.slotKinds.push_back(localInfo.second.scalarKind);
+        context.slotKinds.push_back(localInfo.fastType.scalarKind);
     }
 
     templ.slotKinds = context.slotKinds;
@@ -358,6 +365,19 @@ bool CodeGen::currentLocalSlotFastType(string_ref name,FastTypeInfo &typeOut) co
     auto &context = localSlotStack.back();
     auto found = context.slotTypeMap.find(name.str());
     if(found == context.slotTypeMap.end()){
+        return false;
+    }
+    typeOut = found->second;
+    return true;
+}
+
+bool CodeGen::currentLocalSlotSemanticType(string_ref name,ASTType *&typeOut) const{
+    if(localSlotStack.empty()){
+        return false;
+    }
+    auto &context = localSlotStack.back();
+    auto found = context.slotSemanticTypeMap.find(name.str());
+    if(found == context.slotSemanticTypeMap.end()){
         return false;
     }
     typeOut = found->second;
@@ -614,6 +634,277 @@ CodeGen::FastTypeInfo CodeGen::inferFastType(ASTExpr *expr) const{
     }
 
     return info;
+}
+
+static Semantics::SymbolTable::Entry *findEntryByTypeName(Semantics::STableContext *tableContext,
+                                                          ASTType *type,
+                                                          std::shared_ptr<ASTScope> scope){
+    if(!tableContext || !type){
+        return nullptr;
+    }
+    auto typeName = type->getName();
+    if(auto *entry = tableContext->findEntryByEmittedNoDiag(typeName)){
+        return entry;
+    }
+    if(scope){
+        return tableContext->findEntryNoDiag(typeName,scope);
+    }
+    return nullptr;
+}
+
+static ASTType *semanticTypeFromEntry(Semantics::SymbolTable::Entry *entry){
+    if(!entry){
+        return nullptr;
+    }
+    switch(entry->type){
+        case Semantics::SymbolTable::Entry::Var:
+            return static_cast<Semantics::SymbolTable::Var *>(entry->data)->type;
+        case Semantics::SymbolTable::Entry::Function:
+            return static_cast<Semantics::SymbolTable::Function *>(entry->data)->returnType;
+        case Semantics::SymbolTable::Entry::Class:
+            return static_cast<Semantics::SymbolTable::Class *>(entry->data)->classType;
+        default:
+            return nullptr;
+    }
+}
+
+static ASTType *findSemanticClassFieldType(Semantics::STableContext *tableContext,
+                                           ASTType *classType,
+                                           std::shared_ptr<ASTScope> scope,
+                                           string_ref memberName){
+    if(!tableContext || !classType){
+        return nullptr;
+    }
+    auto *entry = findEntryByTypeName(tableContext,classType,scope);
+    if(!entry || entry->type != Semantics::SymbolTable::Entry::Class){
+        return nullptr;
+    }
+    auto *classData = static_cast<Semantics::SymbolTable::Class *>(entry->data);
+    for(auto *field : classData->fields){
+        if(field && field->name == memberName){
+            return field->type;
+        }
+    }
+    if(classData->superClassType){
+        return findSemanticClassFieldType(tableContext,classData->superClassType,scope,memberName);
+    }
+    return nullptr;
+}
+
+static ASTType *findSemanticClassMethodReturnType(Semantics::STableContext *tableContext,
+                                                  ASTType *classType,
+                                                  std::shared_ptr<ASTScope> scope,
+                                                  string_ref memberName){
+    if(!tableContext || !classType){
+        return nullptr;
+    }
+    auto *entry = findEntryByTypeName(tableContext,classType,scope);
+    if(!entry || entry->type != Semantics::SymbolTable::Entry::Class){
+        return nullptr;
+    }
+    auto *classData = static_cast<Semantics::SymbolTable::Class *>(entry->data);
+    for(auto *method : classData->instMethods){
+        if(method && method->name == memberName){
+            return method->returnType;
+        }
+    }
+    if(classData->superClassType){
+        return findSemanticClassMethodReturnType(tableContext,classData->superClassType,scope,memberName);
+    }
+    return nullptr;
+}
+
+static bool buildSemanticClassChain(Semantics::STableContext *tableContext,
+                                    ASTType *classType,
+                                    std::shared_ptr<ASTScope> scope,
+                                    std::vector<Semantics::SymbolTable::Class *> &chain){
+    if(!tableContext || !classType){
+        return false;
+    }
+    auto *entry = findEntryByTypeName(tableContext,classType,scope);
+    if(!entry || entry->type != Semantics::SymbolTable::Entry::Class){
+        return false;
+    }
+    auto *classData = static_cast<Semantics::SymbolTable::Class *>(entry->data);
+    if(classData->superClassType){
+        buildSemanticClassChain(tableContext,classData->superClassType,scope,chain);
+    }
+    chain.push_back(classData);
+    return true;
+}
+
+static bool resolveSemanticFieldSlot(Semantics::STableContext *tableContext,
+                                     ASTType *classType,
+                                     std::shared_ptr<ASTScope> scope,
+                                     string_ref memberName,
+                                     uint32_t &slotOut){
+    slotOut = 0;
+    std::vector<Semantics::SymbolTable::Class *> chain;
+    if(!buildSemanticClassChain(tableContext,classType,scope,chain)){
+        return false;
+    }
+    std::set<std::string> seen;
+    uint32_t nextSlot = 0;
+    for(auto *classData : chain){
+        for(auto *field : classData->fields){
+            if(!field){
+                continue;
+            }
+            auto inserted = seen.insert(field->name);
+            if(!inserted.second){
+                continue;
+            }
+            if(field->name == memberName){
+                slotOut = nextSlot;
+                return true;
+            }
+            ++nextSlot;
+        }
+    }
+    return false;
+}
+
+ASTType *CodeGen::inferSemanticType(ASTExpr *expr) const{
+    if(!expr){
+        return nullptr;
+    }
+
+    if(expr->type & LITERAL){
+        auto *literal = static_cast<ASTLiteralExpr *>(expr);
+        if(literal->strValue.has_value()){
+            return STRING_TYPE;
+        }
+        if(literal->regexPattern.has_value()){
+            return REGEX_TYPE;
+        }
+        if(literal->boolValue.has_value()){
+            return BOOL_TYPE;
+        }
+        if(literal->floatValue.has_value()){
+            return DOUBLE_TYPE;
+        }
+        if(literal->intValue.has_value()){
+            return INT_TYPE;
+        }
+        if(expr->type == ARRAY_EXPR){
+            return ARRAY_TYPE;
+        }
+        if(expr->type == DICT_EXPR){
+            return DICTIONARY_TYPE;
+        }
+    }
+
+    if(expr->type == ARRAY_EXPR){
+        return ARRAY_TYPE;
+    }
+    if(expr->type == DICT_EXPR){
+        return DICTIONARY_TYPE;
+    }
+
+    if(expr->type == ID_EXPR && expr->id){
+        ASTType *localType = nullptr;
+        if(expr->id->type == ASTIdentifier::Var && currentLocalSlotSemanticType(expr->id->val,localType)){
+            return localType;
+        }
+        if(genContext && genContext->tableContext){
+            if(auto *entry = genContext->tableContext->findEntryByEmittedNoDiag(expr->id->val)){
+                if(auto *type = semanticTypeFromEntry(entry)){
+                    return type;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    if(expr->type == MEMBER_EXPR){
+        if(expr->isScopeAccess && genContext && genContext->tableContext && expr->resolvedScope
+           && expr->rightExpr && expr->rightExpr->id){
+            if(auto *entry = genContext->tableContext->findEntryInExactScopeNoDiag(expr->rightExpr->id->val,expr->resolvedScope)){
+                return semanticTypeFromEntry(entry);
+            }
+            return nullptr;
+        }
+
+        std::string memberName;
+        if(!getMemberName(expr,memberName)){
+            return nullptr;
+        }
+
+        auto *baseType = inferSemanticType(expr->leftExpr);
+        if(!baseType){
+            return nullptr;
+        }
+        if(baseType->nameMatches(STRING_TYPE) || baseType->nameMatches(ARRAY_TYPE)
+           || baseType->nameMatches(DICTIONARY_TYPE) || baseType->nameMatches(MAP_TYPE)){
+            if(memberName == "length"){
+                return INT_TYPE;
+            }
+            return nullptr;
+        }
+        if(!genContext || !genContext->tableContext){
+            return nullptr;
+        }
+        if(auto *fieldType = findSemanticClassFieldType(genContext->tableContext,baseType,expr->scope,memberName)){
+            return fieldType;
+        }
+        return findSemanticClassMethodReturnType(genContext->tableContext,baseType,expr->scope,memberName);
+    }
+
+    if(expr->type == IVKE_EXPR){
+        if(expr->runtimeCastTargetName.has_value() && genContext && genContext->tableContext){
+            if(auto *entry = genContext->tableContext->findEntryByEmittedNoDiag(expr->runtimeCastTargetName.value())){
+                return semanticTypeFromEntry(entry);
+            }
+        }
+        if(expr->isConstructorCall && expr->callee){
+            if(expr->callee->type == ID_EXPR && expr->callee->id){
+                if(genContext && genContext->tableContext){
+                    if(auto *entry = genContext->tableContext->findEntryByEmittedNoDiag(expr->callee->id->val)){
+                        return semanticTypeFromEntry(entry);
+                    }
+                }
+            }
+            if(expr->callee->type == MEMBER_EXPR){
+                return inferSemanticType(expr->callee);
+            }
+        }
+        if(!expr->callee){
+            return nullptr;
+        }
+        if(expr->callee->type == MEMBER_EXPR && !expr->callee->isScopeAccess){
+            std::string memberName;
+            if(!getMemberName(expr->callee,memberName)){
+                return nullptr;
+            }
+            auto *baseType = inferSemanticType(expr->callee->leftExpr);
+            if(!baseType || !genContext || !genContext->tableContext){
+                return nullptr;
+            }
+            return findSemanticClassMethodReturnType(genContext->tableContext,baseType,expr->callee->scope,memberName);
+        }
+        return inferSemanticType(expr->callee);
+    }
+
+    return nullptr;
+}
+
+bool CodeGen::tryResolveDirectFieldSlot(ASTExpr *memberExpr,uint32_t &slotOut) const{
+    slotOut = 0;
+    if(!memberExpr || memberExpr->type != MEMBER_EXPR || memberExpr->isScopeAccess
+       || !memberExpr->rightExpr || !memberExpr->rightExpr->id
+       || memberExpr->rightExpr->id->type != ASTIdentifier::Var
+       || !genContext || !genContext->tableContext){
+        return false;
+    }
+    auto *receiverType = inferSemanticType(memberExpr->leftExpr);
+    if(!receiverType){
+        return false;
+    }
+    return resolveSemanticFieldSlot(genContext->tableContext,
+                                    receiverType,
+                                    memberExpr->scope,
+                                    memberExpr->rightExpr->id->val,
+                                    slotOut);
 }
 
 static bool unaryOpCodeFromSymbol(const std::string &op,RTCode &out){
@@ -1422,11 +1713,17 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
         if(!getMemberName(expr,memberName)){
             return;
         }
-        RTCode code = CODE_RTMEMBER_GET;
+        uint32_t fieldSlot = 0;
+        RTCode code = tryResolveDirectFieldSlot(expr,fieldSlot) ? CODE_RTMEMBER_GET_FIELD_SLOT : CODE_RTMEMBER_GET;
         genContext->out.write((const char *)&code,sizeof(RTCode));
         consumeStmt(expr->leftExpr);
-        RTID memberId = makeOwnedRTID(memberName);
-        genContext->out << &memberId;
+        if(code == CODE_RTMEMBER_GET_FIELD_SLOT){
+            genContext->out.write((const char *)&fieldSlot,sizeof(fieldSlot));
+        }
+        else {
+            RTID memberId = makeOwnedRTID(memberName);
+            genContext->out << &memberId;
+        }
     }
     else if(stmt->type == INDEX_EXPR){
         auto baseType = inferFastType(expr->leftExpr);
@@ -1619,11 +1916,17 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
             if(!getMemberName(expr->leftExpr,memberName)){
                 return;
             }
-            RTCode code = CODE_RTMEMBER_SET;
+            uint32_t fieldSlot = 0;
+            RTCode code = tryResolveDirectFieldSlot(expr->leftExpr,fieldSlot) ? CODE_RTMEMBER_SET_FIELD_SLOT : CODE_RTMEMBER_SET;
             genContext->out.write((const char *)&code,sizeof(RTCode));
             consumeStmt(expr->leftExpr->leftExpr);
-            RTID memberId = makeOwnedRTID(memberName);
-            genContext->out << &memberId;
+            if(code == CODE_RTMEMBER_SET_FIELD_SLOT){
+                genContext->out.write((const char *)&fieldSlot,sizeof(fieldSlot));
+            }
+            else {
+                RTID memberId = makeOwnedRTID(memberName);
+                genContext->out << &memberId;
+            }
             emitAssignedValueExpr();
             return;
         }
@@ -1693,11 +1996,19 @@ void CodeGen::consumeStmt(ASTStmt *stmt){
             if(!getMemberName(expr->callee,memberName)){
                 return;
             }
-            RTCode code = CODE_RTMEMBER_IVK;
+            RTBuiltinMemberId builtinMemberId = RTBUILTIN_MEMBER_INVALID;
+            RTCode code = rtBuiltinMemberIdForName(memberName,builtinMemberId)
+                ? CODE_RTCALL_BUILTIN_MEMBER
+                : CODE_RTMEMBER_IVK;
             genContext->out.write((const char *)&code,sizeof(RTCode));
             consumeStmt(expr->callee->leftExpr);
-            RTID memberId = makeOwnedRTID(memberName);
-            genContext->out << &memberId;
+            if(code == CODE_RTCALL_BUILTIN_MEMBER){
+                genContext->out.write((const char *)&builtinMemberId,sizeof(builtinMemberId));
+            }
+            else {
+                RTID memberId = makeOwnedRTID(memberName);
+                genContext->out << &memberId;
+            }
             unsigned argCount = expr->exprArrayData.size();
             genContext->out.write((const char *)&argCount,sizeof(argCount));
             for(auto *arg : expr->exprArrayData){

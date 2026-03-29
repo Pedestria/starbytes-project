@@ -9,6 +9,208 @@
 namespace starbytes {
 namespace Runtime {
 
+    bool rtBuiltinMemberIdForName(const std::string &name,RTBuiltinMemberId &idOut){
+        idOut = RTBUILTIN_MEMBER_INVALID;
+        if(name == "isEmpty"){
+            idOut = RTBUILTIN_MEMBER_STRING_IS_EMPTY;
+            return true;
+        }
+        if(name == "at"){
+            idOut = RTBUILTIN_MEMBER_STRING_AT;
+            return true;
+        }
+        if(name == "slice"){
+            idOut = RTBUILTIN_MEMBER_STRING_SLICE;
+            return true;
+        }
+        if(name == "contains"){
+            idOut = RTBUILTIN_MEMBER_STRING_CONTAINS;
+            return true;
+        }
+        if(name == "startsWith"){
+            idOut = RTBUILTIN_MEMBER_STRING_STARTS_WITH;
+            return true;
+        }
+        if(name == "endsWith"){
+            idOut = RTBUILTIN_MEMBER_STRING_ENDS_WITH;
+            return true;
+        }
+        if(name == "indexOf"){
+            idOut = RTBUILTIN_MEMBER_STRING_INDEX_OF;
+            return true;
+        }
+        if(name == "lastIndexOf"){
+            idOut = RTBUILTIN_MEMBER_STRING_LAST_INDEX_OF;
+            return true;
+        }
+        if(name == "lower"){
+            idOut = RTBUILTIN_MEMBER_STRING_LOWER;
+            return true;
+        }
+        if(name == "upper"){
+            idOut = RTBUILTIN_MEMBER_STRING_UPPER;
+            return true;
+        }
+        if(name == "trim"){
+            idOut = RTBUILTIN_MEMBER_STRING_TRIM;
+            return true;
+        }
+        if(name == "replace"){
+            idOut = RTBUILTIN_MEMBER_STRING_REPLACE;
+            return true;
+        }
+        if(name == "split"){
+            idOut = RTBUILTIN_MEMBER_STRING_SPLIT;
+            return true;
+        }
+        if(name == "repeat"){
+            idOut = RTBUILTIN_MEMBER_STRING_REPEAT;
+            return true;
+        }
+        if(name == "match"){
+            idOut = RTBUILTIN_MEMBER_REGEX_MATCH;
+            return true;
+        }
+        if(name == "findAll"){
+            idOut = RTBUILTIN_MEMBER_REGEX_FIND_ALL;
+            return true;
+        }
+        if(name == "push"){
+            idOut = RTBUILTIN_MEMBER_ARRAY_PUSH;
+            return true;
+        }
+        if(name == "pop"){
+            idOut = RTBUILTIN_MEMBER_ARRAY_POP;
+            return true;
+        }
+        if(name == "set"){
+            idOut = RTBUILTIN_MEMBER_ARRAY_SET;
+            return true;
+        }
+        if(name == "insert"){
+            idOut = RTBUILTIN_MEMBER_ARRAY_INSERT;
+            return true;
+        }
+        if(name == "removeAt"){
+            idOut = RTBUILTIN_MEMBER_ARRAY_REMOVE_AT;
+            return true;
+        }
+        if(name == "clear"){
+            idOut = RTBUILTIN_MEMBER_ARRAY_CLEAR;
+            return true;
+        }
+        if(name == "join"){
+            idOut = RTBUILTIN_MEMBER_ARRAY_JOIN;
+            return true;
+        }
+        if(name == "copy"){
+            idOut = RTBUILTIN_MEMBER_ARRAY_COPY;
+            return true;
+        }
+        if(name == "reverse"){
+            idOut = RTBUILTIN_MEMBER_ARRAY_REVERSE;
+            return true;
+        }
+        if(name == "has"){
+            idOut = RTBUILTIN_MEMBER_DICT_HAS;
+            return true;
+        }
+        if(name == "get"){
+            idOut = RTBUILTIN_MEMBER_DICT_GET;
+            return true;
+        }
+        if(name == "remove"){
+            idOut = RTBUILTIN_MEMBER_DICT_REMOVE;
+            return true;
+        }
+        if(name == "keys"){
+            idOut = RTBUILTIN_MEMBER_DICT_KEYS;
+            return true;
+        }
+        if(name == "values"){
+            idOut = RTBUILTIN_MEMBER_DICT_VALUES;
+            return true;
+        }
+        return false;
+    }
+
+    const char *rtBuiltinMemberName(RTBuiltinMemberId id){
+        switch(id){
+            case RTBUILTIN_MEMBER_STRING_IS_EMPTY:
+            case RTBUILTIN_MEMBER_ARRAY_IS_EMPTY:
+            case RTBUILTIN_MEMBER_DICT_IS_EMPTY:
+                return "isEmpty";
+            case RTBUILTIN_MEMBER_STRING_AT:
+            case RTBUILTIN_MEMBER_ARRAY_AT:
+                return "at";
+            case RTBUILTIN_MEMBER_STRING_SLICE:
+            case RTBUILTIN_MEMBER_ARRAY_SLICE:
+                return "slice";
+            case RTBUILTIN_MEMBER_STRING_CONTAINS:
+            case RTBUILTIN_MEMBER_ARRAY_CONTAINS:
+                return "contains";
+            case RTBUILTIN_MEMBER_STRING_STARTS_WITH:
+                return "startsWith";
+            case RTBUILTIN_MEMBER_STRING_ENDS_WITH:
+                return "endsWith";
+            case RTBUILTIN_MEMBER_STRING_INDEX_OF:
+            case RTBUILTIN_MEMBER_ARRAY_INDEX_OF:
+                return "indexOf";
+            case RTBUILTIN_MEMBER_STRING_LAST_INDEX_OF:
+                return "lastIndexOf";
+            case RTBUILTIN_MEMBER_STRING_LOWER:
+                return "lower";
+            case RTBUILTIN_MEMBER_STRING_UPPER:
+                return "upper";
+            case RTBUILTIN_MEMBER_STRING_TRIM:
+                return "trim";
+            case RTBUILTIN_MEMBER_STRING_REPLACE:
+            case RTBUILTIN_MEMBER_REGEX_REPLACE:
+                return "replace";
+            case RTBUILTIN_MEMBER_STRING_SPLIT:
+                return "split";
+            case RTBUILTIN_MEMBER_STRING_REPEAT:
+                return "repeat";
+            case RTBUILTIN_MEMBER_REGEX_MATCH:
+                return "match";
+            case RTBUILTIN_MEMBER_REGEX_FIND_ALL:
+                return "findAll";
+            case RTBUILTIN_MEMBER_ARRAY_PUSH:
+                return "push";
+            case RTBUILTIN_MEMBER_ARRAY_POP:
+                return "pop";
+            case RTBUILTIN_MEMBER_ARRAY_SET:
+            case RTBUILTIN_MEMBER_DICT_SET:
+                return "set";
+            case RTBUILTIN_MEMBER_ARRAY_INSERT:
+                return "insert";
+            case RTBUILTIN_MEMBER_ARRAY_REMOVE_AT:
+                return "removeAt";
+            case RTBUILTIN_MEMBER_ARRAY_CLEAR:
+            case RTBUILTIN_MEMBER_DICT_CLEAR:
+                return "clear";
+            case RTBUILTIN_MEMBER_ARRAY_JOIN:
+                return "join";
+            case RTBUILTIN_MEMBER_ARRAY_COPY:
+            case RTBUILTIN_MEMBER_DICT_COPY:
+                return "copy";
+            case RTBUILTIN_MEMBER_ARRAY_REVERSE:
+                return "reverse";
+            case RTBUILTIN_MEMBER_DICT_HAS:
+                return "has";
+            case RTBUILTIN_MEMBER_DICT_GET:
+                return "get";
+            case RTBUILTIN_MEMBER_DICT_REMOVE:
+                return "remove";
+            case RTBUILTIN_MEMBER_DICT_KEYS:
+                return "keys";
+            case RTBUILTIN_MEMBER_DICT_VALUES:
+                return "values";
+            default:
+                return nullptr;
+        }
+    }
+
     #define RTCODE_STREAM_OBJECT_IN_IMPL(object) \
     std::istream & operator >>(std::istream & is,object * obj)
 
@@ -155,6 +357,19 @@ namespace Runtime {
                 }
                 break;
             }
+            case CODE_RTCALL_BUILTIN_MEMBER: {
+                skipExpr(is);
+                RTBuiltinMemberId memberId = RTBUILTIN_MEMBER_INVALID;
+                is.read((char *)&memberId,sizeof(memberId));
+                (void)memberId;
+                unsigned argCount = 0;
+                is.read((char *)&argCount,sizeof(argCount));
+                while(argCount > 0){
+                    skipExpr(is);
+                    --argCount;
+                }
+                break;
+            }
             case CODE_UNARY_OPERATOR: {
                 RTCode unaryCode = UNARY_OP_NOT;
                 is.read((char *)&unaryCode,sizeof(unaryCode));
@@ -213,9 +428,18 @@ namespace Runtime {
                 skipExpr(is);
                 skipRTIDPayload(is);
                 break;
+            case CODE_RTMEMBER_GET_FIELD_SLOT:
+                skipExpr(is);
+                is.seekg((std::streamoff)sizeof(uint32_t),std::ios_base::cur);
+                break;
             case CODE_RTMEMBER_SET:
                 skipExpr(is);
                 skipRTIDPayload(is);
+                skipExpr(is);
+                break;
+            case CODE_RTMEMBER_SET_FIELD_SLOT:
+                skipExpr(is);
+                is.seekg((std::streamoff)sizeof(uint32_t),std::ios_base::cur);
                 skipExpr(is);
                 break;
             case CODE_RTMEMBER_IVK: {
