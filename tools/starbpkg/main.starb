@@ -1,2 +1,419 @@
-print("starbpkg: use tools/starbpkg/starbpkg launcher")
-print("commands: init | add-path <dir> | sync | status | help")
+import CmdLine
+import FS
+import IO
+
+decl imut STARBPKG_TEXT_PREFIX = "STARBPKG_TEXT:"
+decl imut STARBPKG_EXIT_PREFIX = "STARBPKG_EXIT:"
+decl imut STARBPKG_DEFAULT_MODPATHS = "./modules\n./stdlib\n"
+
+func textLine(line:String) String {
+    return STARBPKG_TEXT_PREFIX + line
+}
+
+func boolText(value:Bool) String {
+    if(value) {
+        return "true"
+    }
+    return "false"
+}
+
+func currentDirectoryOrDot() String {
+    secure(decl cwd = FS.currentDirectory()) catch (error:String) {
+        return "."
+    }
+    return cwd
+}
+
+func absolutePathOrSelf(path:String) String {
+    secure(decl absolute = FS.pathAbsolute(path)) catch (error:String) {
+        return path
+    }
+    return absolute
+}
+
+func pathParentOrSelf(path:String) String {
+    decl parent = FS.pathParent(path)
+    if(parent == "") {
+        return path
+    }
+    return parent
+}
+
+func repoRootFromScript() String {
+    decl scriptPath = CmdLine.scriptPath()
+    return pathParentOrSelf(pathParentOrSelf(pathParentOrSelf(scriptPath)))
+}
+
+func joinPath(base:String,leaf:String) String {
+    if(base == "") {
+        return leaf
+    }
+    if(base.endsWith("/")) {
+        return base + leaf
+    }
+    return base + "/" + leaf
+}
+
+func stateDirectory(projectPath:String) String {
+    return joinPath(projectPath,".starbpkg")
+}
+
+func modpathsFile(projectPath:String) String {
+    return joinPath(stateDirectory(projectPath),"modpaths.txt")
+}
+
+func outputFile(projectPath:String) String {
+    return joinPath(projectPath,".starbmodpath")
+}
+
+func createDirectoryIfMissing(path:String,label:String) String {
+    if(IO.exists(path)) {
+        if(!FS.isDirectory(path)) {
+            return label + " is not a directory: " + path
+        }
+        return ""
+    }
+
+    secure(decl created = IO.createDirectory(path,true)) catch (error:String) {
+        return "failed to create " + label + ": " + path + " (" + error + ")"
+    }
+    if(!created) {
+        return "failed to create " + label + ": " + path
+    }
+    return ""
+}
+
+func ensureState(projectPath:String,createProject:Bool) String {
+    if(IO.exists(projectPath)) {
+        if(!FS.isDirectory(projectPath)) {
+            return "project path is not a directory: " + projectPath
+        }
+    }
+    elif(createProject) {
+        decl createProjectError = createDirectoryIfMissing(projectPath,"project directory")
+        if(createProjectError != "") {
+            return createProjectError
+        }
+    }
+    else {
+        return "project directory not found: " + projectPath
+    }
+
+    decl stateError = createDirectoryIfMissing(stateDirectory(projectPath),"state directory")
+    if(stateError != "") {
+        return stateError
+    }
+
+    decl modpathsPath = modpathsFile(projectPath)
+    if(!IO.exists(modpathsPath)) {
+        secure(decl wroteDefault = IO.writeText(modpathsPath,STARBPKG_DEFAULT_MODPATHS,"utf-8")) catch (error:String) {
+            return "failed to write modpaths file: " + modpathsPath + " (" + error + ")"
+        }
+        if(!wroteDefault) {
+            return "failed to write modpaths file: " + modpathsPath
+        }
+    }
+
+    return ""
+}
+
+func appendModpathEntry(existingText:String,newPath:String) String {
+    if(existingText == "") {
+        return newPath + "\n"
+    }
+    if(existingText.endsWith("\n")) {
+        return existingText + newPath + "\n"
+    }
+    return existingText + "\n" + newPath + "\n"
+}
+
+func printHelpAndReturn(code:Int) Int {
+    print(textLine("Usage: starbpkg [options] <command> [args]"))
+    print(textLine(""))
+    print(textLine("Commands:"))
+    print(textLine("  init                  Initialize .starbpkg state and generate .starbmodpath"))
+    print(textLine("  add-path <dir>        Append a module search directory and regenerate .starbmodpath"))
+    print(textLine("  sync                  Regenerate .starbmodpath from .starbpkg/modpaths.txt"))
+    print(textLine("  status                Print tool status and current path configuration"))
+    print(textLine("  help                  Show command summary"))
+    print(textLine(""))
+    print(textLine("Options:"))
+    print(textLine("  -C, --project <dir>        Project root to manage (default: current directory)"))
+    print(textLine("  -B, --starbytes-bin <bin>  Starbytes driver binary (shell shim only)"))
+    print(textLine("  -V, --verbose              Print debug output"))
+    print(textLine("  -h, --help                 Show this help"))
+    return code
+}
+
+func runInit(projectPath:String,argCount:Int) Int {
+    if(argCount != 0) {
+        print(textLine("starbpkg: command 'init' does not accept arguments"))
+        return 1
+    }
+
+    decl ensureError = ensureState(projectPath,true)
+    if(ensureError != "") {
+        print(textLine("starbpkg: " + ensureError))
+        return 1
+    }
+
+    decl modpathsPath = modpathsFile(projectPath)
+    decl outputPath = outputFile(projectPath)
+
+    secure(decl modpathsText = IO.readText(modpathsPath,"utf-8")) catch (error:String) {
+        print(textLine("starbpkg: failed to read modpaths file: " + modpathsPath + " (" + error + ")"))
+        return 1
+    }
+
+    secure(decl wroteOutput = IO.writeText(outputPath,modpathsText,"utf-8")) catch (error:String) {
+        print(textLine("starbpkg: failed to write generated module path file: " + outputPath + " (" + error + ")"))
+        return 1
+    }
+    if(!wroteOutput) {
+        print(textLine("starbpkg: failed to write generated module path file: " + outputPath))
+        return 1
+    }
+
+    print(textLine("starbpkg: initialized " + projectPath))
+    return 0
+}
+
+func runSync(projectPath:String,argCount:Int) Int {
+    if(argCount != 0) {
+        print(textLine("starbpkg: command 'sync' does not accept arguments"))
+        return 1
+    }
+
+    decl ensureError = ensureState(projectPath,false)
+    if(ensureError != "") {
+        print(textLine("starbpkg: " + ensureError))
+        return 1
+    }
+
+    decl modpathsPath = modpathsFile(projectPath)
+    decl outputPath = outputFile(projectPath)
+
+    secure(decl modpathsText = IO.readText(modpathsPath,"utf-8")) catch (error:String) {
+        print(textLine("starbpkg: failed to read modpaths file: " + modpathsPath + " (" + error + ")"))
+        return 1
+    }
+
+    secure(decl wroteOutput = IO.writeText(outputPath,modpathsText,"utf-8")) catch (error:String) {
+        print(textLine("starbpkg: failed to write generated module path file: " + outputPath + " (" + error + ")"))
+        return 1
+    }
+    if(!wroteOutput) {
+        print(textLine("starbpkg: failed to write generated module path file: " + outputPath))
+        return 1
+    }
+
+    print(textLine("starbpkg: synced " + outputPath))
+    return 0
+}
+
+func runStatus(projectPath:String,argCount:Int) Int {
+    if(argCount != 0) {
+        print(textLine("starbpkg: command 'status' does not accept arguments"))
+        return 1
+    }
+
+    decl ensureError = ensureState(projectPath,false)
+    if(ensureError != "") {
+        print(textLine("starbpkg: " + ensureError))
+        return 1
+    }
+
+    decl modpathsPath = modpathsFile(projectPath)
+    decl outputPath = outputFile(projectPath)
+
+    secure(decl modpathsText = IO.readText(modpathsPath,"utf-8")) catch (error:String) {
+        print(textLine("starbpkg: failed to read modpaths file: " + modpathsPath + " (" + error + ")"))
+        return 1
+    }
+
+    print(textLine("STARBPKG-STATUS"))
+    print(textLine("project=" + projectPath))
+    print(textLine("modpaths=" + modpathsPath))
+    print(textLine("output=" + outputPath))
+    print(textLine("output_exists=" + boolText(IO.exists(outputPath))))
+
+    decl normalizedText = modpathsText.replace("\r","")
+    decl lines = normalizedText.split("\n")
+    decl lineIndex:Int = 0
+    while(lineIndex < lines.length) {
+        decl line = lines[lineIndex]
+        decl isTrailingBlank = (lineIndex == (lines.length - 1)) && (line == "")
+        if(!isTrailingBlank) {
+            print(textLine(line))
+        }
+        lineIndex += 1
+    }
+
+    return 0
+}
+
+func runAddPath(projectPath:String,argCount:Int,arg1:String) Int {
+    if(argCount != 1) {
+        print(textLine("starbpkg: add-path requires exactly one argument: <dir>"))
+        return 1
+    }
+
+    decl ensureError = ensureState(projectPath,false)
+    if(ensureError != "") {
+        print(textLine("starbpkg: " + ensureError))
+        return 1
+    }
+
+    decl modpathsPath = modpathsFile(projectPath)
+    decl outputPath = outputFile(projectPath)
+
+    secure(decl existingText = IO.readText(modpathsPath,"utf-8")) catch (error:String) {
+        print(textLine("starbpkg: failed to read modpaths file: " + modpathsPath + " (" + error + ")"))
+        return 1
+    }
+
+    decl updatedText = appendModpathEntry(existingText,arg1)
+    secure(decl wroteModpaths = IO.writeText(modpathsPath,updatedText,"utf-8")) catch (error:String) {
+        print(textLine("starbpkg: failed to write modpaths file: " + modpathsPath + " (" + error + ")"))
+        return 1
+    }
+    if(!wroteModpaths) {
+        print(textLine("starbpkg: failed to write modpaths file: " + modpathsPath))
+        return 1
+    }
+
+    secure(decl wroteOutput = IO.writeText(outputPath,updatedText,"utf-8")) catch (error:String) {
+        print(textLine("starbpkg: failed to write generated module path file: " + outputPath + " (" + error + ")"))
+        return 1
+    }
+    if(!wroteOutput) {
+        print(textLine("starbpkg: failed to write generated module path file: " + outputPath))
+        return 1
+    }
+
+    print(textLine("starbpkg: added path " + arg1))
+    print(textLine("starbpkg: synced " + outputPath))
+    return 0
+}
+
+decl scriptArgs:String[] = CmdLine.rawArgs()
+decl projectPath = absolutePathOrSelf(currentDirectoryOrDot())
+decl command = ""
+decl commandArg1 = ""
+decl commandArgCount:Int = 0
+decl verbose:Bool = false
+decl showHelp:Bool = false
+decl parseError = ""
+decl index:Int = 0
+decl parsingOptions:Bool = true
+
+while(index < scriptArgs.length) {
+    decl token = scriptArgs[index]
+    if(command == "" && parsingOptions) {
+        if(token == "--") {
+            parsingOptions = false
+        }
+        elif(token == "-h" || token == "--help") {
+            showHelp = true
+            index = scriptArgs.length
+        }
+        elif(token == "-V" || token == "--verbose") {
+            verbose = true
+        }
+        elif(token == "-C" || token == "--project") {
+            if((index + 1) >= scriptArgs.length) {
+                parseError = "missing value for --project"
+                index = scriptArgs.length
+            }
+            else {
+                index += 1
+                projectPath = absolutePathOrSelf(scriptArgs[index])
+            }
+        }
+        elif(token == "-B" || token == "--starbytes-bin") {
+            if((index + 1) >= scriptArgs.length) {
+                parseError = "missing value for --starbytes-bin"
+                index = scriptArgs.length
+            }
+            else {
+                index += 1
+            }
+        }
+        elif(token.startsWith("-")) {
+            parseError = "unknown option: " + token
+            index = scriptArgs.length
+        }
+        else {
+            command = token
+        }
+    }
+    else {
+        if(command == "") {
+            command = token
+        }
+        else {
+            if(commandArgCount == 0) {
+                commandArg1 = token
+            }
+            commandArgCount += 1
+        }
+    }
+    index += 1
+}
+
+decl exitCode:Int = 0
+if(parseError != "") {
+    print(textLine("starbpkg: " + parseError))
+    print(textLine(""))
+    exitCode = printHelpAndReturn(1)
+}
+elif(showHelp) {
+    exitCode = printHelpAndReturn(0)
+}
+elif(command == "") {
+    exitCode = printHelpAndReturn(1)
+}
+else {
+    if(verbose) {
+        print(textLine("starbpkg: repo=" + repoRootFromScript()))
+        print(textLine("starbpkg: project=" + projectPath))
+        print(textLine("starbpkg: command=" + command))
+        if(commandArgCount > 0) {
+            print(textLine("starbpkg: arg1=" + commandArg1))
+        }
+    }
+
+    if(command == "help") {
+        if(commandArgCount != 0) {
+            print(textLine("starbpkg: command 'help' does not accept arguments"))
+            exitCode = 1
+        }
+        else {
+            exitCode = printHelpAndReturn(0)
+        }
+    }
+    elif(command == "init") {
+        exitCode = runInit(projectPath,commandArgCount)
+    }
+    elif(command == "sync") {
+        exitCode = runSync(projectPath,commandArgCount)
+    }
+    elif(command == "status") {
+        exitCode = runStatus(projectPath,commandArgCount)
+    }
+    elif(command == "add-path") {
+        exitCode = runAddPath(projectPath,commandArgCount,commandArg1)
+    }
+    else {
+        print(textLine("starbpkg: unknown command: " + command))
+        print(textLine(""))
+        exitCode = printHelpAndReturn(1)
+    }
+}
+
+if(exitCode == 0) {
+    print(STARBPKG_EXIT_PREFIX + "0")
+}
+else {
+    print(STARBPKG_EXIT_PREFIX + "1")
+}

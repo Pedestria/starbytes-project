@@ -1,7 +1,7 @@
 # Starbytes LSP Feature and Compliance Matrix
 
 Date: March 9, 2026  
-Server: `starbytes-lsp` (version `0.11.0`)
+Server: `starbytes-lsp` (version `0.12.0`)
 
 ## Scope
 

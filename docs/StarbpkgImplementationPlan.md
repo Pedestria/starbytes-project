@@ -143,7 +143,7 @@ Recommended shape:
 module(
   name: "acme.widgets",
   version: "0.1.0",
-  compat: ">=0.11.0 <0.12.0"
+  compat: ">=0.12.0 <0.13.0"
 )
 
 about(

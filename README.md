@@ -4,7 +4,7 @@
 
 Starbytes is a strongly typed language and toolchain with a bytecode compiler/runtime, native standard library modules, compiler-backed LSP support, and a shared linguistics layer for formatting, linting, and code actions.
 
-Current project version: `0.11.0`
+Current project version: `0.12.0`
 
 ## Repository Contents
 

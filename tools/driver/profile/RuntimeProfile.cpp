@@ -124,6 +124,37 @@ const char *objectKindName(StarbytesRuntimeObjectKind kind) {
     return "unknown";
 }
 
+const char *executionModeName(starbytes::Runtime::RuntimeExecutionMode mode) {
+    using starbytes::Runtime::RuntimeExecutionMode;
+    switch(mode) {
+        case RuntimeExecutionMode::Auto: return "auto";
+        case RuntimeExecutionMode::V1: return "v1";
+        case RuntimeExecutionMode::V2: return "v2";
+    }
+    return "unknown";
+}
+
+const char *executionPathName(starbytes::Runtime::RuntimeExecutionPath path) {
+    using starbytes::Runtime::RuntimeExecutionPath;
+    switch(path) {
+        case RuntimeExecutionPath::Unknown: return "unknown";
+        case RuntimeExecutionPath::V1StreamInterpreter: return "v1_stream_interpreter";
+        case RuntimeExecutionPath::V2RegisterInterpreter: return "v2_register_interpreter";
+    }
+    return "unknown";
+}
+
+const char *siteKindName(starbytes::Runtime::RuntimeProfileSiteKind kind) {
+    using starbytes::Runtime::RuntimeProfileSiteKind;
+    switch(kind) {
+        case RuntimeProfileSiteKind::Call: return "call";
+        case RuntimeProfileSiteKind::Member: return "member";
+        case RuntimeProfileSiteKind::Index: return "index";
+        case RuntimeProfileSiteKind::Branch: return "branch";
+    }
+    return "unknown";
+}
+
 }
 
 namespace starbytes::driver::profile {
@@ -142,6 +173,14 @@ void printRuntimeProfileJson(std::ostream &out,const RuntimeProfileReport &repor
     out << "  \"input\": \"" << jsonEscape(report.input) << "\",\n";
     out << "  \"module\": \"" << jsonEscape(report.moduleName) << "\",\n";
     out << "  \"runtime_error\": \"" << jsonEscape(report.runtimeError) << "\",\n";
+    out << "  \"module_format\": {\n";
+    out << "    \"bytecode_version\": " << report.runtime.moduleBytecodeVersion << ",\n";
+    out << "    \"explicit_header\": " << (report.runtime.moduleHasExplicitHeader ? "true" : "false") << "\n";
+    out << "  },\n";
+    out << "  \"execution\": {\n";
+    out << "    \"requested_mode\": \"" << executionModeName(report.runtime.requestedExecutionMode) << "\",\n";
+    out << "    \"path\": \"" << executionPathName(report.runtime.executionPath) << "\"\n";
+    out << "  },\n";
     out << "  \"overlap_rules\": {\n";
     out << "    \"subsystems_are_inclusive\": " << (report.runtime.subsystemTimingsOverlap ? "true" : "false") << ",\n";
     out << "    \"function_totals_are_inclusive\": " << (report.runtime.functionTimingsOverlap ? "true" : "false") << "\n";
@@ -154,7 +193,10 @@ void printRuntimeProfileJson(std::ostream &out,const RuntimeProfileReport &repor
     out << "    \"runtime_quickened_sites\": " << report.runtime.quickenedSitesInstalled << ",\n";
     out << "    \"runtime_quickened_executions\": " << report.runtime.quickenedExecutions << ",\n";
     out << "    \"runtime_quickened_specializations\": " << report.runtime.quickenedSpecializations << ",\n";
-    out << "    \"runtime_quickened_fallbacks\": " << report.runtime.quickenedFallbacks << "\n";
+    out << "    \"runtime_quickened_fallbacks\": " << report.runtime.quickenedFallbacks << ",\n";
+    out << "    \"runtime_feedback_sites\": " << report.runtime.feedbackSitesInstalled << ",\n";
+    out << "    \"runtime_feedback_cache_hits\": " << report.runtime.feedbackCacheHits << ",\n";
+    out << "    \"runtime_feedback_cache_misses\": " << report.runtime.feedbackCacheMisses << "\n";
     out << "  },\n";
     out << "  \"objects\": {\n";
     out << "    \"allocations\": [\n";
@@ -222,6 +264,40 @@ void printRuntimeProfileJson(std::ostream &out,const RuntimeProfileReport &repor
             << "\",\"count\":" << count << "}";
     }
     out << "\n  ],\n";
+    out << "  \"site_counters\": [\n";
+    auto sites = report.runtime.siteStats;
+    std::sort(sites.begin(),sites.end(),[](const auto &lhs,const auto &rhs){
+        if(lhs.executionCount != rhs.executionCount) {
+            return lhs.executionCount > rhs.executionCount;
+        }
+        if(lhs.takenCount != rhs.takenCount) {
+            return lhs.takenCount > rhs.takenCount;
+        }
+        if(lhs.functionName != rhs.functionName) {
+            return lhs.functionName < rhs.functionName;
+        }
+        if(lhs.bytecodeOffset != rhs.bytecodeOffset) {
+            return lhs.bytecodeOffset < rhs.bytecodeOffset;
+        }
+        return lhs.opcode < rhs.opcode;
+    });
+    bool firstSite = true;
+    for(const auto &entry : sites) {
+        if(entry.executionCount == 0 && entry.takenCount == 0) {
+            continue;
+        }
+        if(!firstSite) {
+            out << ",\n";
+        }
+        firstSite = false;
+        out << "    {\"function\":\"" << jsonEscape(entry.functionName)
+            << "\",\"offset\":" << entry.bytecodeOffset
+            << ",\"kind\":\"" << siteKindName(entry.kind)
+            << "\",\"opcode\":\"" << opcodeName(entry.opcode)
+            << "\",\"count\":" << entry.executionCount
+            << ",\"taken\":" << entry.takenCount << "}";
+    }
+    out << "\n  ],\n";
     out << "  \"functions\": [\n";
     auto functions = report.runtime.functionStats;
     std::sort(functions.begin(),functions.end(),[](const auto &lhs,const auto &rhs){
@@ -262,11 +338,18 @@ void printRuntimeProfileSummary(std::ostream &out,
 
     out << std::fixed << std::setprecision(3);
     out << "Runtime Profile Summary\n";
+    out << "bytecode version: " << report.runtime.moduleBytecodeVersion
+        << (report.runtime.moduleHasExplicitHeader ? " (explicit header)\n" : " (legacy stream)\n");
+    out << "requested mode: " << executionModeName(report.runtime.requestedExecutionMode) << "\n";
+    out << "execution path: " << executionPathName(report.runtime.executionPath) << "\n";
     out << "total runtime: " << nsToMs(report.runtime.totalRuntimeNs) << " ms\n";
     out << "dispatch count: " << report.runtime.dispatchCount << "\n";
     out << "function calls: " << report.runtime.functionCallCount << "\n";
     out << "refcount increments: " << report.runtime.refCountIncrements << "\n";
     out << "refcount decrements: " << report.runtime.refCountDecrements << "\n";
+    out << "feedback sites: " << report.runtime.feedbackSitesInstalled << "\n";
+    out << "feedback cache hits: " << report.runtime.feedbackCacheHits << "\n";
+    out << "feedback cache misses: " << report.runtime.feedbackCacheMisses << "\n";
     if(report.runtime.subsystemTimingsOverlap) {
         out << "Note: subsystem timings are overlapping/inclusive and should not be summed.\n";
     }
@@ -366,6 +449,51 @@ void printRuntimeProfileSummary(std::ostream &out,
             out << "  " << objectKindName(entry.kind)
                 << ": allocations=" << entry.allocations
                 << ", deallocations=" << entry.deallocations << "\n";
+        }
+    }
+
+    auto sites = report.runtime.siteStats;
+    std::sort(sites.begin(),sites.end(),[](const auto &lhs,const auto &rhs){
+        if(lhs.executionCount != rhs.executionCount) {
+            return lhs.executionCount > rhs.executionCount;
+        }
+        if(lhs.takenCount != rhs.takenCount) {
+            return lhs.takenCount > rhs.takenCount;
+        }
+        if(lhs.functionName != rhs.functionName) {
+            return lhs.functionName < rhs.functionName;
+        }
+        if(lhs.bytecodeOffset != rhs.bytecodeOffset) {
+            return lhs.bytecodeOffset < rhs.bytecodeOffset;
+        }
+        return lhs.opcode < rhs.opcode;
+    });
+    out << "Top sites:\n";
+    if(sites.empty()) {
+        out << "  (none)\n";
+    }
+    else {
+        size_t shown = 0;
+        for(const auto &entry : sites) {
+            if(entry.executionCount == 0 && entry.takenCount == 0) {
+                continue;
+            }
+            out << "  " << entry.functionName
+                << "@" << entry.bytecodeOffset
+                << " [" << siteKindName(entry.kind) << "] "
+                << opcodeName(entry.opcode)
+                << ": count=" << entry.executionCount;
+            if(entry.takenCount > 0) {
+                out << ", taken=" << entry.takenCount;
+            }
+            out << "\n";
+            ++shown;
+            if(shown >= 8) {
+                break;
+            }
+        }
+        if(shown == 0) {
+            out << "  (none)\n";
         }
     }
     out.unsetf(std::ios::floatfield);

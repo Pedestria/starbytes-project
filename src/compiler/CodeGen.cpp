@@ -10,6 +10,20 @@ namespace starbytes {
 
 using namespace Runtime;
 
+static RTID makeOwnedRTID(string_ref value);
+static void emitRuntimeFunction(ASTBlockStmt *blockStmt,
+                                const std::vector<std::pair<ASTIdentifier *,ASTType *>> &orderedParams,
+                                ModuleGenContext *ctxt,
+                                CodeGen *astConsumer,
+                                RTFuncTemplate &templ,
+                                bool allowV2);
+static bool getMemberName(ASTExpr *memberExpr,std::string &memberName);
+static std::string directCalleeRuntimeName(ModuleGenContext *context,ASTExpr *callee);
+static RTTypedNumericKind promotedFastKind(RTTypedNumericKind lhs,RTTypedNumericKind rhs);
+static bool isFastNumericKind(RTTypedNumericKind kind);
+static bool typedBinaryOpFromSymbol(const std::string &op,RTTypedBinaryOp &out);
+static bool typedCompareOpFromSymbol(const std::string &op,RTTypedCompareOp &out);
+
 bool CodeGen::acceptsSymbolTableContext(){
     return genContext != nullptr;
 }
@@ -22,10 +36,25 @@ void CodeGen::setContext(ModuleGenContext *context){
     genContext = context;
 }
 
-void CodeGen::finish(){
+void CodeGen::finish() const {
+    auto *self = const_cast<CodeGen *>(this);
+    if(genContext && genContext->bytecodeVersion == RTBYTECODE_VERSION_V2 && !self->bufferedTopLevelStatements.empty()){
+        ASTBlockStmt syntheticModuleBlock;
+        syntheticModuleBlock.body = self->bufferedTopLevelStatements;
+
+        RTFuncTemplate moduleMainTemplate;
+        moduleMainTemplate.name = makeOwnedRTID("__module_main__");
+        emitRuntimeFunction(&syntheticModuleBlock,{},genContext,self,moduleMainTemplate,true);
+
+        RTCode code = CODE_RTCALL_DIRECT;
+        genContext->out.write((char *)&code,sizeof(RTCode));
+        RTID funcId = makeOwnedRTID("__module_main__");
+        genContext->out << &funcId;
+        unsigned argCount = 0;
+        genContext->out.write((char *)&argCount,sizeof(argCount));
+    }
     RTCode code = CODE_MODULE_END;
     genContext->out.write((char *)&code,sizeof(RTCode));
-    
 }
 
 inline void write_ASTBlockStmt_to_context(ASTBlockStmt *blockStmt,ModuleGenContext *ctxt,CodeGen *astConsumer,bool isFunc = false){
@@ -65,11 +94,662 @@ static std::string emitBlockBodyToBuffer(ASTBlockStmt *blockStmt,ModuleGenContex
     return bodyBuffer.str();
 }
 
+class CodeGen::BytecodeV2Lowerer {
+    struct LoweredValue {
+        bool valid = false;
+        uint32_t slot = 0;
+        RTTypedNumericKind kind = RTTYPED_NUM_OBJECT;
+    };
+
+    CodeGen *owner = nullptr;
+    ModuleGenContext *context = nullptr;
+    ASTBlockStmt *functionBlock = nullptr;
+    std::vector<std::pair<ASTIdentifier *,ASTType *>> orderedParams;
+    RTFuncTemplate &templ;
+    RTV2FunctionImage image;
+    size_t tempCounter = 0;
+
+    struct Snapshot {
+        size_t instructionCount = 0;
+        size_t i64ConstCount = 0;
+        size_t f64ConstCount = 0;
+        size_t callSiteCount = 0;
+        size_t fallbackCount = 0;
+        size_t localSlotNameCount = 0;
+        size_t slotKindCount = 0;
+        size_t tempCounterValue = 0;
+    };
+
+    Snapshot takeSnapshot() const{
+        return {
+            image.instructions.size(),
+            image.i64Consts.size(),
+            image.f64Consts.size(),
+            image.callSites.size(),
+            image.fallbackStmtBlobs.size(),
+            templ.localSlotNames.size(),
+            templ.slotKinds.size(),
+            tempCounter
+        };
+    }
+
+    void restoreSnapshot(const Snapshot &snapshot){
+        image.instructions.resize(snapshot.instructionCount);
+        image.i64Consts.resize(snapshot.i64ConstCount);
+        image.f64Consts.resize(snapshot.f64ConstCount);
+        image.callSites.resize(snapshot.callSiteCount);
+        image.fallbackStmtBlobs.resize(snapshot.fallbackCount);
+        templ.localSlotNames.resize(snapshot.localSlotNameCount);
+        templ.slotKinds.resize(snapshot.slotKindCount);
+        tempCounter = snapshot.tempCounterValue;
+    }
+
+    RTTypedNumericKind kindFromTypeName(const std::string &name) const{
+        if(name == INT_TYPE->getName().str()){
+            return RTTYPED_NUM_INT;
+        }
+        if(name == LONG_TYPE->getName().str()){
+            return RTTYPED_NUM_LONG;
+        }
+        if(name == FLOAT_TYPE->getName().str()){
+            return RTTYPED_NUM_FLOAT;
+        }
+        if(name == DOUBLE_TYPE->getName().str()){
+            return RTTYPED_NUM_DOUBLE;
+        }
+        return RTTYPED_NUM_OBJECT;
+    }
+
+    uint32_t allocateTemp(RTTypedNumericKind kind){
+        auto name = "__v2tmp" + std::to_string(tempCounter++);
+        templ.localSlotNames.push_back(makeOwnedRTID(name));
+        templ.slotKinds.push_back(kind);
+        return (uint32_t)(templ.slotKinds.size() - 1);
+    }
+
+    uint32_t addI64Const(int64_t value){
+        auto index = (uint32_t)image.i64Consts.size();
+        image.i64Consts.push_back(value);
+        return index;
+    }
+
+    uint32_t addF64Const(double value){
+        auto index = (uint32_t)image.f64Consts.size();
+        image.f64Consts.push_back(value);
+        return index;
+    }
+
+    uint32_t addCallSite(const std::string &targetName,const std::vector<uint32_t> &argSlots){
+        auto index = (uint32_t)image.callSites.size();
+        image.callSites.push_back({targetName,argSlots});
+        return index;
+    }
+
+    std::vector<char> emitLegacyStmtBytes(ASTStmt *stmt){
+        std::ostringstream bodyBuffer(std::ios::out | std::ios::binary);
+        auto tempOutputPath = context->outputPath;
+        ModuleGenContext tempContext(context->name,bodyBuffer,tempOutputPath);
+        tempContext.tableContext = context->tableContext;
+        tempContext.bytecodeVersion = RTBYTECODE_VERSION_V1;
+
+        CodeGen legacyGen;
+        legacyGen.setContext(&tempContext);
+        RTFuncTemplate tempTemplate;
+        legacyGen.pushLocalSlotContext(orderedParams,functionBlock,tempTemplate);
+        if(stmt->type & DECL){
+            legacyGen.consumeDecl((ASTDecl *)stmt);
+        }
+        else {
+            legacyGen.consumeStmt(stmt);
+        }
+        legacyGen.popLocalSlotContext();
+
+        auto bytes = bodyBuffer.str();
+        return std::vector<char>(bytes.begin(),bytes.end());
+    }
+
+    bool emitFallbackStmt(ASTStmt *stmt){
+        auto blob = emitLegacyStmtBytes(stmt);
+        if(blob.empty()){
+            return true;
+        }
+        auto index = (uint32_t)image.fallbackStmtBlobs.size();
+        image.fallbackStmtBlobs.push_back(std::move(blob));
+        RTV2Instruction instr;
+        instr.opcode = RTV2_OP_V1_STMT;
+        instr.a = index;
+        image.instructions.push_back(instr);
+        return true;
+    }
+
+    void emitMove(uint32_t destSlot,uint32_t srcSlot){
+        if(destSlot == srcSlot){
+            return;
+        }
+        RTV2Instruction instr;
+        instr.opcode = RTV2_OP_MOVE;
+        instr.a = destSlot;
+        instr.b = srcSlot;
+        image.instructions.push_back(instr);
+    }
+
+    LoweredValue lowerNumericCast(const LoweredValue &input,RTTypedNumericKind targetKind){
+        if(!input.valid || targetKind == RTTYPED_NUM_OBJECT){
+            return {};
+        }
+        if(input.kind == targetKind){
+            return input;
+        }
+        auto destSlot = allocateTemp(targetKind);
+        RTV2Instruction instr;
+        instr.opcode = RTV2_OP_NUM_CAST;
+        instr.kind = targetKind;
+        instr.aux = input.kind;
+        instr.a = destSlot;
+        instr.b = input.slot;
+        image.instructions.push_back(instr);
+        return {true,destSlot,targetKind};
+    }
+
+    LoweredValue lowerExpr(ASTExpr *expr){
+        if(!expr){
+            return {};
+        }
+
+        if(expr->runtimeCastTargetName.has_value()){
+            bool explicitCastInvocation = false;
+            if(expr->type == IVKE_EXPR && expr->callee){
+                explicitCastInvocation =
+                    ((expr->callee->type == ID_EXPR && expr->callee->id
+                      && expr->callee->id->type == ASTIdentifier::Class)
+                     || (expr->callee->type == MEMBER_EXPR
+                         && expr->callee->rightExpr && expr->callee->rightExpr->id
+                         && expr->callee->rightExpr->id->type == ASTIdentifier::Class));
+            }
+            auto targetKind = kindFromTypeName(expr->runtimeCastTargetName.value());
+            if(targetKind != RTTYPED_NUM_OBJECT){
+                if(explicitCastInvocation){
+                    if(expr->exprArrayData.size() != 1){
+                        return {};
+                    }
+                    return lowerNumericCast(lowerExpr(expr->exprArrayData.front()),targetKind);
+                }
+                auto savedTarget = expr->runtimeCastTargetName;
+                expr->runtimeCastTargetName.reset();
+                auto lowered = lowerExpr(expr);
+                expr->runtimeCastTargetName = savedTarget;
+                return lowerNumericCast(lowered,targetKind);
+            }
+        }
+
+        if(expr->type == NUM_LITERAL){
+            auto *literal = static_cast<ASTLiteralExpr *>(expr);
+            auto kind = owner->inferFastType(expr).scalarKind;
+            if(literal->floatValue.has_value()){
+                auto slot = allocateTemp(kind == RTTYPED_NUM_OBJECT ? RTTYPED_NUM_DOUBLE : kind);
+                RTV2Instruction instr;
+                instr.opcode = RTV2_OP_LOAD_F64_CONST;
+                instr.a = slot;
+                instr.b = addF64Const(*literal->floatValue);
+                image.instructions.push_back(instr);
+                return {true,slot,templ.slotKinds[slot]};
+            }
+            if(literal->intValue.has_value()){
+                auto slot = allocateTemp(kind == RTTYPED_NUM_OBJECT ? RTTYPED_NUM_INT : kind);
+                RTV2Instruction instr;
+                instr.opcode = RTV2_OP_LOAD_I64_CONST;
+                instr.a = slot;
+                instr.b = addI64Const(*literal->intValue);
+                image.instructions.push_back(instr);
+                return {true,slot,templ.slotKinds[slot]};
+            }
+            return {};
+        }
+
+        if(expr->type == BOOL_LITERAL){
+            auto *literal = static_cast<ASTLiteralExpr *>(expr);
+            auto slot = allocateTemp(RTTYPED_NUM_INT);
+            RTV2Instruction instr;
+            instr.opcode = RTV2_OP_LOAD_I64_CONST;
+            instr.a = slot;
+            instr.b = addI64Const(literal->boolValue.value_or(false) ? 1 : 0);
+            image.instructions.push_back(instr);
+            return {true,slot,RTTYPED_NUM_INT};
+        }
+
+        if(expr->type == ID_EXPR && expr->id && expr->id->type == ASTIdentifier::Var){
+            uint32_t slot = 0;
+            if(!owner->currentLocalSlotForName(expr->id->val,slot)){
+                return {};
+            }
+            auto kind = slot < templ.slotKinds.size() ? templ.slotKinds[slot] : RTTYPED_NUM_OBJECT;
+            return {true,slot,(RTTypedNumericKind)kind};
+        }
+
+        if(expr->type == BINARY_EXPR){
+            auto lhs = lowerExpr(expr->leftExpr);
+            auto rhs = lowerExpr(expr->rightExpr);
+            if(!lhs.valid || !rhs.valid){
+                return {};
+            }
+            auto op = expr->oprtr_str.value_or("");
+            RTTypedBinaryOp typedBinaryOp = RTTYPED_BINARY_ADD;
+            if(isFastNumericKind(lhs.kind) && isFastNumericKind(rhs.kind) && typedBinaryOpFromSymbol(op,typedBinaryOp)){
+                auto resultKind = promotedFastKind(lhs.kind,rhs.kind);
+                auto destSlot = allocateTemp(resultKind);
+                RTV2Instruction instr;
+                instr.opcode = RTV2_OP_BINARY;
+                instr.kind = resultKind;
+                instr.aux = typedBinaryOp;
+                instr.a = destSlot;
+                instr.b = lhs.slot;
+                instr.c = rhs.slot;
+                image.instructions.push_back(instr);
+                return {true,destSlot,resultKind};
+            }
+            RTTypedCompareOp typedCompareOp = RTTYPED_COMPARE_EQ;
+            if(isFastNumericKind(lhs.kind) && isFastNumericKind(rhs.kind) && typedCompareOpFromSymbol(op,typedCompareOp)){
+                auto operandKind = promotedFastKind(lhs.kind,rhs.kind);
+                auto destSlot = allocateTemp(RTTYPED_NUM_INT);
+                RTV2Instruction instr;
+                instr.opcode = RTV2_OP_COMPARE;
+                instr.kind = operandKind;
+                instr.aux = typedCompareOp;
+                instr.a = destSlot;
+                instr.b = lhs.slot;
+                instr.c = rhs.slot;
+                image.instructions.push_back(instr);
+                return {true,destSlot,RTTYPED_NUM_INT};
+            }
+            return {};
+        }
+
+        if(expr->type == INDEX_EXPR){
+            auto baseType = owner->inferFastType(expr->leftExpr);
+            if(!isFastNumericKind(baseType.arrayElementKind)){
+                return {};
+            }
+            auto collection = lowerExpr(expr->leftExpr);
+            auto index = lowerExpr(expr->rightExpr);
+            if(!collection.valid || !index.valid){
+                return {};
+            }
+            auto destSlot = allocateTemp(baseType.arrayElementKind);
+            RTV2Instruction instr;
+            instr.opcode = RTV2_OP_ARRAY_GET;
+            instr.kind = baseType.arrayElementKind;
+            instr.a = destSlot;
+            instr.b = collection.slot;
+            instr.c = index.slot;
+            image.instructions.push_back(instr);
+            return {true,destSlot,baseType.arrayElementKind};
+        }
+
+        if(expr->type == IVKE_EXPR){
+            auto calleeName = [&]() -> std::string {
+                if(!expr->callee){
+                    return {};
+                }
+                if(expr->callee->type == ID_EXPR && expr->callee->id){
+                    return expr->callee->id->val;
+                }
+                if(expr->callee->type == MEMBER_EXPR){
+                    std::string memberName;
+                    if(getMemberName(expr->callee,memberName)){
+                        return memberName;
+                    }
+                }
+                return {};
+            }();
+            bool canUseSqrtIntrinsic = false;
+            if(calleeName == "sqrt" && expr->exprArrayData.size() == 1){
+                if(expr->callee->type == ID_EXPR){
+                    canUseSqrtIntrinsic = !(context && context->tableContext
+                                            && context->tableContext->findEntryByEmittedNoDiag("sqrt"));
+                }
+                else if(expr->callee->type == MEMBER_EXPR && expr->callee->isScopeAccess){
+                    canUseSqrtIntrinsic = true;
+                }
+            }
+            if(canUseSqrtIntrinsic){
+                auto arg = lowerExpr(expr->exprArrayData.front());
+                if(!arg.valid || !isFastNumericKind(arg.kind)){
+                    return {};
+                }
+                auto destSlot = allocateTemp(RTTYPED_NUM_DOUBLE);
+                RTV2Instruction instr;
+                instr.opcode = RTV2_OP_INTRINSIC_SQRT;
+                instr.a = destSlot;
+                instr.b = arg.slot;
+                image.instructions.push_back(instr);
+                return {true,destSlot,RTTYPED_NUM_DOUBLE};
+            }
+
+            auto directCalleeName = directCalleeRuntimeName(context,expr->callee);
+            if(directCalleeName.empty()){
+                return {};
+            }
+            std::vector<uint32_t> argSlots;
+            argSlots.reserve(expr->exprArrayData.size());
+            for(auto *argExpr : expr->exprArrayData){
+                auto loweredArg = lowerExpr(argExpr);
+                if(!loweredArg.valid){
+                    return {};
+                }
+                argSlots.push_back(loweredArg.slot);
+            }
+            auto resultKind = owner->inferFastType(expr).scalarKind;
+            auto destSlot = allocateTemp(resultKind == RTTYPED_NUM_OBJECT ? RTTYPED_NUM_OBJECT : resultKind);
+            RTV2Instruction instr;
+            instr.opcode = RTV2_OP_CALL_DIRECT;
+            instr.kind = resultKind;
+            instr.a = destSlot;
+            instr.b = addCallSite(directCalleeName,argSlots);
+            image.instructions.push_back(instr);
+            return {true,destSlot,resultKind};
+        }
+
+        return {};
+    }
+
+    bool lowerAssignExpr(ASTExpr *expr){
+        if(!expr || expr->type != ASSIGN_EXPR || !expr->leftExpr || !expr->rightExpr){
+            return false;
+        }
+        auto assignOp = expr->oprtr_str.value_or("=");
+        bool isCompound = assignOp != "=";
+
+        if(expr->leftExpr->type == ID_EXPR && expr->leftExpr->id && expr->leftExpr->id->type == ASTIdentifier::Var){
+            uint32_t destSlot = 0;
+            if(!owner->currentLocalSlotForName(expr->leftExpr->id->val,destSlot)){
+                return false;
+            }
+            if(!isCompound){
+                auto value = lowerExpr(expr->rightExpr);
+                if(!value.valid){
+                    return false;
+                }
+                emitMove(destSlot,value.slot);
+                return true;
+            }
+            auto lhsValue = LoweredValue{true,destSlot,(RTTypedNumericKind)(destSlot < templ.slotKinds.size() ? templ.slotKinds[destSlot] : RTTYPED_NUM_OBJECT)};
+            auto rhsValue = lowerExpr(expr->rightExpr);
+            if(!lhsValue.valid || !rhsValue.valid || !isFastNumericKind(lhsValue.kind) || !isFastNumericKind(rhsValue.kind)){
+                return false;
+            }
+            RTTypedBinaryOp typedBinaryOp = RTTYPED_BINARY_ADD;
+            std::string binarySymbol;
+            if(assignOp == "+="){
+                binarySymbol = "+";
+            }
+            else if(assignOp == "-="){
+                binarySymbol = "-";
+            }
+            else if(assignOp == "*="){
+                binarySymbol = "*";
+            }
+            else if(assignOp == "/="){
+                binarySymbol = "/";
+            }
+            else if(assignOp == "%="){
+                binarySymbol = "%";
+            }
+            if(binarySymbol.empty() || !typedBinaryOpFromSymbol(binarySymbol,typedBinaryOp)){
+                return false;
+            }
+            auto resultKind = promotedFastKind(lhsValue.kind,rhsValue.kind);
+            auto tempSlot = allocateTemp(resultKind);
+            RTV2Instruction instr;
+            instr.opcode = RTV2_OP_BINARY;
+            instr.kind = resultKind;
+            instr.aux = typedBinaryOp;
+            instr.a = tempSlot;
+            instr.b = lhsValue.slot;
+            instr.c = rhsValue.slot;
+            image.instructions.push_back(instr);
+            emitMove(destSlot,tempSlot);
+            return true;
+        }
+
+        if(expr->leftExpr->type == INDEX_EXPR){
+            auto baseType = owner->inferFastType(expr->leftExpr->leftExpr);
+            if(!isFastNumericKind(baseType.arrayElementKind)){
+                return false;
+            }
+            auto collection = lowerExpr(expr->leftExpr->leftExpr);
+            auto index = lowerExpr(expr->leftExpr->rightExpr);
+            if(!collection.valid || !index.valid){
+                return false;
+            }
+            LoweredValue value;
+            if(!isCompound){
+                value = lowerExpr(expr->rightExpr);
+                if(!value.valid){
+                    return false;
+                }
+            }
+            else {
+                RTTypedBinaryOp typedBinaryOp = RTTYPED_BINARY_ADD;
+                std::string binarySymbol;
+                if(assignOp == "+="){
+                    binarySymbol = "+";
+                }
+                else if(assignOp == "-="){
+                    binarySymbol = "-";
+                }
+                else if(assignOp == "*="){
+                    binarySymbol = "*";
+                }
+                else if(assignOp == "/="){
+                    binarySymbol = "/";
+                }
+                else if(assignOp == "%="){
+                    binarySymbol = "%";
+                }
+                if(binarySymbol.empty() || !typedBinaryOpFromSymbol(binarySymbol,typedBinaryOp)){
+                    return false;
+                }
+                auto currentValueSlot = allocateTemp(baseType.arrayElementKind);
+                RTV2Instruction getInstr;
+                getInstr.opcode = RTV2_OP_ARRAY_GET;
+                getInstr.kind = baseType.arrayElementKind;
+                getInstr.a = currentValueSlot;
+                getInstr.b = collection.slot;
+                getInstr.c = index.slot;
+                image.instructions.push_back(getInstr);
+
+                auto rhsValue = lowerExpr(expr->rightExpr);
+                if(!rhsValue.valid){
+                    return false;
+                }
+                auto resultKind = promotedFastKind(baseType.arrayElementKind,rhsValue.kind);
+                auto tempSlot = allocateTemp(resultKind);
+                RTV2Instruction binaryInstr;
+                binaryInstr.opcode = RTV2_OP_BINARY;
+                binaryInstr.kind = resultKind;
+                binaryInstr.aux = typedBinaryOp;
+                binaryInstr.a = tempSlot;
+                binaryInstr.b = currentValueSlot;
+                binaryInstr.c = rhsValue.slot;
+                image.instructions.push_back(binaryInstr);
+                value = {true,tempSlot,resultKind};
+            }
+            RTV2Instruction setInstr;
+            setInstr.opcode = RTV2_OP_ARRAY_SET;
+            setInstr.kind = baseType.arrayElementKind;
+            setInstr.a = collection.slot;
+            setInstr.b = index.slot;
+            setInstr.c = value.slot;
+            image.instructions.push_back(setInstr);
+            return true;
+        }
+
+        return false;
+    }
+
+    bool lowerStmt(ASTStmt *stmt){
+        if(!stmt){
+            return true;
+        }
+        if(stmt->type == VAR_DECL){
+            auto snapshot = takeSnapshot();
+            auto *decl = (ASTVarDecl *)stmt;
+            if(decl->specs.size() != 1){
+                return emitFallbackStmt(stmt);
+            }
+            auto &spec = decl->specs.front();
+            if(!spec.id){
+                restoreSnapshot(snapshot);
+                return emitFallbackStmt(stmt);
+            }
+            if(!spec.expr){
+                return true;
+            }
+            uint32_t slot = 0;
+            if(!owner->currentLocalSlotForName(spec.id->val,slot)){
+                restoreSnapshot(snapshot);
+                return emitFallbackStmt(stmt);
+            }
+            auto value = lowerExpr(spec.expr);
+            if(!value.valid){
+                restoreSnapshot(snapshot);
+                return emitFallbackStmt(stmt);
+            }
+            emitMove(slot,value.slot);
+            return true;
+        }
+        if(stmt->type == WHILE_DECL){
+            auto snapshot = takeSnapshot();
+            auto *whileDecl = (ASTWhileDecl *)stmt;
+            if(!whileDecl->expr || !whileDecl->blockStmt){
+                return emitFallbackStmt(stmt);
+            }
+            auto loopHead = (uint32_t)image.instructions.size();
+            auto cond = lowerExpr(whileDecl->expr);
+            if(!cond.valid){
+                restoreSnapshot(snapshot);
+                return emitFallbackStmt(stmt);
+            }
+            RTV2Instruction branchInstr;
+            branchInstr.opcode = RTV2_OP_JUMP_IF_FALSE;
+            branchInstr.a = cond.slot;
+            branchInstr.b = 0;
+            auto branchIndex = image.instructions.size();
+            image.instructions.push_back(branchInstr);
+            for(auto *innerStmt : whileDecl->blockStmt->body){
+                if(!lowerStmt(innerStmt)){
+                    return false;
+                }
+            }
+            RTV2Instruction jumpInstr;
+            jumpInstr.opcode = RTV2_OP_JUMP;
+            jumpInstr.a = loopHead;
+            image.instructions.push_back(jumpInstr);
+            image.instructions[branchIndex].b = (uint32_t)image.instructions.size();
+            return true;
+        }
+        if(stmt->type == RETURN_DECL){
+            auto snapshot = takeSnapshot();
+            auto *returnDecl = (ASTReturnDecl *)stmt;
+            RTV2Instruction instr;
+            instr.opcode = RTV2_OP_RETURN;
+            instr.a = UINT32_MAX;
+            if(returnDecl->expr){
+                auto value = lowerExpr(returnDecl->expr);
+                if(!value.valid){
+                    restoreSnapshot(snapshot);
+                    return emitFallbackStmt(stmt);
+                }
+                instr.kind = value.kind;
+                instr.a = value.slot;
+            }
+            image.instructions.push_back(instr);
+            return true;
+        }
+        if((stmt->type & EXPR) && ((ASTExpr *)stmt)->type == ASSIGN_EXPR){
+            auto snapshot = takeSnapshot();
+            if(lowerAssignExpr((ASTExpr *)stmt)){
+                return true;
+            }
+            restoreSnapshot(snapshot);
+            return emitFallbackStmt(stmt);
+        }
+        return emitFallbackStmt(stmt);
+    }
+
+public:
+    BytecodeV2Lowerer(CodeGen *owner,
+                      ModuleGenContext *context,
+                      ASTBlockStmt *functionBlock,
+                      const std::vector<std::pair<ASTIdentifier *,ASTType *>> &orderedParams,
+                      RTFuncTemplate &templ)
+        : owner(owner),
+          context(context),
+          functionBlock(functionBlock),
+          orderedParams(orderedParams),
+          templ(templ) {
+    }
+
+    bool lower(RTV2FunctionImage &imageOut){
+        if(!functionBlock){
+            return false;
+        }
+        for(auto *stmt : functionBlock->body){
+            if((stmt->type & EXPR) && stmt->type != ASSIGN_EXPR){
+                owner->ensureInlineExprTemplates((ASTExpr *)stmt);
+            }
+            if(!lowerStmt(stmt)){
+                return false;
+            }
+        }
+        imageOut = std::move(image);
+        return true;
+    }
+};
+
+static bool emitRuntimeFunctionV2(ASTBlockStmt *blockStmt,
+                                  const std::vector<std::pair<ASTIdentifier *,ASTType *>> &orderedParams,
+                                  ModuleGenContext *ctxt,
+                                  CodeGen *astConsumer,
+                                  RTFuncTemplate &templ){
+    if(!blockStmt || !ctxt || !astConsumer){
+        return false;
+    }
+    astConsumer->pushLocalSlotContext(orderedParams,blockStmt,templ);
+    RTV2FunctionImage image;
+    CodeGen::BytecodeV2Lowerer lowerer(astConsumer,ctxt,blockStmt,orderedParams,templ);
+    bool lowered = lowerer.lower(image);
+    if(lowered){
+        std::ostringstream bodyBuffer(std::ios::out | std::ios::binary);
+        lowered = writeRTV2FunctionImage(bodyBuffer,image);
+        if(lowered){
+            auto bodyBytes = bodyBuffer.str();
+            templ.blockByteSize = bodyBytes.size();
+            addRTInternalAttribute(templ,"__rt_body_v2");
+            ctxt->out << &templ;
+            RTCode code = CODE_RTFUNCBLOCK_BEGIN;
+            ctxt->out.write((char *)&code,sizeof(RTCode));
+            if(!bodyBytes.empty()){
+                ctxt->out.write(bodyBytes.data(),(std::streamsize)bodyBytes.size());
+            }
+            code = CODE_RTFUNCBLOCK_END;
+            ctxt->out.write((char *)&code,sizeof(RTCode));
+        }
+    }
+    astConsumer->popLocalSlotContext();
+    return lowered;
+}
+
 static void emitRuntimeFunction(ASTBlockStmt *blockStmt,
                                 const std::vector<std::pair<ASTIdentifier *,ASTType *>> &orderedParams,
                                 ModuleGenContext *ctxt,
                                 CodeGen *astConsumer,
-                                RTFuncTemplate &templ){
+                                RTFuncTemplate &templ,
+                                bool allowV2 = true){
+    if(allowV2 && ctxt && ctxt->bytecodeVersion == RTBYTECODE_VERSION_V2
+       && emitRuntimeFunctionV2(blockStmt,orderedParams,ctxt,astConsumer,templ)){
+        return;
+    }
     astConsumer->pushLocalSlotContext(orderedParams,blockStmt,templ);
     auto bodyBytes = emitBlockBodyToBuffer(blockStmt,ctxt,astConsumer);
     templ.blockByteSize = bodyBytes.size();
@@ -1161,6 +1841,17 @@ static std::vector<RTAttribute> convertAttributes(const std::vector<ASTAttribute
 
 
 void CodeGen::consumeDecl(ASTDecl *stmt){
+    if(stmt && genContext && genContext->bytecodeVersion == RTBYTECODE_VERSION_V2 && localSlotStack.empty()){
+        if(stmt->type == VAR_DECL
+           || stmt->type == COND_DECL
+           || stmt->type == FOR_DECL
+           || stmt->type == WHILE_DECL
+           || stmt->type == SECURE_DECL
+           || stmt->type == RETURN_DECL){
+            bufferedTopLevelStatements.push_back(stmt);
+            return;
+        }
+    }
     if(stmt->type == VAR_DECL){
         ASTVarDecl *varDecl = (ASTVarDecl *)stmt;
         for(auto & spec : varDecl->specs){
@@ -1289,7 +1980,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
             ASTIdentifier_to_RTID(param_pair.first,param_id);
             funcTemplate.argsTemplate.push_back(param_id);
         };
-        emitRuntimeFunction(func_node->blockStmt,orderedParams,genContext,this,funcTemplate);
+        emitRuntimeFunction(func_node->blockStmt,orderedParams,genContext,this,funcTemplate,true);
     }
     else if(stmt->type == CLASS_DECL){
         auto class_decl = (ASTClassDecl *)stmt;
@@ -1363,7 +2054,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
                 ASTIdentifier_to_RTID(paramPair.first,paramId);
                 runtimeMethod.argsTemplate.push_back(paramId);
             }
-            emitRuntimeFunction(methodDecl->blockStmt,orderedMethodParams,genContext,this,runtimeMethod);
+            emitRuntimeFunction(methodDecl->blockStmt,orderedMethodParams,genContext,this,runtimeMethod,false);
         }
         for(auto &ctorDecl : class_decl->constructors){
             RTFuncTemplate runtimeCtor;
@@ -1375,7 +2066,7 @@ void CodeGen::consumeDecl(ASTDecl *stmt){
                 ASTIdentifier_to_RTID(paramPair.first,paramId);
                 runtimeCtor.argsTemplate.push_back(paramId);
             }
-            emitRuntimeFunction(ctorDecl->blockStmt,orderedCtorParams,genContext,this,runtimeCtor);
+            emitRuntimeFunction(ctorDecl->blockStmt,orderedCtorParams,genContext,this,runtimeCtor,false);
         }
         if(!fieldInitializers.empty()){
             RTFuncTemplate runtimeFieldInit;
@@ -1579,6 +2270,10 @@ StarbytesObject CodeGen::exprToRTInternalObject(ASTExpr *expr){
 
 void CodeGen::consumeStmt(ASTStmt *stmt){
     if(!stmt){
+        return;
+    }
+    if(genContext && genContext->bytecodeVersion == RTBYTECODE_VERSION_V2 && localSlotStack.empty()){
+        bufferedTopLevelStatements.push_back(stmt);
         return;
     }
     bool isExprLike = stmtIsExpressionLike(stmt);

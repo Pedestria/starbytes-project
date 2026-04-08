@@ -1,6 +1,6 @@
 # Starbytes Completion Roadmap
 
-Last updated: February 28, 2026
+Last updated: April 8, 2026
 
 This roadmap turns Starbytes from a promising prototype into a complete interpreted language with a usable toolchain.
 
@@ -99,8 +99,8 @@ Known gaps and stability risks:
 
 ## Version Status
 
-- Current project version target: `0.11.0`.
-- Rationale: Starbytes now includes complete compile-time optimization phases 1-7, diagnostics optimization phases 1-5, expanded stdlib modules through phase 3, linguistics phases 1-7 with shared CLI/LSP integration, and broader LSP feature coverage with semantic-token and code-action workflows.
+- Current project version target: `0.12.0`.
+- Rationale: the roadmap now reflects an advanced pre-1.0 baseline rather than the earlier milestone. Core language closure is effectively complete for the documented surface, modules/imports and compile-time optimization phases 1-7 are in place, the stdlib baseline has expanded through phase 3 modules, diagnostics and LSP have moved into advanced-baseline territory, and the remaining work is now concentrated in hardening, release tooling, and the last high-complexity type/tooling gaps rather than missing foundational surfaces.
 
 ---
 

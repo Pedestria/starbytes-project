@@ -44,6 +44,7 @@ bool testDriverLikeParse() {
     parser.addValueOption("profile-compile-out");
     parser.addFlagOption("profile-runtime");
     parser.addValueOption("profile-runtime-out");
+    parser.addValueOption("runtime-mode");
     parser.addFlagOption("no-diagnostics");
     parser.addFlagOption("no-native-auto");
     parser.addFlagOption("infer-64bit-numbers");
@@ -68,6 +69,7 @@ bool testDriverLikeParse() {
         "--profile-compile-out=profile.json",
         "--profile-runtime",
         "--profile-runtime-out=runtime-profile.json",
+        "--runtime-mode=v1",
         "--no-diagnostics",
         "--no-native-auto",
         "--infer-64bit-numbers",
@@ -92,6 +94,7 @@ bool testDriverLikeParse() {
         && expect(result.firstValue("out-dir").value_or("") == ".starbytes","expected out-dir value")
         && expect(result.firstValue("profile-compile-out").value_or("") == "profile.json","expected profile-compile-out value")
         && expect(result.firstValue("profile-runtime-out").value_or("") == "runtime-profile.json","expected profile-runtime-out value")
+        && expect(result.firstValue("runtime-mode").value_or("") == "v1","expected runtime-mode value")
         && expect(result.values("native").size() == 2,"expected two native values")
         && expect(result.values("native")[0] == "./libA.ntstarbmod","expected first native value")
         && expect(result.values("native")[1] == "./libB.ntstarbmod","expected second native value")

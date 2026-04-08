@@ -141,6 +141,34 @@ static bool isExpressionOpcode(RTCode code){
         || code == CODE_RTFUNC_REF;
 }
 
+static bool siteKindForOpcode(RTCode code,RuntimeProfileSiteKind &kindOut){
+    switch(code){
+        case CODE_RTIVKFUNC:
+        case CODE_RTCALL_DIRECT:
+            kindOut = RuntimeProfileSiteKind::Call;
+            return true;
+        case CODE_RTCALL_BUILTIN_MEMBER:
+        case CODE_RTMEMBER_GET:
+        case CODE_RTMEMBER_GET_FIELD_SLOT:
+        case CODE_RTMEMBER_SET:
+        case CODE_RTMEMBER_SET_FIELD_SLOT:
+        case CODE_RTMEMBER_IVK:
+            kindOut = RuntimeProfileSiteKind::Member;
+            return true;
+        case CODE_RTINDEX_GET:
+        case CODE_RTTYPED_INDEX_GET:
+        case CODE_RTINDEX_SET:
+        case CODE_RTTYPED_INDEX_SET:
+            kindOut = RuntimeProfileSiteKind::Index;
+            return true;
+        case CODE_RTTERNARY:
+            kindOut = RuntimeProfileSiteKind::Branch;
+            return true;
+        default:
+            return false;
+    }
+}
+
 static std::string resolveNativeValueName(const RTVar *var){
     if(!var){
         return {};
@@ -645,9 +673,24 @@ static bool parseDoubleStrict(const std::string &text,double &outValue){
 
 
 class RTAllocator {
-    
-   string_map<string_map<StarbytesObject>> all_var_objects;
-    
+public:
+    using ScopeVarMap = string_map<StarbytesObject>;
+    using ScopeVarIterator = ScopeVarMap::iterator;
+
+private:
+    string_map<ScopeVarMap> all_var_objects;
+    string_map<uint64_t> scopeGenerations;
+
+    void bumpScopeGeneration(string_ref scope){
+        auto scopeKey = scope.str();
+        auto found = scopeGenerations.find(scopeKey);
+        if(found == scopeGenerations.end()){
+            scopeGenerations.insert(std::make_pair(std::move(scopeKey),1ULL));
+            return;
+        }
+        found->second += 1;
+    }
+
 public:
     std::string currentScope;
 
@@ -655,8 +698,32 @@ public:
         
     };
 
-    string_map<StarbytesObject> & getObjectRegistryAtScope(string_ref name){
+    ScopeVarMap & getObjectRegistryAtScope(string_ref name){
         return all_var_objects[name];
+    };
+
+    ScopeVarMap *findObjectRegistryAtScope(string_ref name){
+        auto found = all_var_objects.find(name.view());
+        if(found == all_var_objects.end()){
+            return nullptr;
+        }
+        return &found->second;
+    };
+
+    const ScopeVarMap *findObjectRegistryAtScope(string_ref name) const{
+        auto found = all_var_objects.find(name.view());
+        if(found == all_var_objects.end()){
+            return nullptr;
+        }
+        return &found->second;
+    };
+
+    uint64_t scopeGeneration(string_ref scope) const{
+        auto found = scopeGenerations.find(scope.view());
+        if(found == scopeGenerations.end()){
+            return 0;
+        }
+        return found->second;
     };
 
     void setScope(string_ref scope_name){
@@ -668,38 +735,42 @@ public:
     void allocVariable(string_ref name,StarbytesObject obj){
         auto found = all_var_objects.find(currentScope);
         if(found == all_var_objects.end()){
-            string_map<StarbytesObject> vars;
+            ScopeVarMap vars;
             vars.insert(std::make_pair(name,obj));
             all_var_objects.insert(std::make_pair(currentScope,std::move(vars)));
+            bumpScopeGeneration(string_ref(currentScope));
         }
         else {
             auto & var_map = found->second;
-            auto existing = var_map.find(std::string(name));
+            auto existing = var_map.find(name.view());
             if(existing != var_map.end()){
                 StarbytesObjectRelease(existing->second);
                 existing->second = obj;
             }
             else {
                 var_map.insert(std::make_pair(name,obj));
+                bumpScopeGeneration(string_ref(currentScope));
             }
         };
     };
     void allocVariable(string_ref name,StarbytesObject obj,string_ref scope){
         auto found = all_var_objects.find(scope);
         if(found == all_var_objects.end()){
-            string_map<StarbytesObject> vars;
+            ScopeVarMap vars;
             vars.insert(std::make_pair(name,obj));
             all_var_objects.insert(std::make_pair(scope,std::move(vars)));
+            bumpScopeGeneration(scope);
         }
         else {
             auto & var_map = found->second;
-            auto existing = var_map.find(std::string(name));
+            auto existing = var_map.find(name.view());
             if(existing != var_map.end()){
                 StarbytesObjectRelease(existing->second);
                 existing->second = obj;
             }
             else {
                 var_map.insert(std::make_pair(name,obj));
+                bumpScopeGeneration(scope);
             }
         };
     };
@@ -712,19 +783,16 @@ public:
         }
         else {
             auto & var_map = found->second;
-            for(auto & var : var_map){
-                if(var.first.size() == name.size() &&
-                   std::memcmp(var.first.data(),name.getBuffer(),name.size()) == 0){
-                    /// Increase Reference count upon variable reference.
-                    if(!var.second){
-                        return nullptr;
-                    }
-                    StarbytesObjectReference(var.second);
+            auto var = var_map.find(name.view());
+            if(var != var_map.end()){
+                /// Increase Reference count upon variable reference.
+                if(!var->second){
+                    return nullptr;
+                }
+                StarbytesObjectReference(var->second);
 //                     std::cout << "Found Var:" << name.data() << std::endl;
-                    return var.second;
-                    break;
-                };
-            };
+                return var->second;
+            }
 //             std::cout << "Var NOT FOUND:" << name.data() << std::endl;
             return nullptr;
         }
@@ -737,6 +805,7 @@ public:
                 StarbytesObjectRelease(ent.second);
             };
             all_var_objects.erase(found);
+            bumpScopeGeneration(string_ref(currentScope));
         };
     };
 };
@@ -754,6 +823,14 @@ struct ScheduledTaskCall {
 };
 
 class InterpImpl final : public Interp {
+    enum class CachedReceiverKind : uint8_t {
+        Invalid = 0,
+        String,
+        Array,
+        Dict,
+        ClassObject
+    };
+
     struct RuntimeClassLayout {
         std::vector<const char *> fieldNames;
         string_map<uint32_t> slotByName;
@@ -818,6 +895,86 @@ class InterpImpl final : public Interp {
         std::vector<LocalSlot> slots;
     };
 
+    struct RuntimeSiteKey {
+        const RTFuncTemplate *funcTemplate = nullptr;
+        std::streamoff bytecodeOffset = 0;
+        RuntimeProfileSiteKind kind = RuntimeProfileSiteKind::Call;
+        uint8_t opcode = 0;
+
+        bool operator==(const RuntimeSiteKey &other) const{
+            return funcTemplate == other.funcTemplate
+                && bytecodeOffset == other.bytecodeOffset
+                && kind == other.kind
+                && opcode == other.opcode;
+        }
+    };
+
+    struct RuntimeSiteKeyHash {
+        size_t operator()(const RuntimeSiteKey &key) const{
+            auto hash = static_cast<size_t>(reinterpret_cast<uintptr_t>(key.funcTemplate));
+            hash ^= static_cast<size_t>(key.bytecodeOffset + 0x9e3779b97f4a7c15ULL) + (hash << 6) + (hash >> 2);
+            hash ^= static_cast<size_t>(key.opcode) + (hash << 6) + (hash >> 2);
+            hash ^= static_cast<size_t>(key.kind) + (hash << 6) + (hash >> 2);
+            return hash;
+        }
+    };
+
+    struct RuntimeFeedbackKey {
+        const RTFuncTemplate *funcTemplate = nullptr;
+        std::streamoff bytecodeOffset = 0;
+        uint8_t opcode = 0;
+
+        bool operator==(const RuntimeFeedbackKey &other) const{
+            return funcTemplate == other.funcTemplate
+                && bytecodeOffset == other.bytecodeOffset
+                && opcode == other.opcode;
+        }
+    };
+
+    struct RuntimeFeedbackKeyHash {
+        size_t operator()(const RuntimeFeedbackKey &key) const{
+            auto hash = static_cast<size_t>(reinterpret_cast<uintptr_t>(key.funcTemplate));
+            hash ^= static_cast<size_t>(key.bytecodeOffset + 0x9e3779b97f4a7c15ULL) + (hash << 6) + (hash >> 2);
+            hash ^= static_cast<size_t>(key.opcode) + (hash << 6) + (hash >> 2);
+            return hash;
+        }
+    };
+
+    enum class MemberGetCacheKind : uint8_t {
+        None = 0,
+        BuiltinLength,
+        FieldSlot
+    };
+
+    struct MemberGetFeedbackSite {
+        MemberGetCacheKind cacheKind = MemberGetCacheKind::None;
+        CachedReceiverKind receiverKind = CachedReceiverKind::Invalid;
+        StarbytesClassType classType = 0;
+        uint32_t fieldSlot = 0;
+        uint32_t expectedFieldCount = 0;
+    };
+
+    struct MemberSetFeedbackSite {
+        bool hasFieldSlot = false;
+        StarbytesClassType classType = 0;
+        uint32_t fieldSlot = 0;
+        uint32_t expectedFieldCount = 0;
+    };
+
+    struct MemberInvokeFeedbackSite {
+        bool hasMethod = false;
+        StarbytesClassType classType = 0;
+        size_t functionIndex = 0;
+    };
+
+    struct VarRefFeedbackSite {
+        bool initialized = false;
+        bool hasEntry = false;
+        std::string scopeName;
+        uint64_t scopeGeneration = 0;
+        RTAllocator::ScopeVarIterator cachedIt;
+    };
+
     std::unique_ptr<RTAllocator> allocator;
     std::vector<LocalFrame> localFrames;
     std::vector<LocalFrame> localFrameFreeList;
@@ -840,14 +997,33 @@ class InterpImpl final : public Interp {
     std::string lastRuntimeError;
     RuntimeProfileData runtimeProfile;
     bool runtimeProfilingEnabled = false;
+    RuntimeExecutionMode executionMode = RuntimeExecutionMode::Auto;
     std::unordered_map<std::string,size_t> functionProfileIndex;
     std::vector<ActiveFunctionProfile> activeFunctionProfiles;
+    std::unordered_map<RuntimeSiteKey,size_t,RuntimeSiteKeyHash> runtimeSiteProfileIndex;
+    std::unordered_map<RuntimeFeedbackKey,MemberGetFeedbackSite,RuntimeFeedbackKeyHash> memberGetFeedbackSites;
+    std::unordered_map<RuntimeFeedbackKey,MemberSetFeedbackSite,RuntimeFeedbackKeyHash> memberSetFeedbackSites;
+    std::unordered_map<RuntimeFeedbackKey,MemberInvokeFeedbackSite,RuntimeFeedbackKeyHash> memberInvokeFeedbackSites;
+    std::unordered_map<RuntimeFeedbackKey,VarRefFeedbackSite,RuntimeFeedbackKeyHash> varRefFeedbackSites;
+    RTModuleHeaderInfo activeModuleHeader;
+    std::istream::pos_type activeModuleCodeStart = std::istream::pos_type(-1);
 
     void execNorm(RTCode &code,std::istream &in,bool * willReturn,StarbytesObject *return_val);
     void recordOpcodeDispatch(RTCode code);
     void addSubsystemTime(RuntimeProfileSubsystem subsystem,uint64_t ns);
     void beginFunctionProfile(const std::string &name);
     void endFunctionProfile();
+    std::istream::pos_type currentOpcodeStart(std::istream &in) const;
+    std::streamoff profileBytecodeOffset(std::istream::pos_type sitePos,const RTFuncTemplate *funcTemplate) const;
+    bool buildFeedbackKey(std::istream::pos_type sitePos,RTCode opcode,RuntimeFeedbackKey &keyOut) const;
+    void recordFeedbackSiteInstall();
+    void recordFeedbackCacheHit();
+    void recordFeedbackCacheMiss();
+    void recordSiteProfile(RTCode opcode,
+                           RuntimeProfileSiteKind kind,
+                           std::istream::pos_type sitePos,
+                           bool countExecution = true,
+                           bool taken = false);
     
     StarbytesObject invokeFunc(std::istream &in,RTFuncTemplate *func_temp,unsigned argCount,StarbytesObject boundSelf = nullptr);
     void registerFunctionTemplate(RTFuncTemplate funcTemp);
@@ -857,14 +1033,19 @@ class InterpImpl final : public Interp {
     RTClass *findMethodOwnerInHierarchy(RTClass *classMeta,const std::string &methodName);
     const RuntimeClassLayout *findClassLayout(StarbytesClassType classType) const;
     void rebuildClassLayout(StarbytesClassType classType);
+    static CachedReceiverKind classifyReceiverKind(StarbytesObject object);
     bool lookupClassFieldSlot(StarbytesObject object,const std::string &memberName,uint32_t &slotOut) const;
     bool canAccessDirectFieldSlot(StarbytesObject object,uint32_t slot) const;
+    bool resolveClassMethod(StarbytesClassType classType,const std::string &methodName,size_t &functionIndexOut);
     RTFuncTemplate *findFunctionByName(string_ref functionName);
     LocalFrame *currentLocalFrame();
     const LocalFrame *currentLocalFrame() const;
     void pushLocalFrame(const RTFuncTemplate *funcTemp);
     void popLocalFrame();
     StarbytesObject referenceLocalSlot(uint32_t slot);
+    bool copyLocalSlotValue(uint32_t destSlot,uint32_t srcSlot);
+    bool storeLocalNumericValue(uint32_t slot,RTTypedNumericKind kind,long double value);
+    bool localSlotIsTruthy(uint32_t slot,bool &truthyOut);
     bool localSlotToNumber(uint32_t slot,RTTypedNumericKind kind,long double &valueOut);
     bool localSlotToIndex(uint32_t slot,int &indexOut);
     bool observedLocalSlotNumericType(uint32_t slot,StarbytesNumT &typeOut) const;
@@ -884,6 +1065,8 @@ class InterpImpl final : public Interp {
     StarbytesFuncCallback findNativeValueCallback(string_ref callbackName);
     StarbytesObject invokeNativeFunc(std::istream &in,StarbytesFuncCallback callback,unsigned argCount,StarbytesObject boundSelf);
     StarbytesObject invokeNativeFuncWithValues(StarbytesFuncCallback callback,ArrayRef<StarbytesObject> args,StarbytesObject boundSelf);
+    StarbytesObject invokeV2FuncWithValues(RTFuncTemplate *func_temp,ArrayRef<StarbytesObject> args);
+    bool executeV1FallbackBlob(const std::vector<char> &blob,bool &willReturn,StarbytesObject &returnValue);
     StarbytesObject invokeFuncWithValues(RTFuncTemplate *func_temp,ArrayRef<StarbytesObject> args,StarbytesObject boundSelf = nullptr);
     StarbytesObject invokeResolvedClassMethod(std::istream &in,StarbytesObject object,const std::string &methodName,unsigned argCount);
     StarbytesObject invokeBuiltinMember(std::istream &in,StarbytesObject object,RTBuiltinMemberId memberId,unsigned argCount);
@@ -915,6 +1098,9 @@ public:
         if(enabled){
             StarbytesRuntimeProfileResetLowLevelCounters();
         }
+    }
+    void setExecutionMode(RuntimeExecutionMode mode) override {
+        executionMode = mode;
     }
     bool addExtension(const std::string &path) override;
     bool hasRuntimeError() const override {
@@ -1032,6 +1218,25 @@ void InterpImpl::rebuildClassLayout(StarbytesClassType classType){
     classLayouts[classType] = std::move(layout);
 }
 
+InterpImpl::CachedReceiverKind InterpImpl::classifyReceiverKind(StarbytesObject object){
+    if(!object){
+        return CachedReceiverKind::Invalid;
+    }
+    if(StarbytesObjectTypecheck(object,StarbytesStrType())){
+        return CachedReceiverKind::String;
+    }
+    if(StarbytesObjectTypecheck(object,StarbytesArrayType())){
+        return CachedReceiverKind::Array;
+    }
+    if(StarbytesObjectTypecheck(object,StarbytesDictType())){
+        return CachedReceiverKind::Dict;
+    }
+    if(!StarbytesObjectIs(object)){
+        return CachedReceiverKind::ClassObject;
+    }
+    return CachedReceiverKind::Invalid;
+}
+
 bool InterpImpl::lookupClassFieldSlot(StarbytesObject object,const std::string &memberName,uint32_t &slotOut) const{
     slotOut = 0;
     if(!object || StarbytesObjectIs(object)){
@@ -1065,34 +1270,43 @@ bool InterpImpl::canAccessDirectFieldSlot(StarbytesObject object,uint32_t slot) 
     return fieldCount == layout->fieldNames.size() && slot < fieldCount;
 }
 
+bool InterpImpl::resolveClassMethod(StarbytesClassType classType,
+                                    const std::string &methodName,
+                                    size_t &functionIndexOut){
+    functionIndexOut = 0;
+    auto *classMeta = findClassByType(classType);
+    if(!classMeta){
+        return false;
+    }
+
+    auto *methodOwner = findMethodOwnerInHierarchy(classMeta,methodName);
+    if(!methodOwner){
+        return false;
+    }
+
+    std::string className = rtidToString(methodOwner->name);
+    std::string mangledName = mangleClassMethodName(className,methodName);
+    auto found = functionIndexByName.find(mangledName);
+    if(found == functionIndexByName.end() || found->second >= functions.size()){
+        return false;
+    }
+    functionIndexOut = found->second;
+    return true;
+}
+
 StarbytesObject InterpImpl::invokeResolvedClassMethod(std::istream &in,
                                                       StarbytesObject object,
                                                       const std::string &methodName,
                                                       unsigned argCount){
     StarbytesClassType classType = StarbytesClassObjectGetClass(object);
-    auto *classMeta = findClassByType(classType);
-    if(!classMeta){
+    size_t functionIndex = 0;
+    if(!resolveClassMethod(classType,methodName,functionIndex) || functionIndex >= functions.size()){
         StarbytesObjectRelease(object);
         discardExprArgs(in,argCount);
         return nullptr;
     }
 
-    auto *methodOwner = findMethodOwnerInHierarchy(classMeta,methodName);
-    if(!methodOwner){
-        StarbytesObjectRelease(object);
-        discardExprArgs(in,argCount);
-        return nullptr;
-    }
-
-    std::string className = rtidToString(methodOwner->name);
-    std::string mangledName = mangleClassMethodName(className,methodName);
-    auto *runtimeMethod = findFunctionByName(string_ref(mangledName));
-    if(!runtimeMethod){
-        StarbytesObjectRelease(object);
-        discardExprArgs(in,argCount);
-        return nullptr;
-    }
-
+    auto *runtimeMethod = &functions[functionIndex];
     StarbytesObject result = nullptr;
     if(runtimeMethod->isLazy){
         result = scheduleLazyCall(in,runtimeMethod,argCount,object);
@@ -1824,6 +2038,15 @@ StarbytesObject InterpImpl::invokeBuiltinMember(std::istream &in,
 }
 
 void InterpImpl::registerFunctionTemplate(RTFuncTemplate funcTemp){
+    if(hasRTInternalAttribute(funcTemp,"__rt_body_v2")){
+        funcTemp.hasV2Image = readRTV2FunctionImage(funcTemp.decodedBody.data(),
+                                                    funcTemp.decodedBody.size(),
+                                                    funcTemp.v2Image,
+                                                    &funcTemp.v2DecodeError);
+        if(!funcTemp.hasV2Image && funcTemp.v2DecodeError.empty()){
+            funcTemp.v2DecodeError = "failed to decode V2 function image";
+        }
+    }
     auto index = functions.size();
     functionIndexByName[rtidToString(funcTemp.name)] = index;
     functions.push_back(std::move(funcTemp));
@@ -1905,6 +2128,132 @@ void InterpImpl::endFunctionProfile(){
     }
     if(!activeFunctionProfiles.empty()){
         activeFunctionProfiles.back().childNs += totalNs;
+    }
+}
+
+std::istream::pos_type InterpImpl::currentOpcodeStart(std::istream &in) const{
+    auto currentPos = in.tellg();
+    if(currentPos == std::istream::pos_type(-1)){
+        return currentPos;
+    }
+    auto opcodeSize = static_cast<std::streamoff>(sizeof(RTCode));
+    if(currentPos < std::istream::pos_type(opcodeSize)){
+        return std::istream::pos_type(-1);
+    }
+    return currentPos - opcodeSize;
+}
+
+std::streamoff InterpImpl::profileBytecodeOffset(std::istream::pos_type sitePos,const RTFuncTemplate *funcTemplate) const{
+    if(sitePos == std::istream::pos_type(-1)){
+        return -1;
+    }
+    if(funcTemplate){
+        if(!funcTemplate->decodedBody.empty()){
+            return static_cast<std::streamoff>(sitePos);
+        }
+        if(funcTemplate->block_start_pos != std::istream::pos_type(-1)
+           && sitePos >= funcTemplate->block_start_pos){
+            return static_cast<std::streamoff>(sitePos - funcTemplate->block_start_pos);
+        }
+    }
+    if(activeModuleCodeStart != std::istream::pos_type(-1) && sitePos >= activeModuleCodeStart){
+        return static_cast<std::streamoff>(sitePos - activeModuleCodeStart);
+    }
+    return -1;
+}
+
+bool InterpImpl::buildFeedbackKey(std::istream::pos_type sitePos,
+                                  RTCode opcode,
+                                  RuntimeFeedbackKey &keyOut) const{
+    const RTFuncTemplate *funcTemplate = nullptr;
+    if(auto *frame = currentLocalFrame()){
+        funcTemplate = frame->funcTemplate;
+    }
+
+    auto bytecodeOffset = profileBytecodeOffset(sitePos,funcTemplate);
+    if(bytecodeOffset < 0){
+        return false;
+    }
+
+    keyOut.funcTemplate = funcTemplate;
+    keyOut.bytecodeOffset = bytecodeOffset;
+    keyOut.opcode = opcode;
+    return true;
+}
+
+void InterpImpl::recordFeedbackSiteInstall(){
+    if(!runtimeProfilingEnabled){
+        return;
+    }
+    runtimeProfile.feedbackSitesInstalled += 1;
+}
+
+void InterpImpl::recordFeedbackCacheHit(){
+    if(!runtimeProfilingEnabled){
+        return;
+    }
+    runtimeProfile.feedbackCacheHits += 1;
+}
+
+void InterpImpl::recordFeedbackCacheMiss(){
+    if(!runtimeProfilingEnabled){
+        return;
+    }
+    runtimeProfile.feedbackCacheMisses += 1;
+}
+
+void InterpImpl::recordSiteProfile(RTCode opcode,
+                                   RuntimeProfileSiteKind kind,
+                                   std::istream::pos_type sitePos,
+                                   bool countExecution,
+                                   bool taken){
+    if(!runtimeProfilingEnabled){
+        return;
+    }
+
+    const RTFuncTemplate *funcTemplate = nullptr;
+    if(auto *frame = currentLocalFrame()){
+        funcTemplate = frame->funcTemplate;
+    }
+
+    auto bytecodeOffset = profileBytecodeOffset(sitePos,funcTemplate);
+    if(bytecodeOffset < 0){
+        return;
+    }
+
+    RuntimeSiteKey key;
+    key.funcTemplate = funcTemplate;
+    key.bytecodeOffset = bytecodeOffset;
+    key.kind = kind;
+    key.opcode = opcode;
+
+    size_t statsIndex = 0;
+    auto found = runtimeSiteProfileIndex.find(key);
+    if(found == runtimeSiteProfileIndex.end()){
+        statsIndex = runtimeProfile.siteStats.size();
+        runtimeSiteProfileIndex.emplace(key,statsIndex);
+        RuntimeSiteProfileData entry;
+        if(funcTemplate){
+            entry.functionName = rtidToString(funcTemplate->name);
+        }
+        else {
+            entry.functionName = "__module__";
+        }
+        entry.bytecodeOffset = static_cast<uint64_t>(bytecodeOffset);
+        entry.kind = kind;
+        entry.opcode = opcode;
+        runtimeProfile.siteStats.push_back(std::move(entry));
+    }
+    else {
+        statsIndex = found->second;
+    }
+
+    auto &entry = runtimeProfile.siteStats[statsIndex];
+    if(countExecution){
+        entry.executionCount += 1;
+    }
+    if(taken){
+        entry.takenCount += 1;
     }
 }
 
@@ -1992,6 +2341,88 @@ StarbytesObject InterpImpl::referenceLocalSlot(uint32_t slot){
         default:
             return nullptr;
     }
+}
+
+bool InterpImpl::storeLocalNumericValue(uint32_t slot,RTTypedNumericKind kind,long double value){
+    auto *frame = currentLocalFrame();
+    if(!frame || slot >= frame->slots.size()){
+        return false;
+    }
+    auto &target = frame->slots[slot];
+    if(target.object){
+        StarbytesObjectRelease(target.object);
+        target.object = nullptr;
+    }
+    target.hasNumericValue = true;
+    target.kind = kind;
+    switch(kind){
+        case RTTYPED_NUM_INT:
+            target.intValue = (int)value;
+            return true;
+        case RTTYPED_NUM_LONG:
+            target.longValue = (int64_t)value;
+            return true;
+        case RTTYPED_NUM_FLOAT:
+            target.floatValue = (float)value;
+            return true;
+        case RTTYPED_NUM_DOUBLE:
+            target.doubleValue = (double)value;
+            return true;
+        default:
+            target.hasNumericValue = false;
+            return false;
+    }
+}
+
+bool InterpImpl::copyLocalSlotValue(uint32_t destSlot,uint32_t srcSlot){
+    auto *frame = currentLocalFrame();
+    if(!frame || destSlot >= frame->slots.size() || srcSlot >= frame->slots.size()){
+        return false;
+    }
+    auto &src = frame->slots[srcSlot];
+    auto destKind = frame->slots[destSlot].kind;
+    if(destKind != RTTYPED_NUM_OBJECT){
+        long double numericValue = 0.0;
+        if(localSlotToNumber(srcSlot,destKind,numericValue)){
+            return storeLocalNumericValue(destSlot,destKind,numericValue);
+        }
+    }
+    auto value = referenceLocalSlot(srcSlot);
+    storeLocalSlotOwned(destSlot,value);
+    return true;
+}
+
+bool InterpImpl::localSlotIsTruthy(uint32_t slot,bool &truthyOut){
+    truthyOut = false;
+    auto *frame = currentLocalFrame();
+    if(!frame || slot >= frame->slots.size()){
+        return false;
+    }
+    auto &value = frame->slots[slot];
+    if(value.object){
+        if(StarbytesObjectTypecheck(value.object,StarbytesBoolType())){
+            truthyOut = (bool)StarbytesBoolValue(value.object);
+            return true;
+        }
+        if(StarbytesObjectTypecheck(value.object,StarbytesNumType())){
+            long double numericValue = 0.0;
+            StarbytesNumT numericType = NumTypeInt;
+            if(objectToNumber(value.object,numericValue,numericType)){
+                truthyOut = numericValue != 0.0;
+                return true;
+            }
+        }
+        truthyOut = true;
+        return true;
+    }
+    if(value.hasNumericValue){
+        long double numericValue = 0.0;
+        if(localSlotToNumber(slot,value.kind,numericValue)){
+            truthyOut = numericValue != 0.0;
+            return true;
+        }
+    }
+    return true;
 }
 
 bool InterpImpl::localSlotToNumber(uint32_t slot,RTTypedNumericKind kind,long double &valueOut){
@@ -2803,6 +3234,312 @@ StarbytesObject InterpImpl::invokeNativeFuncWithValues(StarbytesFuncCallback cal
     return result;
 }
 
+bool InterpImpl::executeV1FallbackBlob(const std::vector<char> &blob,bool &willReturn,StarbytesObject &returnValue){
+    if(blob.empty()){
+        return true;
+    }
+    MemoryInputStream bodyIn(blob.data(),blob.size());
+    RTCode code = CODE_MODULE_END;
+    while(!willReturn && bodyIn.read((char *)&code,sizeof(RTCode))){
+        execNorm(code,bodyIn,&willReturn,&returnValue);
+        processMicrotasks();
+        if(!lastRuntimeError.empty()){
+            return false;
+        }
+    }
+    return true;
+}
+
+StarbytesObject InterpImpl::invokeV2FuncWithValues(RTFuncTemplate *func_temp,
+                                                   ArrayRef<StarbytesObject> args){
+    if(!func_temp){
+        return nullptr;
+    }
+    if(!func_temp->hasV2Image){
+        lastRuntimeError = func_temp->v2DecodeError.empty()
+            ? "V2 function body is unavailable"
+            : func_temp->v2DecodeError;
+        return nullptr;
+    }
+
+    pushLocalFrame(func_temp);
+    uint32_t paramSlot = 0;
+    for(auto *arg : args){
+        if(paramSlot < func_temp->argsTemplate.size()){
+            StarbytesObjectReference(arg);
+            storeLocalSlotOwned(paramSlot,arg);
+            ++paramSlot;
+        }
+    }
+
+    func_temp->invocations += 1;
+    if(runtimeProfilingEnabled){
+        runtimeProfile.executionPath = RuntimeExecutionPath::V2RegisterInterpreter;
+    }
+
+    bool willReturn = false;
+    StarbytesObject returnVal = nullptr;
+    auto fail = [&](const std::string &message) -> StarbytesObject {
+        if(lastRuntimeError.empty()){
+            lastRuntimeError = message;
+        }
+        popLocalFrame();
+        return returnVal;
+    };
+
+    size_t pc = 0;
+    while(pc < func_temp->v2Image.instructions.size() && !willReturn && lastRuntimeError.empty()){
+        if(runtimeProfilingEnabled){
+            runtimeProfile.dispatchCount += 1;
+        }
+        const auto &instr = func_temp->v2Image.instructions[pc];
+        switch(instr.opcode){
+            case RTV2_OP_NOP:
+                break;
+            case RTV2_OP_MOVE:
+                if(!copyLocalSlotValue(instr.a,instr.b)){
+                    return fail("V2 MOVE referenced an invalid local slot");
+                }
+                break;
+            case RTV2_OP_LOAD_I64_CONST: {
+                if(instr.b >= func_temp->v2Image.i64Consts.size()){
+                    return fail("V2 i64 constant index is out of range");
+                }
+                auto destKind = (instr.a < func_temp->slotKinds.size() && func_temp->slotKinds[instr.a] != RTTYPED_NUM_OBJECT)
+                    ? func_temp->slotKinds[instr.a]
+                    : RTTYPED_NUM_INT;
+                if(!storeLocalNumericValue(instr.a,destKind,(long double)func_temp->v2Image.i64Consts[instr.b])){
+                    return fail("V2 i64 constant store failed");
+                }
+                break;
+            }
+            case RTV2_OP_LOAD_F64_CONST: {
+                if(instr.b >= func_temp->v2Image.f64Consts.size()){
+                    return fail("V2 f64 constant index is out of range");
+                }
+                auto destKind = (instr.a < func_temp->slotKinds.size() && func_temp->slotKinds[instr.a] != RTTYPED_NUM_OBJECT)
+                    ? func_temp->slotKinds[instr.a]
+                    : RTTYPED_NUM_DOUBLE;
+                if(!storeLocalNumericValue(instr.a,destKind,(long double)func_temp->v2Image.f64Consts[instr.b])){
+                    return fail("V2 f64 constant store failed");
+                }
+                break;
+            }
+            case RTV2_OP_NUM_CAST: {
+                long double value = 0.0;
+                if(!localSlotToNumber(instr.b,(RTTypedNumericKind)instr.aux,value)
+                   || !storeLocalNumericValue(instr.a,(RTTypedNumericKind)instr.kind,value)){
+                    return fail("V2 numeric cast failed");
+                }
+                break;
+            }
+            case RTV2_OP_BINARY: {
+                auto kind = (RTTypedNumericKind)instr.kind;
+                auto op = (RTTypedBinaryOp)instr.aux;
+                long double lhsVal = 0.0;
+                long double rhsVal = 0.0;
+                if(!localSlotToNumber(instr.b,kind,lhsVal) || !localSlotToNumber(instr.c,kind,rhsVal)){
+                    return fail("V2 numeric binary op failed to load operands");
+                }
+                if((op == RTTYPED_BINARY_DIV || op == RTTYPED_BINARY_MOD) && rhsVal == 0.0){
+                    return fail("V2 numeric binary op divided by zero");
+                }
+                long double result = 0.0;
+                switch(op){
+                    case RTTYPED_BINARY_ADD:
+                        result = lhsVal + rhsVal;
+                        break;
+                    case RTTYPED_BINARY_SUB:
+                        result = lhsVal - rhsVal;
+                        break;
+                    case RTTYPED_BINARY_MUL:
+                        result = lhsVal * rhsVal;
+                        break;
+                    case RTTYPED_BINARY_DIV:
+                        result = (kind == RTTYPED_NUM_INT) ? (long double)((int)lhsVal / (int)rhsVal)
+                            : (kind == RTTYPED_NUM_LONG) ? (long double)((int64_t)lhsVal / (int64_t)rhsVal)
+                            : lhsVal / rhsVal;
+                        break;
+                    case RTTYPED_BINARY_MOD:
+                        result = (kind == RTTYPED_NUM_INT) ? (long double)((int)lhsVal % (int)rhsVal)
+                            : (kind == RTTYPED_NUM_LONG) ? (long double)((int64_t)lhsVal % (int64_t)rhsVal)
+                            : std::fmod((double)lhsVal,(double)rhsVal);
+                        break;
+                    default:
+                        return fail("V2 numeric binary op is unsupported");
+                }
+                if(!storeLocalNumericValue(instr.a,kind,result)){
+                    return fail("V2 numeric binary op failed to store");
+                }
+                break;
+            }
+            case RTV2_OP_COMPARE: {
+                auto kind = (RTTypedNumericKind)instr.kind;
+                auto op = (RTTypedCompareOp)instr.aux;
+                long double lhsVal = 0.0;
+                long double rhsVal = 0.0;
+                if(!localSlotToNumber(instr.b,kind,lhsVal) || !localSlotToNumber(instr.c,kind,rhsVal)){
+                    return fail("V2 compare failed to load operands");
+                }
+                bool comparison = false;
+                switch(op){
+                    case RTTYPED_COMPARE_EQ:
+                        comparison = lhsVal == rhsVal;
+                        break;
+                    case RTTYPED_COMPARE_NE:
+                        comparison = lhsVal != rhsVal;
+                        break;
+                    case RTTYPED_COMPARE_LT:
+                        comparison = lhsVal < rhsVal;
+                        break;
+                    case RTTYPED_COMPARE_LE:
+                        comparison = lhsVal <= rhsVal;
+                        break;
+                    case RTTYPED_COMPARE_GT:
+                        comparison = lhsVal > rhsVal;
+                        break;
+                    case RTTYPED_COMPARE_GE:
+                        comparison = lhsVal >= rhsVal;
+                        break;
+                    default:
+                        return fail("V2 compare op is unsupported");
+                }
+                if(!storeLocalNumericValue(instr.a,RTTYPED_NUM_INT,comparison ? 1.0 : 0.0)){
+                    return fail("V2 compare failed to store");
+                }
+                break;
+            }
+            case RTV2_OP_ARRAY_GET: {
+                auto collection = referenceLocalSlot(instr.b);
+                int index = -1;
+                if(!collection || !localSlotToIndex(instr.c,index)){
+                    if(collection){
+                        StarbytesObjectRelease(collection);
+                    }
+                    return fail("V2 typed array get failed");
+                }
+                long double numericValue = 0.0;
+                bool success = index >= 0
+                    && StarbytesObjectTypecheck(collection,StarbytesArrayType())
+                    && (unsigned)index < StarbytesArrayGetLength(collection)
+                    && StarbytesArrayTryGetNumeric(collection,(unsigned)index,numTypeFromTypedKind((RTTypedNumericKind)instr.kind),&numericValue);
+                StarbytesObjectRelease(collection);
+                if(!success || !storeLocalNumericValue(instr.a,(RTTypedNumericKind)instr.kind,numericValue)){
+                    return fail("V2 typed array get failed");
+                }
+                break;
+            }
+            case RTV2_OP_ARRAY_SET: {
+                auto collection = referenceLocalSlot(instr.a);
+                int index = -1;
+                long double numericValue = 0.0;
+                bool success = collection
+                    && localSlotToIndex(instr.b,index)
+                    && localSlotToNumber(instr.c,(RTTypedNumericKind)instr.kind,numericValue)
+                    && index >= 0
+                    && StarbytesObjectTypecheck(collection,StarbytesArrayType())
+                    && (unsigned)index < StarbytesArrayGetLength(collection)
+                    && StarbytesArrayTrySetNumeric(collection,(unsigned)index,numTypeFromTypedKind((RTTypedNumericKind)instr.kind),numericValue) != 0;
+                if(collection){
+                    StarbytesObjectRelease(collection);
+                }
+                if(!success){
+                    return fail("V2 typed array set failed");
+                }
+                break;
+            }
+            case RTV2_OP_CALL_DIRECT: {
+                if(instr.b >= func_temp->v2Image.callSites.size()){
+                    return fail("V2 direct call site index is out of range");
+                }
+                auto &callSite = func_temp->v2Image.callSites[instr.b];
+                auto *target = findFunctionByName(string_ref(callSite.targetName));
+                if(!target){
+                    return fail("V2 direct call target does not exist");
+                }
+                std::vector<StarbytesObject> callArgs;
+                callArgs.reserve(callSite.argSlots.size());
+                for(auto argSlot : callSite.argSlots){
+                    callArgs.push_back(referenceLocalSlot(argSlot));
+                }
+                auto result = invokeFuncWithValues(target,{callArgs.data(),(unsigned)callArgs.size()},nullptr);
+                for(auto *arg : callArgs){
+                    if(arg){
+                        StarbytesObjectRelease(arg);
+                    }
+                }
+                if(!lastRuntimeError.empty()){
+                    if(result){
+                        StarbytesObjectRelease(result);
+                    }
+                    return fail(lastRuntimeError);
+                }
+                if(instr.a != UINT32_MAX){
+                    storeLocalSlotOwned(instr.a,result);
+                }
+                else if(result){
+                    StarbytesObjectRelease(result);
+                }
+                break;
+            }
+            case RTV2_OP_INTRINSIC_SQRT: {
+                auto inputKind = (instr.b < func_temp->slotKinds.size() && func_temp->slotKinds[instr.b] != RTTYPED_NUM_OBJECT)
+                    ? func_temp->slotKinds[instr.b]
+                    : RTTYPED_NUM_DOUBLE;
+                long double value = 0.0;
+                if(!localSlotToNumber(instr.b,inputKind,value)){
+                    return fail("V2 sqrt failed to load its operand");
+                }
+                if(value < 0.0){
+                    lastRuntimeError = "sqrt requires non-negative numeric input";
+                    return fail(lastRuntimeError);
+                }
+                if(!storeLocalNumericValue(instr.a,RTTYPED_NUM_DOUBLE,std::sqrt((double)value))){
+                    return fail("V2 sqrt failed to store its result");
+                }
+                break;
+            }
+            case RTV2_OP_JUMP:
+                pc = instr.a;
+                continue;
+            case RTV2_OP_JUMP_IF_FALSE: {
+                bool truthy = false;
+                if(!localSlotIsTruthy(instr.a,truthy)){
+                    return fail("V2 conditional jump failed");
+                }
+                if(!truthy){
+                    pc = instr.b;
+                    continue;
+                }
+                break;
+            }
+            case RTV2_OP_V1_STMT:
+                if(instr.a >= func_temp->v2Image.fallbackStmtBlobs.size()
+                   || !executeV1FallbackBlob(func_temp->v2Image.fallbackStmtBlobs[instr.a],willReturn,returnVal)){
+                    return fail("V2 fallback statement failed");
+                }
+                if(willReturn){
+                    popLocalFrame();
+                    return returnVal;
+                }
+                break;
+            case RTV2_OP_RETURN:
+                if(instr.a != UINT32_MAX){
+                    returnVal = referenceLocalSlot(instr.a);
+                }
+                willReturn = true;
+                break;
+            default:
+                return fail("unsupported V2 opcode");
+        }
+        processMicrotasks();
+        ++pc;
+    }
+
+    popLocalFrame();
+    return returnVal;
+}
+
 StarbytesObject InterpImpl::invokeFuncWithValues(RTFuncTemplate *func_temp,
                                                  ArrayRef<StarbytesObject> args,
                                                  StarbytesObject boundSelf){
@@ -2839,10 +3576,22 @@ StarbytesObject InterpImpl::invokeFuncWithValues(RTFuncTemplate *func_temp,
         }
     }
 
-    Twine funcScopeBuilder;
-    funcScopeBuilder + func_name.str();
-    funcScopeBuilder + std::to_string(func_temp->invocations);
-    std::string funcScope = funcScopeBuilder.str();
+    if(hasRTInternalAttribute(*func_temp,"__rt_body_v2")){
+        if(boundSelf){
+            lastRuntimeError = "V2 bound-method execution is not supported yet";
+            return nullptr;
+        }
+        return invokeV2FuncWithValues(func_temp,args);
+    }
+
+    bool needsNamedFunctionScope = boundSelf != nullptr;
+    std::string funcScope;
+    if(needsNamedFunctionScope){
+        Twine funcScopeBuilder;
+        funcScopeBuilder + func_name.str();
+        funcScopeBuilder + std::to_string(func_temp->invocations);
+        funcScope = funcScopeBuilder.str();
+    }
     pushLocalFrame(func_temp);
     if(boundSelf){
         StarbytesObjectReference(boundSelf);
@@ -2858,11 +3607,15 @@ StarbytesObject InterpImpl::invokeFuncWithValues(RTFuncTemplate *func_temp,
         }
     }
 
-    allocator->setScope(funcScope);
+    if(needsNamedFunctionScope){
+        allocator->setScope(funcScope);
+    }
     if(func_temp->decodedBody.empty()){
         popLocalFrame();
-        allocator->clearScope();
-        allocator->setScope(parentScope);
+        if(needsNamedFunctionScope){
+            allocator->clearScope();
+            allocator->setScope(parentScope);
+        }
         return nullptr;
     }
     MemoryInputStream bodyIn(func_temp->decodedBody.data(),func_temp->decodedBody.size());
@@ -2879,8 +3632,10 @@ StarbytesObject InterpImpl::invokeFuncWithValues(RTFuncTemplate *func_temp,
         processMicrotasks();
     }
     popLocalFrame();
-    allocator->clearScope();
-    allocator->setScope(parentScope);
+    if(needsNamedFunctionScope){
+        allocator->clearScope();
+        allocator->setScope(parentScope);
+    }
     return return_val;
 }
 
@@ -3018,6 +3773,10 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
     in.read((char *)&code,sizeof(RTCode));
     if(code != CODE_MODULE_END){
         recordOpcodeDispatch(code);
+        RuntimeProfileSiteKind siteKind = RuntimeProfileSiteKind::Call;
+        if(siteKindForOpcode(code,siteKind)){
+            recordSiteProfile(code,siteKind,exprStart);
+        }
     }
     if(code != CODE_MODULE_END){
         if(auto *quickened = getOrInstallQuickenedExpr(in,exprStart,code)){
@@ -3033,6 +3792,50 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             }
         }
     }
+    auto getVarRefFeedbackSite = [&]() -> VarRefFeedbackSite * {
+        RuntimeFeedbackKey key;
+        if(!buildFeedbackKey(exprStart,CODE_RTVAR_REF,key)){
+            return nullptr;
+        }
+        auto inserted = varRefFeedbackSites.emplace(key,VarRefFeedbackSite());
+        if(inserted.second){
+            recordFeedbackSiteInstall();
+        }
+        return &inserted.first->second;
+    };
+    auto getMemberGetFeedbackSite = [&]() -> MemberGetFeedbackSite * {
+        RuntimeFeedbackKey key;
+        if(!buildFeedbackKey(exprStart,CODE_RTMEMBER_GET,key)){
+            return nullptr;
+        }
+        auto inserted = memberGetFeedbackSites.emplace(key,MemberGetFeedbackSite());
+        if(inserted.second){
+            recordFeedbackSiteInstall();
+        }
+        return &inserted.first->second;
+    };
+    auto getMemberSetFeedbackSite = [&]() -> MemberSetFeedbackSite * {
+        RuntimeFeedbackKey key;
+        if(!buildFeedbackKey(exprStart,CODE_RTMEMBER_SET,key)){
+            return nullptr;
+        }
+        auto inserted = memberSetFeedbackSites.emplace(key,MemberSetFeedbackSite());
+        if(inserted.second){
+            recordFeedbackSiteInstall();
+        }
+        return &inserted.first->second;
+    };
+    auto getMemberInvokeFeedbackSite = [&]() -> MemberInvokeFeedbackSite * {
+        RuntimeFeedbackKey key;
+        if(!buildFeedbackKey(exprStart,CODE_RTMEMBER_IVK,key)){
+            return nullptr;
+        }
+        auto inserted = memberInvokeFeedbackSites.emplace(key,MemberInvokeFeedbackSite());
+        if(inserted.second){
+            recordFeedbackSiteInstall();
+        }
+        return &inserted.first->second;
+    };
     switch (code) {
         case CODE_RTOBJCREATE:
         {
@@ -3050,6 +3853,48 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             RTID var_id;
             in >> &var_id;
             string_ref var_name (var_id.value,var_id.len);
+            auto *feedbackSite = getVarRefFeedbackSite();
+            if(feedbackSite){
+                auto currentScope = allocator->currentScope;
+                auto currentGeneration = allocator->scopeGeneration(string_ref(currentScope));
+                if(feedbackSite->initialized
+                   && feedbackSite->scopeName == currentScope
+                   && feedbackSite->scopeGeneration == currentGeneration){
+                    recordFeedbackCacheHit();
+                    if(!feedbackSite->hasEntry){
+                        return nullptr;
+                    }
+                    if(!feedbackSite->cachedIt->second){
+                        return nullptr;
+                    }
+                    StarbytesObjectReference(feedbackSite->cachedIt->second);
+                    return feedbackSite->cachedIt->second;
+                }
+                if(feedbackSite->initialized){
+                    recordFeedbackCacheMiss();
+                }
+
+                feedbackSite->initialized = true;
+                feedbackSite->scopeName = currentScope;
+                feedbackSite->scopeGeneration = currentGeneration;
+                feedbackSite->hasEntry = false;
+
+                auto *scopeMap = allocator->findObjectRegistryAtScope(string_ref(currentScope));
+                if(!scopeMap){
+                    return nullptr;
+                }
+                auto foundVar = scopeMap->find(var_name.view());
+                if(foundVar == scopeMap->end()){
+                    return nullptr;
+                }
+                feedbackSite->hasEntry = true;
+                feedbackSite->cachedIt = foundVar;
+                if(!foundVar->second){
+                    return nullptr;
+                }
+                StarbytesObjectReference(foundVar->second);
+                return foundVar->second;
+            }
             return allocator->referenceVariable(allocator->currentScope,var_name);
             
             break;
@@ -3946,6 +4791,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             bool chooseTrue = (bool)StarbytesBoolValue(condition);
             StarbytesObjectRelease(condition);
             if(chooseTrue){
+                recordSiteProfile(code,RuntimeProfileSiteKind::Branch,exprStart,false,true);
                 auto trueValue = evalExpr(in);
                 skipExpr(in);
                 return trueValue;
@@ -4257,10 +5103,51 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             RTID memberId;
             in >> &memberId;
             std::string memberName = rtidToString(memberId);
+            auto *feedbackSite = getMemberGetFeedbackSite();
 
             StarbytesObject value = nullptr;
             if(object){
+                if(feedbackSite && feedbackSite->cacheKind != MemberGetCacheKind::None){
+                    if(feedbackSite->cacheKind == MemberGetCacheKind::BuiltinLength){
+                        auto receiverKind = classifyReceiverKind(object);
+                        if(receiverKind == feedbackSite->receiverKind){
+                            recordFeedbackCacheHit();
+                            switch(receiverKind){
+                                case CachedReceiverKind::String:
+                                    value = StarbytesNumNew(NumTypeInt,(int)StarbytesStrLength(object));
+                                    break;
+                                case CachedReceiverKind::Array:
+                                    value = StarbytesNumNew(NumTypeInt,(int)StarbytesArrayGetLength(object));
+                                    break;
+                                case CachedReceiverKind::Dict:
+                                    value = StarbytesNumNew(NumTypeInt,(int)StarbytesDictGetLength(object));
+                                    break;
+                                default:
+                                    break;
+                            }
+                        }
+                        else {
+                            recordFeedbackCacheMiss();
+                        }
+                    }
+                    else if(feedbackSite->cacheKind == MemberGetCacheKind::FieldSlot){
+                        if(classifyReceiverKind(object) == CachedReceiverKind::ClassObject
+                           && StarbytesClassObjectGetClass(object) == feedbackSite->classType
+                           && StarbytesClassObjectGetFieldCount(object) == feedbackSite->expectedFieldCount
+                           && feedbackSite->fieldSlot < feedbackSite->expectedFieldCount){
+                            value = StarbytesClassObjectGetField(object,feedbackSite->fieldSlot);
+                            if(value){
+                                StarbytesObjectReference(value);
+                            }
+                            recordFeedbackCacheHit();
+                        }
+                        else {
+                            recordFeedbackCacheMiss();
+                        }
+                    }
+                }
                 if(memberName == "length"){
+                    auto receiverKind = classifyReceiverKind(object);
                     if(StarbytesObjectTypecheck(object,StarbytesStrType())){
                         value = StarbytesNumNew(NumTypeInt,(int)StarbytesStrLength(object));
                     }
@@ -4270,6 +5157,13 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                     else if(StarbytesObjectTypecheck(object,StarbytesDictType())){
                         value = StarbytesNumNew(NumTypeInt,(int)StarbytesDictGetLength(object));
                     }
+                    if(value && feedbackSite
+                       && (receiverKind == CachedReceiverKind::String
+                           || receiverKind == CachedReceiverKind::Array
+                           || receiverKind == CachedReceiverKind::Dict)){
+                        feedbackSite->cacheKind = MemberGetCacheKind::BuiltinLength;
+                        feedbackSite->receiverKind = receiverKind;
+                    }
                 }
                 if(!value){
                     uint32_t fieldSlot = 0;
@@ -4277,6 +5171,13 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                         value = StarbytesClassObjectGetField(object,fieldSlot);
                         if(value){
                             StarbytesObjectReference(value);
+                        }
+                        if(feedbackSite){
+                            feedbackSite->cacheKind = MemberGetCacheKind::FieldSlot;
+                            feedbackSite->receiverKind = CachedReceiverKind::ClassObject;
+                            feedbackSite->classType = StarbytesClassObjectGetClass(object);
+                            feedbackSite->fieldSlot = fieldSlot;
+                            feedbackSite->expectedFieldCount = StarbytesClassObjectGetFieldCount(object);
                         }
                     }
                 }
@@ -4320,12 +5221,27 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             RTID memberId;
             in >> &memberId;
             auto value = evalExpr(in);
+            auto *feedbackSite = getMemberSetFeedbackSite();
             if(!value){
                 value = StarbytesBoolNew(StarbytesBoolFalse);
             }
             if(!object){
                 StarbytesObjectRelease(value);
                 return nullptr;
+            }
+
+            if(feedbackSite && feedbackSite->hasFieldSlot){
+                if(classifyReceiverKind(object) == CachedReceiverKind::ClassObject
+                   && StarbytesClassObjectGetClass(object) == feedbackSite->classType
+                   && StarbytesClassObjectGetFieldCount(object) == feedbackSite->expectedFieldCount
+                   && feedbackSite->fieldSlot < feedbackSite->expectedFieldCount){
+                    StarbytesObjectReference(value);
+                    StarbytesClassObjectSetField(object,feedbackSite->fieldSlot,value);
+                    StarbytesObjectRelease(object);
+                    recordFeedbackCacheHit();
+                    return value;
+                }
+                recordFeedbackCacheMiss();
             }
 
             std::string memberName = rtidToString(memberId);
@@ -4340,6 +5256,12 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             }
             uint32_t fieldSlot = 0;
             if(lookupClassFieldSlot(object,memberName,fieldSlot)){
+                if(feedbackSite){
+                    feedbackSite->hasFieldSlot = true;
+                    feedbackSite->classType = StarbytesClassObjectGetClass(object);
+                    feedbackSite->fieldSlot = fieldSlot;
+                    feedbackSite->expectedFieldCount = StarbytesClassObjectGetFieldCount(object);
+                }
                 StarbytesObjectReference(value);
                 StarbytesClassObjectSetField(object,fieldSlot,value);
                 StarbytesObjectRelease(object);
@@ -4395,6 +5317,7 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
             in >> &memberId;
             unsigned argCount = 0;
             in.read((char *)&argCount,sizeof(argCount));
+            auto *feedbackSite = getMemberInvokeFeedbackSite();
             if(!object){
                 discardExprArgs(in,argCount);
                 return nullptr;
@@ -4458,6 +5381,25 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 value = StarbytesStrGetBuffer(arg);
                 return true;
             };
+
+            if(feedbackSite && feedbackSite->hasMethod){
+                if(classifyReceiverKind(object) == CachedReceiverKind::ClassObject
+                   && StarbytesClassObjectGetClass(object) == feedbackSite->classType
+                   && feedbackSite->functionIndex < functions.size()){
+                    auto *runtimeMethod = &functions[feedbackSite->functionIndex];
+                    recordFeedbackCacheHit();
+                    StarbytesObject result = nullptr;
+                    if(runtimeMethod->isLazy){
+                        result = scheduleLazyCall(in,runtimeMethod,argCount,object);
+                    }
+                    else {
+                        result = invokeFunc(in,runtimeMethod,argCount,object);
+                    }
+                    StarbytesObjectRelease(object);
+                    return result;
+                }
+                recordFeedbackCacheMiss();
+            }
 
             if(StarbytesObjectTypecheck(object,StarbytesStrType()) ||
                StarbytesObjectTypecheck(object,StarbytesRegexType()) ||
@@ -5063,6 +6005,28 @@ StarbytesObject InterpImpl::evalExpr(std::istream & in){
                 }
             }
 
+            if(!StarbytesObjectIs(object) && feedbackSite){
+                size_t functionIndex = 0;
+                auto classType = StarbytesClassObjectGetClass(object);
+                if(resolveClassMethod(classType,methodName,functionIndex)){
+                    feedbackSite->hasMethod = true;
+                    feedbackSite->classType = classType;
+                    feedbackSite->functionIndex = functionIndex;
+                    if(functionIndex < functions.size()){
+                        auto *runtimeMethod = &functions[functionIndex];
+                        StarbytesObject result = nullptr;
+                        if(runtimeMethod->isLazy){
+                            result = scheduleLazyCall(in,runtimeMethod,argCount,object);
+                        }
+                        else {
+                            result = invokeFunc(in,runtimeMethod,argCount,object);
+                        }
+                        StarbytesObjectRelease(object);
+                        return result;
+                    }
+                }
+            }
+
             return invokeResolvedClassMethod(in,object,methodName,argCount);
         }
         case CODE_RTREGEX_LITERAL: {
@@ -5551,6 +6515,10 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
     if(!isExpressionOpcode(code)){
         recordOpcodeDispatch(code);
     }
+    auto opcodeStart = currentOpcodeStart(in);
+    if(code == CODE_CONDITIONAL){
+        recordSiteProfile(code,RuntimeProfileSiteKind::Branch,opcodeStart);
+    }
     if(code == CODE_RTVAR){
         RTVar var;
         in >> &var;
@@ -5699,6 +6667,7 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
                 }
 
                 if(condition && !branchTaken && !*willReturn){
+                    recordSiteProfile(code,RuntimeProfileSiteKind::Branch,opcodeStart,false,true);
                     executeRuntimeBlock(in,CODE_RTBLOCK_END,willReturn,return_val);
                     branchTaken = true;
                 }
@@ -5744,6 +6713,7 @@ void InterpImpl::execNorm(RTCode &code,std::istream &in,bool * willReturn,Starby
                     }
 
                     if(condition && !*willReturn){
+                        recordSiteProfile(code,RuntimeProfileSiteKind::Branch,opcodeStart,false,true);
                         executeRuntimeBlock(in,CODE_RTBLOCK_END,willReturn,return_val);
                         loopExitPos = in.tellg();
                         if(*willReturn){
@@ -5839,13 +6809,43 @@ void InterpImpl::exec(std::istream & in){
     RTCode code = CODE_MODULE_END;
     std::string g = "GLOBAL";
     allocator->setScope(g);
+    memberGetFeedbackSites.clear();
+    memberSetFeedbackSites.clear();
+    memberInvokeFeedbackSites.clear();
+    varRefFeedbackSites.clear();
     activeInput = &in;
+    activeModuleHeader = prepareRTModuleStream(in);
+    activeModuleCodeStart = in.tellg();
     lastRuntimeError.clear();
     if(runtimeProfilingEnabled){
         StarbytesRuntimeProfileResetLowLevelCounters();
+        runtimeProfile.moduleBytecodeVersion = activeModuleHeader.hasExplicitHeader
+            ? activeModuleHeader.bytecodeVersion
+            : RTBYTECODE_VERSION_V1;
+        runtimeProfile.moduleHasExplicitHeader = activeModuleHeader.hasExplicitHeader;
+        runtimeProfile.requestedExecutionMode = executionMode;
+        runtimeProfile.executionPath = RuntimeExecutionPath::Unknown;
+    }
+
+    auto effectiveBytecodeVersion = activeModuleHeader.hasExplicitHeader
+        ? activeModuleHeader.bytecodeVersion
+        : RTBYTECODE_VERSION_V1;
+    if(effectiveBytecodeVersion == RTBYTECODE_VERSION_V2){
+        if(executionMode == RuntimeExecutionMode::V1){
+            lastRuntimeError = "runtime mode `v1` cannot execute Bytecode V2 modules";
+            allocator->clearScope();
+            activeInput = nullptr;
+            activeModuleCodeStart = std::istream::pos_type(-1);
+            return;
+        }
+    }
+    if(runtimeProfilingEnabled){
+        runtimeProfile.executionPath = RuntimeExecutionPath::V1StreamInterpreter;
     }
     if(!in.read((char *)&code,sizeof(RTCode))){
+        allocator->clearScope();
         activeInput = nullptr;
+        activeModuleCodeStart = std::istream::pos_type(-1);
         return;
     }
     bool temp = false;
@@ -5863,6 +6863,7 @@ void InterpImpl::exec(std::istream & in){
     processMicrotasks();
     allocator->clearScope();
     activeInput = nullptr;
+    activeModuleCodeStart = std::istream::pos_type(-1);
     if(runtimeProfilingEnabled){
         auto execEnd = std::chrono::steady_clock::now();
         StarbytesRuntimeLowLevelCounters lowLevelCounters = {};

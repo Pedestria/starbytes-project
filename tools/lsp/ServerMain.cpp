@@ -3936,7 +3936,7 @@ void Server::handleInitialize(rapidjson::Document &request) {
 
   rapidjson::Value serverInfo(rapidjson::kObjectType);
   serverInfo.AddMember("name", rapidjson::Value("Starbytes LSP", alloc), alloc);
-  serverInfo.AddMember("version", rapidjson::Value("0.11.0", alloc), alloc);
+  serverInfo.AddMember("version", rapidjson::Value("0.12.0", alloc), alloc);
 
   rapidjson::Value result(rapidjson::kObjectType);
   result.AddMember("capabilities", capabilities, alloc);

@@ -15,6 +15,16 @@ int fail(const char *message) {
     return 1;
 }
 
+bool hasSiteKind(const starbytes::Runtime::RuntimeProfileData &profile,
+                 starbytes::Runtime::RuntimeProfileSiteKind kind) {
+    for(const auto &entry : profile.siteStats) {
+        if(entry.kind == kind && entry.executionCount > 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }
 
 int main() {
@@ -33,8 +43,10 @@ func kernel(limit:Int) Int {
     decl i:Int = 0
     decl total:Int = 0
     decl box = new Box()
+    decl values:Int[] = [3,4]
     while(i < limit){
         total += box.read()
+        total += values[0]
         i += 1
     }
     return total
@@ -92,6 +104,14 @@ decl sink:Int = kernel(4)
         cleanup();
         return fail("runtime profile should be enabled");
     }
+    if(profile.moduleBytecodeVersion != Runtime::RTBYTECODE_VERSION_V1 || !profile.moduleHasExplicitHeader) {
+        cleanup();
+        return fail("expected explicit Bytecode V1 module metadata");
+    }
+    if(profile.executionPath != Runtime::RuntimeExecutionPath::V1StreamInterpreter) {
+        cleanup();
+        return fail("expected V1 stream interpreter execution path");
+    }
     if(profile.totalRuntimeNs == 0 || profile.dispatchCount == 0) {
         cleanup();
         return fail("expected total runtime and dispatch count");
@@ -127,6 +147,22 @@ decl sink:Int = kernel(4)
     if(profile.objectDeallocations[static_cast<size_t>(StarbytesRuntimeObjectKindCustomClass)] == 0) {
         cleanup();
         return fail("expected custom-class deallocation counts");
+    }
+    if(!hasSiteKind(profile,Runtime::RuntimeProfileSiteKind::Call)) {
+        cleanup();
+        return fail("expected per-site call counters");
+    }
+    if(!hasSiteKind(profile,Runtime::RuntimeProfileSiteKind::Member)) {
+        cleanup();
+        return fail("expected per-site member counters");
+    }
+    if(!hasSiteKind(profile,Runtime::RuntimeProfileSiteKind::Index)) {
+        cleanup();
+        return fail("expected per-site index counters");
+    }
+    if(!hasSiteKind(profile,Runtime::RuntimeProfileSiteKind::Branch)) {
+        cleanup();
+        return fail("expected per-site branch counters");
     }
 
     bool sawKernel = false;

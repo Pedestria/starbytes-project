@@ -87,6 +87,11 @@ func slotDemo(seed:Int) Int {
     }
 
     RTCode code = CODE_MODULE_END;
+    auto moduleHeader = prepareRTModuleStream(moduleIn);
+    if(!moduleHeader.hasExplicitHeader || moduleHeader.bytecodeVersion != RTBYTECODE_VERSION_V1) {
+        cleanup();
+        return fail("expected explicit Bytecode V1 module header");
+    }
     if(!moduleIn.read((char *)&code,sizeof(code)) || code != CODE_RTFUNC) {
         cleanup();
         return fail("expected runtime function template at module start");
@@ -133,7 +138,7 @@ func slotDemo(seed:Int) Int {
         cleanup();
         return fail("disassembly is missing local declaration opcode");
     }
-    if(!contains(disasmText,"CODE_RTLOCAL_REF")) {
+    if(!contains(disasmText,"CODE_RTLOCAL_REF") && !contains(disasmText,"CODE_RTTYPED_LOCAL_REF")) {
         cleanup();
         return fail("disassembly is missing local reference opcode");
     }

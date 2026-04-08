@@ -31,6 +31,9 @@ struct CompileProfileData {
     uint64_t runtimeQuickenedExecutions = 0;
     uint64_t runtimeQuickenedSpecializations = 0;
     uint64_t runtimeQuickenedFallbacks = 0;
+    uint64_t runtimeFeedbackSites = 0;
+    uint64_t runtimeFeedbackCacheHits = 0;
+    uint64_t runtimeFeedbackCacheMisses = 0;
     uint64_t moduleCount = 0;
     uint64_t sourceCount = 0;
     uint64_t moduleCacheHits = 0;

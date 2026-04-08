@@ -183,6 +183,47 @@ typedef uint8_t RTBuiltinMemberId;
 #define RTBUILTIN_MEMBER_DICT_CLEAR 0x27
 #define RTBUILTIN_MEMBER_DICT_COPY 0x28
 
+typedef uint8_t RTV2Opcode;
+#define RTV2_OP_NOP 0x00
+#define RTV2_OP_MOVE 0x01
+#define RTV2_OP_LOAD_I64_CONST 0x02
+#define RTV2_OP_LOAD_F64_CONST 0x03
+#define RTV2_OP_NUM_CAST 0x04
+#define RTV2_OP_BINARY 0x05
+#define RTV2_OP_COMPARE 0x06
+#define RTV2_OP_ARRAY_GET 0x07
+#define RTV2_OP_ARRAY_SET 0x08
+#define RTV2_OP_CALL_DIRECT 0x09
+#define RTV2_OP_INTRINSIC_SQRT 0x0A
+#define RTV2_OP_JUMP 0x0B
+#define RTV2_OP_JUMP_IF_FALSE 0x0C
+#define RTV2_OP_V1_STMT 0x0D
+#define RTV2_OP_RETURN 0x0E
+
+struct RTV2Instruction {
+    RTV2Opcode opcode = RTV2_OP_NOP;
+    uint8_t kind = 0;
+    uint8_t aux = 0;
+    uint8_t flags = 0;
+    uint32_t a = 0;
+    uint32_t b = 0;
+    uint32_t c = 0;
+    uint32_t d = 0;
+};
+
+struct RTV2CallSite {
+    std::string targetName;
+    std::vector<uint32_t> argSlots;
+};
+
+struct RTV2FunctionImage {
+    std::vector<RTV2Instruction> instructions;
+    std::vector<int64_t> i64Consts;
+    std::vector<double> f64Consts;
+    std::vector<RTV2CallSite> callSites;
+    std::vector<std::vector<char>> fallbackStmtBlobs;
+};
+
 #define RTCODE_STREAM_OBJECT(object) \
 std::ostream & operator <<(std::ostream & os,object * obj); \
 std::istream & operator >>(std::istream & is,object * obj);
@@ -191,12 +232,25 @@ struct RTCodeContext {
     
 };
 
+constexpr uint16_t RTBYTECODE_VERSION_LEGACY_V1 = 0;
+constexpr uint16_t RTBYTECODE_VERSION_V1 = 1;
+constexpr uint16_t RTBYTECODE_VERSION_V2 = 2;
+constexpr size_t RTModuleHeaderByteCount = 8;
+
+struct RTModuleHeaderInfo {
+    uint16_t bytecodeVersion = RTBYTECODE_VERSION_LEGACY_V1;
+    bool hasExplicitHeader = false;
+};
+
 struct RTID {
     size_t len;
     const char *value;
 };
 
 RTCODE_STREAM_OBJECT(RTID)
+
+void writeRTModuleHeader(std::ostream &os,uint16_t bytecodeVersion = RTBYTECODE_VERSION_V1);
+RTModuleHeaderInfo prepareRTModuleStream(std::istream &is);
 
 bool rtBuiltinMemberIdForName(const std::string &name,RTBuiltinMemberId &idOut);
 const char *rtBuiltinMemberName(RTBuiltinMemberId id);
@@ -256,9 +310,17 @@ struct RTFuncTemplate {
     std::istream::pos_type block_start_pos;
     std::map<std::streamoff, RTQuickenedExpr> quickenedExprs;
     std::vector<char> decodedBody;
+    RTV2FunctionImage v2Image;
+    bool hasV2Image = false;
+    std::string v2DecodeError;
 };
 
 RTCODE_STREAM_OBJECT(RTFuncTemplate)
+
+void addRTInternalAttribute(RTFuncTemplate &func,const std::string &name);
+bool hasRTInternalAttribute(const RTFuncTemplate &func,const std::string &name);
+bool writeRTV2FunctionImage(std::ostream &os,const RTV2FunctionImage &image);
+bool readRTV2FunctionImage(const char *data,size_t size,RTV2FunctionImage &imageOut,std::string *errorOut = nullptr);
 
 
 struct RTClass {

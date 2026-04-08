@@ -10,7 +10,10 @@ ModuleGenContext::ModuleGenContext(string_ref strRef,std::ostream & out,std::fil
 };
 
 ModuleGenContext ModuleGenContext::Create(string_ref strRef,std::ostream & os,std::filesystem::path & outputPath){
-    return ModuleGenContext(strRef,os,outputPath);
+    auto context = ModuleGenContext(strRef,os,outputPath);
+    context.emitModuleHeader = true;
+    context.bytecodeVersion = Runtime::RTBYTECODE_VERSION_V1;
+    return context;
 };
 
 Gen::Gen():
@@ -29,6 +32,10 @@ void Gen::consumeSTableContext(Semantics::STableContext *ctxt){
 
 void Gen::setContext(ModuleGenContext *context){
     genContext = context;
+    if(genContext && genContext->emitModuleHeader && !genContext->moduleHeaderWritten){
+        Runtime::writeRTModuleHeader(genContext->out,genContext->bytecodeVersion);
+        genContext->moduleHeaderWritten = true;
+    }
     codeGen->setContext(context);
     interfaceEnabled = (context && context->generateInterface);
     if(interfaceEnabled){
@@ -54,7 +61,7 @@ void Gen::consumeStmt(ASTStmt *stmt){
     }
 };
 
-void Gen::finish(){
+void Gen::finish() const {
     codeGen->finish();
     if(interfaceEnabled){
         interfaceGen->finish();

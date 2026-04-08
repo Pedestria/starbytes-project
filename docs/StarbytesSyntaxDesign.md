@@ -19,4 +19,4 @@ To keep specification quality high, the detailed documentation was split by conc
 2. compiler/driver workflow
 3. semantic rules
 
-Use `docs/StarbytesUserGuideISO.md` as the primary consolidated source of truth for 0.11.x behavior.
+Use `docs/StarbytesUserGuideISO.md` as the primary consolidated source of truth for 0.12.x behavior.

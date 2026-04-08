@@ -37,7 +37,10 @@ void printCompileProfile(std::ostream &out,const CompileProfileData &profile,boo
     out << "    \"runtime_quickened_sites\": " << profile.runtimeQuickenedSites << ",\n";
     out << "    \"runtime_quickened_executions\": " << profile.runtimeQuickenedExecutions << ",\n";
     out << "    \"runtime_quickened_specializations\": " << profile.runtimeQuickenedSpecializations << ",\n";
-    out << "    \"runtime_quickened_fallbacks\": " << profile.runtimeQuickenedFallbacks << "\n";
+    out << "    \"runtime_quickened_fallbacks\": " << profile.runtimeQuickenedFallbacks << ",\n";
+    out << "    \"runtime_feedback_sites\": " << profile.runtimeFeedbackSites << ",\n";
+    out << "    \"runtime_feedback_cache_hits\": " << profile.runtimeFeedbackCacheHits << ",\n";
+    out << "    \"runtime_feedback_cache_misses\": " << profile.runtimeFeedbackCacheMisses << "\n";
     out << "  },\n";
     out << "  \"timings_ms\": {\n";
     out << "    \"total\": " << nsToMs(profile.totalNs) << ",\n";

@@ -1,9 +1,9 @@
 # Starbytes User Guide and Language Specification (ISO-Style Draft)
 
 Document ID: SB-UG-ISO-DRAFT  
-Version: 0.11.0  
+Version: 0.12.0  
 Date: February 27, 2026  
-Status: Draft normative reference for Starbytes 0.11.x
+Status: Draft normative reference for Starbytes 0.12.x
 
 ## 1 Scope
 
@@ -555,7 +555,7 @@ func print(object:Any) Void
 
 ## 15 Standard Library Modules
 
-The following module interfaces are part of the 0.11.x stdlib baseline (native-backed where applicable):
+The following module interfaces are part of the 0.12.x stdlib baseline (native-backed where applicable):
 
 - `Archive`
 - `CmdLine`
@@ -730,4 +730,4 @@ scopedIdentifier      = Identifier { "." Identifier } ;
 
 This document supersedes older split references for syntax and semantics where conflicts exist.
 
-When old documents differ from this guide, this guide is authoritative for 0.11.x behavior.
+When old documents differ from this guide, this guide is authoritative for 0.12.x behavior.

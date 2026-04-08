@@ -63,6 +63,24 @@ add_starbytes_test(
 
 add_starbytes_test(
     NAME
+    "bytecode-version-compatibility-test"
+    INCLUDE_LIB
+    FILES
+    "BytecodeVersionCompatibilityTest.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "bytecode-v2-phase1-test"
+    INCLUDE_LIB
+    FILES
+    "BytecodeV2Phase1Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
     "diagnostic-baseline-test"
     INCLUDE_LIB
     FILES
@@ -319,6 +337,15 @@ add_starbytes_test(
     INCLUDE_LIB
     FILES
     "AdaptiveQuickeningPhase5Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
+add_starbytes_test(
+    NAME
+    "feedback-vectors-phase2-test"
+    INCLUDE_LIB
+    FILES
+    "FeedbackVectorsPhase2Test.cpp"
     DEPENDENCIES
     ${STARBYTES_ALL_LIBS})
 

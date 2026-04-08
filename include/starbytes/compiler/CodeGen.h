@@ -20,6 +20,8 @@ public:
         Runtime::RTTypedNumericKind arrayElementKind = RTTYPED_NUM_OBJECT;
     };
 
+    class BytecodeV2Lowerer;
+
 private:
     struct LocalSlotContext {
         std::map<std::string,FastTypeInfo> slotTypeMap;
@@ -36,6 +38,7 @@ private:
     size_t exprEmitDepth = 0;
     std::set<std::string> emittedInlineRuntimeFuncs;
     std::vector<LocalSlotContext> localSlotStack;
+    std::vector<ASTStmt *> bufferedTopLevelStatements;
     friend class Parser;
     StarbytesObject exprToRTInternalObject(ASTExpr *expr);
     FastTypeInfo inferFastType(ASTExpr *expr) const;
@@ -52,7 +55,7 @@ public:
                               Runtime::RTFuncTemplate &templ);
     void popLocalSlotContext();
     bool currentLocalSlotForName(string_ref name,uint32_t &slotOut) const;
-    void finish();
+    void finish() const;
     void consumeSTableContext(Semantics::STableContext *table) override;
     bool acceptsSymbolTableContext() override;
     void setContext(ModuleGenContext *context);

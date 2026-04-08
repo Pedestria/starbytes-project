@@ -73,6 +73,30 @@ class Disassembler {
                 out << (unsigned)kind << " ";
             }
             out << std::endl;
+            if(hasRTInternalAttribute(funcTemp,"__rt_body_v2")){
+                RTV2FunctionImage image;
+                std::string decodeError;
+                if(readRTV2FunctionImage(funcTemp.decodedBody.data(),funcTemp.decodedBody.size(),image,&decodeError)){
+                    out << "CODE_RTFUNCBLOCK_BEGIN_V2 " << image.instructions.size() << std::endl;
+                    for(const auto &instr : image.instructions){
+                        out << "RTV2_OP " << (unsigned)instr.opcode
+                            << " " << (unsigned)instr.kind
+                            << " " << (unsigned)instr.aux
+                            << " " << (unsigned)instr.flags
+                            << " " << instr.a
+                            << " " << instr.b
+                            << " " << instr.c
+                            << " " << instr.d
+                            << std::endl;
+                    }
+                    out << "CODE_RTFUNCBLOCK_END_V2";
+                }
+                else {
+                    out << "CODE_RTFUNCBLOCK_BEGIN_V2 <decode-error> " << decodeError << std::endl;
+                    out << "CODE_RTFUNCBLOCK_END_V2";
+                }
+                return;
+            }
             in.seekg(funcTemp.block_start_pos);
             RTCode code2;
             in.read((char *)&code2,sizeof(RTCode));
@@ -522,6 +546,7 @@ public:
        
     };
     void disasm(){
+        prepareRTModuleStream(in);
         RTCode code;
         in.read((char *)&code,sizeof(RTCode));
         while (code != CODE_MODULE_END) {

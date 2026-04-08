@@ -60,6 +60,9 @@ struct DriverOptions {
     bool profileRuntime = false;
     bool printRuntimeProfileSummary = false;
     std::string profileRuntimeOutPath;
+    starbytes::Runtime::RuntimeExecutionMode runtimeMode = starbytes::Runtime::RuntimeExecutionMode::Auto;
+    uint16_t bytecodeVersion = starbytes::Runtime::RTBYTECODE_VERSION_V1;
+    bool bytecodeVersionExplicit = false;
     bool logDiagnostics = true;
     bool autoLoadNative = true;
     bool infer64BitNumbers = false;
@@ -693,6 +696,7 @@ uint64_t computeModuleAnalysisFlagsHash(const DriverOptions &opts,
     std::ostringstream key;
     key << "auto_native=" << (opts.autoLoadNative ? "1" : "0") << ";";
     key << "infer_64bit_numbers=" << (opts.infer64BitNumbers ? "1" : "0") << ";";
+    key << "bytecode_version=" << opts.bytecodeVersion << ";";
     key << "native_dirs=";
     for(const auto &dir : opts.nativeSearchDirs) {
         key << makeAbsolutePathString(dir) << ";";
@@ -1491,6 +1495,7 @@ ModuleCompileTaskResult compileModuleToSegment(const std::string &moduleKey,
                                                const std::filesystem::path &artifactDir,
                                                bool profileEnabled,
                                                bool infer64BitNumbers,
+                                               uint16_t bytecodeVersion,
                                                bool generateInterface,
                                                const std::unordered_set<std::string> &interfaceAllowlist){
     ModuleCompileTaskResult result;
@@ -1517,6 +1522,7 @@ ModuleCompileTaskResult compileModuleToSegment(const std::string &moduleKey,
     auto outputPathForGen = artifactDir;
     auto genContext = starbytes::ModuleGenContext::Create(moduleName,moduleOut,outputPathForGen);
     genContext.generateInterface = generateInterface;
+    genContext.bytecodeVersion = bytecodeVersion;
     if(generateInterface){
         genContext.interfaceSourceAllowlist = interfaceAllowlist;
     }
@@ -1650,6 +1656,9 @@ void printHelp(std::ostream &out) {
     out << "      --profile-runtime      Print runtime profile summary after execution.\n";
     out << "      --profile-runtime-out <path>\n";
     out << "                              Write detailed runtime profile output to file.\n";
+    out << "      --bytecode-version <ver>\n";
+    out << "                              Emit bytecode version v1 or v2.\n";
+    out << "      --runtime-mode <mode>  Select runtime path: auto, v1, or v2.\n";
     out << "      --no-diagnostics       Do not print diagnostics buffered by runtime handlers.\n";
     out << "  -n, --native <path>        Load a native module binary before runtime execution (repeatable).\n";
     out << "  -L, --native-dir <dir>     Add a search directory for auto native module resolution (repeatable).\n";
@@ -1713,6 +1722,8 @@ ParseResult parseArgs(int argc, const char *argv[], DriverOptions &opts) {
     parser.addValueOption("profile-compile-out");
     parser.addFlagOption("profile-runtime");
     parser.addValueOption("profile-runtime-out");
+    parser.addValueOption("bytecode-version");
+    parser.addValueOption("runtime-mode");
     parser.addFlagOption("no-diagnostics");
     parser.addFlagOption("no-native-auto");
     parser.addFlagOption("infer-64bit-numbers");
@@ -1768,6 +1779,39 @@ ParseResult parseArgs(int argc, const char *argv[], DriverOptions &opts) {
     if(!runtimeProfileOutValues.empty()) {
         opts.profileRuntimeOutPath = runtimeProfileOutValues.back();
         opts.profileRuntime = true;
+    }
+    const auto &runtimeModeValues = parsed.values("runtime-mode");
+    if(!runtimeModeValues.empty()) {
+        auto runtimeMode = runtimeModeValues.back();
+        if(runtimeMode == "auto") {
+            opts.runtimeMode = starbytes::Runtime::RuntimeExecutionMode::Auto;
+        }
+        else if(runtimeMode == "v1") {
+            opts.runtimeMode = starbytes::Runtime::RuntimeExecutionMode::V1;
+        }
+        else if(runtimeMode == "v2") {
+            opts.runtimeMode = starbytes::Runtime::RuntimeExecutionMode::V2;
+        }
+        else {
+            return {false, 1, "Invalid --runtime-mode value: expected auto, v1, or v2."};
+        }
+    }
+    const auto &bytecodeVersionValues = parsed.values("bytecode-version");
+    if(!bytecodeVersionValues.empty()) {
+        auto bytecodeVersion = bytecodeVersionValues.back();
+        opts.bytecodeVersionExplicit = true;
+        if(bytecodeVersion == "v1") {
+            opts.bytecodeVersion = starbytes::Runtime::RTBYTECODE_VERSION_V1;
+        }
+        else if(bytecodeVersion == "v2") {
+            opts.bytecodeVersion = starbytes::Runtime::RTBYTECODE_VERSION_V2;
+        }
+        else {
+            return {false, 1, "Invalid --bytecode-version value: expected v1 or v2."};
+        }
+    }
+    else if(opts.runtimeMode == starbytes::Runtime::RuntimeExecutionMode::V2) {
+        opts.bytecodeVersion = starbytes::Runtime::RTBYTECODE_VERSION_V2;
     }
     opts.nativeModules.assign(parsed.values("native").begin(),parsed.values("native").end());
     opts.nativeSearchDirs.assign(parsed.values("native-dir").begin(),parsed.values("native-dir").end());
@@ -2224,6 +2268,7 @@ int main(int argc, const char *argv[]) {
                                                    moduleArtifactDir,
                                                    profile.enabled,
                                                    opts.infer64BitNumbers,
+                                                   opts.bytecodeVersion,
                                                    shouldGenerateInterface,
                                                    interfaceAllowlist);
             if(compiled.success){
@@ -2339,6 +2384,7 @@ int main(int argc, const char *argv[]) {
         }
 
         auto interp = starbytes::Runtime::Interp::Create();
+        interp->setExecutionMode(opts.runtimeMode);
         interp->setProfilingEnabled(opts.profileRuntime || profile.enabled);
         std::unordered_set<std::string> loadedNativePaths;
         auto tryLoadNativeModule = [&](const std::filesystem::path &nativePath, bool required) -> bool {
@@ -2409,6 +2455,9 @@ int main(int argc, const char *argv[]) {
                 profile.runtimeQuickenedExecutions = interpProfile.quickenedExecutions;
                 profile.runtimeQuickenedSpecializations = interpProfile.quickenedSpecializations;
                 profile.runtimeQuickenedFallbacks = interpProfile.quickenedFallbacks;
+                profile.runtimeFeedbackSites = interpProfile.feedbackSitesInstalled;
+                profile.runtimeFeedbackCacheHits = interpProfile.feedbackCacheHits;
+                profile.runtimeFeedbackCacheMisses = interpProfile.feedbackCacheMisses;
             }
             if(opts.profileRuntime) {
                 runtimeProfile.runtime = interpProfile;

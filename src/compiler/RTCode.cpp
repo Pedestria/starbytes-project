@@ -3,11 +3,67 @@
 #include "starbytes/compiler/ASTNodes.def"
 #include <fstream>
 #include <iostream>
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
+#include <sstream>
 
 namespace starbytes {
 namespace Runtime {
+
+    namespace {
+
+        constexpr std::array<char,4> kRTModuleMagic = {'S','B','X','M'};
+
+        void rewindModuleProbe(std::istream &is,
+                               const char *bytes,
+                               size_t size,
+                               std::istream::pos_type startPos){
+            is.clear();
+            if(startPos != std::istream::pos_type(-1)){
+                is.seekg(startPos);
+                return;
+            }
+            for(size_t i = size; i > 0; --i){
+                is.putback(bytes[i - 1]);
+            }
+        }
+
+    }
+
+    void writeRTModuleHeader(std::ostream &os,uint16_t bytecodeVersion){
+        os.write(kRTModuleMagic.data(),(std::streamsize)kRTModuleMagic.size());
+        os.write((char *)&bytecodeVersion,sizeof(bytecodeVersion));
+        uint16_t reservedFlags = 0;
+        os.write((char *)&reservedFlags,sizeof(reservedFlags));
+    }
+
+    RTModuleHeaderInfo prepareRTModuleStream(std::istream &is){
+        RTModuleHeaderInfo info;
+        auto startPos = is.tellg();
+        std::array<char,4> magic = {};
+        if(!is.read(magic.data(),(std::streamsize)magic.size())){
+            rewindModuleProbe(is,magic.data(),magic.size(),startPos);
+            return info;
+        }
+        if(magic != kRTModuleMagic){
+            rewindModuleProbe(is,magic.data(),magic.size(),startPos);
+            return info;
+        }
+
+        uint16_t bytecodeVersion = RTBYTECODE_VERSION_LEGACY_V1;
+        uint16_t reservedFlags = 0;
+        if(!is.read((char *)&bytecodeVersion,sizeof(bytecodeVersion))
+           || !is.read((char *)&reservedFlags,sizeof(reservedFlags))){
+            rewindModuleProbe(is,magic.data(),magic.size(),startPos);
+            return info;
+        }
+        (void)reservedFlags;
+        info.bytecodeVersion = bytecodeVersion;
+        info.hasExplicitHeader = true;
+        return info;
+    }
 
     bool rtBuiltinMemberIdForName(const std::string &name,RTBuiltinMemberId &idOut){
         idOut = RTBUILTIN_MEMBER_INVALID;
@@ -211,6 +267,28 @@ namespace Runtime {
         }
     }
 
+    void addRTInternalAttribute(RTFuncTemplate &func,const std::string &name){
+        auto found = std::find_if(func.attributes.begin(),func.attributes.end(),[&](const auto &attr){
+            return std::string(attr.name.value,attr.name.len) == name;
+        });
+        if(found != func.attributes.end()){
+            return;
+        }
+        RTAttribute attr;
+        attr.name.len = name.size();
+        auto *buf = new char[attr.name.len];
+        std::memcpy(buf,name.data(),attr.name.len);
+        attr.name.value = buf;
+        func.attributes.push_back(std::move(attr));
+    }
+
+    bool hasRTInternalAttribute(const RTFuncTemplate &func,const std::string &name){
+        return std::any_of(func.attributes.begin(),func.attributes.end(),[&](const auto &attr){
+            return attr.name.len == name.size()
+                && std::memcmp(attr.name.value,name.data(),name.size()) == 0;
+        });
+    }
+
     #define RTCODE_STREAM_OBJECT_IN_IMPL(object) \
     std::istream & operator >>(std::istream & is,object * obj)
 
@@ -256,6 +334,187 @@ namespace Runtime {
         if(len > 0){
             is.seekg((std::streamoff)len,std::ios_base::cur);
         }
+    }
+
+    namespace {
+
+        constexpr std::array<char,4> kRTV2FunctionMagic = {'V','2','F','N'};
+
+        bool writeSizedString(std::ostream &os,const std::string &value){
+            uint32_t size = (uint32_t)value.size();
+            os.write((char *)&size,sizeof(size));
+            if(size > 0){
+                os.write(value.data(),(std::streamsize)size);
+            }
+            return os.good();
+        }
+
+        bool readSizedString(std::istream &is,std::string &value){
+            uint32_t size = 0;
+            if(!is.read((char *)&size,sizeof(size))){
+                return false;
+            }
+            value.resize(size);
+            if(size > 0 && !is.read(value.data(),(std::streamsize)size)){
+                return false;
+            }
+            return true;
+        }
+
+        bool failReadRTV2(std::string *errorOut,const std::string &message){
+            if(errorOut){
+                *errorOut = message;
+            }
+            return false;
+        }
+
+    }
+
+    bool writeRTV2FunctionImage(std::ostream &os,const RTV2FunctionImage &image){
+        os.write(kRTV2FunctionMagic.data(),(std::streamsize)kRTV2FunctionMagic.size());
+        uint16_t version = 1;
+        uint16_t reserved = 0;
+        os.write((char *)&version,sizeof(version));
+        os.write((char *)&reserved,sizeof(reserved));
+
+        uint32_t instructionCount = (uint32_t)image.instructions.size();
+        uint32_t i64ConstCount = (uint32_t)image.i64Consts.size();
+        uint32_t f64ConstCount = (uint32_t)image.f64Consts.size();
+        uint32_t callSiteCount = (uint32_t)image.callSites.size();
+        uint32_t fallbackCount = (uint32_t)image.fallbackStmtBlobs.size();
+        os.write((char *)&instructionCount,sizeof(instructionCount));
+        os.write((char *)&i64ConstCount,sizeof(i64ConstCount));
+        os.write((char *)&f64ConstCount,sizeof(f64ConstCount));
+        os.write((char *)&callSiteCount,sizeof(callSiteCount));
+        os.write((char *)&fallbackCount,sizeof(fallbackCount));
+
+        for(const auto &instr : image.instructions){
+            os.write((char *)&instr.opcode,sizeof(instr.opcode));
+            os.write((char *)&instr.kind,sizeof(instr.kind));
+            os.write((char *)&instr.aux,sizeof(instr.aux));
+            os.write((char *)&instr.flags,sizeof(instr.flags));
+            os.write((char *)&instr.a,sizeof(instr.a));
+            os.write((char *)&instr.b,sizeof(instr.b));
+            os.write((char *)&instr.c,sizeof(instr.c));
+            os.write((char *)&instr.d,sizeof(instr.d));
+        }
+        if(i64ConstCount > 0){
+            os.write((char *)image.i64Consts.data(),(std::streamsize)(sizeof(int64_t) * i64ConstCount));
+        }
+        if(f64ConstCount > 0){
+            os.write((char *)image.f64Consts.data(),(std::streamsize)(sizeof(double) * f64ConstCount));
+        }
+        for(const auto &callSite : image.callSites){
+            if(!writeSizedString(os,callSite.targetName)){
+                return false;
+            }
+            uint32_t argCount = (uint32_t)callSite.argSlots.size();
+            os.write((char *)&argCount,sizeof(argCount));
+            if(argCount > 0){
+                os.write((char *)callSite.argSlots.data(),(std::streamsize)(sizeof(uint32_t) * argCount));
+            }
+        }
+        for(const auto &blob : image.fallbackStmtBlobs){
+            uint32_t blobSize = (uint32_t)blob.size();
+            os.write((char *)&blobSize,sizeof(blobSize));
+            if(blobSize > 0){
+                os.write(blob.data(),(std::streamsize)blobSize);
+            }
+        }
+        return os.good();
+    }
+
+    bool readRTV2FunctionImage(const char *data,size_t size,RTV2FunctionImage &imageOut,std::string *errorOut){
+        imageOut = RTV2FunctionImage();
+        if(!data || size < kRTV2FunctionMagic.size() + sizeof(uint16_t) * 2 + sizeof(uint32_t) * 5){
+            return failReadRTV2(errorOut,"V2 function image is truncated");
+        }
+
+        std::string buffer(data,size);
+        std::istringstream in(buffer,std::ios::in | std::ios::binary);
+        std::array<char,4> magic = {};
+        if(!in.read(magic.data(),(std::streamsize)magic.size()) || magic != kRTV2FunctionMagic){
+            return failReadRTV2(errorOut,"V2 function image magic is invalid");
+        }
+
+        uint16_t version = 0;
+        uint16_t reserved = 0;
+        if(!in.read((char *)&version,sizeof(version)) || !in.read((char *)&reserved,sizeof(reserved))){
+            return failReadRTV2(errorOut,"V2 function header is truncated");
+        }
+        (void)reserved;
+        if(version != 1){
+            return failReadRTV2(errorOut,"V2 function image version is unsupported");
+        }
+
+        uint32_t instructionCount = 0;
+        uint32_t i64ConstCount = 0;
+        uint32_t f64ConstCount = 0;
+        uint32_t callSiteCount = 0;
+        uint32_t fallbackCount = 0;
+        if(!in.read((char *)&instructionCount,sizeof(instructionCount))
+           || !in.read((char *)&i64ConstCount,sizeof(i64ConstCount))
+           || !in.read((char *)&f64ConstCount,sizeof(f64ConstCount))
+           || !in.read((char *)&callSiteCount,sizeof(callSiteCount))
+           || !in.read((char *)&fallbackCount,sizeof(fallbackCount))){
+            return failReadRTV2(errorOut,"V2 function table counts are truncated");
+        }
+
+        imageOut.instructions.resize(instructionCount);
+        for(auto &instr : imageOut.instructions){
+            if(!in.read((char *)&instr.opcode,sizeof(instr.opcode))
+               || !in.read((char *)&instr.kind,sizeof(instr.kind))
+               || !in.read((char *)&instr.aux,sizeof(instr.aux))
+               || !in.read((char *)&instr.flags,sizeof(instr.flags))
+               || !in.read((char *)&instr.a,sizeof(instr.a))
+               || !in.read((char *)&instr.b,sizeof(instr.b))
+               || !in.read((char *)&instr.c,sizeof(instr.c))
+               || !in.read((char *)&instr.d,sizeof(instr.d))){
+                return failReadRTV2(errorOut,"V2 instruction stream is truncated");
+            }
+        }
+
+        imageOut.i64Consts.resize(i64ConstCount);
+        if(i64ConstCount > 0
+           && !in.read((char *)imageOut.i64Consts.data(),(std::streamsize)(sizeof(int64_t) * i64ConstCount))){
+            return failReadRTV2(errorOut,"V2 i64 constant pool is truncated");
+        }
+
+        imageOut.f64Consts.resize(f64ConstCount);
+        if(f64ConstCount > 0
+           && !in.read((char *)imageOut.f64Consts.data(),(std::streamsize)(sizeof(double) * f64ConstCount))){
+            return failReadRTV2(errorOut,"V2 f64 constant pool is truncated");
+        }
+
+        imageOut.callSites.resize(callSiteCount);
+        for(auto &callSite : imageOut.callSites){
+            if(!readSizedString(in,callSite.targetName)){
+                return failReadRTV2(errorOut,"V2 call target name table is truncated");
+            }
+            uint32_t argCount = 0;
+            if(!in.read((char *)&argCount,sizeof(argCount))){
+                return failReadRTV2(errorOut,"V2 call arg table is truncated");
+            }
+            callSite.argSlots.resize(argCount);
+            if(argCount > 0
+               && !in.read((char *)callSite.argSlots.data(),(std::streamsize)(sizeof(uint32_t) * argCount))){
+                return failReadRTV2(errorOut,"V2 call arg slots are truncated");
+            }
+        }
+
+        imageOut.fallbackStmtBlobs.resize(fallbackCount);
+        for(auto &blob : imageOut.fallbackStmtBlobs){
+            uint32_t blobSize = 0;
+            if(!in.read((char *)&blobSize,sizeof(blobSize))){
+                return failReadRTV2(errorOut,"V2 fallback blob table is truncated");
+            }
+            blob.resize(blobSize);
+            if(blobSize > 0 && !in.read(blob.data(),(std::streamsize)blobSize)){
+                return failReadRTV2(errorOut,"V2 fallback blob payload is truncated");
+            }
+        }
+
+        return true;
     }
 
     static void skipAttributeListPayload(std::istream &is){

@@ -14,6 +14,9 @@
 namespace starbytes {
     struct ModuleGenContext {
         bool generateInterface = false;
+        bool emitModuleHeader = false;
+        bool moduleHeaderWritten = false;
+        uint16_t bytecodeVersion = Runtime::RTBYTECODE_VERSION_V1;
         std::string name;
         std::ostream & out;
         std::filesystem::path outputPath;
@@ -34,7 +37,7 @@ namespace starbytes {
         
     public:
         Gen();
-        void finish();
+        void finish() const;
         void consumeSTableContext(Semantics::STableContext *ctxt);
         bool acceptsSymbolTableContext();
         void setContext(ModuleGenContext *context);
