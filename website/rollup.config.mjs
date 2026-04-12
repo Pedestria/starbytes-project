@@ -12,7 +12,8 @@ export default {
   input: "src/main.jsx",
   output: {
     file: "dist/bundle.js",
-    format: "esm",
+    format: "iife",
+    name: "StarbytesWebsite",
     sourcemap: true
   },
   plugins: [
@@ -28,8 +29,7 @@ export default {
     commonjs(),
     url({
       include: ["**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.gif", "**/*.svg"],
-      limit: 0,
-      fileName: "assets/[name]-[hash][extname]"
+      limit: Number.MAX_SAFE_INTEGER
     }),
     postcss({
       extract: "bundle.css",
