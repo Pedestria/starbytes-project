@@ -349,4 +349,13 @@ add_starbytes_test(
     DEPENDENCIES
     ${STARBYTES_ALL_LIBS})
 
+add_starbytes_test(
+    NAME
+    "execution-model-phase3-test"
+    INCLUDE_LIB
+    FILES
+    "ExecutionModelPhase3Test.cpp"
+    DEPENDENCIES
+    ${STARBYTES_ALL_LIBS})
+
 configure_file("test.starb" "${CMAKE_CURRENT_BINARY_DIR}/test.starb" COPYONLY)

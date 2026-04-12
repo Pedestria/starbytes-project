@@ -271,8 +271,10 @@ namespace starbytes {
         std::unordered_map<const ASTIdentifier *,SemanticUsageBindingPtr> bindingsByDeclId;
     };
 
-    static std::unordered_map<const SemanticA *, SemanticFlowState> gNamespaceFlowStates;
-    static std::unordered_map<const SemanticA *, SemanticUsageState> gNamespaceUsageStates;
+    // Module compilation runs across async worker threads; these per-SemanticA
+    // scratch maps must not be shared process-wide.
+    static thread_local std::unordered_map<const SemanticA *, SemanticFlowState> gNamespaceFlowStates;
+    static thread_local std::unordered_map<const SemanticA *, SemanticUsageState> gNamespaceUsageStates;
 
     static void pushSemanticFlowFrame(SemanticFlowState &state,const std::vector<SemanticFlowBinding> &bindings = {}){
         state.frames.push_back(bindings);

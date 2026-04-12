@@ -196,7 +196,16 @@ void printRuntimeProfileJson(std::ostream &out,const RuntimeProfileReport &repor
     out << "    \"runtime_quickened_fallbacks\": " << report.runtime.quickenedFallbacks << ",\n";
     out << "    \"runtime_feedback_sites\": " << report.runtime.feedbackSitesInstalled << ",\n";
     out << "    \"runtime_feedback_cache_hits\": " << report.runtime.feedbackCacheHits << ",\n";
-    out << "    \"runtime_feedback_cache_misses\": " << report.runtime.feedbackCacheMisses << "\n";
+    out << "    \"runtime_feedback_cache_misses\": " << report.runtime.feedbackCacheMisses << ",\n";
+    out << "    \"runtime_v2_execution_images\": " << report.runtime.v2ExecutionImagesBuilt << ",\n";
+    out << "    \"runtime_superinstructions_installed\": " << report.runtime.superinstructionsInstalled << ",\n";
+    out << "    \"runtime_superinstruction_executions\": " << report.runtime.superinstructionExecutions << ",\n";
+    out << "    \"runtime_loop_headers_tracked\": " << report.runtime.loopHeadersTracked << ",\n";
+    out << "    \"runtime_hot_loop_triggers\": " << report.runtime.hotLoopTriggers << ",\n";
+    out << "    \"runtime_tier2_loops_lowered\": " << report.runtime.tier2LoopsLowered << ",\n";
+    out << "    \"runtime_tier2_ir_instruction_count\": " << report.runtime.tier2IrInstructionCount << ",\n";
+    out << "    \"runtime_loop_guard_samples\": " << report.runtime.loopGuardSamples << ",\n";
+    out << "    \"runtime_loop_guard_failures\": " << report.runtime.loopGuardFailures << "\n";
     out << "  },\n";
     out << "  \"objects\": {\n";
     out << "    \"allocations\": [\n";
@@ -350,6 +359,15 @@ void printRuntimeProfileSummary(std::ostream &out,
     out << "feedback sites: " << report.runtime.feedbackSitesInstalled << "\n";
     out << "feedback cache hits: " << report.runtime.feedbackCacheHits << "\n";
     out << "feedback cache misses: " << report.runtime.feedbackCacheMisses << "\n";
+    out << "v2 execution images: " << report.runtime.v2ExecutionImagesBuilt << "\n";
+    out << "superinstructions installed: " << report.runtime.superinstructionsInstalled << "\n";
+    out << "superinstruction executions: " << report.runtime.superinstructionExecutions << "\n";
+    out << "loop headers tracked: " << report.runtime.loopHeadersTracked << "\n";
+    out << "hot loop triggers: " << report.runtime.hotLoopTriggers << "\n";
+    out << "tier2 loops lowered: " << report.runtime.tier2LoopsLowered << "\n";
+    out << "tier2 ir instructions: " << report.runtime.tier2IrInstructionCount << "\n";
+    out << "loop guard samples: " << report.runtime.loopGuardSamples << "\n";
+    out << "loop guard failures: " << report.runtime.loopGuardFailures << "\n";
     if(report.runtime.subsystemTimingsOverlap) {
         out << "Note: subsystem timings are overlapping/inclusive and should not be summed.\n";
     }

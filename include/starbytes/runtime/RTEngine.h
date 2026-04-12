@@ -87,6 +87,15 @@ struct RuntimeProfileData {
     uint64_t feedbackSitesInstalled = 0;
     uint64_t feedbackCacheHits = 0;
     uint64_t feedbackCacheMisses = 0;
+    uint64_t v2ExecutionImagesBuilt = 0;
+    uint64_t superinstructionsInstalled = 0;
+    uint64_t superinstructionExecutions = 0;
+    uint64_t loopHeadersTracked = 0;
+    uint64_t hotLoopTriggers = 0;
+    uint64_t tier2LoopsLowered = 0;
+    uint64_t tier2IrInstructionCount = 0;
+    uint64_t loopGuardSamples = 0;
+    uint64_t loopGuardFailures = 0;
 };
 
 

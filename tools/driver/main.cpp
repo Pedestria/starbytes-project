@@ -2458,6 +2458,15 @@ int main(int argc, const char *argv[]) {
                 profile.runtimeFeedbackSites = interpProfile.feedbackSitesInstalled;
                 profile.runtimeFeedbackCacheHits = interpProfile.feedbackCacheHits;
                 profile.runtimeFeedbackCacheMisses = interpProfile.feedbackCacheMisses;
+                profile.runtimeV2ExecutionImages = interpProfile.v2ExecutionImagesBuilt;
+                profile.runtimeSuperinstructionsInstalled = interpProfile.superinstructionsInstalled;
+                profile.runtimeSuperinstructionExecutions = interpProfile.superinstructionExecutions;
+                profile.runtimeLoopHeadersTracked = interpProfile.loopHeadersTracked;
+                profile.runtimeHotLoopTriggers = interpProfile.hotLoopTriggers;
+                profile.runtimeTier2LoopsLowered = interpProfile.tier2LoopsLowered;
+                profile.runtimeTier2IrInstructionCount = interpProfile.tier2IrInstructionCount;
+                profile.runtimeLoopGuardSamples = interpProfile.loopGuardSamples;
+                profile.runtimeLoopGuardFailures = interpProfile.loopGuardFailures;
             }
             if(opts.profileRuntime) {
                 runtimeProfile.runtime = interpProfile;

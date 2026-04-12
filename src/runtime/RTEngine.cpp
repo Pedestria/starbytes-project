@@ -539,6 +539,41 @@ static bool extractTypedNumericValue(StarbytesObject object,RTTypedNumericKind k
 }
 
 static constexpr unsigned kQuickeningInvocationThreshold = 4;
+static constexpr uint64_t kV2HotLoopThreshold = 8;
+
+static bool computeTypedBinaryResult(RTTypedNumericKind kind,
+                                     RTTypedBinaryOp op,
+                                     long double lhsVal,
+                                     long double rhsVal,
+                                     long double &resultOut){
+    if((op == RTTYPED_BINARY_DIV || op == RTTYPED_BINARY_MOD) && rhsVal == 0.0){
+        return false;
+    }
+    switch(op){
+        case RTTYPED_BINARY_ADD:
+            resultOut = lhsVal + rhsVal;
+            return true;
+        case RTTYPED_BINARY_SUB:
+            resultOut = lhsVal - rhsVal;
+            return true;
+        case RTTYPED_BINARY_MUL:
+            resultOut = lhsVal * rhsVal;
+            return true;
+        case RTTYPED_BINARY_DIV:
+            resultOut = (kind == RTTYPED_NUM_INT) ? (long double)((int)lhsVal / (int)rhsVal)
+                : (kind == RTTYPED_NUM_LONG) ? (long double)((int64_t)lhsVal / (int64_t)rhsVal)
+                : lhsVal / rhsVal;
+            return true;
+        case RTTYPED_BINARY_MOD:
+            resultOut = (kind == RTTYPED_NUM_INT) ? (long double)((int)lhsVal % (int)rhsVal)
+                : (kind == RTTYPED_NUM_LONG) ? (long double)((int64_t)lhsVal % (int64_t)rhsVal)
+                : std::fmod((double)lhsVal,(double)rhsVal);
+            return true;
+        default:
+            break;
+    }
+    return false;
+}
 
 static std::string objectToString(StarbytesObject object){
     if(!object){
@@ -975,6 +1010,97 @@ class InterpImpl final : public Interp {
         RTAllocator::ScopeVarIterator cachedIt;
     };
 
+    enum class V2ExecOpcode : uint8_t {
+        Nop = 0,
+        Move,
+        LoadI64Const,
+        LoadF64Const,
+        NumCast,
+        Binary,
+        Compare,
+        ArrayGet,
+        ArraySet,
+        CallDirect,
+        IntrinsicSqrt,
+        Jump,
+        JumpIfFalse,
+        V1Stmt,
+        Return,
+        CompareJumpFalse,
+        BinaryInplace,
+        ArrayUpdate
+    };
+
+    struct V2ExecInstruction {
+        V2ExecOpcode opcode = V2ExecOpcode::Nop;
+        uint8_t kind = 0;
+        uint8_t aux = 0;
+        uint8_t flags = 0;
+        uint32_t a = 0;
+        uint32_t b = 0;
+        uint32_t c = 0;
+        uint32_t d = 0;
+        uint32_t originalPc = 0;
+        uint32_t originalSpan = 1;
+    };
+
+    enum class V2LoopIRKind : uint8_t {
+        Move = 0,
+        LoadI64Const,
+        LoadF64Const,
+        NumCast,
+        Binary,
+        CompareBranch,
+        ArrayGet,
+        ArraySet,
+        ArrayUpdate,
+        CallDirect,
+        IntrinsicSqrt,
+        Jump,
+        GuardArrayNumeric,
+        Deopt
+    };
+
+    struct V2LoopIRInstruction {
+        V2LoopIRKind kind = V2LoopIRKind::Move;
+        uint8_t numericKind = 0;
+        uint8_t aux = 0;
+        uint8_t flags = 0;
+        uint32_t a = 0;
+        uint32_t b = 0;
+        uint32_t c = 0;
+        uint32_t d = 0;
+        uint32_t e = 0;
+    };
+
+    struct V2LoopIR {
+        uint32_t headerPc = 0;
+        uint32_t exitPc = 0;
+        uint32_t backedgePc = 0;
+        std::vector<V2LoopIRInstruction> instructions;
+    };
+
+    struct V2LoopRuntimeState {
+        uint32_t headerPc = 0;
+        uint32_t exitPc = 0;
+        uint32_t backedgePc = 0;
+        uint64_t headerExecutions = 0;
+        uint64_t backedgeTaken = 0;
+        uint64_t guardSamples = 0;
+        uint64_t guardFailures = 0;
+        bool hotTriggered = false;
+        bool irBuilt = false;
+        V2LoopIR ir;
+    };
+
+    struct V2ExecutionImage {
+        bool initialized = false;
+        std::vector<V2ExecInstruction> instructions;
+        std::vector<int32_t> innermostLoopByPc;
+        std::vector<int32_t> loopIndexByHeaderPc;
+        std::vector<V2LoopRuntimeState> loops;
+    };
+
     std::unique_ptr<RTAllocator> allocator;
     std::vector<LocalFrame> localFrames;
     std::vector<LocalFrame> localFrameFreeList;
@@ -1005,6 +1131,7 @@ class InterpImpl final : public Interp {
     std::unordered_map<RuntimeFeedbackKey,MemberSetFeedbackSite,RuntimeFeedbackKeyHash> memberSetFeedbackSites;
     std::unordered_map<RuntimeFeedbackKey,MemberInvokeFeedbackSite,RuntimeFeedbackKeyHash> memberInvokeFeedbackSites;
     std::unordered_map<RuntimeFeedbackKey,VarRefFeedbackSite,RuntimeFeedbackKeyHash> varRefFeedbackSites;
+    std::unordered_map<std::string,V2ExecutionImage> v2ExecutionImages;
     RTModuleHeaderInfo activeModuleHeader;
     std::istream::pos_type activeModuleCodeStart = std::istream::pos_type(-1);
 
@@ -1051,6 +1178,15 @@ class InterpImpl final : public Interp {
     bool observedLocalSlotNumericType(uint32_t slot,StarbytesNumT &typeOut) const;
     void storeLocalSlotOwned(uint32_t slot,StarbytesObject value);
     void storeLocalSlotBorrowed(uint32_t slot,StarbytesObject value);
+    V2ExecutionImage *getOrBuildV2ExecutionImage(const RTFuncTemplate *funcTemp);
+    bool buildV2ExecutionImage(const RTFuncTemplate *funcTemp,V2ExecutionImage &imageOut);
+    void discoverV2Loops(V2ExecutionImage &image);
+    void noteLoopGuardObservation(V2ExecutionImage &image,size_t pc,bool success);
+    void maybeTriggerHotLoopTier2(const RTFuncTemplate *funcTemp,V2ExecutionImage &image,size_t loopIndex);
+    bool buildTier2LoopIR(const RTFuncTemplate *funcTemp,
+                          const V2ExecutionImage &image,
+                          size_t loopIndex,
+                          V2LoopIR &out) const;
     bool inspectLocalRefExpr(std::istream &in,uint32_t &slotOut,RTTypedNumericKind &kindOut);
     bool inspectQuickeningCandidate(std::istream &in,std::istream::pos_type exprStart,RTCode code,RTQuickenedExpr &out);
     RTQuickenedExpr *getOrInstallQuickenedExpr(std::istream &in,std::istream::pos_type exprStart,RTCode code);
@@ -2630,6 +2766,417 @@ void InterpImpl::storeLocalSlotBorrowed(uint32_t slot,StarbytesObject value){
     target.object = value;
 }
 
+InterpImpl::V2ExecutionImage *InterpImpl::getOrBuildV2ExecutionImage(const RTFuncTemplate *funcTemp){
+    if(!funcTemp){
+        return nullptr;
+    }
+    auto functionName = rtidToString(funcTemp->name);
+    auto found = v2ExecutionImages.find(functionName);
+    if(found != v2ExecutionImages.end()){
+        return &found->second;
+    }
+
+    V2ExecutionImage image;
+    if(!buildV2ExecutionImage(funcTemp,image)){
+        return nullptr;
+    }
+
+    auto inserted = v2ExecutionImages.emplace(functionName,std::move(image));
+    if(runtimeProfilingEnabled){
+        runtimeProfile.v2ExecutionImagesBuilt += 1;
+    }
+    return &inserted.first->second;
+}
+
+bool InterpImpl::buildV2ExecutionImage(const RTFuncTemplate *funcTemp,V2ExecutionImage &imageOut){
+    imageOut = V2ExecutionImage();
+    if(!funcTemp || !funcTemp->hasV2Image){
+        return false;
+    }
+
+    const auto &source = funcTemp->v2Image.instructions;
+    std::vector<uint32_t> originalToExecIndex(source.size() + 1,UINT32_MAX);
+    struct JumpFixup {
+        size_t execIndex = 0;
+        uint32_t targetOriginalPc = 0;
+        bool targetLivesInA = false;
+    };
+    std::vector<JumpFixup> jumpFixups;
+
+    auto installExecInstr = [&](const V2ExecInstruction &instr){
+        imageOut.instructions.push_back(instr);
+    };
+
+    for(size_t i = 0;i < source.size();){
+        originalToExecIndex[i] = (uint32_t)imageOut.instructions.size();
+
+        if(i + 1 < source.size()
+           && source[i].opcode == RTV2_OP_COMPARE
+           && source[i + 1].opcode == RTV2_OP_JUMP_IF_FALSE
+           && source[i + 1].a == source[i].a){
+            V2ExecInstruction execInstr;
+            execInstr.opcode = V2ExecOpcode::CompareJumpFalse;
+            execInstr.kind = source[i].kind;
+            execInstr.aux = source[i].aux;
+            execInstr.a = source[i].b;
+            execInstr.b = source[i].c;
+            execInstr.c = source[i + 1].b;
+            execInstr.originalPc = (uint32_t)i;
+            execInstr.originalSpan = 2;
+            installExecInstr(execInstr);
+            jumpFixups.push_back({imageOut.instructions.size() - 1,source[i + 1].b,false});
+            if(runtimeProfilingEnabled){
+                runtimeProfile.superinstructionsInstalled += 1;
+            }
+            i += 2;
+            continue;
+        }
+
+        if(i + 1 < source.size()
+           && source[i].opcode == RTV2_OP_BINARY
+           && source[i + 1].opcode == RTV2_OP_MOVE
+           && source[i + 1].b == source[i].a){
+            V2ExecInstruction execInstr;
+            execInstr.opcode = V2ExecOpcode::BinaryInplace;
+            execInstr.kind = source[i].kind;
+            execInstr.aux = source[i].aux;
+            execInstr.a = source[i + 1].a;
+            execInstr.b = source[i].b;
+            execInstr.c = source[i].c;
+            execInstr.originalPc = (uint32_t)i;
+            execInstr.originalSpan = 2;
+            installExecInstr(execInstr);
+            if(runtimeProfilingEnabled){
+                runtimeProfile.superinstructionsInstalled += 1;
+            }
+            i += 2;
+            continue;
+        }
+
+        if(i + 2 < source.size()
+           && source[i].opcode == RTV2_OP_ARRAY_GET
+           && source[i + 1].opcode == RTV2_OP_BINARY
+           && source[i + 2].opcode == RTV2_OP_ARRAY_SET
+           && source[i + 1].b == source[i].a
+           && source[i + 2].c == source[i + 1].a
+           && source[i + 2].a == source[i].b
+           && source[i + 2].b == source[i].c
+           && source[i].kind == source[i + 1].kind
+           && source[i].kind == source[i + 2].kind){
+            V2ExecInstruction execInstr;
+            execInstr.opcode = V2ExecOpcode::ArrayUpdate;
+            execInstr.kind = source[i].kind;
+            execInstr.aux = source[i + 1].aux;
+            execInstr.a = source[i].b;
+            execInstr.b = source[i].c;
+            execInstr.c = source[i + 1].c;
+            execInstr.originalPc = (uint32_t)i;
+            execInstr.originalSpan = 3;
+            installExecInstr(execInstr);
+            if(runtimeProfilingEnabled){
+                runtimeProfile.superinstructionsInstalled += 1;
+            }
+            i += 3;
+            continue;
+        }
+
+        V2ExecInstruction execInstr;
+        execInstr.kind = source[i].kind;
+        execInstr.aux = source[i].aux;
+        execInstr.flags = source[i].flags;
+        execInstr.a = source[i].a;
+        execInstr.b = source[i].b;
+        execInstr.c = source[i].c;
+        execInstr.d = source[i].d;
+        execInstr.originalPc = (uint32_t)i;
+        execInstr.originalSpan = 1;
+        switch(source[i].opcode){
+            case RTV2_OP_NOP:
+                execInstr.opcode = V2ExecOpcode::Nop;
+                break;
+            case RTV2_OP_MOVE:
+                execInstr.opcode = V2ExecOpcode::Move;
+                break;
+            case RTV2_OP_LOAD_I64_CONST:
+                execInstr.opcode = V2ExecOpcode::LoadI64Const;
+                break;
+            case RTV2_OP_LOAD_F64_CONST:
+                execInstr.opcode = V2ExecOpcode::LoadF64Const;
+                break;
+            case RTV2_OP_NUM_CAST:
+                execInstr.opcode = V2ExecOpcode::NumCast;
+                break;
+            case RTV2_OP_BINARY:
+                execInstr.opcode = V2ExecOpcode::Binary;
+                break;
+            case RTV2_OP_COMPARE:
+                execInstr.opcode = V2ExecOpcode::Compare;
+                break;
+            case RTV2_OP_ARRAY_GET:
+                execInstr.opcode = V2ExecOpcode::ArrayGet;
+                break;
+            case RTV2_OP_ARRAY_SET:
+                execInstr.opcode = V2ExecOpcode::ArraySet;
+                break;
+            case RTV2_OP_CALL_DIRECT:
+                execInstr.opcode = V2ExecOpcode::CallDirect;
+                break;
+            case RTV2_OP_INTRINSIC_SQRT:
+                execInstr.opcode = V2ExecOpcode::IntrinsicSqrt;
+                break;
+            case RTV2_OP_JUMP:
+                execInstr.opcode = V2ExecOpcode::Jump;
+                break;
+            case RTV2_OP_JUMP_IF_FALSE:
+                execInstr.opcode = V2ExecOpcode::JumpIfFalse;
+                break;
+            case RTV2_OP_V1_STMT:
+                execInstr.opcode = V2ExecOpcode::V1Stmt;
+                break;
+            case RTV2_OP_RETURN:
+                execInstr.opcode = V2ExecOpcode::Return;
+                break;
+            default:
+                return false;
+        }
+        installExecInstr(execInstr);
+        if(source[i].opcode == RTV2_OP_JUMP){
+            jumpFixups.push_back({imageOut.instructions.size() - 1,source[i].a,true});
+        }
+        else if(source[i].opcode == RTV2_OP_JUMP_IF_FALSE){
+            jumpFixups.push_back({imageOut.instructions.size() - 1,source[i].b,false});
+        }
+        ++i;
+    }
+    originalToExecIndex[source.size()] = (uint32_t)imageOut.instructions.size();
+
+    for(const auto &fixup : jumpFixups){
+        if(fixup.targetOriginalPc >= originalToExecIndex.size()){
+            return false;
+        }
+        auto execTarget = originalToExecIndex[fixup.targetOriginalPc];
+        if(execTarget == UINT32_MAX){
+            return false;
+        }
+        auto &instr = imageOut.instructions[fixup.execIndex];
+        if(fixup.targetLivesInA){
+            instr.a = execTarget;
+        }
+        else if(instr.opcode == V2ExecOpcode::CompareJumpFalse){
+            instr.c = execTarget;
+        }
+        else {
+            instr.b = execTarget;
+        }
+    }
+
+    discoverV2Loops(imageOut);
+    imageOut.initialized = true;
+    return true;
+}
+
+void InterpImpl::discoverV2Loops(V2ExecutionImage &image){
+    image.innermostLoopByPc.assign(image.instructions.size(),-1);
+    image.loopIndexByHeaderPc.assign(image.instructions.size(),-1);
+    image.loops.clear();
+
+    for(size_t pc = 0;pc < image.instructions.size();++pc){
+        const auto &instr = image.instructions[pc];
+        if(instr.opcode != V2ExecOpcode::Jump || instr.a >= pc){
+            continue;
+        }
+
+        uint32_t headerPc = instr.a;
+        uint32_t exitPc = (uint32_t)image.instructions.size();
+        for(size_t scan = headerPc;scan < pc;++scan){
+            const auto &candidate = image.instructions[scan];
+            if(candidate.opcode == V2ExecOpcode::JumpIfFalse && candidate.b > pc){
+                exitPc = candidate.b;
+                break;
+            }
+            if(candidate.opcode == V2ExecOpcode::CompareJumpFalse && candidate.c > pc){
+                exitPc = candidate.c;
+                break;
+            }
+        }
+        if(exitPc == image.instructions.size()){
+            continue;
+        }
+
+        V2LoopRuntimeState loop;
+        loop.headerPc = headerPc;
+        loop.exitPc = exitPc;
+        loop.backedgePc = (uint32_t)pc;
+        image.loops.push_back(std::move(loop));
+    }
+
+    for(size_t loopIndex = 0;loopIndex < image.loops.size();++loopIndex){
+        const auto &loop = image.loops[loopIndex];
+        if(loop.headerPc < image.loopIndexByHeaderPc.size()){
+            image.loopIndexByHeaderPc[loop.headerPc] = (int32_t)loopIndex;
+        }
+        auto loopSpan = loop.backedgePc - loop.headerPc;
+        for(uint32_t pc = loop.headerPc;pc <= loop.backedgePc && pc < image.innermostLoopByPc.size();++pc){
+            auto existing = image.innermostLoopByPc[pc];
+            if(existing < 0){
+                image.innermostLoopByPc[pc] = (int32_t)loopIndex;
+                continue;
+            }
+            const auto &existingLoop = image.loops[(size_t)existing];
+            auto existingSpan = existingLoop.backedgePc - existingLoop.headerPc;
+            if(loopSpan <= existingSpan){
+                image.innermostLoopByPc[pc] = (int32_t)loopIndex;
+            }
+        }
+    }
+
+    if(runtimeProfilingEnabled){
+        runtimeProfile.loopHeadersTracked += image.loops.size();
+    }
+}
+
+void InterpImpl::noteLoopGuardObservation(V2ExecutionImage &image,size_t pc,bool success){
+    if(pc >= image.innermostLoopByPc.size()){
+        return;
+    }
+    auto loopIndex = image.innermostLoopByPc[pc];
+    if(loopIndex < 0 || (size_t)loopIndex >= image.loops.size()){
+        return;
+    }
+    auto &loop = image.loops[(size_t)loopIndex];
+    loop.guardSamples += 1;
+    if(runtimeProfilingEnabled){
+        runtimeProfile.loopGuardSamples += 1;
+    }
+    if(!success){
+        loop.guardFailures += 1;
+        if(runtimeProfilingEnabled){
+            runtimeProfile.loopGuardFailures += 1;
+        }
+    }
+}
+
+void InterpImpl::maybeTriggerHotLoopTier2(const RTFuncTemplate *funcTemp,
+                                          V2ExecutionImage &image,
+                                          size_t loopIndex){
+    if(loopIndex >= image.loops.size()){
+        return;
+    }
+    auto &loop = image.loops[loopIndex];
+    if(loop.hotTriggered || loop.headerExecutions < kV2HotLoopThreshold || loop.guardFailures != 0 || loop.guardSamples == 0){
+        return;
+    }
+
+    loop.hotTriggered = true;
+    if(runtimeProfilingEnabled){
+        runtimeProfile.hotLoopTriggers += 1;
+    }
+
+    V2LoopIR ir;
+    if(buildTier2LoopIR(funcTemp,image,loopIndex,ir)){
+        loop.irBuilt = true;
+        loop.ir = std::move(ir);
+        if(runtimeProfilingEnabled){
+            runtimeProfile.tier2LoopsLowered += 1;
+            runtimeProfile.tier2IrInstructionCount += loop.ir.instructions.size();
+        }
+    }
+}
+
+bool InterpImpl::buildTier2LoopIR(const RTFuncTemplate *funcTemp,
+                                  const V2ExecutionImage &image,
+                                  size_t loopIndex,
+                                  V2LoopIR &out) const{
+    (void)funcTemp;
+    out = V2LoopIR();
+    if(loopIndex >= image.loops.size()){
+        return false;
+    }
+
+    const auto &loop = image.loops[loopIndex];
+    out.headerPc = loop.headerPc;
+    out.exitPc = loop.exitPc;
+    out.backedgePc = loop.backedgePc;
+
+    auto emit = [&](V2LoopIRKind kind,
+                    uint8_t numericKind,
+                    uint8_t aux,
+                    uint32_t a,
+                    uint32_t b,
+                    uint32_t c,
+                    uint32_t d,
+                    uint32_t e = 0){
+        V2LoopIRInstruction instr;
+        instr.kind = kind;
+        instr.numericKind = numericKind;
+        instr.aux = aux;
+        instr.a = a;
+        instr.b = b;
+        instr.c = c;
+        instr.d = d;
+        instr.e = e;
+        out.instructions.push_back(instr);
+    };
+
+    for(uint32_t pc = loop.headerPc;pc <= loop.backedgePc && pc < image.instructions.size();++pc){
+        const auto &instr = image.instructions[pc];
+        switch(instr.opcode){
+            case V2ExecOpcode::Nop:
+                break;
+            case V2ExecOpcode::Move:
+                emit(V2LoopIRKind::Move,0,0,instr.a,instr.b,0,0);
+                break;
+            case V2ExecOpcode::LoadI64Const:
+                emit(V2LoopIRKind::LoadI64Const,0,0,instr.a,instr.b,0,0);
+                break;
+            case V2ExecOpcode::LoadF64Const:
+                emit(V2LoopIRKind::LoadF64Const,0,0,instr.a,instr.b,0,0);
+                break;
+            case V2ExecOpcode::NumCast:
+                emit(V2LoopIRKind::NumCast,instr.kind,instr.aux,instr.a,instr.b,0,0);
+                break;
+            case V2ExecOpcode::Binary:
+            case V2ExecOpcode::BinaryInplace:
+                emit(V2LoopIRKind::Binary,instr.kind,instr.aux,instr.a,instr.b,instr.c,0);
+                break;
+            case V2ExecOpcode::CompareJumpFalse:
+                emit(V2LoopIRKind::CompareBranch,instr.kind,instr.aux,instr.a,instr.b,instr.c,0);
+                break;
+            case V2ExecOpcode::ArrayGet:
+                emit(V2LoopIRKind::GuardArrayNumeric,instr.kind,0,instr.b,instr.c,pc,instr.originalPc);
+                emit(V2LoopIRKind::Deopt,0,0,pc,instr.originalPc,0,0);
+                emit(V2LoopIRKind::ArrayGet,instr.kind,0,instr.a,instr.b,instr.c,0);
+                break;
+            case V2ExecOpcode::ArraySet:
+                emit(V2LoopIRKind::GuardArrayNumeric,instr.kind,0,instr.a,instr.b,pc,instr.originalPc);
+                emit(V2LoopIRKind::Deopt,0,0,pc,instr.originalPc,0,0);
+                emit(V2LoopIRKind::ArraySet,instr.kind,0,instr.a,instr.b,instr.c,0);
+                break;
+            case V2ExecOpcode::ArrayUpdate:
+                emit(V2LoopIRKind::GuardArrayNumeric,instr.kind,0,instr.a,instr.b,pc,instr.originalPc);
+                emit(V2LoopIRKind::Deopt,0,0,pc,instr.originalPc,0,0);
+                emit(V2LoopIRKind::ArrayUpdate,instr.kind,instr.aux,instr.a,instr.b,instr.c,0);
+                break;
+            case V2ExecOpcode::CallDirect:
+                emit(V2LoopIRKind::CallDirect,instr.kind,0,instr.a,instr.b,0,0);
+                break;
+            case V2ExecOpcode::IntrinsicSqrt:
+                emit(V2LoopIRKind::IntrinsicSqrt,RTTYPED_NUM_DOUBLE,0,instr.a,instr.b,0,0);
+                break;
+            case V2ExecOpcode::Jump:
+                emit(V2LoopIRKind::Jump,0,0,instr.a,0,0,0);
+                break;
+            case V2ExecOpcode::JumpIfFalse:
+            case V2ExecOpcode::Compare:
+            case V2ExecOpcode::V1Stmt:
+            case V2ExecOpcode::Return:
+                return false;
+        }
+    }
+
+    return !out.instructions.empty();
+}
+
 bool InterpImpl::inspectLocalRefExpr(std::istream &in,uint32_t &slotOut,RTTypedNumericKind &kindOut){
     RTCode exprCode = CODE_MODULE_END;
     if(!in.read((char *)&exprCode,sizeof(exprCode))){
@@ -3277,109 +3824,132 @@ StarbytesObject InterpImpl::invokeV2FuncWithValues(RTFuncTemplate *func_temp,
         runtimeProfile.executionPath = RuntimeExecutionPath::V2RegisterInterpreter;
     }
 
+    auto *execImage = getOrBuildV2ExecutionImage(func_temp);
+    if(!execImage){
+        lastRuntimeError = "V2 execution image could not be built";
+        popLocalFrame();
+        return nullptr;
+    }
+
     bool willReturn = false;
     StarbytesObject returnVal = nullptr;
-    auto fail = [&](const std::string &message) -> StarbytesObject {
+    size_t currentPc = 0;
+    auto fail = [&](const std::string &message,bool guardFailure = false) -> StarbytesObject {
         if(lastRuntimeError.empty()){
             lastRuntimeError = message;
+        }
+        if(guardFailure){
+            noteLoopGuardObservation(*execImage,currentPc,false);
         }
         popLocalFrame();
         return returnVal;
     };
 
     size_t pc = 0;
-    while(pc < func_temp->v2Image.instructions.size() && !willReturn && lastRuntimeError.empty()){
+    while(pc < execImage->instructions.size() && !willReturn && lastRuntimeError.empty()){
+        currentPc = pc;
+        bool recordedLoopObservation = false;
+        if(pc < execImage->loopIndexByHeaderPc.size()){
+            auto loopIndex = execImage->loopIndexByHeaderPc[pc];
+            if(loopIndex >= 0 && (size_t)loopIndex < execImage->loops.size()){
+                execImage->loops[(size_t)loopIndex].headerExecutions += 1;
+                maybeTriggerHotLoopTier2(func_temp,*execImage,(size_t)loopIndex);
+            }
+        }
         if(runtimeProfilingEnabled){
             runtimeProfile.dispatchCount += 1;
         }
-        const auto &instr = func_temp->v2Image.instructions[pc];
+        const auto &instr = execImage->instructions[pc];
         switch(instr.opcode){
-            case RTV2_OP_NOP:
+            case V2ExecOpcode::Nop:
                 break;
-            case RTV2_OP_MOVE:
+            case V2ExecOpcode::Move:
                 if(!copyLocalSlotValue(instr.a,instr.b)){
-                    return fail("V2 MOVE referenced an invalid local slot");
+                    return fail("V2 MOVE referenced an invalid local slot",true);
                 }
                 break;
-            case RTV2_OP_LOAD_I64_CONST: {
+            case V2ExecOpcode::LoadI64Const: {
                 if(instr.b >= func_temp->v2Image.i64Consts.size()){
-                    return fail("V2 i64 constant index is out of range");
+                    return fail("V2 i64 constant index is out of range",true);
                 }
                 auto destKind = (instr.a < func_temp->slotKinds.size() && func_temp->slotKinds[instr.a] != RTTYPED_NUM_OBJECT)
                     ? func_temp->slotKinds[instr.a]
                     : RTTYPED_NUM_INT;
                 if(!storeLocalNumericValue(instr.a,destKind,(long double)func_temp->v2Image.i64Consts[instr.b])){
-                    return fail("V2 i64 constant store failed");
+                    return fail("V2 i64 constant store failed",true);
                 }
                 break;
             }
-            case RTV2_OP_LOAD_F64_CONST: {
+            case V2ExecOpcode::LoadF64Const: {
                 if(instr.b >= func_temp->v2Image.f64Consts.size()){
-                    return fail("V2 f64 constant index is out of range");
+                    return fail("V2 f64 constant index is out of range",true);
                 }
                 auto destKind = (instr.a < func_temp->slotKinds.size() && func_temp->slotKinds[instr.a] != RTTYPED_NUM_OBJECT)
                     ? func_temp->slotKinds[instr.a]
                     : RTTYPED_NUM_DOUBLE;
                 if(!storeLocalNumericValue(instr.a,destKind,(long double)func_temp->v2Image.f64Consts[instr.b])){
-                    return fail("V2 f64 constant store failed");
+                    return fail("V2 f64 constant store failed",true);
                 }
                 break;
             }
-            case RTV2_OP_NUM_CAST: {
+            case V2ExecOpcode::NumCast: {
                 long double value = 0.0;
                 if(!localSlotToNumber(instr.b,(RTTypedNumericKind)instr.aux,value)
                    || !storeLocalNumericValue(instr.a,(RTTypedNumericKind)instr.kind,value)){
-                    return fail("V2 numeric cast failed");
+                    return fail("V2 numeric cast failed",true);
                 }
                 break;
             }
-            case RTV2_OP_BINARY: {
+            case V2ExecOpcode::Binary: {
                 auto kind = (RTTypedNumericKind)instr.kind;
                 auto op = (RTTypedBinaryOp)instr.aux;
                 long double lhsVal = 0.0;
                 long double rhsVal = 0.0;
                 if(!localSlotToNumber(instr.b,kind,lhsVal) || !localSlotToNumber(instr.c,kind,rhsVal)){
-                    return fail("V2 numeric binary op failed to load operands");
-                }
-                if((op == RTTYPED_BINARY_DIV || op == RTTYPED_BINARY_MOD) && rhsVal == 0.0){
-                    return fail("V2 numeric binary op divided by zero");
+                    return fail("V2 numeric binary op failed to load operands",true);
                 }
                 long double result = 0.0;
-                switch(op){
-                    case RTTYPED_BINARY_ADD:
-                        result = lhsVal + rhsVal;
-                        break;
-                    case RTTYPED_BINARY_SUB:
-                        result = lhsVal - rhsVal;
-                        break;
-                    case RTTYPED_BINARY_MUL:
-                        result = lhsVal * rhsVal;
-                        break;
-                    case RTTYPED_BINARY_DIV:
-                        result = (kind == RTTYPED_NUM_INT) ? (long double)((int)lhsVal / (int)rhsVal)
-                            : (kind == RTTYPED_NUM_LONG) ? (long double)((int64_t)lhsVal / (int64_t)rhsVal)
-                            : lhsVal / rhsVal;
-                        break;
-                    case RTTYPED_BINARY_MOD:
-                        result = (kind == RTTYPED_NUM_INT) ? (long double)((int)lhsVal % (int)rhsVal)
-                            : (kind == RTTYPED_NUM_LONG) ? (long double)((int64_t)lhsVal % (int64_t)rhsVal)
-                            : std::fmod((double)lhsVal,(double)rhsVal);
-                        break;
-                    default:
-                        return fail("V2 numeric binary op is unsupported");
+                if(!computeTypedBinaryResult(kind,op,lhsVal,rhsVal,result)){
+                    if((op == RTTYPED_BINARY_DIV || op == RTTYPED_BINARY_MOD) && rhsVal == 0.0){
+                        return fail("V2 numeric binary op divided by zero",true);
+                    }
+                    return fail("V2 numeric binary op is unsupported",true);
                 }
                 if(!storeLocalNumericValue(instr.a,kind,result)){
-                    return fail("V2 numeric binary op failed to store");
+                    return fail("V2 numeric binary op failed to store",true);
                 }
                 break;
             }
-            case RTV2_OP_COMPARE: {
+            case V2ExecOpcode::BinaryInplace: {
+                auto kind = (RTTypedNumericKind)instr.kind;
+                auto op = (RTTypedBinaryOp)instr.aux;
+                long double lhsVal = 0.0;
+                long double rhsVal = 0.0;
+                if(!localSlotToNumber(instr.b,kind,lhsVal) || !localSlotToNumber(instr.c,kind,rhsVal)){
+                    return fail("V2 fused numeric update failed to load operands",true);
+                }
+                long double result = 0.0;
+                if(!computeTypedBinaryResult(kind,op,lhsVal,rhsVal,result)){
+                    if((op == RTTYPED_BINARY_DIV || op == RTTYPED_BINARY_MOD) && rhsVal == 0.0){
+                        return fail("V2 fused numeric update divided by zero",true);
+                    }
+                    return fail("V2 fused numeric update is unsupported",true);
+                }
+                if(!storeLocalNumericValue(instr.a,kind,result)){
+                    return fail("V2 fused numeric update failed to store",true);
+                }
+                if(runtimeProfilingEnabled){
+                    runtimeProfile.superinstructionExecutions += 1;
+                }
+                break;
+            }
+            case V2ExecOpcode::Compare: {
                 auto kind = (RTTypedNumericKind)instr.kind;
                 auto op = (RTTypedCompareOp)instr.aux;
                 long double lhsVal = 0.0;
                 long double rhsVal = 0.0;
                 if(!localSlotToNumber(instr.b,kind,lhsVal) || !localSlotToNumber(instr.c,kind,rhsVal)){
-                    return fail("V2 compare failed to load operands");
+                    return fail("V2 compare failed to load operands",true);
                 }
                 bool comparison = false;
                 switch(op){
@@ -3402,21 +3972,63 @@ StarbytesObject InterpImpl::invokeV2FuncWithValues(RTFuncTemplate *func_temp,
                         comparison = lhsVal >= rhsVal;
                         break;
                     default:
-                        return fail("V2 compare op is unsupported");
+                        return fail("V2 compare op is unsupported",true);
                 }
                 if(!storeLocalNumericValue(instr.a,RTTYPED_NUM_INT,comparison ? 1.0 : 0.0)){
-                    return fail("V2 compare failed to store");
+                    return fail("V2 compare failed to store",true);
                 }
                 break;
             }
-            case RTV2_OP_ARRAY_GET: {
+            case V2ExecOpcode::CompareJumpFalse: {
+                auto kind = (RTTypedNumericKind)instr.kind;
+                auto op = (RTTypedCompareOp)instr.aux;
+                long double lhsVal = 0.0;
+                long double rhsVal = 0.0;
+                if(!localSlotToNumber(instr.a,kind,lhsVal) || !localSlotToNumber(instr.b,kind,rhsVal)){
+                    return fail("V2 fused compare/branch failed to load operands",true);
+                }
+                bool comparison = false;
+                switch(op){
+                    case RTTYPED_COMPARE_EQ:
+                        comparison = lhsVal == rhsVal;
+                        break;
+                    case RTTYPED_COMPARE_NE:
+                        comparison = lhsVal != rhsVal;
+                        break;
+                    case RTTYPED_COMPARE_LT:
+                        comparison = lhsVal < rhsVal;
+                        break;
+                    case RTTYPED_COMPARE_LE:
+                        comparison = lhsVal <= rhsVal;
+                        break;
+                    case RTTYPED_COMPARE_GT:
+                        comparison = lhsVal > rhsVal;
+                        break;
+                    case RTTYPED_COMPARE_GE:
+                        comparison = lhsVal >= rhsVal;
+                        break;
+                    default:
+                        return fail("V2 fused compare/branch op is unsupported",true);
+                }
+                if(runtimeProfilingEnabled){
+                    runtimeProfile.superinstructionExecutions += 1;
+                }
+                noteLoopGuardObservation(*execImage,pc,true);
+                recordedLoopObservation = true;
+                if(!comparison){
+                    pc = instr.c;
+                    continue;
+                }
+                break;
+            }
+            case V2ExecOpcode::ArrayGet: {
                 auto collection = referenceLocalSlot(instr.b);
                 int index = -1;
                 if(!collection || !localSlotToIndex(instr.c,index)){
                     if(collection){
                         StarbytesObjectRelease(collection);
                     }
-                    return fail("V2 typed array get failed");
+                    return fail("V2 typed array get failed",true);
                 }
                 long double numericValue = 0.0;
                 bool success = index >= 0
@@ -3425,11 +4037,11 @@ StarbytesObject InterpImpl::invokeV2FuncWithValues(RTFuncTemplate *func_temp,
                     && StarbytesArrayTryGetNumeric(collection,(unsigned)index,numTypeFromTypedKind((RTTypedNumericKind)instr.kind),&numericValue);
                 StarbytesObjectRelease(collection);
                 if(!success || !storeLocalNumericValue(instr.a,(RTTypedNumericKind)instr.kind,numericValue)){
-                    return fail("V2 typed array get failed");
+                    return fail("V2 typed array get failed",true);
                 }
                 break;
             }
-            case RTV2_OP_ARRAY_SET: {
+            case V2ExecOpcode::ArraySet: {
                 auto collection = referenceLocalSlot(instr.a);
                 int index = -1;
                 long double numericValue = 0.0;
@@ -3444,18 +4056,63 @@ StarbytesObject InterpImpl::invokeV2FuncWithValues(RTFuncTemplate *func_temp,
                     StarbytesObjectRelease(collection);
                 }
                 if(!success){
-                    return fail("V2 typed array set failed");
+                    return fail("V2 typed array set failed",true);
                 }
                 break;
             }
-            case RTV2_OP_CALL_DIRECT: {
+            case V2ExecOpcode::ArrayUpdate: {
+                auto collection = referenceLocalSlot(instr.a);
+                int index = -1;
+                if(!collection || !localSlotToIndex(instr.b,index)){
+                    if(collection){
+                        StarbytesObjectRelease(collection);
+                    }
+                    return fail("V2 fused typed array update failed",true);
+                }
+                long double currentValue = 0.0;
+                bool success = index >= 0
+                    && StarbytesObjectTypecheck(collection,StarbytesArrayType())
+                    && (unsigned)index < StarbytesArrayGetLength(collection)
+                    && StarbytesArrayTryGetNumeric(collection,(unsigned)index,numTypeFromTypedKind((RTTypedNumericKind)instr.kind),&currentValue);
+                if(!success){
+                    StarbytesObjectRelease(collection);
+                    return fail("V2 fused typed array update failed",true);
+                }
+                long double rhsValue = 0.0;
+                if(!localSlotToNumber(instr.c,(RTTypedNumericKind)instr.kind,rhsValue)){
+                    StarbytesObjectRelease(collection);
+                    return fail("V2 fused typed array update failed to load rhs",true);
+                }
+                long double result = 0.0;
+                auto op = (RTTypedBinaryOp)instr.aux;
+                if(!computeTypedBinaryResult((RTTypedNumericKind)instr.kind,op,currentValue,rhsValue,result)){
+                    StarbytesObjectRelease(collection);
+                    if((op == RTTYPED_BINARY_DIV || op == RTTYPED_BINARY_MOD) && rhsValue == 0.0){
+                        return fail("V2 fused typed array update divided by zero",true);
+                    }
+                    return fail("V2 fused typed array update is unsupported",true);
+                }
+                success = StarbytesArrayTrySetNumeric(collection,
+                                                      (unsigned)index,
+                                                      numTypeFromTypedKind((RTTypedNumericKind)instr.kind),
+                                                      result) != 0;
+                StarbytesObjectRelease(collection);
+                if(!success){
+                    return fail("V2 fused typed array update failed to store",true);
+                }
+                if(runtimeProfilingEnabled){
+                    runtimeProfile.superinstructionExecutions += 1;
+                }
+                break;
+            }
+            case V2ExecOpcode::CallDirect: {
                 if(instr.b >= func_temp->v2Image.callSites.size()){
-                    return fail("V2 direct call site index is out of range");
+                    return fail("V2 direct call site index is out of range",true);
                 }
                 auto &callSite = func_temp->v2Image.callSites[instr.b];
                 auto *target = findFunctionByName(string_ref(callSite.targetName));
                 if(!target){
-                    return fail("V2 direct call target does not exist");
+                    return fail("V2 direct call target does not exist",true);
                 }
                 std::vector<StarbytesObject> callArgs;
                 callArgs.reserve(callSite.argSlots.size());
@@ -3472,7 +4129,7 @@ StarbytesObject InterpImpl::invokeV2FuncWithValues(RTFuncTemplate *func_temp,
                     if(result){
                         StarbytesObjectRelease(result);
                     }
-                    return fail(lastRuntimeError);
+                    return fail(lastRuntimeError,true);
                 }
                 if(instr.a != UINT32_MAX){
                     storeLocalSlotOwned(instr.a,result);
@@ -3482,55 +4139,71 @@ StarbytesObject InterpImpl::invokeV2FuncWithValues(RTFuncTemplate *func_temp,
                 }
                 break;
             }
-            case RTV2_OP_INTRINSIC_SQRT: {
+            case V2ExecOpcode::IntrinsicSqrt: {
                 auto inputKind = (instr.b < func_temp->slotKinds.size() && func_temp->slotKinds[instr.b] != RTTYPED_NUM_OBJECT)
                     ? func_temp->slotKinds[instr.b]
                     : RTTYPED_NUM_DOUBLE;
                 long double value = 0.0;
                 if(!localSlotToNumber(instr.b,inputKind,value)){
-                    return fail("V2 sqrt failed to load its operand");
+                    return fail("V2 sqrt failed to load its operand",true);
                 }
                 if(value < 0.0){
                     lastRuntimeError = "sqrt requires non-negative numeric input";
-                    return fail(lastRuntimeError);
+                    return fail(lastRuntimeError,true);
                 }
                 if(!storeLocalNumericValue(instr.a,RTTYPED_NUM_DOUBLE,std::sqrt((double)value))){
-                    return fail("V2 sqrt failed to store its result");
+                    return fail("V2 sqrt failed to store its result",true);
                 }
                 break;
             }
-            case RTV2_OP_JUMP:
+            case V2ExecOpcode::Jump:
+                if(pc < execImage->innermostLoopByPc.size()){
+                    auto loopIndex = execImage->innermostLoopByPc[pc];
+                    if(loopIndex >= 0 && (size_t)loopIndex < execImage->loops.size()){
+                        auto &loop = execImage->loops[(size_t)loopIndex];
+                        if(loop.backedgePc == pc && loop.headerPc == instr.a){
+                            loop.backedgeTaken += 1;
+                        }
+                    }
+                }
+                noteLoopGuardObservation(*execImage,pc,true);
+                recordedLoopObservation = true;
                 pc = instr.a;
                 continue;
-            case RTV2_OP_JUMP_IF_FALSE: {
+            case V2ExecOpcode::JumpIfFalse: {
                 bool truthy = false;
                 if(!localSlotIsTruthy(instr.a,truthy)){
-                    return fail("V2 conditional jump failed");
+                    return fail("V2 conditional jump failed",true);
                 }
+                noteLoopGuardObservation(*execImage,pc,true);
+                recordedLoopObservation = true;
                 if(!truthy){
                     pc = instr.b;
                     continue;
                 }
                 break;
             }
-            case RTV2_OP_V1_STMT:
+            case V2ExecOpcode::V1Stmt:
                 if(instr.a >= func_temp->v2Image.fallbackStmtBlobs.size()
                    || !executeV1FallbackBlob(func_temp->v2Image.fallbackStmtBlobs[instr.a],willReturn,returnVal)){
-                    return fail("V2 fallback statement failed");
+                    return fail("V2 fallback statement failed",true);
                 }
                 if(willReturn){
                     popLocalFrame();
                     return returnVal;
                 }
                 break;
-            case RTV2_OP_RETURN:
+            case V2ExecOpcode::Return:
                 if(instr.a != UINT32_MAX){
                     returnVal = referenceLocalSlot(instr.a);
                 }
                 willReturn = true;
                 break;
             default:
-                return fail("unsupported V2 opcode");
+                return fail("unsupported V2 opcode",true);
+        }
+        if(!recordedLoopObservation){
+            noteLoopGuardObservation(*execImage,pc,true);
         }
         processMicrotasks();
         ++pc;
@@ -6813,11 +7486,14 @@ void InterpImpl::exec(std::istream & in){
     memberSetFeedbackSites.clear();
     memberInvokeFeedbackSites.clear();
     varRefFeedbackSites.clear();
+    v2ExecutionImages.clear();
     activeInput = &in;
     activeModuleHeader = prepareRTModuleStream(in);
     activeModuleCodeStart = in.tellg();
     lastRuntimeError.clear();
     if(runtimeProfilingEnabled){
+        runtimeProfile = RuntimeProfileData();
+        runtimeProfile.enabled = true;
         StarbytesRuntimeProfileResetLowLevelCounters();
         runtimeProfile.moduleBytecodeVersion = activeModuleHeader.hasExplicitHeader
             ? activeModuleHeader.bytecodeVersion

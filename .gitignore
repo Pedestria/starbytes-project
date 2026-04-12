@@ -34,3 +34,5 @@ Test.starbsymtb
 module_test_output.stbxm
 build-msvc
 build-nmake
+website/node_modules/
+website/dist/

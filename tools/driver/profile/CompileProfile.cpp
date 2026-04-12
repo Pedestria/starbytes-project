@@ -40,7 +40,16 @@ void printCompileProfile(std::ostream &out,const CompileProfileData &profile,boo
     out << "    \"runtime_quickened_fallbacks\": " << profile.runtimeQuickenedFallbacks << ",\n";
     out << "    \"runtime_feedback_sites\": " << profile.runtimeFeedbackSites << ",\n";
     out << "    \"runtime_feedback_cache_hits\": " << profile.runtimeFeedbackCacheHits << ",\n";
-    out << "    \"runtime_feedback_cache_misses\": " << profile.runtimeFeedbackCacheMisses << "\n";
+    out << "    \"runtime_feedback_cache_misses\": " << profile.runtimeFeedbackCacheMisses << ",\n";
+    out << "    \"runtime_v2_execution_images\": " << profile.runtimeV2ExecutionImages << ",\n";
+    out << "    \"runtime_superinstructions_installed\": " << profile.runtimeSuperinstructionsInstalled << ",\n";
+    out << "    \"runtime_superinstruction_executions\": " << profile.runtimeSuperinstructionExecutions << ",\n";
+    out << "    \"runtime_loop_headers_tracked\": " << profile.runtimeLoopHeadersTracked << ",\n";
+    out << "    \"runtime_hot_loop_triggers\": " << profile.runtimeHotLoopTriggers << ",\n";
+    out << "    \"runtime_tier2_loops_lowered\": " << profile.runtimeTier2LoopsLowered << ",\n";
+    out << "    \"runtime_tier2_ir_instruction_count\": " << profile.runtimeTier2IrInstructionCount << ",\n";
+    out << "    \"runtime_loop_guard_samples\": " << profile.runtimeLoopGuardSamples << ",\n";
+    out << "    \"runtime_loop_guard_failures\": " << profile.runtimeLoopGuardFailures << "\n";
     out << "  },\n";
     out << "  \"timings_ms\": {\n";
     out << "    \"total\": " << nsToMs(profile.totalNs) << ",\n";

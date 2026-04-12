@@ -794,6 +794,10 @@ Reasoning:
 - better fit for a runtime that still needs to build its frame/deopt substrate
 - aligns with current Starbytes scale better than a large compiler framework integration
 
+Follow-on note:
+
+- if the baseline JIT later becomes stable and Starbytes needs a heavier optimizing backend, use `docs/LLVMJitTransitionPlan.md` as the staged migration plan rather than treating LLVM as the first JIT implementation
+
 ### Decision 4: monomorphic caches before PICs
 
 Recommendation:

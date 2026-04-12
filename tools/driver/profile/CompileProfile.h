@@ -34,6 +34,15 @@ struct CompileProfileData {
     uint64_t runtimeFeedbackSites = 0;
     uint64_t runtimeFeedbackCacheHits = 0;
     uint64_t runtimeFeedbackCacheMisses = 0;
+    uint64_t runtimeV2ExecutionImages = 0;
+    uint64_t runtimeSuperinstructionsInstalled = 0;
+    uint64_t runtimeSuperinstructionExecutions = 0;
+    uint64_t runtimeLoopHeadersTracked = 0;
+    uint64_t runtimeHotLoopTriggers = 0;
+    uint64_t runtimeTier2LoopsLowered = 0;
+    uint64_t runtimeTier2IrInstructionCount = 0;
+    uint64_t runtimeLoopGuardSamples = 0;
+    uint64_t runtimeLoopGuardFailures = 0;
     uint64_t moduleCount = 0;
     uint64_t sourceCount = 0;
     uint64_t moduleCacheHits = 0;
