@@ -36,3 +36,4 @@ build-msvc
 build-nmake
 website/node_modules/
 website/dist/
+docs/sphinx/_build/

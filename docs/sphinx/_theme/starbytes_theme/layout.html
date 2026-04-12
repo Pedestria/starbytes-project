@@ -1,0 +1,40 @@
+{% extends "!basic/layout.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  <meta name="theme-color" content="#2463ff" />
+{% endblock %}
+
+{% block relbar1 %}
+  <div class="sb-topbar">
+    <div class="sb-topbar-inner">
+      <a class="sb-brand" href="{{ pathto(master_doc) }}">
+        <span class="sb-brand-mark">S</span>
+        <span class="sb-brand-text">Starbytes Docs</span>
+      </a>
+      <nav class="sb-topnav" aria-label="Primary">
+        <a href="{{ pathto('index') }}">Home</a>
+        <a href="{{ pathto('language/index') }}">Language</a>
+        <a href="{{ pathto('tools/index') }}">Tools</a>
+        <a href="{{ pathto('stdlib/index') }}">Stdlib</a>
+      </nav>
+    </div>
+  </div>
+{% endblock %}
+
+{% block relbar2 %}{% endblock %}
+
+{% block sidebartitle %}
+  <div class="sb-sidebar-brand">
+    <a href="{{ pathto(master_doc) }}">
+      <span class="sb-brand-mark">S</span>
+      <span>Starbytes Docs</span>
+    </a>
+  </div>
+{% endblock %}
+
+{% block footer %}
+  <div class="sb-footer">
+    <p>Generated from the Starbytes repository sources with Sphinx.</p>
+  </div>
+{% endblock %}

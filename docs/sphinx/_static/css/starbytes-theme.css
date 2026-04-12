@@ -1,0 +1,345 @@
+:root {
+  --page-bg: #f5f8ff;
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-strong: #ffffff;
+  --surface-border: rgba(40, 82, 170, 0.14);
+  --text-main: #0d1b39;
+  --text-muted: #51607f;
+  --blue-500: #2463ff;
+  --blue-600: #164bc4;
+  --blue-700: #0f2f82;
+  --gold-400: #ffca47;
+  --gold-500: #f2a925;
+  --shadow-lg: 0 24px 70px rgba(21, 48, 112, 0.14);
+  --shadow-sm: 0 10px 30px rgba(21, 48, 112, 0.08);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at top left, rgba(36, 99, 255, 0.18), transparent 30%),
+    radial-gradient(circle at bottom left, rgba(255, 202, 71, 0.18), transparent 24%),
+    linear-gradient(180deg, #f9fbff 0%, #eef3ff 100%);
+  color: var(--text-main);
+  font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+a {
+  color: var(--blue-600);
+}
+
+a:hover {
+  color: var(--blue-700);
+}
+
+div.related {
+  display: none;
+}
+
+.sb-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.7);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.sb-topbar-inner {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 0;
+}
+
+.sb-brand,
+.sb-sidebar-brand a {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+.sb-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 202, 71, 0.85), transparent 35%),
+    linear-gradient(145deg, #0d1630 10%, #173b96 54%, #101e3f 100%);
+  color: #ffffff;
+  box-shadow: var(--shadow-sm);
+}
+
+.sb-topnav {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.sb-topnav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.sb-topnav a:hover {
+  background: rgba(36, 99, 255, 0.08);
+  color: var(--text-main);
+}
+
+div.document {
+  width: min(1180px, calc(100% - 32px));
+  margin: 28px auto 48px;
+}
+
+div.sphinxsidebar {
+  width: 280px;
+}
+
+div.sphinxsidebarwrapper {
+  position: sticky;
+  top: 92px;
+  padding: 20px;
+  border: 1px solid var(--surface-border);
+  border-radius: 28px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(18px);
+}
+
+div.sphinxsidebar h3,
+div.sphinxsidebar h4 {
+  margin-top: 0;
+  color: var(--blue-700);
+}
+
+div.sphinxsidebar a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+div.sphinxsidebar a:hover {
+  color: var(--blue-600);
+}
+
+div.bodywrapper {
+  margin-left: 320px;
+}
+
+div.body {
+  min-width: 0;
+  padding: 36px 40px;
+  border: 1px solid var(--surface-border);
+  border-radius: 28px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(18px);
+}
+
+div.body h1,
+div.body h2,
+div.body h3,
+div.body h4,
+div.body h5 {
+  color: var(--text-main);
+  letter-spacing: -0.03em;
+}
+
+div.body h1 {
+  margin-top: 0;
+  font-size: clamp(2.6rem, 5vw, 4rem);
+  line-height: 1.05;
+}
+
+div.body h2 {
+  margin-top: 2.2rem;
+  padding-top: 0.25rem;
+  font-size: clamp(1.6rem, 3vw, 2.3rem);
+}
+
+div.body p,
+div.body li,
+div.body dd,
+div.body dt,
+div.body table {
+  color: var(--text-main);
+  line-height: 1.7;
+}
+
+div.body ul li + li,
+div.body ol li + li {
+  margin-top: 0.3rem;
+}
+
+.hero-card,
+div.admonition,
+table.docutils,
+div.body pre,
+div.body .highlight {
+  border: 1px solid rgba(36, 99, 255, 0.1);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--shadow-sm);
+}
+
+.hero-card {
+  padding: 24px 26px;
+  margin-bottom: 24px;
+}
+
+.quick-links {
+  margin: 0 0 28px;
+  padding-left: 1.2rem;
+}
+
+div.admonition {
+  padding: 16px 18px;
+}
+
+div.admonition p.admonition-title {
+  margin: 0 0 8px;
+  color: var(--blue-700);
+  font-weight: 700;
+}
+
+div.body pre,
+div.body .highlight {
+  padding: 18px 20px;
+  overflow-x: auto;
+  background: linear-gradient(180deg, #071126 0%, #101f3e 100%);
+  color: #e9f2ff;
+}
+
+div.body pre code,
+div.body .highlight pre {
+  color: inherit;
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.94rem;
+}
+
+code,
+tt,
+.sig,
+.sig-name {
+  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+table.docutils {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+
+table.docutils th,
+table.docutils td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(36, 99, 255, 0.08);
+}
+
+table.docutils th {
+  background: rgba(36, 99, 255, 0.06);
+  color: var(--blue-700);
+  text-align: left;
+}
+
+table.docutils tr:last-child td {
+  border-bottom: 0;
+}
+
+div.body .toctree-wrapper ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+div.body .toctree-wrapper li {
+  margin: 0 0 10px;
+}
+
+div.body .toctree-wrapper a {
+  display: block;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(36, 99, 255, 0.08);
+  text-decoration: none;
+  color: var(--text-main);
+  box-shadow: var(--shadow-sm);
+}
+
+div.body .toctree-wrapper a:hover {
+  border-color: rgba(36, 99, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+div.footer,
+.sb-footer {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.sb-footer {
+  padding: 24px 0 12px;
+}
+
+@media (max-width: 980px) {
+  div.document {
+    width: calc(100% - 24px);
+  }
+
+  div.sphinxsidebar {
+    float: none;
+    width: auto;
+    margin-bottom: 20px;
+  }
+
+  div.sphinxsidebarwrapper {
+    position: static;
+  }
+
+  div.bodywrapper {
+    margin-left: 0;
+  }
+
+  .sb-topbar-inner {
+    width: calc(100% - 24px);
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sb-topnav {
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 720px) {
+  div.body {
+    padding: 26px 20px;
+  }
+
+  div.body h1 {
+    font-size: clamp(2.2rem, 9vw, 3rem);
+  }
+}
