@@ -96,6 +96,12 @@ struct RuntimeProfileData {
     uint64_t tier2IrInstructionCount = 0;
     uint64_t loopGuardSamples = 0;
     uint64_t loopGuardFailures = 0;
+    uint64_t tier2CompiledLoops = 0;
+    uint64_t tier2CompiledExecutions = 0;
+    uint64_t tier2DeoptCount = 0;
+    uint64_t codeCacheBytesUsed = 0;
+    uint64_t codeCacheOptimizedArtifacts = 0;
+    uint64_t codeCacheWarmArtifacts = 0;
 };
 
 
@@ -104,6 +110,7 @@ public:
     virtual void exec(std::istream & in) = 0;
     virtual void setProfilingEnabled(bool enabled) = 0;
     virtual void setExecutionMode(RuntimeExecutionMode mode) = 0;
+    virtual void setJitEnabled(bool enabled) = 0;
     virtual bool addExtension(const std::string &path) = 0;
     virtual bool hasRuntimeError() const = 0;
     virtual std::string takeRuntimeError() = 0;

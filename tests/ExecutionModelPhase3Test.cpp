@@ -79,6 +79,7 @@ print(phase3Kernel(values,4,12))
 
     auto interp = Runtime::Interp::Create();
     interp->setProfilingEnabled(true);
+    interp->setJitEnabled(false);
     std::ifstream in(outputFile,std::ios::in | std::ios::binary);
     if(!in.is_open()) {
         cleanup();

@@ -1,5 +1,12 @@
 #include "starbytes/runtime/RTEngine.h"
+#include "starbytes/runtime/RTJit.h"
+#include "starbytes/runtime/RTCodeCache.h"
 #include "starbytes/compiler/RTCode.h"
+#include "RTOpcodeMeta.h"
+#include "RTStream.h"
+#include "RTArgBuffer.h"
+#include "RTNumeric.h"
+#include "RTValue.h"
 #include "RTStdlib.h"
 #include "starbytes/runtime/RegexSupport.h"
 #include "starbytes/base/ADT.h"
@@ -104,71 +111,6 @@ static std::string resolveNativeCallbackName(const RTFuncTemplate *func){
     return defaultName;
 }
 
-static bool isExpressionOpcode(RTCode code){
-    return code == CODE_RTIVKFUNC
-        || code == CODE_RTCALL_DIRECT
-        || code == CODE_RTCALL_BUILTIN_MEMBER
-        || code == CODE_UNARY_OPERATOR
-        || code == CODE_RTTYPED_NEGATE
-        || code == CODE_BINARY_OPERATOR
-        || code == CODE_RTTYPED_BINARY
-        || code == CODE_RTTYPED_COMPARE
-        || code == CODE_RTTYPECHECK
-        || code == CODE_RTTERNARY
-        || code == CODE_RTCAST
-        || code == CODE_RTTYPED_INTRINSIC
-        || code == CODE_RTMEMBER_SET
-        || code == CODE_RTMEMBER_SET_FIELD_SLOT
-        || code == CODE_RTMEMBER_IVK
-        || code == CODE_RTMEMBER_GET
-        || code == CODE_RTMEMBER_GET_FIELD_SLOT
-        || code == CODE_RTNEWOBJ
-        || code == CODE_RTREGEX_LITERAL
-        || code == CODE_RTVAR_SET
-        || code == CODE_RTLOCAL_REF
-        || code == CODE_RTTYPED_LOCAL_REF
-        || code == CODE_RTLOCAL_SET
-        || code == CODE_RTARRAY_LITERAL
-        || code == CODE_RTINDEX_GET
-        || code == CODE_RTTYPED_INDEX_GET
-        || code == CODE_RTINDEX_SET
-        || code == CODE_RTTYPED_INDEX_SET
-        || code == CODE_RTDICT_LITERAL
-        || code == CODE_RTOBJCREATE
-        || code == CODE_RTINTOBJCREATE
-        || code == CODE_RTVAR_REF
-        || code == CODE_RTOBJVAR_REF
-        || code == CODE_RTFUNC_REF;
-}
-
-static bool siteKindForOpcode(RTCode code,RuntimeProfileSiteKind &kindOut){
-    switch(code){
-        case CODE_RTIVKFUNC:
-        case CODE_RTCALL_DIRECT:
-            kindOut = RuntimeProfileSiteKind::Call;
-            return true;
-        case CODE_RTCALL_BUILTIN_MEMBER:
-        case CODE_RTMEMBER_GET:
-        case CODE_RTMEMBER_GET_FIELD_SLOT:
-        case CODE_RTMEMBER_SET:
-        case CODE_RTMEMBER_SET_FIELD_SLOT:
-        case CODE_RTMEMBER_IVK:
-            kindOut = RuntimeProfileSiteKind::Member;
-            return true;
-        case CODE_RTINDEX_GET:
-        case CODE_RTTYPED_INDEX_GET:
-        case CODE_RTINDEX_SET:
-        case CODE_RTTYPED_INDEX_SET:
-            kindOut = RuntimeProfileSiteKind::Index;
-            return true;
-        case CODE_RTTERNARY:
-            kindOut = RuntimeProfileSiteKind::Branch;
-            return true;
-        default:
-            return false;
-    }
-}
-
 static std::string resolveNativeValueName(const RTVar *var){
     if(!var){
         return {};
@@ -202,205 +144,6 @@ static std::string mangleClassMethodName(string_ref className,string_ref methodN
     return out.str();
 }
 
-static int clampSliceBound(int bound,int len);
-
-class MemoryStreamBuf final : public std::streambuf {
-public:
-    MemoryStreamBuf(const char *data,size_t size){
-        reset(data,size);
-    }
-
-    void reset(const char *data,size_t size){
-        auto *begin = const_cast<char *>(data);
-        setg(begin,begin,begin + size);
-    }
-
-protected:
-    pos_type seekoff(off_type off,std::ios_base::seekdir dir,std::ios_base::openmode which) override{
-        if((which & std::ios_base::in) == 0){
-            return pos_type(off_type(-1));
-        }
-        char *base = eback();
-        char *next = nullptr;
-        switch(dir){
-            case std::ios_base::beg:
-                next = base + off;
-                break;
-            case std::ios_base::cur:
-                next = gptr() + off;
-                break;
-            case std::ios_base::end:
-                next = egptr() + off;
-                break;
-            default:
-                return pos_type(off_type(-1));
-        }
-        if(next < base || next > egptr()){
-            return pos_type(off_type(-1));
-        }
-        setg(base,next,egptr());
-        return pos_type(next - base);
-    }
-
-    pos_type seekpos(pos_type pos,std::ios_base::openmode which) override{
-        return seekoff(off_type(pos),std::ios_base::beg,which);
-    }
-};
-
-class MemoryInputStream final : public std::istream {
-    MemoryStreamBuf buffer;
-public:
-    MemoryInputStream(const char *data,size_t size)
-        : std::istream(nullptr), buffer(data,size) {
-        rdbuf(&buffer);
-        clear();
-    }
-};
-
-class DirectArgBuffer {
-    static constexpr size_t InlineCapacity = 8;
-    std::array<StarbytesObject, InlineCapacity> inlineStorage = {};
-    std::vector<StarbytesObject> heapStorage;
-    StarbytesObject *buffer = inlineStorage.data();
-    unsigned count = 0;
-
-public:
-    explicit DirectArgBuffer(unsigned argCount):count(argCount){
-        if(argCount > InlineCapacity){
-            heapStorage.resize(argCount,nullptr);
-            buffer = heapStorage.data();
-        }
-    }
-
-    StarbytesObject *data(){
-        return buffer;
-    }
-
-    const StarbytesObject *data() const{
-        return buffer;
-    }
-
-    unsigned size() const{
-        return count;
-    }
-
-    void releaseAll(){
-        for(unsigned i = 0;i < count;++i){
-            if(buffer[i]){
-                StarbytesObjectRelease(buffer[i]);
-                buffer[i] = nullptr;
-            }
-        }
-    }
-};
-
-static size_t utf8ScalarWidth(const std::string &text,size_t byteOffset){
-    if(byteOffset >= text.size()){
-        return 0;
-    }
-    auto lead = (unsigned char)text[byteOffset];
-    if((lead & 0x80u) == 0x00u){
-        return 1;
-    }
-    if((lead & 0xE0u) == 0xC0u && byteOffset + 1 < text.size()){
-        return 2;
-    }
-    if((lead & 0xF0u) == 0xE0u && byteOffset + 2 < text.size()){
-        return 3;
-    }
-    if((lead & 0xF8u) == 0xF0u && byteOffset + 3 < text.size()){
-        return 4;
-    }
-    return 1;
-}
-
-static int utf8ScalarCount(const std::string &text){
-    int count = 0;
-    size_t offset = 0;
-    while(offset < text.size()){
-        auto width = utf8ScalarWidth(text,offset);
-        if(width == 0){
-            break;
-        }
-        offset += width;
-        ++count;
-    }
-    return count;
-}
-
-static bool utf8ByteOffsetForScalarIndex(const std::string &text,int scalarIndex,size_t &byteOffsetOut){
-    if(scalarIndex < 0){
-        return false;
-    }
-    size_t offset = 0;
-    int current = 0;
-    while(offset < text.size()){
-        if(current == scalarIndex){
-            byteOffsetOut = offset;
-            return true;
-        }
-        auto width = utf8ScalarWidth(text,offset);
-        if(width == 0){
-            return false;
-        }
-        offset += width;
-        ++current;
-    }
-    if(current == scalarIndex){
-        byteOffsetOut = offset;
-        return true;
-    }
-    return false;
-}
-
-static bool utf8ScalarSlice(const std::string &text,int startScalar,int endScalar,std::string &out){
-    int scalarLength = utf8ScalarCount(text);
-    startScalar = clampSliceBound(startScalar,scalarLength);
-    endScalar = clampSliceBound(endScalar,scalarLength);
-    if(endScalar < startScalar){
-        endScalar = startScalar;
-    }
-    size_t startByte = 0;
-    size_t endByte = 0;
-    if(!utf8ByteOffsetForScalarIndex(text,startScalar,startByte)
-       || !utf8ByteOffsetForScalarIndex(text,endScalar,endByte)
-       || endByte < startByte){
-        return false;
-    }
-    out = text.substr(startByte,endByte - startByte);
-    return true;
-}
-
-static bool utf8ScalarAt(const std::string &text,int scalarIndex,std::string &out){
-    size_t startByte = 0;
-    if(!utf8ByteOffsetForScalarIndex(text,scalarIndex,startByte) || startByte >= text.size()){
-        return false;
-    }
-    auto width = utf8ScalarWidth(text,startByte);
-    if(width == 0 || startByte + width > text.size()){
-        return false;
-    }
-    out = text.substr(startByte,width);
-    return true;
-}
-
-static int utf8ScalarIndexForByteOffset(const std::string &text,size_t byteOffset){
-    if(byteOffset == std::string::npos || byteOffset > text.size()){
-        return -1;
-    }
-    int scalarIndex = 0;
-    size_t offset = 0;
-    while(offset < byteOffset && offset < text.size()){
-        auto width = utf8ScalarWidth(text,offset);
-        if(width == 0){
-            return -1;
-        }
-        offset += width;
-        ++scalarIndex;
-    }
-    return (offset == byteOffset) ? scalarIndex : -1;
-}
-
 static uint32_t regexCompileOptionsFromFlags(const std::string &flags){
     uint32_t options = 0;
     for(char flag : flags){
@@ -424,287 +167,8 @@ static uint32_t regexCompileOptionsFromFlags(const std::string &flags){
     return options;
 }
 
-static bool isIntegralNumType(StarbytesNumT numType){
-    return numType == NumTypeInt || numType == NumTypeLong;
-}
-
-static bool isFloatingNumType(StarbytesNumT numType){
-    return numType == NumTypeFloat || numType == NumTypeDouble;
-}
-
-static int numericTypeRank(StarbytesNumT numType){
-    switch(numType){
-        case NumTypeInt:
-            return 0;
-        case NumTypeLong:
-            return 1;
-        case NumTypeFloat:
-            return 2;
-        case NumTypeDouble:
-        default:
-            return 3;
-    }
-}
-
-static StarbytesNumT promoteNumericType(StarbytesNumT lhs,StarbytesNumT rhs){
-    return numericTypeRank(lhs) >= numericTypeRank(rhs) ? lhs : rhs;
-}
-
-static bool objectToNumber(StarbytesObject object,long double &value,StarbytesNumT &numType){
-    if(!object || !StarbytesObjectTypecheck(object,StarbytesNumType())){
-        return false;
-    }
-    numType = StarbytesNumGetType(object);
-    if(numType == NumTypeFloat){
-        value = StarbytesNumGetFloatValue(object);
-    }
-    else if(numType == NumTypeDouble){
-        value = StarbytesNumGetDoubleValue(object);
-    }
-    else if(numType == NumTypeLong){
-        value = (long double)StarbytesNumGetLongValue(object);
-    }
-    else {
-        value = StarbytesNumGetIntValue(object);
-    }
-    return true;
-}
-
-static StarbytesObject makeNumber(long double value,StarbytesNumT numType){
-    if(numType == NumTypeDouble){
-        return StarbytesNumNew(NumTypeDouble,(double)value);
-    }
-    if(numType == NumTypeFloat){
-        return StarbytesNumNew(NumTypeFloat,(float)value);
-    }
-    if(numType == NumTypeLong){
-        return StarbytesNumNew(NumTypeLong,(int64_t)value);
-    }
-    return StarbytesNumNew(NumTypeInt,(int)value);
-}
-
-static RTTypedNumericKind typedKindFromNumType(StarbytesNumT numType){
-    switch(numType){
-        case NumTypeInt:
-            return RTTYPED_NUM_INT;
-        case NumTypeLong:
-            return RTTYPED_NUM_LONG;
-        case NumTypeFloat:
-            return RTTYPED_NUM_FLOAT;
-        case NumTypeDouble:
-            return RTTYPED_NUM_DOUBLE;
-        default:
-            return RTTYPED_NUM_OBJECT;
-    }
-}
-
-static StarbytesNumT numTypeFromTypedKind(RTTypedNumericKind kind){
-    switch(kind){
-        case RTTYPED_NUM_INT:
-            return NumTypeInt;
-        case RTTYPED_NUM_LONG:
-            return NumTypeLong;
-        case RTTYPED_NUM_FLOAT:
-            return NumTypeFloat;
-        case RTTYPED_NUM_DOUBLE:
-            return NumTypeDouble;
-        default:
-            return NumTypeInt;
-    }
-}
-
-static bool extractTypedNumericValue(StarbytesObject object,RTTypedNumericKind kind,long double &valueOut){
-    StarbytesNumT actualType = NumTypeInt;
-    long double rawValue = 0.0;
-    if(!objectToNumber(object,rawValue,actualType)){
-        return false;
-    }
-    switch(kind){
-        case RTTYPED_NUM_INT:
-            valueOut = (long double)((int)rawValue);
-            return true;
-        case RTTYPED_NUM_LONG:
-            valueOut = (long double)((int64_t)rawValue);
-            return true;
-        case RTTYPED_NUM_FLOAT:
-            valueOut = (long double)((float)rawValue);
-            return true;
-        case RTTYPED_NUM_DOUBLE:
-            valueOut = (long double)((double)rawValue);
-            return true;
-        default:
-            break;
-    }
-    return false;
-}
-
 static constexpr unsigned kQuickeningInvocationThreshold = 4;
 static constexpr uint64_t kV2HotLoopThreshold = 8;
-
-static bool computeTypedBinaryResult(RTTypedNumericKind kind,
-                                     RTTypedBinaryOp op,
-                                     long double lhsVal,
-                                     long double rhsVal,
-                                     long double &resultOut){
-    if((op == RTTYPED_BINARY_DIV || op == RTTYPED_BINARY_MOD) && rhsVal == 0.0){
-        return false;
-    }
-    switch(op){
-        case RTTYPED_BINARY_ADD:
-            resultOut = lhsVal + rhsVal;
-            return true;
-        case RTTYPED_BINARY_SUB:
-            resultOut = lhsVal - rhsVal;
-            return true;
-        case RTTYPED_BINARY_MUL:
-            resultOut = lhsVal * rhsVal;
-            return true;
-        case RTTYPED_BINARY_DIV:
-            resultOut = (kind == RTTYPED_NUM_INT) ? (long double)((int)lhsVal / (int)rhsVal)
-                : (kind == RTTYPED_NUM_LONG) ? (long double)((int64_t)lhsVal / (int64_t)rhsVal)
-                : lhsVal / rhsVal;
-            return true;
-        case RTTYPED_BINARY_MOD:
-            resultOut = (kind == RTTYPED_NUM_INT) ? (long double)((int)lhsVal % (int)rhsVal)
-                : (kind == RTTYPED_NUM_LONG) ? (long double)((int64_t)lhsVal % (int64_t)rhsVal)
-                : std::fmod((double)lhsVal,(double)rhsVal);
-            return true;
-        default:
-            break;
-    }
-    return false;
-}
-
-static std::string objectToString(StarbytesObject object){
-    if(!object){
-        return "null";
-    }
-    if(StarbytesObjectTypecheck(object,StarbytesStrType())){
-        return StarbytesStrGetBuffer(object);
-    }
-    if(StarbytesObjectTypecheck(object,StarbytesBoolType())){
-        return ((bool)StarbytesBoolValue(object))? "true" : "false";
-    }
-    if(StarbytesObjectTypecheck(object,StarbytesNumType())){
-        auto numType = StarbytesNumGetType(object);
-        if(numType == NumTypeFloat){
-            std::ostringstream out;
-            out << StarbytesNumGetFloatValue(object);
-            return out.str();
-        }
-        if(numType == NumTypeDouble){
-            std::ostringstream out;
-            out << StarbytesNumGetDoubleValue(object);
-            return out.str();
-        }
-        if(numType == NumTypeLong){
-            return std::to_string(StarbytesNumGetLongValue(object));
-        }
-        return std::to_string(StarbytesNumGetIntValue(object));
-    }
-    if(StarbytesObjectTypecheck(object,StarbytesRegexType())){
-        auto pattern = StarbytesObjectGetProperty(object,"pattern");
-        auto flags = StarbytesObjectGetProperty(object,"flags");
-        std::string p = pattern? std::string(StarbytesStrGetBuffer(pattern)) : "";
-        std::string f = flags? std::string(StarbytesStrGetBuffer(flags)) : "";
-        return "/" + p + "/" + f;
-    }
-    return "<object>";
-}
-
-static bool runtimeObjectEquals(StarbytesObject lhs,StarbytesObject rhs){
-    if(!lhs || !rhs){
-        return lhs == rhs;
-    }
-    if(StarbytesObjectTypecheck(lhs,StarbytesNumType()) && StarbytesObjectTypecheck(rhs,StarbytesNumType())){
-        return StarbytesNumCompare(lhs,rhs) == COMPARE_EQUAL;
-    }
-    if(StarbytesObjectTypecheck(lhs,StarbytesStrType()) && StarbytesObjectTypecheck(rhs,StarbytesStrType())){
-        return StarbytesStrCompare(lhs,rhs) == COMPARE_EQUAL;
-    }
-    if(StarbytesObjectTypecheck(lhs,StarbytesBoolType()) && StarbytesObjectTypecheck(rhs,StarbytesBoolType())){
-        return (bool)StarbytesBoolValue(lhs) == (bool)StarbytesBoolValue(rhs);
-    }
-    return lhs == rhs;
-}
-
-static bool isDictKeyObject(StarbytesObject key){
-    return key && (StarbytesObjectTypecheck(key,StarbytesStrType()) || StarbytesObjectTypecheck(key,StarbytesNumType()));
-}
-
-static int clampSliceBound(int bound,int len){
-    if(bound < 0){
-        bound = len + bound;
-    }
-    if(bound < 0){
-        return 0;
-    }
-    if(bound > len){
-        return len;
-    }
-    return bound;
-}
-
-static std::string stringTrim(const std::string &input){
-    size_t begin = 0;
-    while(begin < input.size() && std::isspace((unsigned char)input[begin])){
-        ++begin;
-    }
-    size_t end = input.size();
-    while(end > begin && std::isspace((unsigned char)input[end - 1])){
-        --end;
-    }
-    return input.substr(begin,end - begin);
-}
-
-static bool parseIntStrict(const std::string &text,int &outValue){
-    auto trimmed = stringTrim(text);
-    if(trimmed.empty()){
-        return false;
-    }
-    errno = 0;
-    char *endPtr = nullptr;
-    long parsed = std::strtol(trimmed.c_str(),&endPtr,10);
-    if(errno != 0 || endPtr == nullptr || *endPtr != '\0'){
-        return false;
-    }
-    if(parsed < std::numeric_limits<int>::min() || parsed > std::numeric_limits<int>::max()){
-        return false;
-    }
-    outValue = (int)parsed;
-    return true;
-}
-
-static bool parseFloatStrict(const std::string &text,float &outValue){
-    auto trimmed = stringTrim(text);
-    if(trimmed.empty()){
-        return false;
-    }
-    errno = 0;
-    char *endPtr = nullptr;
-    float parsed = std::strtof(trimmed.c_str(),&endPtr);
-    if(errno != 0 || endPtr == nullptr || *endPtr != '\0'){
-        return false;
-    }
-    outValue = parsed;
-    return true;
-}
-
-static bool parseDoubleStrict(const std::string &text,double &outValue){
-    auto trimmed = stringTrim(text);
-    if(trimmed.empty()){
-        return false;
-    }
-    errno = 0;
-    char *endPtr = nullptr;
-    double parsed = std::strtod(trimmed.c_str(),&endPtr);
-    if(errno != 0 || endPtr == nullptr || *endPtr != '\0'){
-        return false;
-    }
-    outValue = parsed;
-    return true;
-}
-
 
 
 class RTAllocator {
@@ -1044,41 +508,9 @@ class InterpImpl final : public Interp {
         uint32_t originalSpan = 1;
     };
 
-    enum class V2LoopIRKind : uint8_t {
-        Move = 0,
-        LoadI64Const,
-        LoadF64Const,
-        NumCast,
-        Binary,
-        CompareBranch,
-        ArrayGet,
-        ArraySet,
-        ArrayUpdate,
-        CallDirect,
-        IntrinsicSqrt,
-        Jump,
-        GuardArrayNumeric,
-        Deopt
-    };
-
-    struct V2LoopIRInstruction {
-        V2LoopIRKind kind = V2LoopIRKind::Move;
-        uint8_t numericKind = 0;
-        uint8_t aux = 0;
-        uint8_t flags = 0;
-        uint32_t a = 0;
-        uint32_t b = 0;
-        uint32_t c = 0;
-        uint32_t d = 0;
-        uint32_t e = 0;
-    };
-
-    struct V2LoopIR {
-        uint32_t headerPc = 0;
-        uint32_t exitPc = 0;
-        uint32_t backedgePc = 0;
-        std::vector<V2LoopIRInstruction> instructions;
-    };
+    using V2LoopIRKind = ::starbytes::Runtime::V2LoopIRKind;
+    using V2LoopIRInstruction = ::starbytes::Runtime::V2LoopIRInstruction;
+    using V2LoopIR = ::starbytes::Runtime::V2LoopIR;
 
     struct V2LoopRuntimeState {
         uint32_t headerPc = 0;
@@ -1091,6 +523,7 @@ class InterpImpl final : public Interp {
         bool hotTriggered = false;
         bool irBuilt = false;
         V2LoopIR ir;
+        CompiledLoop *compiled = nullptr;
     };
 
     struct V2ExecutionImage {
@@ -1132,6 +565,8 @@ class InterpImpl final : public Interp {
     std::unordered_map<RuntimeFeedbackKey,MemberInvokeFeedbackSite,RuntimeFeedbackKeyHash> memberInvokeFeedbackSites;
     std::unordered_map<RuntimeFeedbackKey,VarRefFeedbackSite,RuntimeFeedbackKeyHash> varRefFeedbackSites;
     std::unordered_map<std::string,V2ExecutionImage> v2ExecutionImages;
+    CodeCache codeCache;
+    bool jitEnabled = true;
     RTModuleHeaderInfo activeModuleHeader;
     std::istream::pos_type activeModuleCodeStart = std::istream::pos_type(-1);
 
@@ -1187,6 +622,13 @@ class InterpImpl final : public Interp {
                           const V2ExecutionImage &image,
                           size_t loopIndex,
                           V2LoopIR &out) const;
+    JitExitInfo executeCompiledLoop(RTFuncTemplate *funcTemp,
+                                    V2ExecutionImage &image,
+                                    V2LoopRuntimeState &loop,
+                                    CompiledLoop &compiled,
+                                    bool &willReturn,
+                                    StarbytesObject &returnVal);
+    void refreshCodeCacheStats();
     bool inspectLocalRefExpr(std::istream &in,uint32_t &slotOut,RTTypedNumericKind &kindOut);
     bool inspectQuickeningCandidate(std::istream &in,std::istream::pos_type exprStart,RTCode code,RTQuickenedExpr &out);
     RTQuickenedExpr *getOrInstallQuickenedExpr(std::istream &in,std::istream::pos_type exprStart,RTCode code);
@@ -1224,6 +666,11 @@ public:
         };
         addBuiltinTemplate("print",{"object"});
         stdlib::addMathBuiltinTemplates(functions);
+        if(const char *env = std::getenv("STARBYTES_DISABLE_JIT")){
+            if(env[0] != '\0' && env[0] != '0'){
+                jitEnabled = false;
+            }
+        }
     };
     ~InterpImpl() override;
     void exec(std::istream &in) override;
@@ -1238,6 +685,9 @@ public:
     void setExecutionMode(RuntimeExecutionMode mode) override {
         executionMode = mode;
     }
+    void setJitEnabled(bool enabled) override {
+        jitEnabled = enabled;
+    }
     bool addExtension(const std::string &path) override;
     bool hasRuntimeError() const override {
         return !lastRuntimeError.empty();
@@ -1248,7 +698,12 @@ public:
         return out;
     }
     RuntimeProfileData getProfileData() const override {
-        return runtimeProfile;
+        auto stats = codeCache.stats();
+        auto snapshot = runtimeProfile;
+        snapshot.codeCacheBytesUsed = stats.bytesUsed;
+        snapshot.codeCacheOptimizedArtifacts = stats.optimizedArtifacts;
+        snapshot.codeCacheWarmArtifacts = stats.warmArtifacts;
+        return snapshot;
     }
 };
 
@@ -3080,6 +2535,22 @@ void InterpImpl::maybeTriggerHotLoopTier2(const RTFuncTemplate *funcTemp,
             runtimeProfile.tier2LoopsLowered += 1;
             runtimeProfile.tier2IrInstructionCount += loop.ir.instructions.size();
         }
+
+        if(jitEnabled){
+            JitTarget target = selectJitTarget();
+            if(target != JitTarget::None){
+                CompiledLoop *artifact = codeCache.allocateOptimized();
+                if(Tier2JitCompiler::compile(loop.ir,target,*artifact)){
+                    loop.compiled = artifact;
+                    if(runtimeProfilingEnabled){
+                        runtimeProfile.tier2CompiledLoops += 1;
+                    }
+                }
+                else {
+                    codeCache.demoteToWarm(artifact);
+                }
+            }
+        }
     }
 }
 
@@ -3098,6 +2569,7 @@ bool InterpImpl::buildTier2LoopIR(const RTFuncTemplate *funcTemp,
     out.exitPc = loop.exitPc;
     out.backedgePc = loop.backedgePc;
 
+    uint32_t currentPc = 0;
     auto emit = [&](V2LoopIRKind kind,
                     uint8_t numericKind,
                     uint8_t aux,
@@ -3115,10 +2587,12 @@ bool InterpImpl::buildTier2LoopIR(const RTFuncTemplate *funcTemp,
         instr.c = c;
         instr.d = d;
         instr.e = e;
+        instr.originalV2Pc = currentPc;
         out.instructions.push_back(instr);
     };
 
     for(uint32_t pc = loop.headerPc;pc <= loop.backedgePc && pc < image.instructions.size();++pc){
+        currentPc = pc;
         const auto &instr = image.instructions[pc];
         switch(instr.opcode){
             case V2ExecOpcode::Nop:
@@ -3175,6 +2649,311 @@ bool InterpImpl::buildTier2LoopIR(const RTFuncTemplate *funcTemp,
     }
 
     return !out.instructions.empty();
+}
+
+JitExitInfo InterpImpl::executeCompiledLoop(RTFuncTemplate *funcTemp,
+                                            V2ExecutionImage &image,
+                                            V2LoopRuntimeState &loop,
+                                            CompiledLoop &compiled,
+                                            bool &willReturn,
+                                            StarbytesObject &returnVal){
+    (void)image;
+    (void)loop;
+    JitExitInfo exit;
+    compiled.executionCount += 1;
+    if(runtimeProfilingEnabled){
+        runtimeProfile.tier2CompiledExecutions += 1;
+    }
+
+    auto deopt = [&](const JitOpRecord &rec) -> JitExitInfo {
+        compiled.deoptimized = true;
+        compiled.deoptVersion += 1;
+        compiled.deoptCount += 1;
+        if(runtimeProfilingEnabled){
+            runtimeProfile.tier2DeoptCount += 1;
+        }
+        lastRuntimeError.clear();
+        JitExitInfo info;
+        info.status = JitExitStatus::Deopt;
+        info.resumePc = rec.deoptIndex < compiled.deoptPoints.size()
+            ? compiled.deoptPoints[rec.deoptIndex].resumePc
+            : rec.originalPc;
+        return info;
+    };
+
+    auto fail = [&](const std::string &message) -> JitExitInfo {
+        if(lastRuntimeError.empty()){
+            lastRuntimeError = message;
+        }
+        JitExitInfo info;
+        info.status = JitExitStatus::Fail;
+        info.resumePc = compiled.exitPc;
+        return info;
+    };
+
+    uint32_t ip = 0;
+    const uint32_t opCount = (uint32_t)compiled.ops.size();
+    while(ip < opCount){
+        const JitOpRecord &rec = compiled.ops[ip];
+        if(runtimeProfilingEnabled){
+            runtimeProfile.dispatchCount += 1;
+        }
+        switch(rec.kind){
+            case JitOpKind::Move: {
+                if(!copyLocalSlotValue(rec.a,rec.b)){
+                    return deopt(rec);
+                }
+                break;
+            }
+            case JitOpKind::LoadI64Const: {
+                if(rec.b >= funcTemp->v2Image.i64Consts.size()){
+                    return deopt(rec);
+                }
+                auto destKind = (rec.a < funcTemp->slotKinds.size() && funcTemp->slotKinds[rec.a] != RTTYPED_NUM_OBJECT)
+                    ? funcTemp->slotKinds[rec.a]
+                    : RTTYPED_NUM_INT;
+                if(!storeLocalNumericValue(rec.a,destKind,(long double)funcTemp->v2Image.i64Consts[rec.b])){
+                    return deopt(rec);
+                }
+                break;
+            }
+            case JitOpKind::LoadF64Const: {
+                if(rec.b >= funcTemp->v2Image.f64Consts.size()){
+                    return deopt(rec);
+                }
+                auto destKind = (rec.a < funcTemp->slotKinds.size() && funcTemp->slotKinds[rec.a] != RTTYPED_NUM_OBJECT)
+                    ? funcTemp->slotKinds[rec.a]
+                    : RTTYPED_NUM_DOUBLE;
+                if(!storeLocalNumericValue(rec.a,destKind,(long double)funcTemp->v2Image.f64Consts[rec.b])){
+                    return deopt(rec);
+                }
+                break;
+            }
+            case JitOpKind::NumCast: {
+                long double value = 0.0;
+                if(!localSlotToNumber(rec.b,(RTTypedNumericKind)rec.aux,value)
+                   || !storeLocalNumericValue(rec.a,(RTTypedNumericKind)rec.numericKind,value)){
+                    return deopt(rec);
+                }
+                break;
+            }
+            case JitOpKind::Binary: {
+                auto kind = (RTTypedNumericKind)rec.numericKind;
+                auto op = (RTTypedBinaryOp)rec.aux;
+                long double lhsVal = 0.0;
+                long double rhsVal = 0.0;
+                if(!localSlotToNumber(rec.b,kind,lhsVal) || !localSlotToNumber(rec.c,kind,rhsVal)){
+                    return deopt(rec);
+                }
+                long double result = 0.0;
+                if(!computeTypedBinaryResult(kind,op,lhsVal,rhsVal,result)){
+                    return deopt(rec);
+                }
+                if(!storeLocalNumericValue(rec.a,kind,result)){
+                    return deopt(rec);
+                }
+                break;
+            }
+            case JitOpKind::CompareBranch: {
+                auto kind = (RTTypedNumericKind)rec.numericKind;
+                auto op = (RTTypedCompareOp)rec.aux;
+                long double lhsVal = 0.0;
+                long double rhsVal = 0.0;
+                if(!localSlotToNumber(rec.a,kind,lhsVal) || !localSlotToNumber(rec.b,kind,rhsVal)){
+                    return deopt(rec);
+                }
+                bool comparison = false;
+                switch(op){
+                    case RTTYPED_COMPARE_EQ: comparison = lhsVal == rhsVal; break;
+                    case RTTYPED_COMPARE_NE: comparison = lhsVal != rhsVal; break;
+                    case RTTYPED_COMPARE_LT: comparison = lhsVal <  rhsVal; break;
+                    case RTTYPED_COMPARE_LE: comparison = lhsVal <= rhsVal; break;
+                    case RTTYPED_COMPARE_GT: comparison = lhsVal >  rhsVal; break;
+                    case RTTYPED_COMPARE_GE: comparison = lhsVal >= rhsVal; break;
+                    default: return deopt(rec);
+                }
+                if(!comparison){
+                    if(rec.branchIp != UINT32_MAX){
+                        ip = rec.branchIp;
+                        continue;
+                    }
+                    JitExitInfo info;
+                    info.status = JitExitStatus::NormalExit;
+                    info.resumePc = rec.branchExitPc;
+                    return info;
+                }
+                break;
+            }
+            case JitOpKind::ArrayGet: {
+                auto collection = referenceLocalSlot(rec.b);
+                int index = -1;
+                if(!collection || !localSlotToIndex(rec.c,index)){
+                    if(collection){ StarbytesObjectRelease(collection); }
+                    return deopt(rec);
+                }
+                long double numericValue = 0.0;
+                bool success = index >= 0
+                    && StarbytesObjectTypecheck(collection,StarbytesArrayType())
+                    && (unsigned)index < StarbytesArrayGetLength(collection)
+                    && StarbytesArrayTryGetNumeric(collection,(unsigned)index,numTypeFromTypedKind((RTTypedNumericKind)rec.numericKind),&numericValue);
+                StarbytesObjectRelease(collection);
+                if(!success || !storeLocalNumericValue(rec.a,(RTTypedNumericKind)rec.numericKind,numericValue)){
+                    return deopt(rec);
+                }
+                break;
+            }
+            case JitOpKind::ArraySet: {
+                auto collection = referenceLocalSlot(rec.a);
+                int index = -1;
+                long double numericValue = 0.0;
+                bool success = collection
+                    && localSlotToIndex(rec.b,index)
+                    && localSlotToNumber(rec.c,(RTTypedNumericKind)rec.numericKind,numericValue)
+                    && index >= 0
+                    && StarbytesObjectTypecheck(collection,StarbytesArrayType())
+                    && (unsigned)index < StarbytesArrayGetLength(collection)
+                    && StarbytesArrayTrySetNumeric(collection,(unsigned)index,numTypeFromTypedKind((RTTypedNumericKind)rec.numericKind),numericValue) != 0;
+                if(collection){ StarbytesObjectRelease(collection); }
+                if(!success){
+                    return deopt(rec);
+                }
+                break;
+            }
+            case JitOpKind::ArrayUpdate: {
+                auto collection = referenceLocalSlot(rec.a);
+                int index = -1;
+                if(!collection || !localSlotToIndex(rec.b,index)){
+                    if(collection){ StarbytesObjectRelease(collection); }
+                    return deopt(rec);
+                }
+                long double currentValue = 0.0;
+                bool readSuccess = index >= 0
+                    && StarbytesObjectTypecheck(collection,StarbytesArrayType())
+                    && (unsigned)index < StarbytesArrayGetLength(collection)
+                    && StarbytesArrayTryGetNumeric(collection,(unsigned)index,numTypeFromTypedKind((RTTypedNumericKind)rec.numericKind),&currentValue);
+                if(!readSuccess){
+                    StarbytesObjectRelease(collection);
+                    return deopt(rec);
+                }
+                long double rhsValue = 0.0;
+                if(!localSlotToNumber(rec.c,(RTTypedNumericKind)rec.numericKind,rhsValue)){
+                    StarbytesObjectRelease(collection);
+                    return deopt(rec);
+                }
+                long double result = 0.0;
+                auto op = (RTTypedBinaryOp)rec.aux;
+                if(!computeTypedBinaryResult((RTTypedNumericKind)rec.numericKind,op,currentValue,rhsValue,result)){
+                    StarbytesObjectRelease(collection);
+                    return deopt(rec);
+                }
+                bool writeSuccess = StarbytesArrayTrySetNumeric(collection,
+                                                                (unsigned)index,
+                                                                numTypeFromTypedKind((RTTypedNumericKind)rec.numericKind),
+                                                                result) != 0;
+                StarbytesObjectRelease(collection);
+                if(!writeSuccess){
+                    return deopt(rec);
+                }
+                break;
+            }
+            case JitOpKind::CallDirect: {
+                if(rec.b >= funcTemp->v2Image.callSites.size()){
+                    return deopt(rec);
+                }
+                auto &callSite = funcTemp->v2Image.callSites[rec.b];
+                auto *target = findFunctionByName(string_ref(callSite.targetName));
+                if(!target){
+                    return deopt(rec);
+                }
+                std::vector<StarbytesObject> callArgs;
+                callArgs.reserve(callSite.argSlots.size());
+                for(auto argSlot : callSite.argSlots){
+                    callArgs.push_back(referenceLocalSlot(argSlot));
+                }
+                auto result = invokeFuncWithValues(target,{callArgs.data(),(unsigned)callArgs.size()},nullptr);
+                for(auto *arg : callArgs){
+                    if(arg){ StarbytesObjectRelease(arg); }
+                }
+                if(!lastRuntimeError.empty()){
+                    if(result){ StarbytesObjectRelease(result); }
+                    return fail(lastRuntimeError);
+                }
+                if(rec.a != UINT32_MAX){
+                    storeLocalSlotOwned(rec.a,result);
+                }
+                else if(result){
+                    StarbytesObjectRelease(result);
+                }
+                break;
+            }
+            case JitOpKind::IntrinsicSqrt: {
+                auto inputKind = (rec.b < funcTemp->slotKinds.size() && funcTemp->slotKinds[rec.b] != RTTYPED_NUM_OBJECT)
+                    ? funcTemp->slotKinds[rec.b]
+                    : RTTYPED_NUM_DOUBLE;
+                long double value = 0.0;
+                if(!localSlotToNumber(rec.b,inputKind,value)){
+                    return deopt(rec);
+                }
+                if(value < 0.0){
+                    return fail("sqrt requires non-negative numeric input");
+                }
+                if(!storeLocalNumericValue(rec.a,RTTYPED_NUM_DOUBLE,std::sqrt((double)value))){
+                    return deopt(rec);
+                }
+                break;
+            }
+            case JitOpKind::Jump: {
+                if(rec.branchIp != UINT32_MAX){
+                    processMicrotasks();
+                    if(!lastRuntimeError.empty()){
+                        return fail(lastRuntimeError);
+                    }
+                    if(willReturn){
+                        JitExitInfo info;
+                        info.status = JitExitStatus::Return;
+                        info.resumePc = compiled.exitPc;
+                        return info;
+                    }
+                    ip = rec.branchIp;
+                    continue;
+                }
+                JitExitInfo info;
+                info.status = JitExitStatus::NormalExit;
+                info.resumePc = rec.branchExitPc;
+                return info;
+            }
+            case JitOpKind::GuardArrayNumeric: {
+                auto collection = referenceLocalSlot(rec.a);
+                bool guardOk = collection
+                    && StarbytesObjectTypecheck(collection,StarbytesArrayType());
+                if(guardOk && StarbytesArrayGetLength(collection) > 0){
+                    long double probe = 0.0;
+                    if(!StarbytesArrayTryGetNumeric(collection,0u,numTypeFromTypedKind((RTTypedNumericKind)rec.numericKind),&probe)){
+                        guardOk = false;
+                    }
+                }
+                if(collection){ StarbytesObjectRelease(collection); }
+                if(!guardOk){
+                    return deopt(rec);
+                }
+                break;
+            }
+        }
+        ++ip;
+    }
+
+    JitExitInfo info;
+    info.status = JitExitStatus::NormalExit;
+    info.resumePc = compiled.exitPc;
+    (void)returnVal;
+    return info;
+}
+
+void InterpImpl::refreshCodeCacheStats(){
+    auto stats = codeCache.stats();
+    runtimeProfile.codeCacheBytesUsed = stats.bytesUsed;
+    runtimeProfile.codeCacheOptimizedArtifacts = stats.optimizedArtifacts;
+    runtimeProfile.codeCacheWarmArtifacts = stats.warmArtifacts;
 }
 
 bool InterpImpl::inspectLocalRefExpr(std::istream &in,uint32_t &slotOut,RTTypedNumericKind &kindOut){
@@ -3852,8 +3631,36 @@ StarbytesObject InterpImpl::invokeV2FuncWithValues(RTFuncTemplate *func_temp,
         if(pc < execImage->loopIndexByHeaderPc.size()){
             auto loopIndex = execImage->loopIndexByHeaderPc[pc];
             if(loopIndex >= 0 && (size_t)loopIndex < execImage->loops.size()){
-                execImage->loops[(size_t)loopIndex].headerExecutions += 1;
+                auto &headerLoop = execImage->loops[(size_t)loopIndex];
+                headerLoop.headerExecutions += 1;
                 maybeTriggerHotLoopTier2(func_temp,*execImage,(size_t)loopIndex);
+
+                if(jitEnabled
+                   && headerLoop.compiled
+                   && !headerLoop.compiled->deoptimized){
+                    auto exitInfo = executeCompiledLoop(func_temp,
+                                                        *execImage,
+                                                        headerLoop,
+                                                        *headerLoop.compiled,
+                                                        willReturn,
+                                                        returnVal);
+                    if(!lastRuntimeError.empty()){
+                        popLocalFrame();
+                        return returnVal;
+                    }
+                    switch(exitInfo.status){
+                        case JitExitStatus::Return:
+                            popLocalFrame();
+                            return returnVal;
+                        case JitExitStatus::Fail:
+                            popLocalFrame();
+                            return returnVal;
+                        case JitExitStatus::Deopt:
+                        case JitExitStatus::NormalExit:
+                            pc = exitInfo.resumePc;
+                            continue;
+                    }
+                }
             }
         }
         if(runtimeProfilingEnabled){
